@@ -1,5 +1,5 @@
 """LAN-first Flask media server."""
-import json, logging, mimetypes, os, re, sqlite3, time
+import json, logging, mimetypes, os, re, sqlite3, subprocess, threading, time
 from functools import lru_cache
 from pathlib import Path
 from shutil import which
@@ -12,6 +12,7 @@ DATABASE = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 CACHE_DIR, POSTER_CACHE, BACKDROP_CACHE = BASE_DIR / "cache", BASE_DIR / "cache/posters", BASE_DIR / "cache/backdrops"
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"}; SUBTITLE_EXTENSIONS = {".srt", ".vtt"}; POSTER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 app = Flask(__name__); logging.basicConfig(level=os.environ.get("MEDIA_SERVER_LOG_LEVEL", "INFO"))
+TRANSCODE_LOCK = threading.BoundedSemaphore(1)
 
 def get_db():
     DATABASE.parent.mkdir(parents=True, exist_ok=True); db=sqlite3.connect(DATABASE); db.row_factory=sqlite3.Row; return db
@@ -123,6 +124,36 @@ def subtitle(filename,name):
     text=sub.read_text(encoding='utf-8-sig',errors='replace')
     if sub.suffix.lower()=='.srt':text='WEBVTT\n\n'+re.sub(r'(?m)^(\d\d:\d\d:\d\d),',r'\1.',text)
     return Response(text,mimetype='text/vtt',headers={'Cache-Control':'private, max-age=3600'})
+@app.route('/transcode/<path:filename>')
+def transcode(filename):
+    """Stream a browser-safe MP4 only after direct playback has failed."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    if not which('ffmpeg'):
+        return jsonify(error='FFmpeg is not installed; this file cannot be converted.'), 503
+    if not TRANSCODE_LOCK.acquire(blocking=False):
+        return jsonify(error='Another media conversion is already in progress.'), 429
+
+    def stream():
+        process = None
+        try:
+            process = subprocess.Popen(
+                ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', str(path),
+                 '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast',
+                 '-crf', '23', '-c:a', 'aac', '-movflags',
+                 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1'],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+            while chunk := process.stdout.read(1024 * 1024):
+                yield chunk
+        finally:
+            if process and process.poll() is None:
+                process.terminate()
+            TRANSCODE_LOCK.release()
+
+    return Response(stream(), mimetype='video/mp4', headers={'Cache-Control': 'no-store'})
+
 @app.route('/api/progress',methods=['GET','POST'])
 def progress():
     if request.method=='GET':
@@ -159,7 +190,23 @@ PLAYER_HTML = PLAYER_HTML.replace(
     'full.onclick=()=>shell.requestFullscreen?.();',
     'full.onclick=()=>document.fullscreenElement?document.exitFullscreen?.():shell.requestFullscreen?.();',
 )
+PLAYER_HTML = PLAYER_HTML.replace(
+    '<source src="{{url_for(\'media\',filename=movie.filename)}}">',
+    '<source id="source" src="{{url_for(\'media\',filename=movie.filename)}}">'
+    '<p id="playbackError" hidden></p>',
+)
+PLAYER_HTML = PLAYER_HTML.replace(
+    '</script>',
+    '''const source=document.querySelector('#source'),playbackError=document.querySelector('#playbackError');
+v.addEventListener('error',()=>{if(source.dataset.transcoded)return;fetch('/api/media-info/'+encodeURIComponent(filename)).then(r=>r.json()).then(info=>{if(info.transcoding_available){source.dataset.transcoded='1';source.src='/transcode/'+filename.split('/').map(encodeURIComponent).join('/');v.load();v.play().catch(()=>{playbackError.hidden=false;playbackError.textContent='This video could not start after conversion.'})}else{playbackError.hidden=false;playbackError.textContent='This format is not supported by this browser. Install FFmpeg on the server to enable a one-at-a-time compatibility conversion.'}}).catch(()=>{playbackError.hidden=false;playbackError.textContent='Playback failed. Check this media file and server connection.'})});</script>''',
+)
+PLAYER_HTML = PLAYER_HTML.replace('<p id="playbackError" hidden></p>', '')
+PLAYER_HTML = PLAYER_HTML.replace(
+    '</video><button id="center">',
+    '</video><p id="playbackError" hidden></p><button id="center">',
+)
 ERROR_HTML='''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px system-ui;background:#090b10;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0}main{text-align:center;padding:2rem}a{color:#fff}</style><main><h1>{{code}}</h1><p>{{message}}</p><a href="/">Back to library</a></main>'''
+CSS += '#playbackError{position:absolute;z-index:2;max-width:28rem;padding:1rem;background:#1b1c22e8;border:1px solid #555;border-radius:.5rem;text-align:center;line-height:1.4}'
 @app.context_processor
 def helpers():
     def poster(m):

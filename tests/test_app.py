@@ -28,3 +28,6 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn(b'WEBVTT',self.client.get('/subtitles/Example.2026.mp4/Example.2026.en.srt').data)
         self.assertEqual(self.client.post('/api/progress',json={'filename':'Example.2026.mp4','position':15,'duration':10}).status_code,200)
         self.assertEqual(self.client.get('/api/progress?filename=Example.2026.mp4').json['position'],10)
+    def test_transcode_is_safe_when_ffmpeg_is_unavailable(self):
+        response = self.client.get('/transcode/Example.2026.mp4')
+        self.assertEqual(response.status_code, 503)
