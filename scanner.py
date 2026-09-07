@@ -1,12 +1,13 @@
 from pathlib import Path
+import os
 import sqlite3
 import requests
 import re
 import time
 
-MEDIA_ROOT = Path("/home/iamroot/Media/Movies").resolve()
-BASE_DIR = Path("/home/iamroot/media-server").resolve()
-DB_PATH = BASE_DIR / "media.db"
+BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
+MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "/home/iamroot/Media/Movies")).resolve()
+DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 ENV_FILE = BASE_DIR / ".env"
 
 TMDB_API = "https://api.themoviedb.org/3"
@@ -113,6 +114,10 @@ def setup_database(conn):
             updated_at INTEGER
         )
     """)
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(movies)")}
+    if "release_date" not in columns:
+        conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
 
     conn.commit()
 
@@ -361,9 +366,10 @@ def scan():
                     runtime,
                     genres,
                     vote_average,
-                    updated_at
+                    updated_at,
+                    release_date
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     relative,
@@ -377,6 +383,7 @@ def scan():
                     genres,
                     details.get("vote_average"),
                     int(time.time()),
+                    release_date,
                 ),
             )
 

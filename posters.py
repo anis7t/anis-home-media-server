@@ -1,29 +1,33 @@
 from pathlib import Path
+import os
 import sqlite3
 import requests
 import time
 
-BASE_DIR = Path("/home/iamroot/media-server").resolve()
-DB_PATH = BASE_DIR / "media.db"
+BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
+DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 POSTER_DIR = BASE_DIR / "cache" / "posters"
+BACKDROP_DIR = BASE_DIR / "cache" / "backdrops"
 
 TMDB_IMAGE = "https://image.tmdb.org/t/p/w500"
 
 MAX_RETRIES = 5
 
 
-def download_poster(tmdb_id, poster_path):
+def download_poster(tmdb_id, poster_path, backdrop=False):
     if not poster_path:
         return False
 
-    POSTER_DIR.mkdir(parents=True, exist_ok=True)
+    directory = BACKDROP_DIR if backdrop else POSTER_DIR
+    directory.mkdir(parents=True, exist_ok=True)
 
-    destination = POSTER_DIR / f"{tmdb_id}.jpg"
+    destination = directory / f"{tmdb_id}.jpg"
 
     if destination.exists() and destination.stat().st_size > 1000:
         return True
 
-    url = f"{TMDB_IMAGE}{poster_path}"
+    image_size = "w1280" if backdrop else "w500"
+    url = f"https://image.tmdb.org/t/p/{image_size}{poster_path}"
 
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -83,7 +87,8 @@ def main():
             filename,
             title,
             tmdb_id,
-            poster_path
+            poster_path,
+            backdrop_path
         FROM movies
         WHERE tmdb_id IS NOT NULL
     """).fetchall()
@@ -94,7 +99,7 @@ def main():
     successful = 0
     failed = 0
 
-    for index, (filename, title, tmdb_id, poster_path) in enumerate(
+    for index, (filename, title, tmdb_id, poster_path, backdrop_path) in enumerate(
         movies, 1
     ):
 
@@ -105,12 +110,13 @@ def main():
         if not poster_path:
             print("    No poster available from TMDB.")
             failed += 1
-            continue
-
-        if download_poster(tmdb_id, poster_path):
+        elif download_poster(tmdb_id, poster_path):
             successful += 1
         else:
             failed += 1
+
+        if backdrop_path:
+            download_poster(tmdb_id, backdrop_path, backdrop=True)
 
         print()
 
