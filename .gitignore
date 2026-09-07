@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Database
+media.db
+*.db
+
+# Cached/generated files
+cache/
+
+# Local backups / old versions
+app.py.backup
+app.py.phase2
+
+# OS/editor files
+.DS_Store
