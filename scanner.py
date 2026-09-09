@@ -4,6 +4,7 @@ import sqlite3
 import requests
 import re
 import time
+from posters import download_poster
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
 MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "/home/iamroot/Media/Movies")).resolve()
@@ -35,14 +36,16 @@ RETRY_DELAY = 3
 # ---------------------------------------------------------
 
 def load_token():
-    if not ENV_FILE.exists():
-        raise RuntimeError(".env file not found")
+    token = os.environ.get("TMDB_API_TOKEN")
+    if token:
+        return token.strip().strip('"').strip("'")
 
-    for line in ENV_FILE.read_text().splitlines():
-        if line.startswith("TMDB_API_TOKEN="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            if line.startswith("TMDB_API_TOKEN="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
 
-    raise RuntimeError("TMDB_API_TOKEN not found in .env")
+    return None
 
 
 # ---------------------------------------------------------
@@ -51,6 +54,11 @@ def load_token():
 
 def parse_filename(path):
     name = path.stem
+
+    # Remove download/copy prefixes and trailing duplicate markers
+    name = re.sub(r"^(?:Copy\s+of\s+)+", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\s*\(\d+\)$", "", name)
+    name = re.sub(r"^[【\[].*?[】\]]\s*", "", name)
 
     # Replace dots and underscores with spaces
     name = re.sub(r"[._]+", " ", name)
@@ -244,171 +252,161 @@ def get_movie_details(session, token, tmdb_id):
 # Scan library
 # ---------------------------------------------------------
 
-def scan():
+def scan_single_file(path, conn=None, session=None, token=None, media_root=None):
+    if token is None:
+        token = load_token()
+    if not token:
+        print("    TMDB_API_TOKEN not found.")
+        return None
 
-    token = load_token()
+    media_root = Path(media_root or MEDIA_ROOT).resolve()
+    path = Path(path).resolve()
+    try:
+        relative = path.relative_to(media_root).as_posix()
+    except ValueError:
+        relative = path.name
 
-    if not MEDIA_ROOT.exists():
-        raise RuntimeError(
-            f"Media directory does not exist: {MEDIA_ROOT}"
+    close_conn = False
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH)
+        setup_database(conn)
+        close_conn = True
+
+    close_session = False
+    if session is None:
+        session = requests.Session()
+        close_session = True
+
+    try:
+        title, year = parse_filename(path)
+        print(f"Scanning: {title}" + (f" ({year})" if year else ""))
+
+        movie = find_movie(session, token, title, year)
+        if not movie:
+            print("    TMDB: no match")
+            return None
+
+        tmdb_id = movie["id"]
+        print(f"    Match: {movie.get('title')} ({movie.get('release_date', '')[:4]})")
+
+        details = get_movie_details(session, token, tmdb_id)
+        genres = ", ".join(genre["name"] for genre in details.get("genres", []))
+        release_date = details.get("release_date", "")
+        actual_year = int(release_date[:4]) if release_date else year
+
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO movies (
+                filename,
+                title,
+                year,
+                tmdb_id,
+                overview,
+                poster_path,
+                backdrop_path,
+                runtime,
+                genres,
+                vote_average,
+                updated_at,
+                release_date
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                relative,
+                details.get("title"),
+                actual_year,
+                tmdb_id,
+                details.get("overview"),
+                details.get("poster_path"),
+                details.get("backdrop_path"),
+                details.get("runtime"),
+                genres,
+                details.get("vote_average"),
+                int(time.time()),
+                release_date,
+            ),
         )
+        conn.commit()
+        print(f"    Saved metadata (TMDB ID {tmdb_id})")
 
-    conn = sqlite3.connect(DB_PATH)
+        if details.get("poster_path"):
+            download_poster(tmdb_id, details["poster_path"])
+        if details.get("backdrop_path"):
+            download_poster(tmdb_id, details["backdrop_path"], backdrop=True)
 
+        return details
+    except Exception as e:
+        print(f"    ERROR scanning {path.name}: {e}")
+        return None
+    finally:
+        if close_session:
+            session.close()
+        if close_conn:
+            conn.close()
+
+
+def scan_unindexed(media_root=None, db_path=None, token=None):
+    if token is None:
+        token = load_token()
+    if not token:
+        print("TMDB_API_TOKEN not configured. Skipping scan.")
+        return []
+
+    media_root = Path(media_root or MEDIA_ROOT).resolve()
+    db_path = Path(db_path or DB_PATH).resolve()
+
+    if not media_root.exists():
+        return []
+
+    conn = sqlite3.connect(db_path)
     setup_database(conn)
 
     video_files = sorted(
         path
-        for path in MEDIA_ROOT.rglob("*")
-        if path.is_file()
-        and path.suffix.lower() in VIDEO_EXTENSIONS
+        for path in media_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
     )
 
-    print(f"Found {len(video_files)} video files.")
-    print()
+    indexed = {
+        row[0]
+        for row in conn.execute(
+            "SELECT filename FROM movies WHERE tmdb_id IS NOT NULL"
+        ).fetchall()
+    }
 
-    # One HTTP session for the entire scan
+    unindexed = [
+        p for p in video_files
+        if p.relative_to(media_root).as_posix() not in indexed
+    ]
+
+    if not unindexed:
+        conn.close()
+        return []
+
+    print(f"Found {len(unindexed)} unindexed video files out of {len(video_files)} total.")
+
     session = requests.Session()
-
-    for index, path in enumerate(video_files, 1):
-
-        relative = path.relative_to(MEDIA_ROOT).as_posix()
-
-        existing = conn.execute(
-            """
-            SELECT tmdb_id, title
-            FROM movies
-            WHERE filename = ?
-            """,
-            (relative,),
-        ).fetchone()
-
-        if existing:
-            print(
-                f"[{index}/{len(video_files)}] "
-                f"Already scanned: {existing[1]}"
-            )
-            continue
-
-        title, year = parse_filename(path)
-
-        print(
-            f"[{index}/{len(video_files)}] "
-            f"{title}"
-            + (f" ({year})" if year else "")
-        )
-
+    scanned = []
+    for p in unindexed:
         try:
-
-            # ---------------------------------------------
-            # Search
-            # ---------------------------------------------
-
-            movie = find_movie(
-                session,
-                token,
-                title,
-                year,
-            )
-
-            if not movie:
-                print("    TMDB: no match")
-                print()
-                continue
-
-            tmdb_id = movie["id"]
-
-            print(
-                f"    Match: "
-                f"{movie.get('title')} "
-                f"({movie.get('release_date', '')[:4]})"
-            )
-
-            # ---------------------------------------------
-            # Details
-            # ---------------------------------------------
-
-            details = get_movie_details(
-                session,
-                token,
-                tmdb_id,
-            )
-
-            genres = ", ".join(
-                genre["name"]
-                for genre in details.get("genres", [])
-            )
-
-            release_date = details.get(
-                "release_date",
-                ""
-            )
-
-            if release_date:
-                actual_year = int(release_date[:4])
-            else:
-                actual_year = year
-
-            # ---------------------------------------------
-            # Save immediately
-            # ---------------------------------------------
-
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO movies (
-                    filename,
-                    title,
-                    year,
-                    tmdb_id,
-                    overview,
-                    poster_path,
-                    backdrop_path,
-                    runtime,
-                    genres,
-                    vote_average,
-                    updated_at,
-                    release_date
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    relative,
-                    details.get("title"),
-                    actual_year,
-                    tmdb_id,
-                    details.get("overview"),
-                    details.get("poster_path"),
-                    details.get("backdrop_path"),
-                    details.get("runtime"),
-                    genres,
-                    details.get("vote_average"),
-                    int(time.time()),
-                    release_date,
-                ),
-            )
-
-            conn.commit()
-
-            print(
-                f"    Saved metadata "
-                f"(TMDB ID {tmdb_id})"
-            )
-
+            res = scan_single_file(p, conn=conn, session=session, token=token, media_root=media_root)
+            if res:
+                scanned.append(res)
         except Exception as e:
-
-            print(
-                f"    ERROR: {e}"
-            )
-
-        # Small pause between movies
-        time.sleep(2)
-
-        print()
+            print(f"Error scanning {p.name}: {e}")
+        time.sleep(1)
 
     session.close()
     conn.close()
+    return scanned
 
-    print("Scan complete.")
+
+def scan():
+    token = load_token()
+    if not token:
+        raise RuntimeError("TMDB_API_TOKEN not found in .env or environment")
+    return scan_unindexed(token=token)
 
 
 # ---------------------------------------------------------
@@ -417,3 +415,4 @@ def scan():
 
 if __name__ == "__main__":
     scan()
+
