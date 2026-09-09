@@ -1,0 +1,174 @@
+"""Media streaming, byte ranges, direct transcoding, and HLS routes."""
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from shutil import which as shutil_which
+from flask import Blueprint, Response, abort, jsonify, request, send_file
+
+from app import config
+from app.services.media_service import probe_media
+from app.services.transcode_service import (
+    compat_transcode_args,
+    ensure_hls_transcode,
+    hls_cache_dir,
+    transcode_cache_path,
+    transcode_progress_path,
+)
+from app.utils.filesystem import is_video, mimetype, parse_range, safe_path
+
+media_bp = Blueprint('media', __name__)
+
+
+def check_which(cmd):
+    """Resolve binary path with support for test patches on app.which."""
+    if 'app' in sys.modules and hasattr(sys.modules['app'], 'which'):
+        app_which = sys.modules['app'].which
+        if app_which != shutil_which:
+            return app_which(cmd)
+    return shutil_which(cmd)
+
+
+@media_bp.route('/media/<path:filename>')
+def media(filename):
+    """Stream raw media file with full HTTP Range byte range support."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    size = path.stat().st_size
+    ran = parse_range(request.headers.get('Range'), size)
+    headers = {
+        'Accept-Ranges': 'bytes',
+        'Content-Type': mimetype(path),
+        'Cache-Control': 'private, max-age=3600'
+    }
+    if ran == 'bad':
+        return Response(status=416, headers={**headers, 'Content-Range': f'bytes */{size}'})
+    if ran:
+        start, end = ran
+        length = end - start + 1
+
+        def stream():
+            with path.open('rb') as f:
+                f.seek(start)
+                left = length
+                while left:
+                    data = f.read(min(left, 1024 * 1024))
+                    if not data:
+                        break
+                    left -= len(data)
+                    yield data
+
+        return Response(
+            stream(),
+            206,
+            {**headers, 'Content-Length': str(length), 'Content-Range': f'bytes {start}-{end}/{size}'}
+        )
+    return send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)
+
+
+@media_bp.route('/transcode/<path:filename>')
+def transcode(filename):
+    """Create and serve a browser-safe MP4 with byte range support."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    if not check_which('ffmpeg'):
+        return jsonify(error='FFmpeg is not installed; this file cannot be converted.'), 503
+
+    mode = 'compat' if request.args.get('compat') == '1' else 'direct'
+    cached = transcode_cache_path(path, mode)
+    progress_path = transcode_progress_path(path, mode)
+    if cached.is_file() and cached.stat().st_size:
+        return send_file(cached, mimetype='video/mp4', conditional=True, max_age=3600)
+
+    lock_key = f'{filename}:{mode}'
+    lock = config.TRANSCODE_LOCKS.setdefault(lock_key, threading.Lock())
+    lock.acquire()
+    temporary = cached.with_name(cached.stem + '.part.mp4')
+    config.ACTIVE_DIRECT_TRANSCODES[lock_key] = {
+        'filename': filename,
+        'mode': mode,
+        'started_at': time.time(),
+        'path': path,
+        'progress_path': progress_path,
+    }
+    try:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        streams = probe_media(path).get('streams', [])
+        video = next((s for s in streams if s.get('codec_type') == 'video'), {})
+        audio = next((s for s in streams if s.get('codec_type') == 'audio'), {})
+        input_args = []
+        vaapi = config.is_vaapi_enabled()
+        if mode == 'compat':
+            dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
+            input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev] if vaapi else []
+            video_args = compat_transcode_args(vaapi)
+        elif video.get('codec_name') in {'h264', 'hevc'}:
+            video_args = ['-c:v', 'copy']
+            if video.get('codec_name') == 'hevc':
+                video_args += ['-tag:v', 'hvc1']
+        else:
+            video_args = compat_transcode_args(False)
+        audio_args = ['-c:a', 'copy'] if audio.get('codec_name') == 'aac' else ['-c:a', 'aac']
+        subprocess.run(
+            ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error']
+            + input_args
+            + ['-i', str(path), '-map', '0:v:0', '-map', '0:a?']
+            + video_args
+            + audio_args
+            + [
+                '-movflags', '+frag_keyframe+empty_moov+default_base_moof',
+                '-progress', str(progress_path),
+                '-nostats', str(temporary)
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        temporary.replace(cached)
+    except (OSError, subprocess.CalledProcessError):
+        progress_path.unlink(missing_ok=True)
+        return jsonify(error='The media conversion failed.'), 500
+    finally:
+        config.ACTIVE_DIRECT_TRANSCODES.pop(lock_key, None)
+        lock.release()
+        progress_path.unlink(missing_ok=True)
+    return send_file(cached, mimetype='video/mp4', conditional=True, max_age=3600)
+
+
+@media_bp.route('/hls/<path:filename>/playlist.m3u8')
+def hls_playlist(filename):
+    """Serve HLS master playlist for the requested video, initiating transcode if needed."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    directory = hls_cache_dir(path)
+    playlist = directory / 'playlist.m3u8'
+    proc = ensure_hls_transcode(filename)
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        if playlist.is_file() and 'segment_' in playlist.read_text(errors='replace'):
+            break
+        if proc is not None and proc.poll() is not None:
+            break
+        time.sleep(0.05)
+    if not playlist.is_file():
+        return Response('#EXTM3U\n#EXT-X-VERSION:3\n', mimetype='application/vnd.apple.mpegurl')
+    return send_file(playlist, mimetype='application/vnd.apple.mpegurl', max_age=0)
+
+
+@media_bp.route('/hls/<path:filename>/<segment>')
+def hls_segment(filename, segment):
+    """Serve individual HLS transport stream (.ts) or initialization segment."""
+    path = safe_path(filename)
+    if not is_video(path) or not re.fullmatch(r'(?:init\.mp4|segment_\d{6}\.(?:m4s|ts))', segment):
+        abort(404)
+    target = hls_cache_dir(path) / segment
+    if not target.is_file():
+        abort(404)
+    seg_mimetype = 'video/mp2t' if segment.endswith('.ts') else 'video/mp4'
+    return send_file(target, mimetype=seg_mimetype, max_age=3600)
+

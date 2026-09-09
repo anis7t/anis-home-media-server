@@ -34,3 +34,28 @@
 - **Cue Elevation**: Subtitle cues rendered via WebVTT must be elevated (baseline `line: -3.5`, `line: -4` for huge font sizes) so single-line and multi-line cues sit comfortably above the playback controls across all font sizes (75%–200%).
 - **Timestamp Regex**: When converting or parsing WebVTT timestamps, match both `HH:MM:SS.mmm` and `MM:SS.mmm` (`r'((?:\d\d:)?\d\d:\d\d\.\d{3}\s*-->\s*(?:\d\d:)?\d\d:\d\d\.\d{3})'`).
 
+## 5. Mobile Responsive & Viewport Clamping Invariants
+- **Root Viewport Clamping**: On mobile-targeted pages, both `html` and `body` must explicitly declare:
+  ```css
+  html.details-html, body.details-page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    touch-action: pan-y;
+  }
+  ```
+  Never rely solely on `body { overflow-x: hidden }`, as mobile rendering engines (WebKit, Blink, Gecko) treat `html` as the root scrolling canvas.
+- **Grid & Flex Child Track Clamping (`min-width: 0`)**: Any element relying on `text-overflow: ellipsis` or variable-length metadata (e.g. subtitle track listings, audio codecs, long titles) MUST have `min-width: 0; max-width: 100%;` applied to its container and all ancestor grid/flex tracks (e.g. `minmax(0, 1fr)`). Without `min-width: 0`, `auto` tracks expand to the intrinsic text width and blow out mobile viewports.
+- **Sub-Scroll Gesture Isolation**: Horizontally swipeable rails (such as cast lists or carousel strips) must specify:
+  ```css
+  .cast-rail {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+  ```
+  This prevents internal swipe gestures from bubbling up and causing accidental page-level horizontal panning.
+

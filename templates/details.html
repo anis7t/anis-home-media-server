@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en" class="details-html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{movie.title}} — Anis' Media Server</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>{{css}}</style>
+</head>
+<body class="details-page">
+{%if backdrop%}
+<div class="details-backdrop" style="background-image:linear-gradient(90deg,#090b10 8%,transparent 80%),linear-gradient(0deg,#090b10 0%,transparent 65%),url('{{url_for('tmdb_backdrop',tmdb_id=backdrop)}}')"></div>
+{%endif%}
+
+<main class="details-hero">
+  <div class="details-nav">
+    <a class="back-btn" href="/">← Library</a>
+    <a href="/" class="details-brand" title="Anis' Media Server">
+      <svg class="brand-icon-sm" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="8" fill="url(#brandGradSm)"/>
+        <defs>
+          <linearGradient id="brandGradSm" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff334b"/>
+            <stop offset="100%" stop-color="#b80017"/>
+          </linearGradient>
+        </defs>
+        <path d="M12.5 9.5L23 16L12.5 22.5V9.5Z" fill="#ffffff"/>
+      </svg>
+      <span class="details-brand-text">Anis' <span>Media Server</span></span>
+    </a>
+  </div>
+
+  <div class="hero-layout">
+    <div class="poster-col">
+      <div class="poster-card">
+        {%if movie.poster%}
+          {%if movie.poster.startswith('tmdb:')%}
+            <img src="{{url_for('tmdb_poster',tmdb_id=movie.tmdb_id)}}" alt="{{movie.title}}" loading="eager">
+          {%else%}
+            <img src="{{url_for('poster',filename=movie.poster[6:])}}" alt="{{movie.title}}" loading="eager">
+          {%endif%}
+        {%else%}
+          <div class="poster-fallback">◉</div>
+        {%endif%}
+      </div>
+    </div>
+
+    <div class="info-col">
+      <h1 class="movie-title">{{movie.title}}</h1>
+      {%if extended.tagline%}<p class="movie-tagline">“{{extended.tagline}}”</p>{%endif%}
+
+      <div class="meta-pills">
+        {%if movie.year%}<span class="meta-pill">{{movie.year}}</span>{%endif%}
+        {%if formatted_runtime%}<span class="meta-pill">{{formatted_runtime}}</span>
+        {%elif movie.runtime%}<span class="meta-pill">{{movie.runtime}} min</span>{%endif%}
+        {%if extended.certification%}<span class="badge-cert">{{extended.certification}}</span>{%endif%}
+        {%if movie.rating%}<span class="badge-score">★ {{'%.1f'|format(movie.rating)}}<span class="score-sub">/10</span></span>{%endif%}
+        <span id="endsAtBadge" class="meta-pill meta-ends" data-duration="{{movie.duration or (movie.runtime*60 if movie.runtime else 0)}}" data-position="{{movie.position}}"></span>
+        {%if movie.percent >= 90%}
+          <span id="watchStatusBadge" class="badge-status status-watched">Watched ✓</span>
+        {%elif movie.position > 10%}
+          <span id="watchStatusBadge" class="badge-status status-progress">In Progress ({{movie.percent|round|int}}%)</span>
+        {%else%}
+          <span id="watchStatusBadge" class="badge-status status-unwatched">Unwatched</span>
+        {%endif%}
+      </div>
+
+      {%if movie.genres%}
+      <div class="genre-chips">
+        {%for g in movie.genres.split(', ')%}
+          <span>{{g}}</span>
+        {%endfor%}
+      </div>
+      {%endif%}
+
+      <div class="action-bar">
+        {%if movie.position > 10 and movie.percent < 90%}
+          <a id="playBtn" class="btn-primary-play" href="{{url_for('watch',filename=movie.filename)}}">▶ Resume ({{(movie.position//60)|int}}:{{'%02d'|format((movie.position%60)|int)}})</a>
+        {%else%}
+          <a id="playBtn" class="btn-primary-play" href="{{url_for('watch',filename=movie.filename)}}">▶ Play</a>
+        {%endif%}
+
+        <a id="replayBtn" class="btn-sub-action" href="{{url_for('watch',filename=movie.filename)}}?replay=1" title="Play from beginning">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg> Replay
+        </a>
+
+        <button id="watchToggleBtn" type="button" class="btn-sub-action" onclick="toggleWatched()">
+          {%if movie.percent >= 90%}Mark Unwatched{%else%}✓ Mark Watched{%endif%}
+        </button>
+
+        {%if extended.trailer_key%}
+        <button id="trailerBtn" type="button" class="btn-sub-action" onclick="openTrailer('{{extended.trailer_key}}')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M10 8.64L15.27 12 10 15.36V8.64M8 5v14l11-7L8 5z"/></svg> Trailer
+        </button>
+        {%endif%}
+
+        <div class="ext-badges">
+          {%if extended.imdb_id%}
+            <a class="badge-ext badge-imdb" href="https://www.imdb.com/title/{{extended.imdb_id}}/" target="_blank" rel="noopener" title="View on IMDb">IMDb</a>
+          {%endif%}
+          {%if movie.tmdb_id%}
+            <a class="badge-ext badge-tmdb" href="https://www.themoviedb.org/movie/{{movie.tmdb_id}}" target="_blank" rel="noopener" title="View on TheMovieDb">TMDB</a>
+          {%endif%}
+        </div>
+      </div>
+
+      <div class="synopsis-block">
+        <p class="synopsis-text">{{movie.overview or 'No synopsis is available for this title.'}}</p>
+      </div>
+
+      {%if extended.directors or extended.writers or extended.production or movie.release_date%}
+      <div class="crew-table">
+        {%if extended.directors%}
+        <div class="crew-row"><span class="crew-title">Director</span><span class="crew-names">{{extended.directors|join(', ')}}</span></div>
+        {%endif%}
+        {%if extended.writers%}
+        <div class="crew-row"><span class="crew-title">Writers</span><span class="crew-names">{{extended.writers|join(', ')}}</span></div>
+        {%endif%}
+        {%if extended.production%}
+        <div class="crew-row"><span class="crew-title">Studios</span><span class="crew-names">{{extended.production|join(', ')}}</span></div>
+        {%endif%}
+        {%if movie.release_date%}
+        <div class="crew-row"><span class="crew-title">Release Date</span><span class="crew-names">{{movie.release_date}}</span></div>
+        {%endif%}
+      </div>
+      {%endif%}
+
+      <!-- Media Technical Specs Card -->
+      <div class="media-specs-card">
+        <div class="specs-top">
+          <span class="specs-heading">Media Info</span>
+          {%if specs.resolution_badge%}
+          <span class="specs-quality-badge">{{specs.resolution_badge}}</span>
+          {%endif%}
+        </div>
+        <div class="specs-grid">
+          <div class="spec-box">
+            <span class="spec-box-label">VIDEO</span>
+            <span class="spec-box-val">{{specs.resolution or 'HD'}}</span>
+            <span class="spec-box-sub">{{specs.video_codec or 'Standard'}}</span>
+          </div>
+          <div class="spec-box">
+            <span class="spec-box-label">AUDIO</span>
+            <span class="spec-box-val">{{specs.audio_codec or 'Audio'}}</span>
+            <span class="spec-box-sub">{{specs.audio_channels or 'Stereo'}}</span>
+          </div>
+          <div class="spec-box">
+            <span class="spec-box-label">CONTAINER & SIZE</span>
+            <span class="spec-box-val">{{specs.container}} · {{specs.file_size}}</span>
+            <span class="spec-box-sub">{%if specs.bitrate%}{{specs.bitrate}}{%else%}Standard Bitrate{%endif%}</span>
+          </div>
+          <div class="spec-box">
+            <span class="spec-box-label">SUBTITLES</span>
+            <span class="spec-box-val">{%if specs.subtitles%}{{specs.subtitles|length}} Track{%if specs.subtitles|length > 1%}s{%endif%}{%else%}None{%endif%}</span>
+            <span class="spec-box-sub" title="{{specs.subtitles|join(', ')}}">{%if specs.subtitles%}{{specs.subtitles|join(', ')}}{%else%}No subtitles available{%endif%}</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Cast & Crew Section -->
+  {%if extended.cast%}
+  <section class="cast-section">
+    <h2 class="section-heading">Top Billed Cast</h2>
+    <div class="cast-rail">
+      {%for actor in extended.cast[:18]%}
+      <div class="cast-card">
+        <div class="cast-avatar">
+          {%if actor.profile_path%}
+          <img src="https://image.tmdb.org/t/p/w185{{actor.profile_path}}" alt="{{actor.name}}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
+          <div class="cast-avatar-fallback" style="display:none">{{actor.name[:2]|upper}}</div>
+          {%else%}
+          <div class="cast-avatar-fallback">{{actor.name[:2]|upper}}</div>
+          {%endif%}
+        </div>
+        <div class="cast-name" title="{{actor.name}}">{{actor.name}}</div>
+        {%if actor.character%}
+        <div class="cast-role" title="{{actor.character}}">{{actor.character}}</div>
+        {%endif%}
+      </div>
+      {%endfor%}
+    </div>
+  </section>
+  {%endif%}
+</main>
+
+{%if extended.trailer_key%}
+<div id="trailerModal" class="trailer-modal" hidden>
+  <div class="trailer-backdrop" onclick="closeTrailer()"></div>
+  <div class="trailer-dialog">
+    <div class="trailer-header">
+      <span>{{movie.title}} - Official Trailer</span>
+      <button type="button" class="trailer-close" onclick="closeTrailer()">&times;</button>
+    </div>
+    <div class="trailer-iframe-wrap">
+      <iframe id="trailerIframe" src="" title="Movie Trailer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    </div>
+  </div>
+</div>
+{%endif%}
+
+<script>
+const filename={{movie.filename|tojson}};
+let isWatched={{1 if movie.percent >= 90 else 0}};
+const movieDur={{movie.duration or (movie.runtime*60 if movie.runtime else 0)}};
+const moviePos={{movie.position or 0}};
+
+function updateEndsAt(){
+  const el=document.getElementById('endsAtBadge');
+  if(!el)return;
+  const rem=Math.max(0,movieDur-moviePos);
+  if(rem>60){
+    const end=new Date(Date.now()+rem*1000);
+    let hours=end.getHours();
+    const minutes=String(end.getMinutes()).padStart(2,'0');
+    const ampm=hours>=12?'PM':'AM';
+    hours=hours%12||12;
+    el.textContent=`Ends at ${hours}:${minutes} ${ampm}`;
+    el.style.display='inline-flex';
+  }
+}
+updateEndsAt();
+
+function toggleWatched(){
+  const btn=document.getElementById('watchToggleBtn');
+  const badge=document.getElementById('watchStatusBadge');
+  const playBtn=document.getElementById('playBtn');
+  const newPos=isWatched?0:(movieDur||100);
+  const newDur=movieDur||100;
+  btn.disabled=true;
+  fetch('/api/progress',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({filename:filename,position:newPos,duration:newDur})
+  }).then(r=>r.json()).then(()=>{
+    isWatched=!isWatched;
+    btn.disabled=false;
+    if(isWatched){
+      btn.textContent='Mark Unwatched';
+      if(badge){badge.className='badge-status status-watched';badge.textContent='Watched ✓';}
+      if(playBtn)playBtn.innerHTML='▶ Play';
+    }else{
+      btn.textContent='✓ Mark Watched';
+      if(badge){badge.className='badge-status status-unwatched';badge.textContent='Unwatched';}
+      if(playBtn)playBtn.innerHTML='▶ Play';
+    }
+  }).catch(()=>{btn.disabled=false;});
+}
+
+function openTrailer(key){
+  const modal=document.getElementById('trailerModal');
+  const iframe=document.getElementById('trailerIframe');
+  if(!modal||!iframe||!key)return;
+  iframe.src='https://www.youtube-nocookie.com/embed/'+key+'?autoplay=1';
+  modal.hidden=false;
+  document.body.style.overflow='hidden';
+}
+
+function closeTrailer(){
+  const modal=document.getElementById('trailerModal');
+  const iframe=document.getElementById('trailerIframe');
+  if(iframe)iframe.src='';
+  if(modal)modal.hidden=true;
+  document.body.style.overflow='';
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')closeTrailer();
+});
+</script>
+</body>
+</html>

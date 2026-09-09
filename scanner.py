@@ -4,6 +4,7 @@ import sqlite3
 import requests
 import re
 import time
+import json
 from posters import download_poster
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
@@ -126,6 +127,8 @@ def setup_database(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(movies)")}
     if "release_date" not in columns:
         conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
+    if "details_json" not in columns:
+        conn.execute("ALTER TABLE movies ADD COLUMN details_json TEXT")
 
     conn.commit()
 
@@ -244,6 +247,7 @@ def get_movie_details(session, token, tmdb_id):
         f"{TMDB_API}/movie/{tmdb_id}",
         {
             "language": "en-US",
+            "append_to_response": "credits,release_dates,videos",
         },
     )
 
@@ -294,6 +298,40 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         release_date = details.get("release_date", "")
         actual_year = int(release_date[:4]) if release_date else year
 
+        cert = ""
+        for r in details.get("release_dates", {}).get("results", []):
+            if r.get("iso_3166_1") in ("US", "IN"):
+                for rel in r.get("release_dates", []):
+                    if rel.get("certification"):
+                        cert = rel["certification"]
+                        break
+                if cert:
+                    break
+
+        cast = [
+            {"name": c.get("name"), "character": c.get("character"), "profile_path": c.get("profile_path")}
+            for c in details.get("credits", {}).get("cast", [])[:20]
+        ]
+        directors = [c.get("name") for c in details.get("credits", {}).get("crew", []) if c.get("job") == "Director"]
+        writers = [c.get("name") for c in details.get("credits", {}).get("crew", []) if c.get("job") in ("Writer", "Screenplay")]
+        production = [p.get("name") for p in details.get("production_companies", [])]
+        trailer_key = ""
+        for v in details.get("videos", {}).get("results", []):
+            if v.get("site") == "YouTube" and v.get("type") in ("Trailer", "Teaser"):
+                trailer_key = v.get("key")
+                break
+
+        details_json = json.dumps({
+            "tagline": details.get("tagline", ""),
+            "imdb_id": details.get("imdb_id", ""),
+            "certification": cert,
+            "cast": cast,
+            "directors": directors,
+            "writers": writers,
+            "production": production,
+            "trailer_key": trailer_key,
+        })
+
         conn.execute(
             """
             INSERT OR REPLACE INTO movies (
@@ -308,9 +346,10 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                 genres,
                 vote_average,
                 updated_at,
-                release_date
+                release_date,
+                details_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 relative,
@@ -325,6 +364,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                 details.get("vote_average"),
                 int(time.time()),
                 release_date,
+                details_json,
             ),
         )
         conn.commit()
