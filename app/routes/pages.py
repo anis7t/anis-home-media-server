@@ -10,6 +10,7 @@ from app.services.media_service import (
     movie,
 )
 from app.services.subtitles_service import tracks
+from app.services.system_service import get_system_telemetry
 from app.services.transcode_service import get_active_transcodes
 from app.utils.filesystem import is_video, safe_path
 from app.utils.formatting import format_runtime_display
@@ -35,13 +36,18 @@ def home():
         reverse=True
     )
     active_transcodes = get_active_transcodes()
+    try:
+        telemetry = get_system_telemetry()
+    except Exception:
+        telemetry = None
     return render_template(
         'library.html',
         movies=movies,
         watching=watching,
         q=q,
         sort=sort,
-        active_transcodes=active_transcodes
+        active_transcodes=active_transcodes,
+        telemetry=telemetry
     )
 
 

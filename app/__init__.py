@@ -94,6 +94,7 @@ from app.services.worker_service import (
     start_auto_transcoder_worker,
     start_precache_worker,
 )
+from app.services.system_service import get_system_telemetry
 
 # Frontend assets & templates for test assertions
 _STATIC_CSS_PATH = BASE_DIR / 'static' / 'css' / 'main.css'

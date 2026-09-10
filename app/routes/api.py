@@ -18,6 +18,7 @@ from app.services.transcode_service import (
     transcode_cache_path,
     transcode_progress_path,
 )
+from app.services.system_service import get_system_telemetry
 from app.utils.filesystem import is_video, safe_path
 
 api_bp = Blueprint('api', __name__)
@@ -200,6 +201,12 @@ def progress():
 def api_transcodes():
     """Return JSON array of all currently active background transcodes."""
     return jsonify(transcodes=get_active_transcodes())
+
+
+@api_bp.route('/api/system-status')
+def api_system_status():
+    """Return real-time hardware telemetry and load statistics."""
+    return jsonify(get_system_telemetry())
 
 
 @api_bp.route('/poster/<path:filename>')
