@@ -437,3 +437,35 @@ class MediaServerTests(unittest.TestCase):
         # Playlist should be trimmed of the invalid trailing segment
         self.assertNotIn('seg2.ts', test_pl.read_text())
 
+    def test_subtitle_vertical_position_and_nerd_stats(self):
+        # Movie with subtitles
+        html_sub = self.client.get('/watch/Example.2026.mp4').data.decode()
+        self.assertEqual(html_sub.count('</script>'), 1)
+        # Verify shell is closed cleanly before watch-info
+        self.assertIn('</div><main class="watch-info">', html_sub)
+        # Verify watch-back and watch-title-badge (no duplicated movie title)
+        self.assertIn('<a class="watch-back"', html_sub)
+        self.assertIn('← Details</a>', html_sub)
+        self.assertIn('class="watch-title-badge"', html_sub)
+        # Verify Subtitle Vertical Position select
+        self.assertIn('id="subVerticalSelect"', html_sub)
+        self.assertIn('value="bottom"', html_sub)
+        self.assertIn('value="raised"', html_sub)
+        self.assertIn('value="middle"', html_sub)
+        self.assertIn('value="top"', html_sub)
+        self.assertIn('id="subPosSelect"', html_sub)
+        # Verify Stats for Nerds button & HUD
+        self.assertIn('id="nerdStatsBtn"', html_sub)
+        self.assertIn('id="nerdStatsHud"', html_sub)
+        self.assertIn('id="closeNerdStats"', html_sub)
+        self.assertIn('id="nsFrames"', html_sub)
+        self.assertIn('id="nsBuffer"', html_sub)
+        self.assertIn('id="nsRes"', html_sub)
+        # Verify controls-row invariants
+        controls_row = html_sub.split('<div class="controls-row">')[1].split('</div>')[0]
+        self.assertTrue(controls_row.startswith('<button id="restartBtn"'))
+        self.assertNotIn('<div', controls_row)
+        self.assertIn('id="nerdStatsBtn"', controls_row)
+        # Verify shortcut key handling
+        self.assertIn("e.key==='n'||e.key==='N'", html_sub)
+
