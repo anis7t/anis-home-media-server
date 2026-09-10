@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en" class="devices-html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090b10">
+<title>Connected Devices & Network — Anis' Media Server</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>{{css}}</style>
+</head>
+<body class="devices-page">
+<header class="manage-header">
+  <a href="/" class="brand-link" title="Anis' Media Server">
+    <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="brandGradD" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff334b"/>
+          <stop offset="100%" stop-color="#b80017"/>
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#brandGradD)"/>
+      <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" stroke="rgba(255,255,255,0.2)"/>
+      <path d="M12.5 9.5L23 16L12.5 22.5V9.5Z" fill="#ffffff"/>
+      <circle cx="21" cy="10.5" r="1.75" fill="#ffffff" fill-opacity="0.85"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-owner">Anis'</span>
+      <span class="brand-title">Media Server</span>
+    </div>
+  </a>
+
+  <div class="manage-header-actions">
+    <a href="/" class="header-nav-btn" title="Back to Home Stream">← Home Stream</a>
+    <a href="/manage" class="header-nav-btn" title="Manage Media Files">📁 My Library</a>
+    <button type="button" class="header-action-btn" onclick="location.reload()" title="Refresh telemetry">↻ Refresh</button>
+  </div>
+</header>
+
+<main class="devices-main">
+  <!-- Top Metrics Ribbon -->
+  <section class="manage-metrics-section">
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Total Devices</span>
+        <span class="metric-icon">📱</span>
+      </div>
+      <div class="metric-value">{{stats.total_devices}}</div>
+      <div class="metric-sub">Tracked Client Devices</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Active Now</span>
+        <span class="metric-icon">🟢</span>
+      </div>
+      <div class="metric-value">{{stats.active_now}}</div>
+      <div class="metric-sub">Seen in Last 15 Minutes</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Cloudflare Quick Tunnel</span>
+        <span class="metric-icon">🌐</span>
+      </div>
+      <div class="metric-value">{{stats.cloudflare_count}}</div>
+      <div class="metric-sub">External WAN Streams</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Local & LAN</span>
+        <span class="metric-icon">🏠</span>
+      </div>
+      <div class="metric-value">{{stats.lan_count + stats.localhost_count}}</div>
+      <div class="metric-sub">Home Subnet & Localhost</div>
+    </div>
+  </section>
+
+  <!-- Section Header -->
+  <div class="devices-section-header">
+    <div class="dsh-title-wrap">
+      <h2>Connected Devices & Telemetry</h2>
+      <span class="dsh-subtitle">Hardware identification, network interfaces, geolocation, and watch history grouped by unique client.</span>
+    </div>
+  </div>
+
+  <!-- Devices Cards List -->
+  {%if devices%}
+  <div class="devices-list">
+    {%for dev in devices%}
+    <article class="device-card {%if dev.is_current%}is-current-device{%endif%}" id="card-{{dev.device_id}}">
+      <!-- Card Header -->
+      <div class="dev-card-header">
+        <div class="dev-identity-wrap">
+          <div class="dev-type-avatar" title="{{dev.device_type}}">{{dev.device_icon}}</div>
+          <div class="dev-titles">
+            <div class="dev-name-row">
+              <h3 class="dev-title" id="name-{{dev.device_id}}">{{dev.display_name}}</h3>
+              {%if dev.is_current%}
+              <span class="badge-this-device">This Device</span>
+              {%endif%}
+              <button type="button" class="btn-dev-rename" onclick="openRenameModal('{{dev.device_id}}', '{{dev.display_name}}')" title="Rename Device">✏️</button>
+            </div>
+            <div class="dev-hardware-sub">
+              <span>{{dev.device_os}}</span>
+              <span class="dev-dot">·</span>
+              <span>{{dev.browser}}</span>
+              <span class="dev-dot">·</span>
+              <span class="dev-id-tag" title="Persistent Device UUID">{{dev.device_id}}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dev-header-actions">
+          <!-- Connection Badge -->
+          {%if 'Cloudflare' in dev.connection_type%}
+          <span class="conn-pill conn-cloudflare" title="Connected via Cloudflare Quick Tunnel (*.trycloudflare.com)">🌐 Cloudflare Tunnel</span>
+          {%elif 'LAN' in dev.connection_type%}
+          <span class="conn-pill conn-lan" title="Connected via Local Area Network (192.168.1.x)">🔵 Local Network (LAN)</span>
+          {%elif 'Localhost' in dev.connection_type%}
+          <span class="conn-pill conn-local" title="Connected directly on Host Machine (127.0.0.1)">🟢 Localhost (127.0.0.1)</span>
+          {%else%}
+          <span class="conn-pill conn-direct" title="Connected via Direct Public WAN">⚡ Internet (Direct)</span>
+          {%endif%}
+
+          <!-- Active / Idle Status Indicator -->
+          {%if dev.is_active%}
+          <span class="dev-status-pill status-active"><span class="pulse-dot-active"></span>Active now</span>
+          {%else%}
+          <span class="dev-status-pill status-idle">Seen {{dev.last_seen_ago}}</span>
+          {%endif%}
+
+          <!-- Delete Device Button -->
+          <button type="button" class="btn-dev-delete" onclick="openDeleteDeviceModal('{{dev.device_id}}', '{{dev.display_name}}')" title="Remove device from dashboard">✕</button>
+        </div>
+      </div>
+
+      <!-- Network & Hardware Telemetry Grid -->
+      <div class="dev-telemetry-grid">
+        <div class="dev-spec-item">
+          <span class="spec-label">Client IP Address</span>
+          <span class="spec-value code-font">{{dev.client_ip or '—'}}</span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Hardware MAC Address</span>
+          <span class="spec-value code-font {%if 'WAN' in dev.mac_address%}spec-faded{%endif%}">{{dev.mac_address or '—'}}</span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Public IP / WAN</span>
+          <span class="spec-value code-font">{{dev.public_ip or 'Local Subnet'}}</span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Internet Service Provider (ISP)</span>
+          <span class="spec-value">{{dev.isp or 'Local / Unknown'}}</span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Estimated Location</span>
+          <span class="spec-value">
+            {%if dev.city and dev.city != 'Unknown'%}{{dev.city}}, {%endif%}{{dev.country or 'Local'}}
+          </span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">First Seen / Registered</span>
+          <span class="spec-value">{{dev.first_seen[:16] if dev.first_seen else '—'}}</span>
+        </div>
+      </div>
+
+      <!-- Recent Watch Card & History Section -->
+      <div class="dev-watch-section">
+        <div class="dws-heading">
+          <span class="dws-title">🎬 Playback Activity & Watch History</span>
+          <span class="dws-count">{{dev.total_watched}} title{{'s' if dev.total_watched != 1 else ''}}</span>
+        </div>
+
+        {%if dev.recent_watch%}
+        <div class="recent-watch-banner">
+          <div class="rwb-poster">
+            {%if dev.recent_watch.poster_url%}
+            <img src="{{dev.recent_watch.poster_url}}" alt="{{dev.recent_watch.title}}" loading="lazy">
+            {%else%}
+            <div class="rwb-poster-fallback">◉</div>
+            {%endif%}
+          </div>
+          <div class="rwb-content">
+            <div class="rwb-top-row">
+              <span class="rwb-tag">Most Recent Watch</span>
+              <span class="rwb-time-ago">{{dev.recent_watch.last_watched_ago}}</span>
+            </div>
+            <h4 class="rwb-movie-title">{{dev.recent_watch.title}} {%if dev.recent_watch.year%}<span class="rwb-year">({{dev.recent_watch.year}})</span>{%endif%}</h4>
+            <div class="rwb-progress-track">
+              <div class="rwb-progress-fill" style="width:{{dev.recent_watch.percent}}%"></div>
+            </div>
+            <div class="rwb-bot-row">
+              <span class="rwb-time-str">{{dev.recent_watch.position_str}} / {{dev.recent_watch.duration_str}} ({{dev.recent_watch.percent}}%)</span>
+              <div class="rwb-actions">
+                <a href="/watch/{{dev.recent_watch.filename}}" class="rwb-play-btn" title="Resume Playback">▶ Resume</a>
+                <a href="/movie/{{dev.recent_watch.filename}}" class="rwb-details-btn" title="View Details">Details</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        {%else%}
+        <div class="dev-no-watch-banner">
+          <span class="dnw-icon">🍿</span>
+          <span class="dnw-text">No watch activity recorded for this device yet. Start watching a title to stream here!</span>
+        </div>
+        {%endif%}
+
+        <!-- Collapsible Full Watch History Drawer -->
+        {%if dev.watch_history|length > 1%}
+        <details class="dev-history-details">
+          <summary class="dev-history-summary">
+            <span>View all {{dev.watch_history|length}} watched titles</span>
+            <span class="summary-caret">▼</span>
+          </summary>
+          <div class="dev-history-list">
+            {%for h in dev.watch_history%}
+            <div class="history-item-row">
+              <div class="hir-poster">
+                {%if h.poster_url%}
+                <img src="{{h.poster_url}}" alt="{{h.title}}" loading="lazy">
+                {%else%}
+                <div class="hir-poster-fallback">◉</div>
+                {%endif%}
+              </div>
+              <div class="hir-info">
+                <div class="hir-title-row">
+                  <span class="hir-title">{{h.title}}</span>
+                  <span class="hir-year">{{h.year}}</span>
+                  {%if h.completed%}
+                  <span class="hir-badge completed">Finished</span>
+                  {%else%}
+                  <span class="hir-badge in-progress">{{h.percent}}%</span>
+                  {%endif%}
+                </div>
+                <div class="hir-meta-row">
+                  <span>Watched {{h.last_watched_ago}}</span>
+                  <span class="hir-sep">·</span>
+                  <span>{{h.position_str}} / {{h.duration_str}}</span>
+                </div>
+              </div>
+              <a href="/watch/{{h.filename}}" class="hir-resume-btn" title="Watch Now">▶</a>
+            </div>
+            {%endfor%}
+          </div>
+        </details>
+        {%endif%}
+      </div>
+    </article>
+    {%endfor%}
+  </div>
+  {%else%}
+  <div class="manage-empty-state">
+    <div class="empty-icon">📱</div>
+    <h3>No Devices Detected Yet</h3>
+    <p>Client devices connecting via localhost, local Wi-Fi / LAN, or the Cloudflare Quick Tunnel will automatically register here with hardware specs and network telemetry.</p>
+  </div>
+  {%endif%}
+</main>
+
+<!-- Rename Device Dialog -->
+<dialog id="renameModal" class="purge-modal" aria-labelledby="renameModalTitle">
+  <div class="purge-modal-content">
+    <div class="purge-modal-header">
+      <div class="purge-title-wrap">
+        <span class="purge-warn-icon">✏️</span>
+        <span id="renameModalTitle" class="purge-title" style="color:#38bdf8">Rename Device</span>
+      </div>
+      <button type="button" class="purge-modal-close" onclick="closeRenameModal()" title="Close (Esc)">✕</button>
+    </div>
+    <form id="renameForm" onsubmit="handleRenameSubmit(event)">
+      <div class="purge-modal-body">
+        <input type="hidden" id="renameDeviceId">
+        <p class="purge-prompt">Set a friendly label for this device (e.g. <b>Living Room Apple TV</b>, <b>Anis's iPhone</b>, <b>Office Laptop</b>):</p>
+        <div style="margin-top:.4rem">
+          <input type="text" id="renameDeviceInput" class="manage-search-input" style="padding-left:1rem" placeholder="Friendly Device Name" required maxlength="60">
+        </div>
+      </div>
+      <div class="purge-modal-footer">
+        <button type="button" class="upload-btn-secondary" onclick="closeRenameModal()">Cancel</button>
+        <button type="submit" id="renameSaveBtn" class="purge-btn-danger" style="background:#0284c7;box-shadow:0 4px 16px rgba(2,132,199,.4)">Save Name</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Delete Device Dialog (Outside touch immune) -->
+<dialog id="deleteDeviceModal" class="purge-modal" aria-labelledby="delModalTitle">
+  <div class="purge-modal-content">
+    <div class="purge-modal-header">
+      <div class="purge-title-wrap">
+        <span class="purge-warn-icon">⚠️</span>
+        <span id="delModalTitle" class="purge-title">Remove Device</span>
+      </div>
+      <button type="button" class="purge-modal-close" onclick="closeDeleteDeviceModal()" title="Close (Esc)">✕</button>
+    </div>
+    <form id="deleteDeviceForm" onsubmit="handleDeleteDeviceSubmit(event)">
+      <div class="purge-modal-body">
+        <input type="hidden" id="deleteDeviceId">
+        <p class="purge-prompt">Are you sure you want to remove <b id="deleteDeviceName">Device</b> from this dashboard?</p>
+        <div class="purge-checklist-box">
+          <span class="purge-check-heading">Actions that will be performed:</span>
+          <ul class="purge-list">
+            <li><span>✕ Purge device hardware and network telemetry</span></li>
+            <li><span>✕ Clear device-specific watch history cache</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="purge-modal-footer">
+        <button type="button" class="upload-btn-secondary" onclick="closeDeleteDeviceModal()">Cancel</button>
+        <button type="submit" id="deleteDeviceBtn" class="purge-btn-danger">Remove Device</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+// Rename modal handlers
+const renameModal = document.getElementById('renameModal');
+const renameDeviceId = document.getElementById('renameDeviceId');
+const renameDeviceInput = document.getElementById('renameDeviceInput');
+const renameSaveBtn = document.getElementById('renameSaveBtn');
+
+function openRenameModal(deviceId, currentName) {
+  renameDeviceId.value = deviceId;
+  renameDeviceInput.value = currentName || '';
+  renameModal.showModal();
+  setTimeout(() => renameDeviceInput.focus(), 100);
+}
+
+function closeRenameModal() {
+  renameModal.close();
+}
+
+async function handleRenameSubmit(e) {
+  e.preventDefault();
+  const devId = renameDeviceId.value;
+  const newName = renameDeviceInput.value.trim();
+  if (!devId) return;
+
+  renameSaveBtn.disabled = true;
+  renameSaveBtn.textContent = 'Saving...';
+
+  try {
+    const res = await fetch('/api/devices/rename', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device_id: devId, name: newName})
+    });
+    const data = await res.json();
+    if (data.success) {
+      const heading = document.getElementById('name-' + devId);
+      if (heading) heading.textContent = newName || 'Device';
+      closeRenameModal();
+    } else {
+      alert(data.error || 'Failed to rename device');
+    }
+  } catch (err) {
+    alert('Network error while renaming device');
+  } finally {
+    renameSaveBtn.disabled = false;
+    renameSaveBtn.textContent = 'Save Name';
+  }
+}
+
+// Delete device modal handlers (Immune to backdrop touch/click per GEMINI.md)
+const deleteDeviceModal = document.getElementById('deleteDeviceModal');
+const deleteDeviceId = document.getElementById('deleteDeviceId');
+const deleteDeviceName = document.getElementById('deleteDeviceName');
+const deleteDeviceBtn = document.getElementById('deleteDeviceBtn');
+
+function openDeleteDeviceModal(deviceId, name) {
+  deleteDeviceId.value = deviceId;
+  deleteDeviceName.textContent = name || 'Device';
+  deleteDeviceModal.showModal();
+}
+
+function closeDeleteDeviceModal() {
+  deleteDeviceModal.close();
+}
+
+async function handleDeleteDeviceSubmit(e) {
+  e.preventDefault();
+  const devId = deleteDeviceId.value;
+  if (!devId) return;
+
+  deleteDeviceBtn.disabled = true;
+  deleteDeviceBtn.textContent = 'Removing...';
+
+  try {
+    const res = await fetch('/api/devices/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device_id: devId})
+    });
+    const data = await res.json();
+    if (data.success) {
+      const card = document.getElementById('card-' + devId);
+      if (card) {
+        card.style.transition = 'all .3s ease';
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(-10px)';
+        setTimeout(() => card.remove(), 300);
+      }
+      closeDeleteDeviceModal();
+    } else {
+      alert(data.error || 'Failed to remove device');
+    }
+  } catch (err) {
+    alert('Network error while removing device');
+  } finally {
+    deleteDeviceBtn.disabled = false;
+    deleteDeviceBtn.textContent = 'Remove Device';
+  }
+}
+</script>
+</body>
+</html>

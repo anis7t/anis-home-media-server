@@ -453,3 +453,108 @@ html.details-html, body.details-page{width:100%;max-width:100%;overflow-x:hidden
 .shell-transcode-pill{display:inline-flex;align-items:center;gap:.4rem;background:rgba(229,9,20,.22);border:1px solid rgba(229,9,20,.45);color:#fca5a5;font-size:.74rem;font-weight:700;padding:2px 8px;border-radius:99px;margin-left:.6rem;vertical-align:middle;box-shadow:0 0 10px rgba(229,9,20,.2)}
 .pulse-dot-sm{width:6px;height:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;animation:transcodePulse 1.4s ease-in-out infinite}
 
+/* Devices Dashboard & Telemetry */
+html.devices-html, body.devices-page{width:100%;max-width:100%;overflow-x:hidden;touch-action:pan-y}
+.devices-main{max-width:1260px;margin:auto;padding:1.5rem 1rem 4rem}
+.devices-section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.4rem;flex-wrap:wrap;gap:.75rem}
+.dsh-title-wrap h2{font-size:1.3rem;font-weight:800;color:#fff;margin:0 0 .25rem;letter-spacing:-.3px}
+.dsh-subtitle{font-size:.84rem;color:#94a3b8}
+
+.devices-list{display:flex;flex-direction:column;gap:1.25rem}
+.device-card{background:rgba(18,21,29,.88);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:1.25rem 1.4rem;box-shadow:0 8px 30px rgba(0,0,0,.45);transition:border-color .2s ease,transform .2s ease;box-sizing:border-box;width:100%;min-width:0;overflow:hidden}
+.device-card:hover{border-color:rgba(255,255,255,.2);background:rgba(22,26,36,.92)}
+.device-card.is-current-device{border-color:rgba(56,189,248,.45);box-shadow:0 8px 32px rgba(56,189,248,.08),0 0 0 1px rgba(56,189,248,.25)}
+
+.dev-card-header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;min-width:0}
+.dev-identity-wrap{display:flex;align-items:center;gap:.9rem;min-width:0}
+.dev-type-avatar{width:46px;height:46px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:1.55rem;flex-shrink:0}
+.dev-titles{display:flex;flex-direction:column;min-width:0}
+.dev-name-row{display:flex;align-items:center;gap:.55rem;min-width:0;flex-wrap:wrap}
+.dev-title{font-size:1.18rem;font-weight:800;color:#fff;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge-this-device{background:rgba(56,189,248,.18);color:#38bdf8;border:1px solid rgba(56,189,248,.35);font-size:.7rem;font-weight:800;padding:2px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.5px}
+.btn-dev-rename{background:none;border:none;cursor:pointer;font-size:.85rem;padding:2px 4px;border-radius:4px;opacity:.65;transition:opacity .15s,transform .15s}
+.btn-dev-rename:hover{opacity:1;transform:scale(1.15)}
+
+.dev-hardware-sub{display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:#94a3b8;margin-top:.2rem;flex-wrap:wrap}
+.dev-dot{color:#475569}
+.dev-id-tag{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.74rem;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px;color:#cbd5e1}
+
+.dev-header-actions{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap}
+.conn-pill{padding:4px 10px;border-radius:99px;font-size:.76rem;font-weight:750;letter-spacing:.3px;display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap}
+.conn-cloudflare{background:linear-gradient(135deg,rgba(249,115,22,.22),rgba(234,88,12,.28));color:#fdba74;border:1px solid rgba(249,115,22,.45);box-shadow:0 0 12px rgba(249,115,22,.2)}
+.conn-lan{background:rgba(59,130,246,.18);color:#93c5fd;border:1px solid rgba(59,130,246,.35)}
+.conn-local{background:rgba(16,185,129,.18);color:#6ee7b7;border:1px solid rgba(16,185,129,.35)}
+.conn-direct{background:rgba(234,179,8,.18);color:#fde047;border:1px solid rgba(234,179,8,.35)}
+
+.dev-status-pill{font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:99px;display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap}
+.status-active{background:rgba(34,197,94,.14);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+.status-idle{background:rgba(255,255,255,.06);color:#94a3b8;border:1px solid rgba(255,255,255,.1)}
+.pulse-dot-active{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 8px #22c55e;animation:pulseGreen 1.6s ease-in-out infinite}
+@keyframes pulseGreen{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.2)}}
+
+.btn-dev-delete{background:rgba(244,63,94,.1);color:#f43f5e;border:1px solid rgba(244,63,94,.25);border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:.82rem;transition:all .15s ease}
+.btn-dev-delete:hover{background:rgba(244,63,94,.25);color:#fff;border-color:#f43f5e;transform:scale(1.08)}
+
+.dev-telemetry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-top:1.15rem;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:.95rem 1.15rem}
+.dev-spec-item{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.spec-label{font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
+.spec-value{font-size:.86rem;color:#e2e8f0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spec-value.code-font{font-family:ui-monospace,SFMono-Regular,monospace;letter-spacing:.2px}
+.spec-faded{color:#94a3b8;font-style:italic}
+
+.dev-watch-section{margin-top:1.15rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1rem}
+.dws-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem}
+.dws-title{font-size:.84rem;font-weight:750;color:#cbd5e1;text-transform:uppercase;letter-spacing:.5px}
+.dws-count{font-size:.76rem;color:#64748b;font-weight:600}
+
+.recent-watch-banner{display:flex;gap:1rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:.75rem .9rem;align-items:center;min-width:0}
+.rwb-poster{width:54px;aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:#141720;flex-shrink:0;box-shadow:0 3px 10px rgba(0,0,0,.45)}
+.rwb-poster img{width:100%;height:100%;object-fit:cover;display:block}
+.rwb-poster-fallback{width:100%;height:100%;display:grid;place-items:center;font-size:1.3rem;color:#64748b;background:#1a1d26}
+.rwb-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:.3rem}
+.rwb-top-row{display:flex;justify-content:space-between;font-size:.74rem;color:#94a3b8}
+.rwb-tag{color:#38bdf8;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.4px}
+.rwb-movie-title{font-size:.98rem;font-weight:750;color:#fff;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rwb-year{color:#94a3b8;font-weight:500;font-size:.85rem}
+.rwb-progress-track{height:5px;width:100%;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden}
+.rwb-progress-fill{height:100%;background:#e50914;border-radius:99px}
+.rwb-bot-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.78rem;margin-top:.1rem;flex-wrap:wrap}
+.rwb-time-str{color:#cbd5e1;font-variant-numeric:tabular-nums}
+.rwb-actions{display:flex;gap:.4rem}
+.rwb-play-btn{background:#e50914;color:#fff;text-decoration:none;padding:3px 9px;border-radius:5px;font-weight:700;font-size:.76rem;transition:background .15s}
+.rwb-play-btn:hover{background:#f40612}
+.rwb-details-btn{background:rgba(255,255,255,.08);color:#cbd5e1;text-decoration:none;padding:3px 8px;border-radius:5px;font-weight:600;font-size:.76rem;border:1px solid rgba(255,255,255,.12)}
+.rwb-details-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+
+.dev-no-watch-banner{display:flex;align-items:center;gap:.75rem;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.08);border-radius:8px;padding:.75rem 1rem;color:#94a3b8;font-size:.84rem}
+.dev-history-details{margin-top:.65rem}
+.dev-history-summary{font-size:.8rem;font-weight:600;color:#38bdf8;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding:.35rem .2rem;user-select:none}
+.dev-history-summary::-webkit-details-marker{display:none}
+.summary-caret{font-size:.7rem;transition:transform .2s ease}
+.dev-history-details[open] .summary-caret{transform:rotate(180deg)}
+.dev-history-list{display:flex;flex-direction:column;gap:.45rem;margin-top:.5rem}
+.history-item-row{display:flex;align-items:center;gap:.75rem;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.05);border-radius:6px;padding:.45rem .65rem;font-size:.8rem;min-width:0}
+.hir-poster{width:28px;aspect-ratio:2/3;border-radius:4px;overflow:hidden;background:#141720;flex-shrink:0}
+.hir-poster img{width:100%;height:100%;object-fit:cover}
+.hir-poster-fallback{width:100%;height:100%;display:grid;place-items:center;font-size:.8rem;color:#64748b;background:#1a1d26}
+.hir-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:.15rem}
+.hir-title-row{display:flex;align-items:baseline;gap:.4rem;min-width:0}
+.hir-title{font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hir-year{color:#64748b;font-size:.74rem}
+.hir-badge{font-size:.68rem;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:auto}
+.hir-badge.completed{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+.hir-badge.in-progress{background:rgba(250,204,21,.15);color:#facc15;border:1px solid rgba(250,204,21,.3)}
+.hir-meta-row{font-size:.72rem;color:#64748b;display:flex;gap:.4rem}
+.hir-sep{color:#475569}
+.hir-resume-btn{color:#fff;background:rgba(229,9,20,.75);border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;text-decoration:none;flex-shrink:0;transition:background .15s}
+.hir-resume-btn:hover{background:#e50914}
+
+@media(max-width:680px){
+  .dev-card-header{flex-direction:column;align-items:flex-start}
+  .dev-header-actions{width:100%;justify-content:space-between}
+  .dev-telemetry-grid{grid-template-columns:1fr 1fr}
+  .recent-watch-banner{flex-direction:column;align-items:flex-start}
+  .rwb-poster{width:60px}
+  .rwb-content{width:100%}
+}
+

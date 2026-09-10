@@ -201,6 +201,14 @@ def progress():
     )
     db.commit()
     db.close()
+
+    try:
+        from app.services.device_service import register_device_request, record_device_watch
+        dev_id, _ = register_device_request(request)
+        record_device_watch(dev_id, filename, position, duration)
+    except Exception:
+        pass
+
     return jsonify(success=True)
 
 
@@ -406,5 +414,39 @@ def api_delete_media(filename):
         return jsonify(res), 200
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
+
+
+@api_bp.route('/api/devices')
+def api_devices():
+    """Return JSON list of all tracked devices, network metadata, and watch history."""
+    from app.services.device_service import get_all_devices, register_device_request
+    current_dev_id, _ = register_device_request(request)
+    devices, stats = get_all_devices(current_device_id=current_dev_id)
+    return jsonify(devices=devices, stats=stats, current_device_id=current_dev_id)
+
+
+@api_bp.route('/api/devices/rename', methods=['POST'])
+def api_devices_rename():
+    """Rename a device with a custom friendly label."""
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('device_id', '').strip()
+    name = data.get('name', '').strip()
+    if not device_id:
+        return jsonify(error="device_id is required"), 400
+    from app.services.device_service import rename_device
+    rename_device(device_id, name)
+    return jsonify(success=True)
+
+
+@api_bp.route('/api/devices/delete', methods=['POST'])
+def api_devices_delete():
+    """Remove a device and its recorded watch history."""
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('device_id', '').strip()
+    if not device_id:
+        return jsonify(error="device_id is required"), 400
+    from app.services.device_service import delete_device
+    delete_device(device_id)
+    return jsonify(success=True)
 
 

@@ -100,6 +100,18 @@ from app.services.worker_service import (
     start_precache_worker,
 )
 from app.services.system_service import get_system_telemetry
+from app.services.device_service import (
+    classify_connection,
+    delete_device,
+    get_all_devices,
+    get_or_create_device_id,
+    lookup_geoip_and_isp,
+    parse_user_agent,
+    record_device_watch,
+    register_device_request,
+    rename_device,
+    resolve_mac_address,
+)
 
 # Frontend assets & templates for test assertions
 _STATIC_CSS_PATH = BASE_DIR / 'static' / 'css' / 'main.css'
@@ -109,6 +121,7 @@ _TEMPLATES_DIR = BASE_DIR / 'templates'
 DETAILS_HTML = (_TEMPLATES_DIR / 'details.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'details.html').is_file() else ""
 PLAYER_HTML = (_TEMPLATES_DIR / 'player.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'player.html').is_file() else ""
 LIBRARY_HTML = (_TEMPLATES_DIR / 'library.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'library.html').is_file() else ""
+DEVICES_HTML = (_TEMPLATES_DIR / 'devices.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'devices.html').is_file() else ""
 ERROR_HTML = (_TEMPLATES_DIR / 'error.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'error.html').is_file() else ""
 
 

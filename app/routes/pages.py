@@ -172,3 +172,39 @@ def manage():
     )
 
 
+@pages_bp.route('/devices')
+@pages_bp.route('/clients')
+def devices():
+    """Render client devices and network telemetry dashboard."""
+    from app.services.device_service import get_all_devices, get_or_create_device_id
+    current_dev_id, _ = get_or_create_device_id(request)
+    dev_list, stats = get_all_devices(current_device_id=current_dev_id)
+    return render_template(
+        'devices.html',
+        devices=dev_list,
+        stats=stats,
+        current_dev_id=current_dev_id,
+    )
+
+
+@pages_bp.after_request
+def stamp_device_cookie(response):
+    """Ensure persistent device tracking cookie is set on client page visits."""
+    try:
+        # Only stamp HTML page responses, avoid static/sw/manifest
+        if response.mimetype == 'text/html':
+            from app.services.device_service import register_device_request
+            dev_id, is_new = register_device_request(request)
+            if is_new or not request.cookies.get('ms_device_id'):
+                response.set_cookie(
+                    'ms_device_id',
+                    dev_id,
+                    max_age=31536000,
+                    path='/',
+                    samesite='Lax'
+                )
+    except Exception:
+        pass
+    return response
+
+
