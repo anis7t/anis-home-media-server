@@ -326,7 +326,7 @@ def ensure_hls_transcode(filename):
                     '-hls_time', '4',
                     '-hls_list_size', '0',
                     '-hls_flags', hls_flags,
-                    '-start_number', '0',
+                    '-start_number', str(start_seg) if resuming else '0',
                     '-hls_segment_filename', str(directory / 'segment_%06d.ts'),
                     '-progress', str(directory / 'hls.progress'),
                     '-nostats', str(playlist)
