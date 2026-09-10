@@ -33,8 +33,9 @@
   This guarantees that in non-fullscreen or tiled windows (e.g. 1024×424), the video element never overflows below the viewport.
 - **Player Shell Container Isolation**: The `#shell` element uses `display: grid; place-items: center; overflow: hidden`. Supplementary page sections (such as `<main class="watch-info">`) MUST be placed outside `#shell` following its closing `</div>` (`</div><main class="watch-info">`). Never allow `#shell` to remain unclosed, as CSS grid placement will center supplementary content (such as movie posters and synopsis cards) directly over the `<video>` canvas.
 - **Dual-Axis Subtitle Positioning & Cue Elevation**:
-  - Subtitle settings must support both **Horizontal Alignment** (`center`, `left`, `right`) and **Vertical Position** (`bottom`, `raised`, `middle`, `top`).
+  - Subtitle settings must support both **Horizontal Alignment** (`center`, `left`, `right`) and **Vertical Position** (`lowered`, `bottom`, `raised`, `middle`, `top`).
   - WebVTT cues must be elevated to prevent overlapping playback controls:
+    - `lowered`: `c.snapToLines = true; c.line = isHuge ? -2.8 : -2.2`
     - `bottom` (Default): `c.snapToLines = true; c.line = isHuge ? -4.8 : -4`
     - `raised`: `c.snapToLines = true; c.line = isHuge ? -6.2 : -5.5`
     - `middle`: `c.snapToLines = false; c.line = 50`

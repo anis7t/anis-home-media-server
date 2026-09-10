@@ -449,6 +449,7 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn('class="watch-title-badge"', html_sub)
         # Verify Subtitle Vertical Position select
         self.assertIn('id="subVerticalSelect"', html_sub)
+        self.assertIn('value="lowered"', html_sub)
         self.assertIn('value="bottom"', html_sub)
         self.assertIn('value="raised"', html_sub)
         self.assertIn('value="middle"', html_sub)
