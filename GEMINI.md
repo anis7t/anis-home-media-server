@@ -67,6 +67,30 @@
   }
   ```
   This prevents internal swipe gestures from bubbling up and causing accidental page-level horizontal panning.
+- **Header Multi-Action Wrapping**: Top navigation forms containing a search input alongside multiple action buttons must declare:
+  ```css
+  @media(max-width: 768px) {
+    header form {
+      max-width: 100%;
+      width: 100%;
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    header input {
+      min-width: 0;
+      flex: 1 1 100%;
+    }
+    header select, header button, header .header-nav-btn {
+      flex: 1 1 auto;
+      justify-content: center;
+      text-align: center;
+      min-width: 0;
+    }
+  }
+  ```
+  This prevents rightmost navigation elements (such as `📁 My Library`) from overflowing off-screen on phones.
 
 ## 6. Git Operations & Index Recovery Protocol
 - **Zero Data Loss Index Recovery**: If Git fails with `fatal: .git/index: index file smaller than expected` (due to `.git/index` being truncated to 0 bytes), NEVER run `git reset --hard` or `git clean`. Run the non-destructive recovery:
@@ -92,3 +116,23 @@
 - **Stats for Nerds (Telemetry HUD)**:
   - Technical telemetry buttons in `.controls-row` must be direct child buttons (preserving `#restartBtn` as the first element and no nested `<div>`s in `.controls-row`).
   - Live stats HUD (`#nerdStatsHud`) must track `v.getVideoPlaybackQuality()` (dropped/total frames), native vs viewport resolution, forward buffer calculation, and stream transcode state, accessible via button, close button, and keyboard shortcut `n` / `N`.
+
+## 9. Modal Dialog Safety & Touch Dismissal Invariants
+- **Destructive/Critical Modal Outside-Touch Immunity**:
+  - Confirmation modals for irreversible or destructive actions (such as `#purgeModal`) must NEVER dismiss on backdrop touch or click.
+  - Omit native `closedby="any"` and do NOT register backdrop bounding-box dismissal listeners (`if (e.target !== dialog) close()`).
+  - Destruction or permanent deletion modals must require explicit user action via a dedicated close cross button (`✕`), Cancel button, or the Escape key.
+- **Zero Vertical Scrolling on Mobile Modals**:
+  - Mobile modals must be designed with compact vertical footprints (total height \(\le 260\text{px}\)) using `max-height: min(90vh, 90dvh)`, reduced padding (\(\le 1\text{rem}\)), and concise checklist copy (\(\le 3\) items).
+  - Modals must fit within compact 375×667 mobile viewports without forcing vertical scrolling.
+
+## 10. Upload Telemetry & Post-Upload Ingestion Invariants
+- **Post-Upload Abort Concealment**:
+  - In `XMLHttpRequest` upload workflows, immediately hide the Abort/Cancel button (`cb.style.display = 'none'`) upon `xhr.upload` completion (`load` event).
+  - Once file bytes are written to disk, client abort is invalid because server-side background ingestion (TMDb querying, ffprobe stream analysis, transcode profiling) has begun.
+- **Dynamic In-Progress Processing Indicator**:
+  - Post-upload backend processing must NOT display a static checklist of tasks.
+  - Implement an animated dynamic processing card with an active spinner and cycling status labels (e.g. *Probing video stream...*, *Querying TMDb...*, *Caching posters...*, *Synchronizing subtitles...*) to give continuous visual feedback while the server finishes indexing.
+- **Exponentially Smoothed Upload ETA**:
+  - Upload progress handlers must apply exponential moving average smoothing to transfer speed (`smoothSpeed = smoothSpeed * 0.7 + instSpeed * 0.3`) and render human-readable remaining time (`ETA: Xm Ys` or `ETA: Xs`).
+
