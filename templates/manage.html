@@ -177,28 +177,25 @@
 </main>
 
 <!-- Delete & Purge Confirmation Modal -->
-<dialog id="purgeModal" closedby="any" class="purge-modal" aria-labelledby="purgeModalTitle">
+<dialog id="purgeModal" class="purge-modal" aria-labelledby="purgeModalTitle">
   <div class="purge-modal-content">
     <div class="purge-modal-header">
       <div class="purge-title-wrap">
         <span class="purge-warn-icon">⚠️</span>
         <span id="purgeModalTitle" class="purge-title">Permanently Delete & Purge</span>
       </div>
-      <button type="button" class="purge-modal-close" onclick="closePurgeModal()" title="Close (Esc)">✕</button>
+      <button type="button" class="purge-modal-close" onclick="closePurgeModal()" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
 
     <div class="purge-modal-body">
       <p class="purge-prompt">Are you sure you want to permanently delete <b id="purgeTargetTitle">this movie</b> (<span id="purgeTargetSize">0 MB</span>)?</p>
       
       <div class="purge-checklist-box">
-        <span class="purge-check-heading">The following associated data will be completely wiped:</span>
+        <span class="purge-check-heading">Associated data that will be completely wiped:</span>
         <ul class="purge-list">
           <li><span>🗑️</span><span>Source video file on disk (<code id="purgeTargetFilename">filename</code>)</span></li>
-          <li><span>⚡</span><span>Any ongoing FFmpeg transcoder processes immediately killed</span></li>
-          <li><span>📦</span><span>Cached HLS stream segments, playlists, and MP4 caches</span></li>
-          <li><span>🖼️</span><span>TMDb metadata, overview, cached poster, and backdrop images</span></li>
-          <li><span>💬</span><span>Extracted and fetched subtitle files (.vtt / .srt)</span></li>
-          <li><span>⏱️</span><span>Watch history and resume playback positions</span></li>
+          <li><span>⚡</span><span>Active FFmpeg transcode & cached HLS / MP4 segments</span></li>
+          <li><span>🖼️</span><span>TMDb metadata, cached posters, subtitles & watch history</span></li>
         </ul>
       </div>
 
@@ -218,7 +215,7 @@
 </dialog>
 
 <!-- Upload Media Modal (Reused for immediate re-upload) -->
-<dialog id="uploadModal" closedby="any" class="upload-modal" aria-labelledby="uploadModalTitle">
+<dialog id="uploadModal" class="upload-modal" aria-labelledby="uploadModalTitle">
   <div class="upload-modal-content">
     <div class="upload-modal-header">
       <div class="upload-modal-title-wrap">
@@ -267,14 +264,18 @@
         </div>
         <div class="upload-progress-footer">
           <span id="uploadBytesText" class="upload-detail-text">0 MB / 0 MB</span>
+          <span id="uploadEtaText" class="upload-detail-text upload-eta-text">ETA: Calculating...</span>
           <span id="uploadSpeedText" class="upload-detail-text">0 MB/s</span>
         </div>
       </div>
-      <div id="uploadTasksBox" class="upload-tasks-box" style="display:none">
-        <div class="upload-task-item active" id="taskSave"><span class="task-icon">✔</span><span>Saved to library storage</span></div>
-        <div class="upload-task-item active" id="taskIndex"><span class="task-icon">↻</span><span>Probing metadata & TMDb scrape...</span></div>
-        <div class="upload-task-item active" id="taskSubs"><span class="task-icon">💬</span><span>Subtitle & OpenSubtitles discovery</span></div>
-        <div class="upload-task-item" id="taskTranscode"><span class="task-icon">⚡</span><span>Transcode inspection</span></div>
+      <div id="uploadTasksBox" class="upload-processing-card" style="display:none">
+        <div class="proc-spinner-wrap">
+          <span class="proc-spinner"></span>
+        </div>
+        <div class="proc-info">
+          <span id="procActiveLabel" class="proc-label">Processing media & indexing TMDb...</span>
+          <span class="proc-sub">Analyzing streams, discovering subtitles & caching artwork</span>
+        </div>
       </div>
       <div id="uploadSuccessBox" class="upload-success-box" style="display:none">
         <div class="success-icon">✓</div>
@@ -432,22 +433,46 @@ function setFilter(btn, type) {
   filterMediaList();
 }
 
-// Light dismiss fallback for dialogs
-[document.getElementById('purgeModal'), document.getElementById('uploadModal')].forEach(m => {
-  if (m && !('closedBy' in HTMLDialogElement.prototype)) {
-    m.addEventListener('click', e => {
-      if (e.target !== m) return;
-      const r = m.getBoundingClientRect();
-      if (e.clientY < r.top || e.clientY > r.top + r.height || e.clientX < r.left || e.clientX > r.left + r.width) {
-        if (m.id === 'purgeModal') closePurgeModal();
-        else closeUploadModal();
-      }
-    });
-  }
-});
+// Dialog dismiss handling: purgeModal only closes via Cross button (✕) or Cancel button.
+const uploadModalEl = document.getElementById('uploadModal');
+if (uploadModalEl && !('closedBy' in HTMLDialogElement.prototype)) {
+  uploadModalEl.addEventListener('click', e => {
+    if (e.target !== uploadModalEl) return;
+    const r = uploadModalEl.getBoundingClientRect();
+    if (e.clientY < r.top || e.clientY > r.top + r.height || e.clientX < r.left || e.clientX > r.left + r.width) {
+      closeUploadModal();
+    }
+  });
+}
 
 // Upload Modal Logic
-let selectedUploadFile = null, uploadXHR = null;
+let selectedUploadFile = null, uploadXHR = null, procInterval = null;
+const procSteps = [
+  'Probing video stream & audio parameters...',
+  'Querying TMDb for movie metadata & cast...',
+  'Caching high-resolution movie poster & backdrop...',
+  'Scanning & synchronizing embedded/external subtitles...',
+  'Initializing on-demand transcode profile & indexing...'
+];
+
+function startProcessingCycle() {
+  let stepIdx = 0;
+  const lbl = document.getElementById('procActiveLabel');
+  if (lbl) lbl.textContent = procSteps[0];
+  if (procInterval) clearInterval(procInterval);
+  procInterval = setInterval(() => {
+    stepIdx = (stepIdx + 1) % procSteps.length;
+    if (lbl) lbl.textContent = procSteps[stepIdx];
+  }, 2000);
+}
+
+function stopProcessingCycle() {
+  if (procInterval) {
+    clearInterval(procInterval);
+    procInterval = null;
+  }
+}
+
 function openUploadModal() {
   const m = document.getElementById('uploadModal');
   if (!m) return;
@@ -455,6 +480,7 @@ function openUploadModal() {
   if (typeof m.showModal === 'function') m.showModal();
   else m.setAttribute('open', '');
 }
+
 function closeUploadModal() {
   const m = document.getElementById('uploadModal');
   if (!m) return;
@@ -466,7 +492,9 @@ function closeUploadModal() {
   else m.removeAttribute('open');
   resetUploadState();
 }
+
 function resetUploadState() {
+  stopProcessingCycle();
   selectedUploadFile = null;
   uploadXHR = null;
   const fi = document.getElementById('mediaFileInput');
@@ -484,10 +512,14 @@ function resetUploadState() {
   sb.style.display = 'inline-flex';
   sb.disabled = true;
   document.getElementById('uploadCancelBtn').style.display = 'inline-flex';
+  document.getElementById('uploadCancelBtn').textContent = 'Cancel';
   document.getElementById('uploadViewBtn').style.display = 'none';
   document.getElementById('uploadProgressBar').style.width = '0%';
   document.getElementById('uploadPercentText').textContent = '0%';
+  const etaEl = document.getElementById('uploadEtaText');
+  if (etaEl) etaEl.textContent = 'ETA: Calculating...';
 }
+
 function handleFileSelected(files) {
   if (!files || !files.length) return;
   const f = files[0];
@@ -516,6 +548,7 @@ function handleFileSelected(files) {
   document.getElementById('uploadErrorBox').style.display = 'none';
   document.getElementById('uploadSubmitBtn').disabled = false;
 }
+
 function clearSelectedFile() {
   selectedUploadFile = null;
   const fi = document.getElementById('mediaFileInput');
@@ -527,17 +560,20 @@ function clearSelectedFile() {
   if (uti) uti.value = '';
   document.getElementById('uploadSubmitBtn').disabled = true;
 }
+
 function fmtSize(b) {
   if (b < 1024) return b + ' B';
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
   return (b / 1073741824).toFixed(2) + ' GB';
 }
+
 function showUploadError(msg) {
   const eb = document.getElementById('uploadErrorBox'), em = document.getElementById('uploadErrorMessage');
   if (em) em.textContent = msg;
   if (eb) eb.style.display = 'flex';
 }
+
 function startUpload() {
   if (!selectedUploadFile) return;
   const sb = document.getElementById('uploadSubmitBtn'), cb = document.getElementById('uploadCancelBtn');
@@ -554,11 +590,13 @@ function startUpload() {
         pt = document.getElementById('uploadPercentText'),
         ps = document.getElementById('uploadStatusText'),
         pby = document.getElementById('uploadBytesText'),
+        peta = document.getElementById('uploadEtaText'),
         psp = document.getElementById('uploadSpeedText');
 
   ps.textContent = 'Uploading media...';
   pb.style.width = '0%';
   pt.textContent = '0%';
+  if (peta) peta.textContent = 'ETA: Calculating...';
 
   const fd = new FormData();
   fd.append('file', selectedUploadFile);
@@ -570,6 +608,7 @@ function startUpload() {
   const xhr = new XMLHttpRequest();
   uploadXHR = xhr;
   let lastLoaded = 0, lastTime = Date.now();
+  let smoothSpeed = 0;
 
   xhr.upload.addEventListener('progress', e => {
     if (e.lengthComputable) {
@@ -578,25 +617,52 @@ function startUpload() {
       pt.textContent = pct + '%';
       pby.textContent = fmtSize(e.loaded) + ' / ' + fmtSize(e.total);
       const now = Date.now(), dt = (now - lastTime) / 1000;
-      if (dt >= 0.5) {
-        psp.textContent = fmtSize((e.loaded - lastLoaded) / dt) + '/s';
+      if (dt >= 0.25) {
+        const instSpeed = (e.loaded - lastLoaded) / dt;
+        smoothSpeed = smoothSpeed > 0 ? (smoothSpeed * 0.7 + instSpeed * 0.3) : instSpeed;
+        psp.textContent = fmtSize(smoothSpeed) + '/s';
         lastLoaded = e.loaded;
         lastTime = now;
+
+        const remBytes = e.total - e.loaded;
+        if (peta) {
+          if (smoothSpeed > 0 && remBytes > 0) {
+            const remSec = Math.round(remBytes / smoothSpeed);
+            if (remSec >= 3600) {
+              const h = Math.floor(remSec / 3600), m = Math.floor((remSec % 3600) / 60);
+              peta.textContent = 'ETA: ' + h + 'h ' + m + 'm';
+            } else if (remSec >= 60) {
+              const m = Math.floor(remSec / 60), s = remSec % 60;
+              peta.textContent = 'ETA: ' + m + 'm ' + s + 's';
+            } else {
+              peta.textContent = 'ETA: ' + remSec + 's';
+            }
+          } else {
+            peta.textContent = 'ETA: Calculating...';
+          }
+        }
       }
     }
   });
 
   xhr.upload.addEventListener('load', () => {
+    // Upload bytes finished! Hide abort button immediately.
+    cb.style.display = 'none';
     pb.style.width = '100%';
     pt.textContent = '100%';
-    ps.textContent = 'Running new-media tasks...';
-    psp.textContent = 'Upload Done';
-    document.getElementById('uploadTasksBox').style.display = 'flex';
+    ps.textContent = 'Processing media...';
+    if (peta) peta.textContent = 'Uploaded';
+    psp.textContent = 'Done';
+    
+    // Show dynamic in-progress processing card
+    const tasksBox = document.getElementById('uploadTasksBox');
+    if (tasksBox) tasksBox.style.display = 'flex';
+    startProcessingCycle();
   });
 
   xhr.addEventListener('load', () => {
     uploadXHR = null;
-    cb.textContent = 'Close';
+    stopProcessingCycle();
     if (xhr.status >= 200 && xhr.status < 300) {
       let res;
       try { res = JSON.parse(xhr.responseText); } catch (e) { res = {}; }
@@ -614,14 +680,28 @@ function startUpload() {
       sb.style.display = 'inline-flex';
       sb.disabled = false;
       document.getElementById('uploadTasksBox').style.display = 'none';
+      cb.style.display = 'inline-flex';
+      cb.textContent = 'Close';
     }
   });
 
   xhr.addEventListener('error', () => {
     uploadXHR = null;
+    stopProcessingCycle();
     showUploadError('Network connection error during upload.');
     sb.style.display = 'inline-flex';
     sb.disabled = false;
+    cb.style.display = 'inline-flex';
+    cb.textContent = 'Close';
+  });
+
+  xhr.addEventListener('abort', () => {
+    uploadXHR = null;
+    stopProcessingCycle();
+    showUploadError('Upload aborted.');
+    sb.style.display = 'inline-flex';
+    sb.disabled = false;
+    cb.style.display = 'inline-flex';
     cb.textContent = 'Close';
   });
 
