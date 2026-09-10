@@ -51,10 +51,12 @@ from app.utils.subtitles import compute_opensubtitles_hash, srt_to_vtt
 from app.services.media_service import (
     _paths,
     extract_media_technical_specs,
+    get_managed_media_items,
     get_movies,
     movie,
     poster_for,
     probe_media,
+    purge_media,
     video_paths,
 )
 from app.services.scanner_service import (
@@ -66,6 +68,7 @@ from app.services.scanner_service import (
 from app.services.subtitles_service import (
     extract_embedded_subtitle,
     fetch_online_subtitle,
+    purge_subtitles_for_media,
     tracks,
 )
 from app.services.tmdb_service import (
@@ -86,6 +89,8 @@ from app.services.transcode_service import (
     hls_cache_dir,
     hls_transcode_args,
     needs_transcode,
+    purge_transcode_caches_for_media,
+    stop_transcodes_for_media,
     transcode_cache_path,
     transcode_progress_path,
 )

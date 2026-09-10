@@ -1,7 +1,11 @@
 """JSON API endpoints and image asset routes."""
 import json
+import os
 import re
 import sys
+import shutil
+import threading
+import time
 from pathlib import Path
 from shutil import which as shutil_which
 from flask import Blueprint, abort, jsonify, request, send_file
@@ -83,10 +87,13 @@ def transcode_status(filename):
     req_mode = request.args.get('mode')
     if not req_mode:
         req_mode = 'compat' if request.args.get('compat') == '1' else 'direct'
-    hls_dir = hls_cache_dir(path)
+    proc = config.HLS_PROCESSES.get(filename)
+    if proc is not None and getattr(proc, 'hls_dir', None) is not None:
+        hls_dir = proc.hls_dir
+    else:
+        hls_dir = hls_cache_dir(path)
     hls_progress = hls_dir / 'hls.progress'
     hls_playlist_file = hls_dir / 'playlist.m3u8'
-    proc = config.HLS_PROCESSES.get(filename)
     hls_running = proc is not None and proc.poll() is None
     hls_complete = _is_hls_truly_complete(hls_playlist_file, path)
 
@@ -256,3 +263,148 @@ def tmdb_backdrop(tmdb_id):
             except Exception:
                 pass
     return _send_cached_image(target)
+
+
+@api_bp.route('/api/upload', methods=['POST'])
+def upload():
+    """Upload media file, save to MEDIA_ROOT, and run all new-media tasks."""
+    if 'file' not in request.files:
+        return jsonify(error="No file uploaded. Please select a video file."), 400
+
+    file = request.files['file']
+    if not file or not file.filename:
+        return jsonify(error="No file selected for upload."), 400
+
+    # Sanitize filename while preserving characters needed for title parsing
+    raw_name = Path(file.filename).name
+    clean_name = re.sub(r'[/\\:\x00]', '', raw_name).strip()
+    if not clean_name or clean_name in {'.', '..'}:
+        return jsonify(error="Invalid filename provided."), 400
+
+    suffix = Path(clean_name).suffix.lower()
+    if suffix not in config.VIDEO_EXTENSIONS:
+        allowed = ", ".join(sorted(config.VIDEO_EXTENSIONS))
+        return jsonify(error=f"Unsupported video format '{suffix}'. Allowed formats: {allowed}"), 400
+
+    # Custom title override (e.g. from mobile devices uploading numeric IDs like 1000403712.mkv)
+    custom_title = request.form.get('title', '').strip()
+    if custom_title:
+        safe_title = re.sub(r'[/\\:\x00*?"<>|]', ' ', custom_title).strip()
+        safe_title = re.sub(r'\s+', ' ', safe_title)
+        if safe_title:
+            clean_name = f"{safe_title}{suffix}"
+
+    overwrite = request.form.get('overwrite', '').lower() in {'1', 'true', 'yes'}
+    config.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    target_path = (config.MEDIA_ROOT / clean_name).resolve()
+
+    if not str(target_path).startswith(str(config.MEDIA_ROOT.resolve())):
+        return jsonify(error="Illegal destination path."), 400
+
+    if target_path.exists() and not overwrite:
+        stem = Path(clean_name).stem
+        counter = 1
+        while target_path.exists():
+            candidate_name = f"{stem} ({counter}){suffix}"
+            target_path = (config.MEDIA_ROOT / candidate_name).resolve()
+            counter += 1
+        clean_name = target_path.name
+
+    # Atomic write: stream to hidden .upload_<target_name>.part file first to protect memory
+    # and prevent background transcode loop or scanner from accessing partially written media
+    part_path = target_path.with_name(f".upload_{target_path.name}.part")
+    try:
+        with open(part_path, 'wb') as out_f:
+            shutil.copyfileobj(file.stream, out_f, length=64 * 1024)
+            out_f.flush()
+            os.fsync(out_f.fileno())
+        part_path.replace(target_path)
+    except Exception as e:
+        part_path.unlink(missing_ok=True)
+        return jsonify(error=f"Failed to write uploaded media to disk: {e}"), 500
+
+    # 1. Invalidate paths cache so video_paths() immediately reflects the new media
+    import app.services.media_service as media_service
+    media_service._paths = (0, [])
+    if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
+        sys.modules['app']._paths = (0, [])
+
+    # 2. Run TMDB metadata scanning and enrichment
+    import scanner
+    scanned_details = None
+    try:
+        scanned_details = scanner.scan_single_file(target_path)
+    except Exception as e:
+        logger.warning(f"Scan single file during upload error: {e}")
+        scanned_details = None
+
+    rel_filename = target_path.relative_to(config.MEDIA_ROOT).as_posix()
+    parsed_title, parsed_year = scanner.parse_filename(target_path)
+
+    # 3. Fallback database registration in SQLite if TMDB had no match or was offline
+    if not scanned_details:
+        try:
+            db = get_db()
+            db.execute(
+                "INSERT OR IGNORE INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?)",
+                (rel_filename, parsed_title, parsed_year, int(time.time()))
+            )
+            db.commit()
+            db.close()
+        except Exception:
+            pass
+
+    # 4. Trigger library scan sync
+    trigger_library_scan()
+
+    # 5. Check if transcode is required (MKV / HEVC / non-web containers)
+    from app.services.transcode_service import needs_transcode, ensure_hls_transcode
+    transcode_started = False
+    if needs_transcode(target_path):
+        try:
+            ensure_hls_transcode(rel_filename)
+            transcode_started = True
+        except Exception:
+            pass
+
+    # 6. Automatic subtitle detection and online pre-fetching
+    from app.services.subtitles_service import tracks
+    try:
+        threading.Thread(
+            target=tracks,
+            args=(target_path, scanned_details),
+            name="sub-prefetch",
+            daemon=True
+        ).start()
+    except Exception:
+        pass
+
+    display_title = (scanned_details.get("title") if scanned_details else None) or parsed_title
+    raw_year = (scanned_details.get("release_date", "")[:4] if (scanned_details and scanned_details.get("release_date")) else None) or parsed_year
+    try:
+        display_year = int(raw_year) if raw_year else None
+    except (ValueError, TypeError):
+        display_year = raw_year
+
+    return jsonify(
+        success=True,
+        filename=rel_filename,
+        title=display_title,
+        year=display_year,
+        needs_transcode=transcode_started,
+        details_url=f"/movie/{rel_filename}"
+    )
+
+
+@api_bp.route('/api/media/<path:filename>', methods=['DELETE'])
+@api_bp.route('/api/media/delete/<path:filename>', methods=['POST'])
+def api_delete_media(filename):
+    """Permanently delete a media item and purge all associated metadata, caches, and streams."""
+    from app.services.media_service import purge_media
+    try:
+        res = purge_media(filename)
+        return jsonify(res), 200
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+
+

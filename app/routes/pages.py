@@ -134,3 +134,35 @@ def sw():
     js = "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>clients.claim());"
     return Response(js, mimetype='application/javascript', headers={'Service-Worker-Allowed': '/'})
 
+
+@pages_bp.route('/manage')
+@pages_bp.route('/library')
+def manage():
+    """Render media library management dashboard with delete/purge actions and storage metrics."""
+    from app.services.media_service import get_managed_media_items
+    from app.services.transcode_service import get_active_transcodes, get_cache_dir
+    from app.utils.formatting import format_bytes_display
+
+    items = get_managed_media_items()
+    total_size = sum(i['size_bytes'] for i in items)
+
+    # Calculate transcode & stream cache size
+    cache_dir = get_cache_dir()
+    hls_dir = cache_dir / 'hls'
+    transcode_dir = cache_dir / 'transcodes'
+    hls_size = sum(f.stat().st_size for f in hls_dir.rglob('*') if f.is_file()) if hls_dir.is_dir() else 0
+    mp4_size = sum(f.stat().st_size for f in transcode_dir.rglob('*') if f.is_file()) if transcode_dir.is_dir() else 0
+    total_cache_size = hls_size + mp4_size
+
+    active_transcodes = get_active_transcodes()
+
+    return render_template(
+        'manage.html',
+        items=items,
+        total_movies=len(items),
+        total_size_str=format_bytes_display(total_size),
+        total_cache_str=format_bytes_display(total_cache_size),
+        active_transcodes=active_transcodes,
+    )
+
+

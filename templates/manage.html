@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090b10">
+<title>My Library — Anis' Media Server</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>{{css}}</style>
+</head>
+<body class="manage-page">
+<header class="manage-header">
+  <a href="/" class="brand-link" title="Anis' Media Server">
+    <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="brandGradM" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff334b"/>
+          <stop offset="100%" stop-color="#b80017"/>
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#brandGradM)"/>
+      <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" stroke="rgba(255,255,255,0.2)"/>
+      <path d="M12.5 9.5L23 16L12.5 22.5V9.5Z" fill="#ffffff"/>
+      <circle cx="21" cy="10.5" r="1.75" fill="#ffffff" fill-opacity="0.85"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-owner">Anis'</span>
+      <span class="brand-title">Media Server</span>
+    </div>
+  </a>
+
+  <div class="manage-header-actions">
+    <a href="/" class="header-nav-btn" title="Back to Home Stream">← Home Stream</a>
+    <button id="scanBtn" type="button" class="header-action-btn" onclick="triggerScan(this)" title="Scan library for newly added media">↻ Scan</button>
+    <button id="uploadBtn" type="button" class="upload-btn" onclick="openUploadModal()" title="Upload media to library">↑ Upload Media</button>
+  </div>
+</header>
+
+<main class="manage-main">
+  <!-- Top Metrics Bar -->
+  <section class="manage-metrics-section">
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Media Files</span>
+        <span class="metric-icon">🎬</span>
+      </div>
+      <div class="metric-value" id="metricTotalMovies">{{total_movies}}</div>
+      <div class="metric-sub">Indexed Library Titles</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Media Storage</span>
+        <span class="metric-icon">💾</span>
+      </div>
+      <div class="metric-value">{{total_size_str}}</div>
+      <div class="metric-sub">Total Source Video Files</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Transcode Cache</span>
+        <span class="metric-icon">⚡</span>
+      </div>
+      <div class="metric-value">{{total_cache_str}}</div>
+      <div class="metric-sub">HLS Segments & MP4 Cache</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Transcoder</span>
+        <span class="metric-icon">⚙️</span>
+      </div>
+      <div class="metric-value">{%if active_transcodes%}{{active_transcodes|length}} Active{%else%}Standby{%endif%}</div>
+      <div class="metric-sub">{%if active_transcodes%}Converting stream{%else%}Idle · On Demand{%endif%}</div>
+    </div>
+  </section>
+
+  <!-- Filter & Search Toolbar -->
+  <section class="manage-toolbar-section">
+    <div class="toolbar-search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input type="text" id="manageSearch" class="manage-search-input" placeholder="Filter by title, filename, format, or TMDb ID..." oninput="filterMediaList()">
+    </div>
+
+    <div class="toolbar-filter-chips">
+      <button type="button" class="filter-chip active" data-filter="all" onclick="setFilter(this, 'all')">All ({{items|length}})</button>
+      <button type="button" class="filter-chip" data-filter="transcoding" onclick="setFilter(this, 'transcoding')">Transcoding</button>
+      <button type="button" class="filter-chip" data-filter="mkv" onclick="setFilter(this, 'mkv')">HLS / MKV</button>
+      <button type="button" class="filter-chip" data-filter="direct" onclick="setFilter(this, 'direct')">Direct Play</button>
+    </div>
+  </section>
+
+  <!-- Media Items Management List -->
+  <section class="manage-list-section">
+    <div id="manageItemsList" class="manage-items-list">
+      {%if items%}
+        {%for m in items%}
+          <div class="manage-item-card" data-filename="{{m.filename}}" data-title="{{m.title|lower}}" data-container="{{m.container|lower}}" data-stream="{{m.stream_status.badge|lower}}" data-mkv="{{'true' if m.is_mkv else 'false'}}">
+            <div class="item-poster-col">
+              {%if m.poster_url%}
+                <img src="{{m.poster_url}}" alt="{{m.title}}" class="item-poster-img" loading="lazy">
+              {%else%}
+                <div class="item-poster-fallback">🎬</div>
+              {%endif%}
+            </div>
+
+            <div class="item-content-col">
+              <div class="item-header-row">
+                <div class="item-title-wrap">
+                  <a href="/movie/{{m.filename}}" class="item-title-link">{{m.title}}</a>
+                  {%if m.year%}<span class="item-year">({{m.year}})</span>{%endif%}
+                </div>
+                <div class="item-badges">
+                  <span class="badge-format">{{m.container}}</span>
+                  <span class="badge-stream {{m.stream_status.badge_class}}">{{m.stream_status.badge}}</span>
+                  {%if m.tmdb_id%}
+                    <span class="badge-tmdb-id" title="TMDb ID">TMDb #{{m.tmdb_id}}</span>
+                  {%endif%}
+                </div>
+              </div>
+
+              <div class="item-filename-row">
+                <span class="item-path-label">File:</span>
+                <span class="item-path-val" title="{{m.filename}}">{{m.filename}}</span>
+                <span class="item-size-val">{{m.size_str}}</span>
+              </div>
+
+              {%if m.stream_status.percent is defined and m.stream_status.percent%}
+                <div class="item-transcode-live">
+                  <div class="it-live-header">
+                    <span>Transcoding progress: <b>{{m.stream_status.percent}}%</b></span>
+                    <span>Speed: {{m.stream_status.speed or '1.0x'}} · ETA: {{m.stream_status.eta or 'Calculating...'}}</span>
+                  </div>
+                  <div class="it-live-track">
+                    <div class="it-live-fill" style="width:{{m.stream_status.percent}}%"></div>
+                  </div>
+                </div>
+              {%endif%}
+
+              <div class="item-footer-row">
+                <div class="item-playback-info">
+                  {%if m.progress_percent and m.progress_percent > 0%}
+                    <span class="item-progress-badge">Watched: {{m.progress_percent|round|int}}%</span>
+                  {%else%}
+                    <span class="item-progress-badge unwatched">Unwatched</span>
+                  {%endif%}
+                </div>
+
+                <div class="item-actions">
+                  <a href="/watch/{{m.filename}}" class="item-btn btn-watch" title="Watch Media">▶ Watch</a>
+                  <a href="/movie/{{m.filename}}" class="item-btn btn-details" title="Movie Details & Specs">ℹ Details</a>
+                  <button type="button" class="item-btn btn-delete" onclick="openPurgeModal('{{m.filename}}', '{{m.title|replace('\'', '\\\'')}}', '{{m.size_str}}')" title="Delete media and purge all data">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Delete & Purge
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        {%endfor%}
+      {%else%}
+        <div class="manage-empty-state">
+          <div class="empty-icon">📁</div>
+          <h3>Your media library is empty</h3>
+          <p>Upload video files or add media to /home/iamroot/Media/Movies to get started.</p>
+          <button type="button" class="upload-btn" onclick="openUploadModal()">↑ Upload First Movie</button>
+        </div>
+      {%endif%}
+    </div>
+  </section>
+</main>
+
+<!-- Delete & Purge Confirmation Modal -->
+<dialog id="purgeModal" closedby="any" class="purge-modal" aria-labelledby="purgeModalTitle">
+  <div class="purge-modal-content">
+    <div class="purge-modal-header">
+      <div class="purge-title-wrap">
+        <span class="purge-warn-icon">⚠️</span>
+        <span id="purgeModalTitle" class="purge-title">Permanently Delete & Purge</span>
+      </div>
+      <button type="button" class="purge-modal-close" onclick="closePurgeModal()" title="Close (Esc)">✕</button>
+    </div>
+
+    <div class="purge-modal-body">
+      <p class="purge-prompt">Are you sure you want to permanently delete <b id="purgeTargetTitle">this movie</b> (<span id="purgeTargetSize">0 MB</span>)?</p>
+      
+      <div class="purge-checklist-box">
+        <span class="purge-check-heading">The following associated data will be completely wiped:</span>
+        <ul class="purge-list">
+          <li><span>🗑️</span><span>Source video file on disk (<code id="purgeTargetFilename">filename</code>)</span></li>
+          <li><span>⚡</span><span>Any ongoing FFmpeg transcoder processes immediately killed</span></li>
+          <li><span>📦</span><span>Cached HLS stream segments, playlists, and MP4 caches</span></li>
+          <li><span>🖼️</span><span>TMDb metadata, overview, cached poster, and backdrop images</span></li>
+          <li><span>💬</span><span>Extracted and fetched subtitle files (.vtt / .srt)</span></li>
+          <li><span>⏱️</span><span>Watch history and resume playback positions</span></li>
+        </ul>
+      </div>
+
+      <div id="purgeErrorBox" class="purge-error-box" style="display:none">
+        <span>⚠️</span><span id="purgeErrorMessage">Failed to delete media</span>
+      </div>
+    </div>
+
+    <div class="purge-modal-footer">
+      <button type="button" id="purgeCancelBtn" class="upload-btn-secondary" onclick="closePurgeModal()">Cancel</button>
+      <button type="button" id="purgeConfirmBtn" class="purge-btn-danger" onclick="executePurge()">
+        <span id="purgeBtnSpinner" class="btn-spinner" style="display:none"></span>
+        <span id="purgeBtnText">Yes, Delete & Purge Everything</span>
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Upload Media Modal (Reused for immediate re-upload) -->
+<dialog id="uploadModal" closedby="any" class="upload-modal" aria-labelledby="uploadModalTitle">
+  <div class="upload-modal-content">
+    <div class="upload-modal-header">
+      <div class="upload-modal-title-wrap">
+        <span class="upload-modal-icon">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </span>
+        <span id="uploadModalTitle" class="upload-modal-title">Upload Media</span>
+      </div>
+      <button type="button" class="upload-modal-close" onclick="closeUploadModal()" title="Close (Esc)">✕</button>
+    </div>
+    <div class="upload-modal-body">
+      <div id="uploadDropZone" class="upload-dropzone" onclick="document.getElementById('mediaFileInput').click()">
+        <input type="file" id="mediaFileInput" accept=".mp4,.mkv,.webm,.mov,.avi,.m4v" style="display:none" onchange="handleFileSelected(this.files)">
+        <div class="dropzone-icon">
+          <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 32v6a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4v-6"/><path d="M24 6v24"/><path d="M14 16l10-10 10 10"/>
+          </svg>
+        </div>
+        <div class="dropzone-text">
+          <span class="dropzone-prompt"><b>Click to browse</b> or drag and drop video here</span>
+          <span class="dropzone-sub">Supports MP4, MKV, WEBM, MOV, AVI, M4V</span>
+        </div>
+      </div>
+      <div id="uploadFileCard" class="upload-file-card" style="display:none">
+        <div class="uf-icon">🎬</div>
+        <div class="uf-meta">
+          <span id="ufName" class="uf-name">movie.mp4</span>
+          <span id="ufSize" class="uf-size">0 MB</span>
+        </div>
+        <button type="button" class="uf-remove" onclick="clearSelectedFile()" title="Remove file">✕</button>
+      </div>
+      <div id="uploadTitleWrap" class="uf-title-wrap" style="display:none">
+        <label for="uploadTitleInput" class="uf-title-label">Movie Title / Rename (Optional)</label>
+        <input type="text" id="uploadTitleInput" class="uf-title-input" placeholder="e.g. Mayday (2026)">
+        <span class="uf-title-hint">Helps TMDb match media if uploaded from phone with numeric IDs.</span>
+      </div>
+      <div id="uploadProgressSection" class="upload-progress-section" style="display:none">
+        <div class="upload-progress-header">
+          <span id="uploadStatusText" class="upload-status-text">Uploading...</span>
+          <span id="uploadPercentText" class="upload-percent-text">0%</span>
+        </div>
+        <div class="upload-track">
+          <div id="uploadProgressBar" class="upload-fill" style="width:0%"></div>
+        </div>
+        <div class="upload-progress-footer">
+          <span id="uploadBytesText" class="upload-detail-text">0 MB / 0 MB</span>
+          <span id="uploadSpeedText" class="upload-detail-text">0 MB/s</span>
+        </div>
+      </div>
+      <div id="uploadTasksBox" class="upload-tasks-box" style="display:none">
+        <div class="upload-task-item active" id="taskSave"><span class="task-icon">✔</span><span>Saved to library storage</span></div>
+        <div class="upload-task-item active" id="taskIndex"><span class="task-icon">↻</span><span>Probing metadata & TMDb scrape...</span></div>
+        <div class="upload-task-item active" id="taskSubs"><span class="task-icon">💬</span><span>Subtitle & OpenSubtitles discovery</span></div>
+        <div class="upload-task-item" id="taskTranscode"><span class="task-icon">⚡</span><span>Transcode inspection</span></div>
+      </div>
+      <div id="uploadSuccessBox" class="upload-success-box" style="display:none">
+        <div class="success-icon">✓</div>
+        <div class="success-info">
+          <span class="success-title" id="successMovieTitle">Upload Complete!</span>
+          <span class="success-sub">Metadata indexed, posters cached, and added to library.</span>
+        </div>
+      </div>
+      <div id="uploadErrorBox" class="upload-error-box" style="display:none">
+        <span class="error-icon">⚠️</span>
+        <span id="uploadErrorMessage" class="error-text">Upload failed</span>
+      </div>
+    </div>
+    <div class="upload-modal-footer">
+      <button type="button" id="uploadCancelBtn" class="upload-btn-secondary" onclick="closeUploadModal()">Cancel</button>
+      <button type="button" id="uploadSubmitBtn" class="upload-btn-primary" disabled onclick="startUpload()">Upload & Index</button>
+      <a id="uploadViewBtn" href="/manage" class="upload-btn-primary" style="display:none">Done</a>
+    </div>
+  </div>
+</dialog>
+
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+let currentPurgeFilename = null;
+
+function openPurgeModal(filename, title, size) {
+  currentPurgeFilename = filename;
+  const modal = document.getElementById('purgeModal');
+  document.getElementById('purgeTargetTitle').textContent = title || filename;
+  document.getElementById('purgeTargetSize').textContent = size || 'Unknown size';
+  document.getElementById('purgeTargetFilename').textContent = filename;
+  document.getElementById('purgeErrorBox').style.display = 'none';
+  const btn = document.getElementById('purgeConfirmBtn');
+  btn.disabled = false;
+  document.getElementById('purgeBtnSpinner').style.display = 'none';
+  document.getElementById('purgeBtnText').textContent = 'Yes, Delete & Purge Everything';
+
+  if (modal) {
+    if (typeof modal.showModal === 'function') {
+      modal.showModal();
+    } else {
+      modal.setAttribute('open', '');
+    }
+  }
+}
+
+function closePurgeModal() {
+  const modal = document.getElementById('purgeModal');
+  if (modal) {
+    if (typeof modal.close === 'function') {
+      modal.close();
+    } else {
+      modal.removeAttribute('open');
+    }
+  }
+  currentPurgeFilename = null;
+}
+
+function executePurge() {
+  if (!currentPurgeFilename) return;
+  const btn = document.getElementById('purgeConfirmBtn');
+  const cancelBtn = document.getElementById('purgeCancelBtn');
+  const spinner = document.getElementById('purgeBtnSpinner');
+  const btnText = document.getElementById('purgeBtnText');
+  const errorBox = document.getElementById('purgeErrorBox');
+
+  btn.disabled = true;
+  cancelBtn.disabled = true;
+  spinner.style.display = 'inline-block';
+  btnText.textContent = 'Purging media & data...';
+  errorBox.style.display = 'none';
+
+  fetch('/api/media/' + encodeURIComponent(currentPurgeFilename), {
+    method: 'DELETE'
+  })
+  .then(res => {
+    if (!res.ok) {
+      return res.json().then(d => { throw new Error(d.error || 'Server error ' + res.status); });
+    }
+    return res.json();
+  })
+  .then(data => {
+    // Successfully purged!
+    const targetCard = document.querySelector(`.manage-item-card[data-filename="${CSS.escape(currentPurgeFilename)}"]`);
+    closePurgeModal();
+    if (targetCard) {
+      targetCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      targetCard.style.opacity = '0';
+      targetCard.style.transform = 'scale(0.96)';
+      setTimeout(() => {
+        targetCard.remove();
+        const totalEl = document.getElementById('metricTotalMovies');
+        if (totalEl) {
+          const count = document.querySelectorAll('.manage-item-card').length;
+          totalEl.textContent = count;
+        }
+      }, 300);
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    cancelBtn.disabled = false;
+    spinner.style.display = 'none';
+    btnText.textContent = 'Retry Purge';
+    document.getElementById('purgeErrorMessage').textContent = err.message || 'Purge failed';
+    errorBox.style.display = 'flex';
+  });
+}
+
+function triggerScan(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  fetch('/api/scan', { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      setTimeout(() => location.reload(), 1500);
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '↻ Scan';
+    });
+}
+
+function filterMediaList() {
+  const q = (document.getElementById('manageSearch').value || '').trim().toLowerCase();
+  const activeChip = document.querySelector('.filter-chip.active');
+  const filterType = activeChip ? activeChip.getAttribute('data-filter') : 'all';
+
+  document.querySelectorAll('.manage-item-card').forEach(card => {
+    const title = card.getAttribute('data-title') || '';
+    const fn = (card.getAttribute('data-filename') || '').toLowerCase();
+    const cont = card.getAttribute('data-container') || '';
+    const isMkv = card.getAttribute('data-mkv') === 'true';
+    const stream = card.getAttribute('data-stream') || '';
+
+    let matchSearch = !q || title.includes(q) || fn.includes(q) || cont.includes(q);
+    let matchFilter = true;
+
+    if (filterType === 'transcoding') {
+      matchFilter = stream.includes('transcoding');
+    } else if (filterType === 'mkv') {
+      matchFilter = isMkv || cont === 'mkv';
+    } else if (filterType === 'direct') {
+      matchFilter = !isMkv || stream.includes('direct');
+    }
+
+    card.style.display = (matchSearch && matchFilter) ? 'flex' : 'none';
+  });
+}
+
+function setFilter(btn, type) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  filterMediaList();
+}
+
+// Light dismiss fallback for dialogs
+[document.getElementById('purgeModal'), document.getElementById('uploadModal')].forEach(m => {
+  if (m && !('closedBy' in HTMLDialogElement.prototype)) {
+    m.addEventListener('click', e => {
+      if (e.target !== m) return;
+      const r = m.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientY > r.top + r.height || e.clientX < r.left || e.clientX > r.left + r.width) {
+        if (m.id === 'purgeModal') closePurgeModal();
+        else closeUploadModal();
+      }
+    });
+  }
+});
+
+// Upload Modal Logic
+let selectedUploadFile = null, uploadXHR = null;
+function openUploadModal() {
+  const m = document.getElementById('uploadModal');
+  if (!m) return;
+  resetUploadState();
+  if (typeof m.showModal === 'function') m.showModal();
+  else m.setAttribute('open', '');
+}
+function closeUploadModal() {
+  const m = document.getElementById('uploadModal');
+  if (!m) return;
+  if (uploadXHR && uploadXHR.readyState > 0 && uploadXHR.readyState < 4) {
+    if (!confirm('Cancel upload in progress?')) return;
+    uploadXHR.abort();
+  }
+  if (typeof m.close === 'function') m.close();
+  else m.removeAttribute('open');
+  resetUploadState();
+}
+function resetUploadState() {
+  selectedUploadFile = null;
+  uploadXHR = null;
+  const fi = document.getElementById('mediaFileInput');
+  if (fi) fi.value = '';
+  document.getElementById('uploadDropZone').style.display = 'flex';
+  document.getElementById('uploadFileCard').style.display = 'none';
+  const utw = document.getElementById('uploadTitleWrap'), uti = document.getElementById('uploadTitleInput');
+  if (utw) utw.style.display = 'none';
+  if (uti) uti.value = '';
+  document.getElementById('uploadProgressSection').style.display = 'none';
+  document.getElementById('uploadTasksBox').style.display = 'none';
+  document.getElementById('uploadSuccessBox').style.display = 'none';
+  document.getElementById('uploadErrorBox').style.display = 'none';
+  const sb = document.getElementById('uploadSubmitBtn');
+  sb.style.display = 'inline-flex';
+  sb.disabled = true;
+  document.getElementById('uploadCancelBtn').style.display = 'inline-flex';
+  document.getElementById('uploadViewBtn').style.display = 'none';
+  document.getElementById('uploadProgressBar').style.width = '0%';
+  document.getElementById('uploadPercentText').textContent = '0%';
+}
+function handleFileSelected(files) {
+  if (!files || !files.length) return;
+  const f = files[0];
+  const exts = ['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v'];
+  const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+  if (!exts.includes(ext)) {
+    showUploadError('Unsupported file type. Please choose a video file (.mp4, .mkv, .webm, etc.)');
+    return;
+  }
+  selectedUploadFile = f;
+  document.getElementById('ufName').textContent = f.name;
+  document.getElementById('ufSize').textContent = fmtSize(f.size);
+  document.getElementById('uploadDropZone').style.display = 'none';
+  document.getElementById('uploadFileCard').style.display = 'flex';
+  const utw = document.getElementById('uploadTitleWrap'), uti = document.getElementById('uploadTitleInput');
+  if (utw && uti) {
+    utw.style.display = 'flex';
+    const rawStem = f.name.slice(0, f.name.lastIndexOf('.')) || f.name;
+    if (/^\d+$/.test(rawStem) || /^VID_\d+/.test(rawStem)) {
+      uti.value = '';
+      uti.placeholder = 'e.g. Mayday (2026) - phone gave numeric ID';
+    } else {
+      uti.value = rawStem.replace(/[._]+/g, ' ');
+    }
+  }
+  document.getElementById('uploadErrorBox').style.display = 'none';
+  document.getElementById('uploadSubmitBtn').disabled = false;
+}
+function clearSelectedFile() {
+  selectedUploadFile = null;
+  const fi = document.getElementById('mediaFileInput');
+  if (fi) fi.value = '';
+  document.getElementById('uploadDropZone').style.display = 'flex';
+  document.getElementById('uploadFileCard').style.display = 'none';
+  const utw = document.getElementById('uploadTitleWrap'), uti = document.getElementById('uploadTitleInput');
+  if (utw) utw.style.display = 'none';
+  if (uti) uti.value = '';
+  document.getElementById('uploadSubmitBtn').disabled = true;
+}
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function showUploadError(msg) {
+  const eb = document.getElementById('uploadErrorBox'), em = document.getElementById('uploadErrorMessage');
+  if (em) em.textContent = msg;
+  if (eb) eb.style.display = 'flex';
+}
+function startUpload() {
+  if (!selectedUploadFile) return;
+  const sb = document.getElementById('uploadSubmitBtn'), cb = document.getElementById('uploadCancelBtn');
+  sb.disabled = true;
+  sb.style.display = 'none';
+  cb.textContent = 'Abort';
+  document.getElementById('uploadDropZone').style.display = 'none';
+  const utw = document.getElementById('uploadTitleWrap');
+  if (utw) utw.style.display = 'none';
+  document.getElementById('uploadProgressSection').style.display = 'flex';
+  document.getElementById('uploadErrorBox').style.display = 'none';
+
+  const pb = document.getElementById('uploadProgressBar'),
+        pt = document.getElementById('uploadPercentText'),
+        ps = document.getElementById('uploadStatusText'),
+        pby = document.getElementById('uploadBytesText'),
+        psp = document.getElementById('uploadSpeedText');
+
+  ps.textContent = 'Uploading media...';
+  pb.style.width = '0%';
+  pt.textContent = '0%';
+
+  const fd = new FormData();
+  fd.append('file', selectedUploadFile);
+  const uti = document.getElementById('uploadTitleInput');
+  if (uti && uti.value.trim()) {
+    fd.append('title', uti.value.trim());
+  }
+
+  const xhr = new XMLHttpRequest();
+  uploadXHR = xhr;
+  let lastLoaded = 0, lastTime = Date.now();
+
+  xhr.upload.addEventListener('progress', e => {
+    if (e.lengthComputable) {
+      const pct = Math.min(100, Math.round(e.loaded / e.total * 100));
+      pb.style.width = pct + '%';
+      pt.textContent = pct + '%';
+      pby.textContent = fmtSize(e.loaded) + ' / ' + fmtSize(e.total);
+      const now = Date.now(), dt = (now - lastTime) / 1000;
+      if (dt >= 0.5) {
+        psp.textContent = fmtSize((e.loaded - lastLoaded) / dt) + '/s';
+        lastLoaded = e.loaded;
+        lastTime = now;
+      }
+    }
+  });
+
+  xhr.upload.addEventListener('load', () => {
+    pb.style.width = '100%';
+    pt.textContent = '100%';
+    ps.textContent = 'Running new-media tasks...';
+    psp.textContent = 'Upload Done';
+    document.getElementById('uploadTasksBox').style.display = 'flex';
+  });
+
+  xhr.addEventListener('load', () => {
+    uploadXHR = null;
+    cb.textContent = 'Close';
+    if (xhr.status >= 200 && xhr.status < 300) {
+      let res;
+      try { res = JSON.parse(xhr.responseText); } catch (e) { res = {}; }
+      document.getElementById('uploadTasksBox').style.display = 'none';
+      document.getElementById('uploadProgressSection').style.display = 'none';
+      document.getElementById('uploadFileCard').style.display = 'none';
+      const sbox = document.getElementById('uploadSuccessBox'), smt = document.getElementById('successMovieTitle');
+      if (smt) smt.textContent = (res.title || 'Media') + ' added successfully!';
+      if (sbox) sbox.style.display = 'flex';
+      setTimeout(() => { location.reload(); }, 1500);
+    } else {
+      let err = 'Upload failed (' + xhr.status + ')';
+      try { const r = JSON.parse(xhr.responseText); if (r.error) err = r.error; } catch (e) {}
+      showUploadError(err);
+      sb.style.display = 'inline-flex';
+      sb.disabled = false;
+      document.getElementById('uploadTasksBox').style.display = 'none';
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    uploadXHR = null;
+    showUploadError('Network connection error during upload.');
+    sb.style.display = 'inline-flex';
+    sb.disabled = false;
+    cb.textContent = 'Close';
+  });
+
+  xhr.open('POST', '/api/upload');
+  xhr.send(fd);
+}
+</script>
+</body>
+</html>

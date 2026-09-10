@@ -8,7 +8,7 @@ from shutil import which
 
 from app import config
 from app.db import get_db, value
-from app.utils.filesystem import is_video
+from app.utils.filesystem import is_video, safe_path
 from app.utils.formatting import clean_title, format_bytes_display
 
 # Cached video paths (timestamp, list_of_paths)
@@ -220,3 +220,217 @@ def extract_media_technical_specs(path, movie_meta=None):
         specs['subtitles'] = []
 
     return specs
+
+
+def purge_media(filename):
+    """Permanently delete media file, transcode caches, subtitles, TMDb metadata, posters, and playback progress."""
+    try:
+        path = safe_path(filename)
+    except Exception:
+        path = config.MEDIA_ROOT / filename
+
+    try:
+        rel_filename = path.relative_to(config.MEDIA_ROOT).as_posix()
+    except ValueError:
+        rel_filename = str(filename)
+
+    db = get_db()
+    movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
+    progress_row = db.execute("SELECT * FROM progress WHERE filename=?", (rel_filename,)).fetchone()
+    tmdb_id = value(movie_row, 'tmdb_id')
+    poster_path = value(movie_row, 'poster_path')
+
+    # 1. Stop active transcodes and capture HLS directory
+    from app.services.transcode_service import (
+        stop_transcodes_for_media,
+        purge_transcode_caches_for_media,
+        find_ffmpeg_info_for_path,
+        hls_cache_dir,
+    )
+    known_hls_dir = None
+    proc = config.HLS_PROCESSES.get(rel_filename)
+    if proc and getattr(proc, 'hls_dir', None):
+        known_hls_dir = proc.hls_dir
+    if not known_hls_dir and path.exists():
+        _, ext_hls_dir = find_ffmpeg_info_for_path(path)
+        if ext_hls_dir:
+            known_hls_dir = ext_hls_dir
+    if not known_hls_dir and path.exists():
+        try:
+            known_hls_dir = hls_cache_dir(path)
+        except Exception:
+            pass
+
+    stopped_pids = stop_transcodes_for_media(rel_filename, path)
+
+    # 2. Purge transcode caches and HLS directory
+    transcode_purge_info = purge_transcode_caches_for_media(path, known_hls_dir=known_hls_dir)
+
+    # 3. Purge subtitle caches
+    from app.services.subtitles_service import purge_subtitles_for_media
+    purged_subs = purge_subtitles_for_media(path)
+
+    # 4. Purge TMDb posters and backdrops if not referenced by other items
+    purged_posters = []
+    if tmdb_id:
+        other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
+        if not other:
+            cached_p = config.POSTER_CACHE / f"{tmdb_id}.jpg"
+            if cached_p.is_file():
+                cached_p.unlink(missing_ok=True)
+                purged_posters.append(str(cached_p))
+            cached_b = config.BACKDROP_CACHE / f"{tmdb_id}.jpg"
+            if cached_b.is_file():
+                cached_b.unlink(missing_ok=True)
+                purged_posters.append(str(cached_b))
+
+    if poster_path and str(poster_path).startswith('local:'):
+        try:
+            local_poster = config.MEDIA_ROOT / poster_path[6:]
+            if local_poster.is_file():
+                local_poster.unlink(missing_ok=True)
+                purged_posters.append(str(local_poster))
+        except Exception:
+            pass
+
+    if path.parent.is_dir():
+        for ext in config.POSTER_EXTENSIONS:
+            local_ext = path.with_suffix(ext)
+            if local_ext.is_file():
+                local_ext.unlink(missing_ok=True)
+                purged_posters.append(str(local_ext))
+
+    # 5. Purge database records
+    db.execute("DELETE FROM movies WHERE filename=?", (rel_filename,))
+    db.execute("DELETE FROM progress WHERE filename=?", (rel_filename,))
+    db.commit()
+    db.close()
+
+    # 6. Delete media file on disk and any upload part files
+    file_deleted = False
+    if path.is_file():
+        path.unlink(missing_ok=True)
+        file_deleted = True
+
+    part_a = path.with_name(f".upload_{path.name}.part")
+    part_a.unlink(missing_ok=True)
+    part_b = path.with_name(f"{path.name}.part")
+    part_b.unlink(missing_ok=True)
+
+    # If in subfolder, clean up if empty
+    try:
+        parent = path.parent
+        if parent.resolve() != config.MEDIA_ROOT.resolve() and str(parent.resolve()).startswith(str(config.MEDIA_ROOT.resolve())):
+            if not any(parent.iterdir()):
+                parent.rmdir()
+    except Exception:
+        pass
+
+    # 7. Invalidate paths cache
+    global _paths
+    _paths = (0, [])
+    if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
+        sys.modules['app']._paths = (0, [])
+
+    from app.services.scanner_service import trigger_library_scan
+    trigger_library_scan()
+
+    return {
+        'success': True,
+        'filename': rel_filename,
+        'file_deleted': file_deleted,
+        'stopped_pids': stopped_pids,
+        'purged_transcodes': transcode_purge_info,
+        'purged_subtitles': purged_subs,
+        'purged_posters': purged_posters,
+        'tmdb_purged': bool(tmdb_id),
+        'db_rows_purged': bool(movie_row or progress_row)
+    }
+
+
+def get_managed_media_items():
+    """Retrieve media items with file sizes, stream modes, and technical specifications for management."""
+    from flask import url_for
+    from app.services.transcode_service import needs_transcode, get_active_transcodes, hls_cache_dir, _is_hls_truly_complete
+
+    active_map = {t['filename']: t for t in get_active_transcodes()}
+    all_movies = get_movies()
+    items = []
+
+    for m in all_movies:
+        p = m['path']
+        rel_fn = m['filename']
+        file_exists = p.is_file() if isinstance(p, Path) else Path(p).is_file()
+        st = p.stat() if file_exists else None
+        size_bytes = st.st_size if st else 0
+        size_str = format_bytes_display(size_bytes) if size_bytes else "—"
+        suffix = Path(rel_fn).suffix.upper().lstrip('.')
+        is_mkv = needs_transcode(p)
+
+        # Transcode status
+        active_t = active_map.get(rel_fn)
+        hls_cached = False
+        if is_mkv and file_exists:
+            hls_dir = hls_cache_dir(p)
+            pl = hls_dir / 'playlist.m3u8'
+            hls_cached = _is_hls_truly_complete(pl, p)
+
+        if active_t:
+            stream_status = {
+                'badge': 'Transcoding',
+                'badge_class': 'status-transcoding',
+                'percent': active_t.get('percent', 0),
+                'eta': active_t.get('eta_str', ''),
+                'speed': active_t.get('speed', '')
+            }
+        elif hls_cached:
+            stream_status = {
+                'badge': 'HLS Cached',
+                'badge_class': 'status-cached'
+            }
+        elif not is_mkv:
+            stream_status = {
+                'badge': 'Direct Stream',
+                'badge_class': 'status-direct'
+            }
+        else:
+            stream_status = {
+                'badge': 'On-Demand HLS',
+                'badge_class': 'status-ondemand'
+            }
+
+        poster_url = None
+        if m.get('poster'):
+            try:
+                poster_url = (
+                    url_for('tmdb_poster', tmdb_id=m['tmdb_id'])
+                    if m['poster'].startswith('tmdb:')
+                    else url_for('poster', filename=m['poster'][6:])
+                )
+            except Exception:
+                try:
+                    poster_url = (
+                        url_for('api.tmdb_poster', tmdb_id=m['tmdb_id'])
+                        if m['poster'].startswith('tmdb:')
+                        else url_for('api.poster', filename=m['poster'][6:])
+                    )
+                except Exception:
+                    poster_url = None
+
+        items.append({
+            'filename': rel_fn,
+            'title': m['title'],
+            'year': m['year'],
+            'tmdb_id': m.get('tmdb_id'),
+            'poster_url': poster_url,
+            'size_bytes': size_bytes,
+            'size_str': size_str,
+            'container': suffix,
+            'is_mkv': is_mkv,
+            'stream_status': stream_status,
+            'progress_percent': m.get('percent', 0),
+            'mtime': st.st_mtime if st else 0
+        })
+
+    return items
+

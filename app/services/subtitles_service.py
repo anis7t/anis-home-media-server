@@ -303,3 +303,53 @@ def tracks(path, movie_meta=None):
 
     return result
 
+
+def purge_subtitles_for_media(path):
+    """Purge cached embedded and online WebVTT files, and sidecar subtitles for the media path."""
+    path = Path(path)
+    purged = []
+
+    # 1. Embedded subtitles cache
+    try:
+        if path.exists():
+            stamp = f"{path}:{path.stat().st_size}:{path.stat().st_mtime_ns}".encode()
+            file_hash = hashlib.sha256(stamp).hexdigest()[:16]
+            if config.SUBTITLE_EMBEDDED_CACHE.is_dir():
+                for vtt in config.SUBTITLE_EMBEDDED_CACHE.glob(f"{file_hash}_*.vtt"):
+                    try:
+                        vtt.unlink(missing_ok=True)
+                        purged.append(str(vtt))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # 2. Online subtitles cache
+    try:
+        if path.exists():
+            stamp_online = f"{path}:{path.stat().st_size}".encode()
+            online_hash = hashlib.sha256(stamp_online).hexdigest()[:16]
+            online_file = config.SUBTITLE_ONLINE_CACHE / f"{online_hash}.vtt"
+            if online_file.is_file():
+                online_file.unlink(missing_ok=True)
+                purged.append(str(online_file))
+    except Exception:
+        pass
+
+    # 3. Sidecar subtitles alongside movie file (e.g. .srt or .vtt matching stem)
+    try:
+        if path.parent.is_dir():
+            stem = path.stem
+            for ext in ('.srt', '.vtt'):
+                for sidecar in path.parent.glob(f"{stem}*{ext}"):
+                    try:
+                        sidecar.unlink(missing_ok=True)
+                        purged.append(str(sidecar))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    return purged
+
+

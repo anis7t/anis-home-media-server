@@ -470,3 +470,70 @@ class MediaServerTests(unittest.TestCase):
         # Verify shortcut key handling
         self.assertIn("e.key==='n'||e.key==='N'", html_sub)
 
+    def test_api_upload_endpoint_valid_video(self):
+        import io
+        data = {
+            'file': (io.BytesIO(b'dummy-video-data-12345'), 'Upload_Test_Movie.2025.mp4')
+        }
+        res = self.client.post('/api/upload', data=data, content_type='multipart/form-data')
+        self.assertEqual(res.status_code, 200)
+        json_data = res.get_json()
+        self.assertTrue(json_data['success'])
+        self.assertIn('Upload_Test_Movie', json_data['filename'])
+        self.assertIn('Upload Test Movie', json_data['title'])
+        self.assertEqual(json_data['year'], 2025)
+        self.assertIn('/movie/', json_data['details_url'])
+        # Verify file exists on disk in MEDIA_ROOT
+        saved_file = Path(app.config.MEDIA_ROOT) / json_data['filename']
+        self.assertTrue(saved_file.is_file())
+        self.assertEqual(saved_file.read_bytes(), b'dummy-video-data-12345')
+
+    def test_api_upload_endpoint_rejects_invalid_extension(self):
+        import io
+        data = {
+            'file': (io.BytesIO(b'malicious content'), 'malicious_script.sh')
+        }
+        res = self.client.post('/api/upload', data=data, content_type='multipart/form-data')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('Unsupported video format', res.get_json()['error'])
+
+    def test_api_upload_endpoint_missing_file(self):
+        res = self.client.post('/api/upload', data={}, content_type='multipart/form-data')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('No file uploaded', res.get_json()['error'])
+
+    def test_homepage_renders_upload_button_and_modal(self):
+        res = self.client.get('/')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+        self.assertIn('id="uploadBtn"', html)
+        self.assertIn('openUploadModal()', html)
+        self.assertIn('id="uploadModal"', html)
+        self.assertIn('id="uploadDropZone"', html)
+        self.assertIn('id="mediaFileInput"', html)
+        self.assertIn('id="uploadTitleInput"', html)
+        self.assertIn('id="uploadTitleWrap"', html)
+        self.assertIn('id="uploadProgressBar"', html)
+        self.assertIn('id="uploadSubmitBtn"', html)
+
+    def test_api_upload_with_custom_title_override(self):
+        import io
+        from unittest.mock import patch
+        data = {
+            'file': (io.BytesIO(b'dummy-mkv-video-content'), '1000403712.mkv'),
+            'title': 'Mayday (2026)'
+        }
+        mock_details = {'title': 'Mayday', 'release_date': '2026-05-01', 'id': 1137844}
+        with patch('scanner.scan_single_file', return_value=mock_details):
+            res = self.client.post('/api/upload', data=data, content_type='multipart/form-data')
+            self.assertEqual(res.status_code, 200)
+            json_data = res.get_json()
+            self.assertTrue(json_data['success'])
+            self.assertIn('Mayday (2026).mkv', json_data['filename'])
+            self.assertEqual(json_data['title'], 'Mayday')
+            self.assertEqual(json_data['year'], 2026)
+            saved_file = Path(app.config.MEDIA_ROOT) / json_data['filename']
+            self.assertTrue(saved_file.is_file())
+            self.assertEqual(saved_file.read_bytes(), b'dummy-mkv-video-content')
+
+

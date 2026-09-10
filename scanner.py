@@ -98,7 +98,7 @@ def parse_filename(path):
     for tag in tags:
         name = re.sub(tag, "", name, flags=re.IGNORECASE)
 
-    name = re.sub(r"\s+", " ", name).strip(" -._")
+    name = re.sub(r"\s+", " ", name).strip(" -._'\"")
 
     return name, year
 
@@ -141,8 +141,7 @@ def tmdb_get(session, token, url, params=None):
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
-        "User-Agent": "LocalMediaServer/1.0",
-        "Connection": "close",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LocalMediaServer/1.0",
     }
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -197,6 +196,22 @@ def tmdb_get(session, token, url, params=None):
 # ---------------------------------------------------------
 # Search TMDB
 # ---------------------------------------------------------
+
+def find_movie_by_imdb_id(session, token, imdb_id):
+    """Query TMDB external IDs endpoint via IMDb ID."""
+    if not imdb_id or not token:
+        return None
+    clean_id = f"tt{str(imdb_id).lstrip('t')}"
+    url = f"{TMDB_API}/find/{clean_id}"
+    try:
+        data = tmdb_get(session, token, url, params={"external_source": "imdb_id"})
+        movie_results = data.get("movie_results", [])
+        if movie_results:
+            return movie_results[0]
+    except Exception as e:
+        print(f"    TMDB find by IMDb ID {clean_id} error: {e}")
+    return None
+
 
 def find_movie(session, token, title, year):
 
@@ -285,7 +300,18 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         title, year = parse_filename(path)
         print(f"Scanning: {title}" + (f" ({year})" if year else ""))
 
-        movie = find_movie(session, token, title, year)
+        movie = None
+        from app.services.media_resolver import is_anonymous_name, resolve_media
+
+        if not is_anonymous_name(title):
+            movie = find_movie(session, token, title, year)
+
+        if not movie:
+            print(f"    Triggering forensic media resolution for: {path.name}")
+            movie, resolution_source = resolve_media(path, session=session, token=token)
+            if movie:
+                print(f"    Forensic match via {resolution_source}: {movie.get('title')}")
+
         if not movie:
             print("    TMDB: no match")
             return None

@@ -4,6 +4,8 @@ import hashlib
 import logging
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -21,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 class ProcessProxy:
     """Lightweight proxy around an active external process PID."""
-    def __init__(self, pid):
+    def __init__(self, pid, hls_dir=None):
         self.pid = pid
+        self.hls_dir = hls_dir
 
     def poll(self):
         try:
@@ -124,8 +127,8 @@ def cleanup_cache_on_startup():
     cleanup_cache()
 
 
-def find_ffmpeg_for_path(path):
-    """Find any running external FFmpeg process actively converting the target media path."""
+def find_ffmpeg_info_for_path(path):
+    """Find any running external FFmpeg process actively converting target media path and extract PID and HLS output dir."""
     target = str(path)
     target_name = Path(path).name
     for cmd_file in glob.glob('/proc/[0-9]*/cmdline'):
@@ -133,10 +136,21 @@ def find_ffmpeg_for_path(path):
             with open(cmd_file, 'rb') as f:
                 content = f.read().decode('utf-8', errors='ignore').replace('\x00', ' ')
                 if 'ffmpeg' in content and (target in content or target_name in content):
-                    return int(cmd_file.split('/')[2])
+                    pid = int(cmd_file.split('/')[2])
+                    hls_dir = None
+                    m = re.search(r'-hls_segment_filename\s+([^\s]+)/segment_%06d\.ts', content)
+                    if m:
+                        hls_dir = Path(m.group(1))
+                    return pid, hls_dir
         except Exception:
             pass
-    return None
+    return None, None
+
+
+def find_ffmpeg_for_path(path):
+    """Find any running external FFmpeg process actively converting the target media path."""
+    pid, _ = find_ffmpeg_info_for_path(path)
+    return pid
 
 
 def _hls_resume_point(directory, playlist_path):
@@ -265,9 +279,9 @@ def ensure_hls_transcode(filename):
         proc = config.HLS_PROCESSES.get(filename)
         is_running = proc is not None and proc.poll() is None
         if not is_running and not is_complete:
-            existing_pid = find_ffmpeg_for_path(path)
+            existing_pid, existing_hls_dir = find_ffmpeg_info_for_path(path)
             if existing_pid:
-                proc = ProcessProxy(existing_pid)
+                proc = ProcessProxy(existing_pid, hls_dir=existing_hls_dir)
                 config.HLS_PROCESSES[filename] = proc
                 is_running = True
         if not is_complete and not is_running:
@@ -341,6 +355,10 @@ def ensure_hls_transcode(filename):
                     popen_func = app_sub.Popen
 
             proc = popen_func(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                proc.hls_dir = directory
+            except Exception:
+                pass
             config.HLS_PROCESSES[filename] = proc
             logger.info(
                 'HLS transcode %s: %s from %.1fs (segment %d)',
@@ -350,6 +368,28 @@ def ensure_hls_transcode(filename):
                 start_seg
             )
     return proc
+
+
+_active_resolving = set()
+
+
+def _trigger_active_resolution(path):
+    """Asynchronously resolve unidentified or numeric media currently transcoding."""
+    path_str = str(path)
+    if path_str in _active_resolving:
+        return
+    _active_resolving.add(path_str)
+
+    def _worker():
+        try:
+            import scanner
+            scanner.scan_single_file(path)
+        except Exception as e:
+            logger.warning(f"Active resolution error for {path}: {e}")
+        finally:
+            _active_resolving.discard(path_str)
+
+    threading.Thread(target=_worker, name=f"resolve-{Path(path).name}", daemon=True).start()
 
 
 def get_active_transcodes():
@@ -427,16 +467,16 @@ def get_active_transcodes():
         except ValueError:
             continue
         if rel not in config.HLS_PROCESSES or config.HLS_PROCESSES[rel].poll() is not None:
-            pid = find_ffmpeg_for_path(p)
+            pid, hls_dir = find_ffmpeg_info_for_path(p)
             if pid:
-                config.HLS_PROCESSES[rel] = ProcessProxy(pid)
+                config.HLS_PROCESSES[rel] = ProcessProxy(pid, hls_dir=hls_dir)
 
     # 1. Running HLS processes
     for fn, proc in list(config.HLS_PROCESSES.items()):
         if proc is not None and proc.poll() is None:
             try:
                 path = safe_path(fn)
-                hls_dir = hls_cache_dir(path)
+                hls_dir = getattr(proc, 'hls_dir', None) or hls_cache_dir(path)
                 playlist_file = hls_dir / 'playlist.m3u8'
                 is_complete = _is_hls_truly_complete(playlist_file, path)
                 if not is_complete:
@@ -444,6 +484,9 @@ def get_active_transcodes():
                     info = parse_prog(hls_dir / 'hls.progress', path, playlist_file)
                     m = movie_rows.get(fn, {})
                     title = m.get('title') or Path(fn).stem
+                    from app.services.media_resolver import is_anonymous_name
+                    if (is_anonymous_name(title) or not m.get('tmdb_id')) and path.is_file():
+                        _trigger_active_resolution(path)
                     poster = m.get('poster_path')
                     try:
                         poster_url = (
@@ -519,4 +562,119 @@ def get_active_transcodes():
                 pass
 
     return results
+
+
+def stop_transcodes_for_media(filename, path=None):
+    """Terminate and kill any active FFmpeg transcode processes associated with this media."""
+    stopped_pids = []
+    rel_name = str(filename)
+    if path is None:
+        try:
+            path = safe_path(rel_name)
+        except Exception:
+            path = None
+
+    # 1. Check in config.HLS_PROCESSES
+    proc = config.HLS_PROCESSES.pop(rel_name, None)
+    if proc is not None:
+        try:
+            pid = getattr(proc, 'pid', None)
+            if pid:
+                stopped_pids.append(pid)
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    pass
+            if hasattr(proc, 'terminate'):
+                proc.terminate()
+        except Exception as e:
+            logger.warning(f"Error terminating HLS process for {rel_name}: {e}")
+
+    # 2. Check for running external FFmpeg processes via /proc
+    if path is not None:
+        pid, hls_dir = find_ffmpeg_info_for_path(path)
+        if pid and pid not in stopped_pids:
+            stopped_pids.append(pid)
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+
+    # 3. Direct/compat MP4 transcodes
+    for lock_key, item in list(config.ACTIVE_DIRECT_TRANSCODES.items()):
+        if item.get('filename') == rel_name or (path is not None and str(item.get('path')) == str(path)):
+            p = item.get('process')
+            if p:
+                pid = getattr(p, 'pid', None)
+                if pid and pid not in stopped_pids:
+                    stopped_pids.append(pid)
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            config.ACTIVE_DIRECT_TRANSCODES.pop(lock_key, None)
+
+    # 4. Clean up any locks
+    config.TRANSCODE_LOCKS.pop(rel_name, None)
+    config.TRANSCODE_LOCKS.pop(f"{rel_name}:direct", None)
+    config.TRANSCODE_LOCKS.pop(f"{rel_name}:compat", None)
+
+    # 5. Grace period then SIGKILL if still running
+    if stopped_pids:
+        time.sleep(0.3)
+        for pid in stopped_pids:
+            try:
+                os.kill(pid, 0)
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+    return stopped_pids
+
+
+def purge_transcode_caches_for_media(path, known_hls_dir=None):
+    """Purge all HLS chunks, playlists, and transcoded MP4 files for the media path."""
+    purged = {'hls_dirs': [], 'mp4_files': []}
+
+    # 1. Purge known or calculated HLS directories
+    target_hls_dirs = []
+    if known_hls_dir and Path(known_hls_dir).is_dir():
+        target_hls_dirs.append(Path(known_hls_dir))
+
+    if path is not None and Path(path).exists():
+        try:
+            calc_dir = hls_cache_dir(path)
+            if calc_dir.is_dir() and calc_dir not in target_hls_dirs:
+                target_hls_dirs.append(calc_dir)
+        except Exception:
+            pass
+
+    for hd in target_hls_dirs:
+        try:
+            shutil.rmtree(hd, ignore_errors=True)
+            purged['hls_dirs'].append(str(hd))
+            logger.info(f"Purged HLS directory: {hd}")
+        except Exception as e:
+            logger.warning(f"Failed to remove HLS directory {hd}: {e}")
+
+    # 2. Purge direct & compat MP4 cache files if path exists or existed
+    if path is not None:
+        try:
+            for mode in ('direct', 'compat'):
+                try:
+                    mp4_path = transcode_cache_path(path, mode)
+                    if mp4_path.is_file():
+                        mp4_path.unlink(missing_ok=True)
+                        purged['mp4_files'].append(str(mp4_path))
+                    prog_path = transcode_progress_path(path, mode)
+                    prog_path.unlink(missing_ok=True)
+                    part_path = mp4_path.with_name(mp4_path.stem + '.part.mp4')
+                    part_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    return purged
+
 
