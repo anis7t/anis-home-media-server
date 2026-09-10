@@ -2,7 +2,7 @@
 .brand-icon{width:32px;height:32px;flex-shrink:0;border-radius:8px;filter:drop-shadow(0 2px 8px rgba(229,9,20,.45));transition:transform .2s cubic-bezier(.4,0,.2,1)}
 .brand-link:hover .brand-icon{transform:scale(1.05)}
 .brand-text{display:flex;align-items:baseline;gap:.35rem;white-space:nowrap}
-.brand-owner{font-size:1.22rem;font-weight:800;letter-spacing:-.4px;color:#fff;background:linear-gradient(135deg,#ffffff 40%,#cbd5e1 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand-owner{font-size:1.22rem;font-weight:800;letter-spacing:-.4px;color:#fff;background:linear-gradient(135deg,#ffffff 40%,#cbd5e1 100%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .brand-title{font-size:1.15rem;font-weight:700;letter-spacing:-.3px;color:#e50914}
 .details-nav{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.6rem;width:100%;min-width:0}
 .details-nav .back-btn{margin-bottom:0}
