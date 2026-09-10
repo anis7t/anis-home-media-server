@@ -198,9 +198,11 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn('id="subColorSelect"', html)
         self.assertIn('id="subBgSelect"', html)
         self.assertIn('id="subSizeSelect"', html)
+        self.assertIn('id="subPosSelect"', html)
         self.assertIn('video::cue', html)
         self.assertIn('toggleCC()', html)
         self.assertIn('applySubStyles()', html)
+        self.assertIn('controlsVisibleAtInteractionStart', html)
     def test_cache_status_and_subtitle_scale_coexist(self):
         mkv = Path(TMP.name) / 'SubtitleMkv.2026.mkv'
         mkv.write_bytes(b'dummy content')
