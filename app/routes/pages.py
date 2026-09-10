@@ -69,13 +69,16 @@ def details(filename):
     db.close()
     specs = extract_media_technical_specs(path, m)
     formatted_runtime = format_runtime_display(m.get('runtime'))
+    active_transcodes = get_active_transcodes()
+    transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
     return render_template(
         'details.html',
         movie=m,
         backdrop=backdrop,
         extended=extended,
         specs=specs,
-        formatted_runtime=formatted_runtime
+        formatted_runtime=formatted_runtime,
+        transcode_info=transcode_info
     )
 
 
@@ -88,10 +91,13 @@ def watch(filename):
     db = get_db()
     m = movie(path, db)
     db.close()
+    active_transcodes = get_active_transcodes()
+    transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
     return render_template(
         'player.html',
         movie=m,
-        tracks=tracks(path, m)
+        tracks=tracks(path, m),
+        transcode_info=transcode_info
     )
 
 

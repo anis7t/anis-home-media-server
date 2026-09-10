@@ -107,6 +107,25 @@
         </div>
       </div>
 
+      <!-- Real-Time Transcode Progress Card -->
+      <div id="detailsTranscodeCard" class="details-transcode-card" {%if not transcode_info%}style="display:none"{%endif%}>
+        <div class="dtc-header">
+          <div class="dtc-title-wrap">
+            <span class="pulse-dot" id="dtcPulse"></span>
+            <span class="dtc-title" id="dtcTitle">⚡ Transcoding in Progress</span>
+          </div>
+          <span class="dtc-pct" id="dtcPct">{{transcode_info.percent if transcode_info else '0'}}%</span>
+        </div>
+        <div class="transcode-track">
+          <div class="transcode-fill" id="dtcFill" style="width:{{transcode_info.percent if transcode_info else 0}}%"></div>
+        </div>
+        <div class="dtc-meta-row">
+          <span class="dtc-time" id="dtcTime">{{(transcode_info.encoded_str ~ ' / ' ~ transcode_info.duration_str) if transcode_info else '0:00 / 0:00'}}</span>
+          <span class="dtc-speed" id="dtcSpeed">{{transcode_info.speed_str if (transcode_info and transcode_info.speed_str) else ''}}</span>
+          <span class="dtc-eta" id="dtcEta">ETA: {{transcode_info.eta_str if transcode_info else 'Calculating...'}}</span>
+        </div>
+      </div>
+
       <div class="synopsis-block">
         <p class="synopsis-text">{{movie.overview or 'No synopsis is available for this title.'}}</p>
       </div>
@@ -272,6 +291,68 @@ function closeTrailer(){
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape')closeTrailer();
 });
+
+let dtcTimer=null;
+const fmtDtcTime=s=>{
+  s=Math.floor(s||0);
+  return (s>3599?Math.floor(s/3600)+':':'')+String(Math.floor(s%3600/60)).padStart(s>3599?2:1,'0')+':'+String(s%60).padStart(2,'0');
+};
+const fmtDtcEta=s=>{
+  if(s==null||!isFinite(s))return 'Calculating...';
+  s=Math.max(0,Math.round(s));
+  return s>=3600?Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m remaining':Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s remaining';
+};
+
+function pollDetailsTranscode(){
+  fetch('/api/transcode-status/'+encodeURIComponent(filename))
+    .then(r=>r.json())
+    .then(s=>{
+      const card=document.getElementById('detailsTranscodeCard');
+      if(!card)return;
+      if(s.status==='building'||s.status==='partial'){
+        card.style.display='block';
+        const pctEl=document.getElementById('dtcPct');
+        const fillEl=document.getElementById('dtcFill');
+        const timeEl=document.getElementById('dtcTime');
+        const spdEl=document.getElementById('dtcSpeed');
+        const etaEl=document.getElementById('dtcEta');
+        const pct=Math.min(99.9,Math.max(0,s.percent||0));
+        if(pctEl)pctEl.textContent=pct.toFixed(1)+'%';
+        if(fillEl)fillEl.style.width=Math.max(2,pct)+'%';
+        if(timeEl&&s.duration)timeEl.textContent=fmtDtcTime(s.encoded)+' / '+fmtDtcTime(s.duration);
+        if(spdEl)spdEl.textContent=s.speed>0?(s.speed.toFixed(1)+'x'):'';
+        if(etaEl)etaEl.textContent='ETA: '+fmtDtcEta(s.remaining);
+      }else if(s.status==='ready'){
+        if(card.style.display!=='none'){
+          const titleEl=document.getElementById('dtcTitle');
+          const pulseEl=document.getElementById('dtcPulse');
+          const fillEl=document.getElementById('dtcFill');
+          const pctEl=document.getElementById('dtcPct');
+          const etaEl=document.getElementById('dtcEta');
+          if(titleEl)titleEl.textContent='✓ Transcoding Complete';
+          if(pulseEl)pulseEl.className='pulse-dot idle';
+          if(fillEl){fillEl.style.width='100%';fillEl.style.background='#22c55e';}
+          if(pctEl)pctEl.textContent='100%';
+          if(etaEl)etaEl.textContent='Ready for stream';
+          if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
+          setTimeout(()=>{
+            card.style.transition='opacity 0.6s ease';
+            card.style.opacity='0';
+            setTimeout(()=>{card.style.display='none';},600);
+          },5000);
+        }else{
+          if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
+        }
+      }else if(s.status==='idle'){
+        if(card.style.display==='none'){
+          if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
+        }
+      }
+    })
+    .catch(()=>{});
+}
+pollDetailsTranscode();
+dtcTimer=setInterval(pollDetailsTranscode,2000);
 </script>
 </body>
 </html>

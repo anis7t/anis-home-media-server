@@ -536,4 +536,94 @@ class MediaServerTests(unittest.TestCase):
             self.assertTrue(saved_file.is_file())
             self.assertEqual(saved_file.read_bytes(), b'dummy-mkv-video-content')
 
+    def test_player_page_renders_header_branding_and_nav_links(self):
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+        self.assertIn('class="player-header"', html)
+        self.assertIn("Anis'", html)
+        self.assertIn('Media Server', html)
+        self.assertIn('class="player-header-actions"', html)
+        self.assertIn('← Home', html)
+        self.assertIn('ℹ Details', html)
+        self.assertIn('📁 My Library', html)
+
+    def test_player_and_details_pages_render_transcode_progress_elements(self):
+        # When no transcode is active, elements exist but are hidden (display:none)
+        watch_html = self.client.get('/watch/Example.2026.mp4').data.decode('utf-8')
+        self.assertIn('id="playerTranscodeCard"', watch_html)
+        self.assertIn('id="shellTranscodePill"', watch_html)
+        self.assertIn('pollTranscodeMonitor()', watch_html)
+
+        details_html = self.client.get('/movie/Example.2026.mp4').data.decode('utf-8')
+        self.assertIn('id="detailsTranscodeCard"', details_html)
+        self.assertIn('pollDetailsTranscode()', details_html)
+
+    def test_player_and_details_render_live_transcode_values_when_active(self):
+        mock_active = [{
+            'filename': 'Example.2026.mp4',
+            'title': 'Example',
+            'percent': 42.5,
+            'speed_str': '2.4x',
+            'encoded_str': '0:42',
+            'duration_str': '1:40',
+            'eta_str': '1m 15s',
+            'mode': 'HLS'
+        }]
+        with patch('app.routes.pages.get_active_transcodes', return_value=mock_active):
+            watch_html = self.client.get('/watch/Example.2026.mp4').data.decode('utf-8')
+            self.assertIn('42.5%', watch_html)
+            self.assertIn('2.4x', watch_html)
+            self.assertIn('1m 15s', watch_html)
+
+            details_html = self.client.get('/movie/Example.2026.mp4').data.decode('utf-8')
+            self.assertIn('42.5%', details_html)
+            self.assertIn('2.4x', details_html)
+            self.assertIn('1m 15s', details_html)
+
+    def test_player_merged_subtitle_button_and_controls_invariants(self):
+        mkv = Path(TMP.name) / 'MergedCC.2026.mkv'
+        mkv.write_bytes(b'dummy-content')
+        (Path(TMP.name) / 'MergedCC.2026.en.srt').write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+        res = self.client.get('/watch/MergedCC.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+
+        # Verify merged pill exists
+        self.assertIn('class="cc-merged-pill"', html)
+        self.assertIn('id="ccMergedPill"', html)
+        self.assertIn('class="cc-sep"', html)
+        self.assertIn('id="ccBtn"', html)
+        self.assertIn('id="subSettingsBtn"', html)
+
+        # Verify controls-row invariant: no nested <div>, starts with restartBtn
+        controls_row = html.split('<div class="controls-row">')[1].split('</div>')[0]
+        self.assertTrue(controls_row.startswith('<button id="restartBtn"'))
+        self.assertNotIn('<div', controls_row)
+        self.assertIn('id="ccMergedPill"', controls_row)
+
+        # Verify JS long-press & click handling
+        self.assertIn('ccHoldTimer', html)
+        self.assertIn('ccHoldFired', html)
+        self.assertIn('cancelCcHold', html)
+
+    def test_player_modals_fixed_viewport_and_dismissal(self):
+        mkv = Path(TMP.name) / 'ModalFix.2026.mkv'
+        mkv.write_bytes(b'dummy-content')
+        (Path(TMP.name) / 'ModalFix.2026.en.srt').write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+        res = self.client.get('/watch/ModalFix.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+
+        # Verify CSS rules for fixed viewport and backdrop shadow
+        self.assertIn('.sub-modal{position:fixed;z-index:100;left:50%;top:50%;transform:translate(-50%,-50%)', html)
+        self.assertIn('box-shadow:0 0 0 100vmax rgba(0,0,0,.7)', html)
+        self.assertIn('@media(max-width:768px){', html)
+        self.assertIn('.nerd-stats-hud{position:fixed;z-index:100;top:50%;left:50%;transform:translate(-50%,-50%)', html)
+
+        # Verify document click dismissal and Escape dismissal
+        self.assertIn("document.addEventListener('click',e=>{if(typeof subSettingsModal!=='undefined'", html)
+        self.assertIn("if(e.key==='Escape')", html)
+
+
 
