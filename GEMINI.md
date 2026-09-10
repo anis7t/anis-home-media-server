@@ -31,7 +31,15 @@
   }
   ```
   This guarantees that in non-fullscreen or tiled windows (e.g. 1024×424), the video element never overflows below the viewport.
-- **Cue Elevation**: Subtitle cues rendered via WebVTT must be elevated (baseline `line: -3.5`, `line: -4` for huge font sizes) so single-line and multi-line cues sit comfortably above the playback controls across all font sizes (75%–200%).
+- **Player Shell Container Isolation**: The `#shell` element uses `display: grid; place-items: center; overflow: hidden`. Supplementary page sections (such as `<main class="watch-info">`) MUST be placed outside `#shell` following its closing `</div>` (`</div><main class="watch-info">`). Never allow `#shell` to remain unclosed, as CSS grid placement will center supplementary content (such as movie posters and synopsis cards) directly over the `<video>` canvas.
+- **Dual-Axis Subtitle Positioning & Cue Elevation**:
+  - Subtitle settings must support both **Horizontal Alignment** (`center`, `left`, `right`) and **Vertical Position** (`bottom`, `raised`, `middle`, `top`).
+  - WebVTT cues must be elevated to prevent overlapping playback controls:
+    - `bottom` (Default): `c.snapToLines = true; c.line = isHuge ? -4.8 : -4`
+    - `raised`: `c.snapToLines = true; c.line = isHuge ? -6.2 : -5.5`
+    - `middle`: `c.snapToLines = false; c.line = 50`
+    - `top`: `c.snapToLines = true; c.line = 2`
+  - Subtitle preview elements (`#subPreviewBox`) must synchronize both `justifyContent` (horizontal) and `alignItems` (vertical).
 - **Timestamp Regex**: When converting or parsing WebVTT timestamps, match both `HH:MM:SS.mmm` and `MM:SS.mmm` (`r'((?:\d\d:)?\d\d:\d\d\.\d{3}\s*-->\s*(?:\d\d:)?\d\d:\d\d\.\d{3})'`).
 
 ## 5. Mobile Responsive & Viewport Clamping Invariants
@@ -72,3 +80,14 @@
   - `app/__init__.py` must export `app = create_app()` and all public interfaces (`init_db`, `get_db`, `CSS`, `DETAILS_HTML`, `video_paths`, `_paths`, etc.) to maintain 100% compatibility with test imports and external scripts.
   - Root `app.py` must remain lightweight and executable as the systemd entrypoint (`/usr/bin/python3 /home/iamroot/media-server-1/app.py`).
 - **Dual Blueprint Endpoint Aliasing**: In `create_app()`, all blueprint endpoints must also be registered as bare route names (e.g. `details` alongside `pages.details`, `poster` alongside `api.poster`) so that `url_for('details')` calls in templates and helpers resolve cleanly without blueprint prefix requirements.
+
+## 8. Player Gestures, Navigation & Telemetry Invariants
+- **Tap-to-Reveal Playback Interaction**:
+  - When controls are hidden during active playback, a tap/click on `#shell` must FIRST reveal controls without toggling play/pause.
+  - Play/pause should only toggle if the controls were already visible when the user initiated the interaction.
+- **Non-Redundant Navigation & Title Alignment**:
+  - The in-player back button (`.watch-back`) must use concise text (`← Details` or `← Back`) to avoid duplicating title text alongside `.watch-title-badge`.
+  - `.watch-title-badge` must declare an explicit horizontal offset (`left: calc(1.2rem + 95px)`) and `max-width` clamping so it sits adjacent to the back button without visual clipping or overlap.
+- **Stats for Nerds (Telemetry HUD)**:
+  - Technical telemetry buttons in `.controls-row` must be direct child buttons (preserving `#restartBtn` as the first element and no nested `<div>`s in `.controls-row`).
+  - Live stats HUD (`#nerdStatsHud`) must track `v.getVideoPlaybackQuality()` (dropped/total frames), native vs viewport resolution, forward buffer calculation, and stream transcode state, accessible via button, close button, and keyboard shortcut `n` / `N`.
