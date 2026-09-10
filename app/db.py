@@ -40,6 +40,47 @@ def init_db():
     for name, spec in (("release_date", "TEXT"), ("added_at", "INTEGER"), ("details_json", "TEXT")):
         if name not in columns:
             db.execute(f"ALTER TABLE movies ADD COLUMN {name} {spec}")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS devices("
+        "device_id TEXT PRIMARY KEY,"
+        "custom_name TEXT,"
+        "device_name TEXT,"
+        "device_type TEXT,"
+        "device_os TEXT,"
+        "browser TEXT,"
+        "user_agent TEXT,"
+        "connection_type TEXT,"
+        "client_ip TEXT,"
+        "public_ip TEXT,"
+        "mac_address TEXT,"
+        "isp TEXT,"
+        "city TEXT,"
+        "country TEXT,"
+        "first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        "last_seen DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS device_watch_history("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "device_id TEXT NOT NULL,"
+        "filename TEXT NOT NULL,"
+        "position REAL NOT NULL DEFAULT 0,"
+        "duration REAL NOT NULL DEFAULT 0,"
+        "completed INTEGER NOT NULL DEFAULT 0,"
+        "last_watched DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        "UNIQUE(device_id, filename))"
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS ip_cache("
+        "ip TEXT PRIMARY KEY,"
+        "isp TEXT,"
+        "org TEXT,"
+        "city TEXT,"
+        "country TEXT,"
+        "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_dwh_device ON device_watch_history(device_id, last_watched DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON progress(updated_at DESC)")
     db.execute("INSERT OR IGNORE INTO schema_migrations VALUES(1)")
     db.commit()
