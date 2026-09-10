@@ -20,3 +20,5 @@ app.py.phase2
 # OS/editor files
 .DS_Store
 *.log
+.agents/
+skills-lock.json
