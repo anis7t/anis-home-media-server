@@ -49,6 +49,7 @@ A temporary Quick Tunnel was used earlier for initial testing, but agents should
 
 - The custom hostname provides stable addressing but does not itself provide application authentication.
 - Production WSGI deployment is powered by Gunicorn (`gthread` worker with 8 threads) managed by systemd (`media-server.service`), wrapped with Werkzeug's `ProxyFix` middleware to handle Cloudflare tunnel and reverse proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`).
+- Ensure user lingering is enabled (`loginctl enable-linger iamroot`) so user-level systemd services persist across terminal/SSH sessions and start on system boot without requiring an active desktop login.
 - Prefer configuration through environment variables or an appropriate secrets mechanism.
 - Review Cloudflare's current service-specific video/large-file policies before using the public proxy path to deliver the entire media library.
 

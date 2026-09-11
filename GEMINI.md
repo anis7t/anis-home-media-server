@@ -156,3 +156,19 @@
   - Implement periodic client keepalive pings (`POST /api/devices/heartbeat` every 40s) only when `document.visibilityState === 'visible'`.
   - Dispatch a `navigator.sendBeacon('/api/devices/heartbeat')` on the `pagehide` event to immediately mark the client's departure or final active timestamp.
   - Active threshold must be bounded (e.g. 3 minutes) with distinct status indicators (🟢 Active now vs ⚪ Offline) and top-level filter tabs.
+
+## 13. Single-Script Block & Dynamic Asset Injection Invariants
+- **Single Script Block on Player View**: In `templates/player.html`, automated test invariants strictly assert that the template contains exactly one `<script>` block (`html.count('</script>') == 1`). Never add auxiliary `<script src="...">` or `<script>` tags to `player.html`.
+- **Dynamic Script Loading**: When external JavaScript modules (such as navigation transitions, telemetry, or third-party libraries) must be included on the player page, inject them dynamically from within the existing `<script>` block:
+  ```javascript
+  const s = document.createElement('script');
+  s.src = '/static/js/nav.js';
+  s.defer = true;
+  document.head.appendChild(s);
+  ```
+
+## 14. Navigation Transitions, Canvas Isolation & Motion Accessibility
+- **Player Canvas Isolation**: Video playback containers (`#shell`, `<video>`, `.watch-info`) must remain strictly isolated from page-enter and cross-document transition animations (e.g. `main:not(#shell):not(.watch-info)`). Never apply layout transforms or translate keyframes to `#shell`.
+- **Motion Accessibility**: All view transitions, progress bars, and page enter animations must provide `@media (prefers-reduced-motion: reduce)` overrides (`animation: none !important; transition: none !important; display: none !important;`).
+- **bfcache (Back/Forward Cache) Resilience**: Navigation progress indicators must bind to the `pageshow` event and check `e.persisted` to immediately reset animation and dimming states when users navigate with browser Back/Forward gestures.
+
