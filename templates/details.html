@@ -354,6 +354,36 @@ function pollDetailsTranscode(){
 }
 pollDetailsTranscode();
 dtcTimer=setInterval(pollDetailsTranscode,2000);
+
+// Telemetry keepalive & Client Hints
+if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+  navigator.userAgentData.getHighEntropyValues(['model', 'platform', 'platformVersion'])
+    .then(hints => {
+      if (hints && (hints.model || hints.platformVersion)) {
+        fetch('/api/devices/client-hints', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            model: hints.model,
+            platform: hints.platform,
+            platformVersion: hints.platformVersion
+          })
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+}
+function pingHeartbeat() {
+  if (document.visibilityState === 'visible') {
+    fetch('/api/devices/heartbeat', {method: 'POST'}).catch(() => {});
+  }
+}
+setInterval(pingHeartbeat, 45000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') pingHeartbeat();
+});
+window.addEventListener('pagehide', () => {
+  if (navigator.sendBeacon) navigator.sendBeacon('/api/devices/heartbeat');
+});
 </script>
 </body>
 </html>

@@ -107,10 +107,14 @@ from app.services.device_service import (
     get_or_create_device_id,
     lookup_geoip_and_isp,
     parse_user_agent,
+    record_device_heartbeat,
     record_device_watch,
     register_device_request,
     rename_device,
+    resolve_device_make_model,
+    resolve_device_os,
     resolve_mac_address,
+    update_device_client_hints,
 )
 
 # Frontend assets & templates for test assertions
@@ -195,6 +199,15 @@ def create_app(test_config=None):
     @app_instance.errorhandler(403)
     def denied(_):
         return render_template('error.html', code=403, message='That location is not available.'), 403
+
+    @app_instance.after_request
+    def add_client_hints_headers(response):
+        response.headers['Accept-CH'] = (
+            'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Platform, '
+            'Sec-CH-UA-Mobile, Sec-CH-UA-Arch, Sec-CH-UA-Bitness'
+        )
+        response.headers['Permissions-Policy'] = 'ch-ua-model=*, ch-ua-platform-version=*'
+        return response
 
     return app_instance
 

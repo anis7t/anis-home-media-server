@@ -55,7 +55,16 @@
         <span class="metric-icon">🟢</span>
       </div>
       <div class="metric-value">{{stats.active_now}}</div>
-      <div class="metric-sub">Seen in Last 15 Minutes</div>
+      <div class="metric-sub">Seen in Last 3 Minutes</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-header">
+        <span class="metric-label">Offline Devices</span>
+        <span class="metric-icon">⚪</span>
+      </div>
+      <div class="metric-value">{{stats.offline_count}}</div>
+      <div class="metric-sub">Preserved Client Profiles</div>
     </div>
 
     <div class="metric-card">
@@ -85,11 +94,24 @@
     </div>
   </div>
 
+  <!-- Filter Bar -->
+  <div class="dev-filter-bar">
+    <button type="button" class="dev-filter-pill is-active" data-filter="all" onclick="setDeviceFilter('all')">
+      All Devices <span class="filter-badge">{{stats.total_devices}}</span>
+    </button>
+    <button type="button" class="dev-filter-pill" data-filter="active" onclick="setDeviceFilter('active')">
+      Active Now <span class="filter-badge badge-active">{{stats.active_now}}</span>
+    </button>
+    <button type="button" class="dev-filter-pill" data-filter="offline" onclick="setDeviceFilter('offline')">
+      Offline <span class="filter-badge badge-offline">{{stats.offline_count}}</span>
+    </button>
+  </div>
+
   <!-- Devices Cards List -->
   {%if devices%}
   <div class="devices-list">
     {%for dev in devices%}
-    <article class="device-card {%if dev.is_current%}is-current-device{%endif%}" id="card-{{dev.device_id}}">
+    <article class="device-card {%if dev.is_current%}is-current-device{%endif%}" id="card-{{dev.device_id}}" data-active="{{'true' if dev.is_active else 'false'}}">
       <!-- Card Header -->
       <div class="dev-card-header">
         <div class="dev-identity-wrap">
@@ -100,9 +122,13 @@
               {%if dev.is_current%}
               <span class="badge-this-device">This Device</span>
               {%endif%}
-              <button type="button" class="btn-dev-rename" onclick="openRenameModal('{{dev.device_id}}', '{{dev.display_name}}')" title="Rename Device">✏️</button>
+              <button type="button" class="btn-dev-rename" data-id="{{dev.device_id}}" data-name="{{dev.display_name|e}}" onclick="openRenameModal(this.dataset.id, this.dataset.name)" title="Rename Device">✏️</button>
             </div>
             <div class="dev-hardware-sub">
+              {%if dev.device_model%}
+              <span class="dev-model-badge">{{dev.device_model}}</span>
+              <span class="dev-dot">·</span>
+              {%endif%}
               <span>{{dev.device_os}}</span>
               <span class="dev-dot">·</span>
               <span>{{dev.browser}}</span>
@@ -114,11 +140,11 @@
 
         <div class="dev-header-actions">
           <!-- Connection Badge -->
-          {%if 'Cloudflare' in dev.connection_type%}
+          {%if dev.connection_type and 'Cloudflare' in dev.connection_type%}
           <span class="conn-pill conn-cloudflare" title="Connected via Cloudflare Quick Tunnel (*.trycloudflare.com)">🌐 Cloudflare Tunnel</span>
-          {%elif 'LAN' in dev.connection_type%}
+          {%elif dev.connection_type and 'LAN' in dev.connection_type%}
           <span class="conn-pill conn-lan" title="Connected via Local Area Network (192.168.1.x)">🔵 Local Network (LAN)</span>
-          {%elif 'Localhost' in dev.connection_type%}
+          {%elif dev.connection_type and 'Localhost' in dev.connection_type%}
           <span class="conn-pill conn-local" title="Connected directly on Host Machine (127.0.0.1)">🟢 Localhost (127.0.0.1)</span>
           {%else%}
           <span class="conn-pill conn-direct" title="Connected via Direct Public WAN">⚡ Internet (Direct)</span>
@@ -128,16 +154,26 @@
           {%if dev.is_active%}
           <span class="dev-status-pill status-active"><span class="pulse-dot-active"></span>Active now</span>
           {%else%}
-          <span class="dev-status-pill status-idle">Seen {{dev.last_seen_ago}}</span>
+          <span class="dev-status-pill status-idle"><span class="idle-dot">⚪</span>Offline · Seen {{dev.last_seen_ago}}</span>
           {%endif%}
 
           <!-- Delete Device Button -->
-          <button type="button" class="btn-dev-delete" onclick="openDeleteDeviceModal('{{dev.device_id}}', '{{dev.display_name}}')" title="Remove device from dashboard">✕</button>
+          <button type="button" class="btn-dev-delete" data-id="{{dev.device_id}}" data-name="{{dev.display_name|e}}" onclick="openDeleteDeviceModal(this.dataset.id, this.dataset.name)" title="Remove device from dashboard">✕</button>
         </div>
       </div>
 
       <!-- Network & Hardware Telemetry Grid -->
       <div class="dev-telemetry-grid">
+        <div class="dev-spec-item">
+          <span class="spec-label">Hardware Make & Model</span>
+          <span class="spec-value">{{dev.device_model or dev.device_name or '—'}}</span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Operating System</span>
+          <span class="spec-value">{{dev.device_os or '—'}}</span>
+        </div>
+
         <div class="dev-spec-item">
           <span class="spec-label">Client IP Address</span>
           <span class="spec-value code-font">{{dev.client_ip or '—'}}</span>
@@ -145,7 +181,7 @@
 
         <div class="dev-spec-item">
           <span class="spec-label">Hardware MAC Address</span>
-          <span class="spec-value code-font {%if 'WAN' in dev.mac_address%}spec-faded{%endif%}">{{dev.mac_address or '—'}}</span>
+          <span class="spec-value code-font {%if dev.mac_address and 'WAN' in dev.mac_address%}spec-faded{%endif%}">{{dev.mac_address or '—'}}</span>
         </div>
 
         <div class="dev-spec-item">
@@ -162,6 +198,14 @@
           <span class="spec-label">Estimated Location</span>
           <span class="spec-value">
             {%if dev.city and dev.city != 'Unknown'%}{{dev.city}}, {%endif%}{{dev.country or 'Local'}}
+          </span>
+        </div>
+
+        <div class="dev-spec-item">
+          <span class="spec-label">Last Seen</span>
+          <span class="spec-value spec-highlight" id="lastseen-{{dev.device_id}}">
+            {{dev.last_seen_ago}}
+            <span class="spec-utc" title="Recorded timestamp">({{dev.last_seen[:19] if dev.last_seen else '—'}})</span>
           </span>
         </div>
 
@@ -321,6 +365,25 @@
 </dialog>
 
 <script>
+// Filter devices handler (All / Active / Offline)
+let currentFilter = 'all';
+function setDeviceFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.dev-filter-pill').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.filter === filter);
+  });
+  document.querySelectorAll('.device-card').forEach(card => {
+    const isActive = card.dataset.active === 'true';
+    if (filter === 'all') {
+      card.style.display = '';
+    } else if (filter === 'active') {
+      card.style.display = isActive ? '' : 'none';
+    } else if (filter === 'offline') {
+      card.style.display = !isActive ? '' : 'none';
+    }
+  });
+}
+
 // Rename modal handlers
 const renameModal = document.getElementById('renameModal');
 const renameDeviceId = document.getElementById('renameDeviceId');
@@ -357,6 +420,14 @@ async function handleRenameSubmit(e) {
     if (data.success) {
       const heading = document.getElementById('name-' + devId);
       if (heading) heading.textContent = newName || 'Device';
+      // Also update data-name attribute on rename and delete buttons
+      const card = document.getElementById('card-' + devId);
+      if (card) {
+        const renBtn = card.querySelector('.btn-dev-rename');
+        if (renBtn) renBtn.dataset.name = newName || 'Device';
+        const delBtn = card.querySelector('.btn-dev-delete');
+        if (delBtn) delBtn.dataset.name = newName || 'Device';
+      }
       closeRenameModal();
     } else {
       alert(data.error || 'Failed to rename device');
@@ -406,7 +477,10 @@ async function handleDeleteDeviceSubmit(e) {
         card.style.transition = 'all .3s ease';
         card.style.opacity = '0';
         card.style.transform = 'translateY(-10px)';
-        setTimeout(() => card.remove(), 300);
+        setTimeout(() => {
+          card.remove();
+          refreshTelemetry();
+        }, 300);
       }
       closeDeleteDeviceModal();
     } else {
@@ -419,6 +493,92 @@ async function handleDeleteDeviceSubmit(e) {
     deleteDeviceBtn.textContent = 'Remove Device';
   }
 }
+
+// Client Hints High-Entropy Telemetry: Resolves true Android version & device make/model
+if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+  navigator.userAgentData.getHighEntropyValues(['model', 'platform', 'platformVersion'])
+    .then(hints => {
+      if (hints && (hints.model || hints.platformVersion)) {
+        fetch('/api/devices/client-hints', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            model: hints.model,
+            platform: hints.platform,
+            platformVersion: hints.platformVersion
+          })
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+}
+
+// Keepalive Heartbeat: every 40 seconds when page is visible
+function pingHeartbeat() {
+  if (document.visibilityState === 'visible') {
+    fetch('/api/devices/heartbeat', {method: 'POST'}).catch(() => {});
+  }
+}
+setInterval(pingHeartbeat, 40000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') pingHeartbeat();
+});
+window.addEventListener('pagehide', () => {
+  if (navigator.sendBeacon) navigator.sendBeacon('/api/devices/heartbeat');
+});
+
+// Live Telemetry Auto-Refresh: updates metrics and active/offline states without page reload
+async function refreshTelemetry() {
+  if (document.visibilityState !== 'visible') return;
+  if (renameModal.open || deleteDeviceModal.open) return;
+  try {
+    const res = await fetch('/api/devices');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.stats) {
+      const s = data.stats;
+      const metricVals = document.querySelectorAll('.manage-metrics-section .metric-value');
+      if (metricVals.length >= 5) {
+        metricVals[0].textContent = s.total_devices;
+        metricVals[1].textContent = s.active_now;
+        metricVals[2].textContent = s.offline_count;
+        metricVals[3].textContent = s.cloudflare_count;
+        metricVals[4].textContent = s.lan_count + s.localhost_count;
+      }
+      const bAll = document.querySelector('.dev-filter-pill[data-filter="all"] .filter-badge');
+      if (bAll) bAll.textContent = s.total_devices;
+      const bAct = document.querySelector('.dev-filter-pill[data-filter="active"] .filter-badge');
+      if (bAct) bAct.textContent = s.active_now;
+      const bOff = document.querySelector('.dev-filter-pill[data-filter="offline"] .filter-badge');
+      if (bOff) bOff.textContent = s.offline_count;
+    }
+
+    if (data.devices) {
+      data.devices.forEach(dev => {
+        const card = document.getElementById('card-' + dev.device_id);
+        if (card) {
+          card.dataset.active = dev.is_active ? 'true' : 'false';
+          const statusPill = card.querySelector('.dev-status-pill');
+          if (statusPill) {
+            if (dev.is_active) {
+              statusPill.className = 'dev-status-pill status-active';
+              statusPill.innerHTML = '<span class="pulse-dot-active"></span>Active now';
+            } else {
+              statusPill.className = 'dev-status-pill status-idle';
+              statusPill.innerHTML = '<span class="idle-dot">⚪</span>Offline · Seen ' + dev.last_seen_ago;
+            }
+          }
+          const lsEl = document.getElementById('lastseen-' + dev.device_id);
+          if (lsEl) {
+            lsEl.innerHTML = dev.last_seen_ago + ' <span class="spec-utc">(' + (dev.last_seen ? dev.last_seen.substring(0, 19) : '—') + ')</span>';
+          }
+        }
+      });
+      setDeviceFilter(currentFilter);
+    }
+  } catch (err) {}
+}
+setInterval(refreshTelemetry, 15000);
 </script>
 </body>
 </html>

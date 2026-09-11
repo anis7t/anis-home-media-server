@@ -447,6 +447,31 @@ def api_devices_delete():
         return jsonify(error="device_id is required"), 400
     from app.services.device_service import delete_device
     delete_device(device_id)
-    return jsonify(success=True)
+    res = jsonify(success=True)
+    if request.cookies.get('ms_device_id') == device_id:
+        res.delete_cookie('ms_device_id', path='/')
+    return res
+
+
+@api_bp.route('/api/devices/heartbeat', methods=['POST', 'GET'])
+def api_devices_heartbeat():
+    """Receive lightweight client keepalive ping and update device last_seen."""
+    from app.services.device_service import record_device_heartbeat
+    dev_id = record_device_heartbeat(request)
+    return jsonify(success=True, device_id=dev_id)
+
+
+@api_bp.route('/api/devices/client-hints', methods=['POST'])
+def api_devices_client_hints():
+    """Receive client-side high-entropy userAgentData (model, platform, platformVersion)."""
+    data = request.get_json(silent=True) or {}
+    model = data.get('model')
+    platform = data.get('platform')
+    platform_version = data.get('platformVersion')
+
+    from app.services.device_service import get_or_create_device_id, update_device_client_hints
+    device_id, _ = get_or_create_device_id(request)
+    updated = update_device_client_hints(device_id, model=model, platform=platform, platform_version=platform_version)
+    return jsonify(success=True, updated=updated, device_id=device_id)
 
 

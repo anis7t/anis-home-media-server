@@ -295,3 +295,116 @@ class TestDeviceLifecycleAndRoutes:
 
         manage_html = client.get("/manage").get_data(as_text=True)
         assert 'href="/devices"' in manage_html
+
+    def test_client_hints_parsing(self):
+        req = MagicMock()
+        req.headers = {
+            "Sec-CH-UA-Model": '"I2202"',
+            "Sec-CH-UA-Platform": '"Android"',
+            "Sec-CH-UA-Platform-Version": '"14.0.0"',
+            "Sec-CH-UA-Mobile": "?1",
+        }
+        ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+        res = parse_user_agent(ua, req=req)
+        assert res["device_name"] == "Vivo iQOO Neo 7"
+        assert "iQOO Neo 7" in res["device_model"]
+        assert res["device_os"] == "Android 14"
+        assert res["device_type"] == "Mobile"
+
+    def test_iqoo_and_samsung_model_resolution(self):
+        from app.services.device_service import resolve_device_make_model, resolve_device_os
+        name, model = resolve_device_make_model("I2011")
+        assert name == "Vivo iQOO 7"
+        assert "iQOO 7" in model
+
+        name, model = resolve_device_make_model("I2301")
+        assert name == "Vivo iQOO 12"
+
+        name, model = resolve_device_make_model("SM-S918B")
+        assert "Samsung Galaxy" in name
+
+        os_resolved = resolve_device_os("Android 10", "Android", "15.0.0")
+        assert os_resolved == "Android 15"
+
+        win_resolved = resolve_device_os("Windows 10/11", "Windows", "15.0.0")
+        assert win_resolved == "Windows 11"
+
+    def test_special_characters_rename_and_html_render(self, client):
+        # Register device
+        dev_res = client.get("/api/devices")
+        dev_id = dev_res.get_json()["current_device_id"]
+
+        # Rename with apostrophe (e.g. Anis' iPhone 15 Pro)
+        name_with_apostrophe = "Anis' iPhone 15 Pro"
+        rename_res = client.post(
+            "/api/devices/rename",
+            json={"device_id": dev_id, "name": name_with_apostrophe}
+        )
+        assert rename_res.status_code == 200
+        assert rename_res.get_json()["success"] is True
+
+        # Render HTML and verify data attributes are safely escaped
+        html_res = client.get("/devices")
+        html = html_res.get_data(as_text=True)
+        assert f'data-id="{dev_id}"' in html
+        assert 'Anis&#39; iPhone 15 Pro' in html or "Anis' iPhone 15 Pro" in html
+        assert 'data-name="Anis&#39; iPhone 15 Pro"' in html or 'data-name="Anis\' iPhone 15 Pro"' in html
+        # Ensure broken inline quote pattern is not used
+        assert f"openRenameModal('{dev_id}', 'Anis' iPhone" not in html
+
+    def test_heartbeat_api(self, client):
+        res = client.post("/api/devices/heartbeat")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["success"] is True
+        assert "device_id" in data
+
+    def test_client_hints_api(self, client):
+        # Register a device first
+        dev_res = client.get("/api/devices")
+        dev_id = dev_res.get_json()["current_device_id"]
+
+        # Post client hints
+        res = client.post(
+            "/api/devices/client-hints",
+            json={
+                "model": "I2202",
+                "platform": "Android",
+                "platformVersion": "14.0.0"
+            }
+        )
+        assert res.status_code == 200
+        assert res.get_json()["success"] is True
+
+        # Check updated device details in /api/devices
+        dev_res2 = client.get("/api/devices")
+        updated_dev = next(d for d in dev_res2.get_json()["devices"] if d["device_id"] == dev_id)
+        assert updated_dev["device_name"] == "Vivo iQOO Neo 7"
+        assert updated_dev["device_os"] == "Android 14"
+        assert "iQOO Neo 7" in updated_dev["device_model"]
+
+    def test_active_and_offline_stats(self, client):
+        # Create an active device and an older (offline) device
+        client.get("/devices")
+        db = get_db()
+        db.execute(
+            "INSERT INTO devices(device_id, device_name, device_type, device_os, browser, connection_type, client_ip, first_seen, last_seen) "
+            "VALUES('dev_old_offline', 'Old Laptop', 'Desktop', 'Windows 10', 'Chrome 100', 'Local Network (LAN)', '192.168.1.99', datetime('now', '-10 minutes'), datetime('now', '-10 minutes'))"
+        )
+        db.commit()
+        db.close()
+
+        res = client.get("/api/devices")
+        data = res.get_json()
+        stats = data["stats"]
+        assert stats["total_devices"] >= 2
+        assert stats["active_now"] >= 1
+        assert stats["offline_count"] >= 1
+        assert stats["total_devices"] == stats["active_now"] + stats["offline_count"]
+
+        # Check rendered HTML for offline pill and last seen spec
+        html = client.get("/devices").get_data(as_text=True)
+        assert "Offline Devices" in html
+        assert "Last Seen" in html
+        assert "Offline · Seen" in html
+

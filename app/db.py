@@ -59,6 +59,12 @@ def init_db():
         "first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,"
         "last_seen DATETIME DEFAULT CURRENT_TIMESTAMP)"
     )
+    dev_cols = [c[1] for c in db.execute("PRAGMA table_info(devices)").fetchall()]
+    if "device_model" not in dev_cols:
+        try:
+            db.execute("ALTER TABLE devices ADD COLUMN device_model TEXT")
+        except Exception:
+            pass
     db.execute(
         "CREATE TABLE IF NOT EXISTS device_watch_history("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
