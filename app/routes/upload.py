@@ -46,6 +46,27 @@ def _safe_filename(filename):
     return clean_name, suffix
 
 
+def _is_anonymous_filename(filename):
+    """Return True for numeric/generic device-generated filenames that cannot safely identify a movie."""
+    stem = Path(filename).stem.strip(" -._'\"")
+    if not stem:
+        return True
+    if re.fullmatch(r"\d+", stem):
+        return True
+    if re.fullmatch(r"[0-9a-fA-F-]{8,}", stem):
+        return True
+    generic_prefixes = (
+        "vid_", "video_", "mov_", "movie_", "dsc_", "img_",
+        "untitled", "unknown", "file", "upload", "stream", "part"
+    )
+    lower = stem.lower()
+    return any(
+        lower.startswith(prefix)
+        and (len(lower) == len(prefix) or re.search(r"\d", lower))
+        for prefix in generic_prefixes
+    )
+
+
 def _safe_target_name(clean_name):
     config.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
     target_path = (config.MEDIA_ROOT / clean_name).resolve()
@@ -170,6 +191,10 @@ def chunk_upload_init():
         safe_title = re.sub(r'\s+', ' ', safe_title)
         if safe_title:
             clean_name = f"{safe_title}{suffix}"
+    elif _is_anonymous_filename(clean_name):
+        return jsonify(
+            error="This upload has an anonymous or numeric filename. Enter the movie title before uploading so the server does not guess the wrong movie."
+        ), 400
 
     upload_id = secrets.token_urlsafe(24)
     _ensure_upload_dir()
