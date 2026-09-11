@@ -75,5 +75,5 @@ This separation keeps application development and Internet tunneling independent
 
 ## Next recommended improvements
 1. Add authentication/access protection to the media server before sharing the public URL.
-2. Run the application with a production WSGI server (for example Gunicorn or Waitress) rather than relying on the Flask development server for ongoing public access.
+2. [Completed] Production WSGI deployment is live using Gunicorn (`gthread` worker, 8 threads, 120s streaming timeout) with `ProxyFix` middleware and managed by systemd (`media-server.service`).
 3. For a permanent public hostname later, replace the Quick Tunnel with a named Cloudflare Tunnel/domain or another stable reverse-tunnel/VPS architecture.

@@ -213,6 +213,17 @@ def create_app(test_config=None):
         response.headers['Permissions-Policy'] = 'ch-ua-model=*, ch-ua-platform-version=*'
         return response
 
+    # Wrap with ProxyFix for reverse proxy and Cloudflare tunnel support
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app_instance.wsgi_app = ProxyFix(
+        app_instance.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+        x_prefix=1
+    )
+
     return app_instance
 
 

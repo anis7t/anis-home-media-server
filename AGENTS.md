@@ -36,8 +36,7 @@ The generated `trycloudflare.com` hostname is temporary and only works while the
 ## Security / Deployment Notes
 
 - A Quick Tunnel does not automatically provide application authentication. Treat the generated public URL as an access credential and do not publish it unnecessarily.
-- Do not commit API keys, passwords, tunnel credentials, tokens, or other secrets.
-- The Flask development server should not be treated as the final production deployment. A production WSGI server and proper access control should be considered before long-term public exposure.
+- Production WSGI deployment is powered by Gunicorn (`gthread` worker with 8 threads) managed by systemd (`media-server.service`), wrapped with Werkzeug's `ProxyFix` middleware to handle Cloudflare tunnel and reverse proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`).
 - Prefer configuration through environment variables or an appropriate secrets mechanism.
 
 ## Existing Documentation
