@@ -136,3 +136,23 @@
 - **Exponentially Smoothed Upload ETA**:
   - Upload progress handlers must apply exponential moving average smoothing to transfer speed (`smoothSpeed = smoothSpeed * 0.7 + instSpeed * 0.3`) and render human-readable remaining time (`ETA: Xm Ys` or `ETA: Xs`).
 
+## 11. Jinja Template Safety & DOM Attribute Invariants
+- **Data Attributes for Dynamic Values**: Never pass dynamic Jinja expressions directly into inline JavaScript function arguments (e.g., `onclick="fn('{{ dev.name }}')"`). Unescaped quotes or apostrophes (such as `Anis' iPhone`) cause JavaScript `SyntaxError: missing ) after argument list`. Always bind values to HTML5 data attributes with HTML escaping (`data-name="{{ dev.name|e }}"`) and retrieve them via `this.dataset.name` or `element.dataset.*`.
+- **Defensive NoneType Containment Checks**: Jinja's `in` operator raises `TypeError: argument of type 'NoneType' is not a container or iterable` when checking containment against a variable that can be `None`. Always guard with an explicit truthiness check:
+  ```jinja2
+  {% if dev.mac_address and 'WAN' in dev.mac_address %}
+  ```
+
+## 12. Client Telemetry, User-Agent Reduction & Heartbeats
+- **Chromium High-Entropy Client Hints**: To identify Android device make, model, and OS versions accurately despite Chromium User-Agent Reduction (which freezes UAs to `Linux; Android 10; K`):
+  - In `create_app()`, set response headers:
+    ```python
+    response.headers['Accept-CH'] = 'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Platform, Sec-CH-UA-Mobile, Sec-CH-UA-Arch, Sec-CH-UA-Bitness'
+    response.headers['Permissions-Policy'] = 'ch-ua-model=*, ch-ua-platform-version=*'
+    ```
+  - Use `navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion'])` on the client to report real hardware models and Android releases to `POST /api/devices/client-hints`.
+  - Maintain a brand/model decoding dictionary in `device_service.py` to translate OEM model codes (e.g., `I2011`, `SM-S928B`, `Pixel 8`) into human-readable consumer names.
+- **Client Heartbeat & Active State Lifecycle**:
+  - Implement periodic client keepalive pings (`POST /api/devices/heartbeat` every 40s) only when `document.visibilityState === 'visible'`.
+  - Dispatch a `navigator.sendBeacon('/api/devices/heartbeat')` on the `pagehide` event to immediately mark the client's departure or final active timestamp.
+  - Active threshold must be bounded (e.g. 3 minutes) with distinct status indicators (🟢 Active now vs ⚪ Offline) and top-level filter tabs.
