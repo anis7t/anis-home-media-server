@@ -37,35 +37,6 @@ def media(filename):
     path = safe_path(filename)
     if not is_video(path):
         abort(404)
-    size = path.stat().st_size
-    ran = parse_range(request.headers.get('Range'), size)
-    headers = {
-        'Accept-Ranges': 'bytes',
-        'Content-Type': mimetype(path),
-        'Cache-Control': 'private, max-age=3600'
-    }
-    if ran == 'bad':
-        return Response(status=416, headers={**headers, 'Content-Range': f'bytes */{size}'})
-    if ran:
-        start, end = ran
-        length = end - start + 1
-
-        def stream():
-            with path.open('rb') as f:
-                f.seek(start)
-                left = length
-                while left:
-                    data = f.read(min(left, 1024 * 1024))
-                    if not data:
-                        break
-                    left -= len(data)
-                    yield data
-
-        return Response(
-            stream(),
-            206,
-            {**headers, 'Content-Length': str(length), 'Content-Range': f'bytes {start}-{end}/{size}'}
-        )
     return send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)
 
 
