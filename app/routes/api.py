@@ -1,5 +1,6 @@
 """JSON API endpoints and image asset routes."""
 import json
+import logging
 import os
 import re
 import sys
@@ -12,6 +13,8 @@ from flask import Blueprint, abort, jsonify, request, send_file
 
 from app import config
 from app.db import get_db, value
+
+logger = logging.getLogger(__name__)
 from app.services.media_service import probe_media
 from app.services.scanner_service import trigger_library_scan
 from app.services.tmdb_service import download_poster
