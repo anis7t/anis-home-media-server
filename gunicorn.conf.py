@@ -48,3 +48,4 @@ def on_starting(server):
     init_db()
     start_auto_transcoder_worker()
     start_media_scanner_worker()
+

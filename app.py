@@ -122,9 +122,12 @@ if __name__ == '__main__':
     use_gunicorn = os.environ.get('FLASK_DEBUG', '0') != '1' and not os.environ.get('USE_DEV_SERVER')
     if use_gunicorn:
         try:
-            import sys
+            import importlib
             import logging
-            from gunicorn.app.base import BaseApplication
+            import sys
+
+            gunicorn_base = importlib.import_module('gunicorn.app.base')
+            BaseApplication = gunicorn_base.BaseApplication
 
             class StandaloneGunicornApp(BaseApplication):
                 def __init__(self, wsgi_app, options=None):
