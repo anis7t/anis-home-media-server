@@ -628,18 +628,26 @@ class MediaServerTests(unittest.TestCase):
     def test_mobile_player_height_and_controls_row_responsiveness(self):
         mkv = Path(TMP.name) / 'MobilePlayerTest.2026.mkv'
         mkv.write_bytes(b'dummy-content')
+        vtt = Path(TMP.name) / 'MobilePlayerTest.2026.en.vtt'
+        vtt.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHello world\n")
         res = self.client.get('/watch/MobilePlayerTest.2026.mkv')
         self.assertEqual(res.status_code, 200)
         html = res.data.decode('utf-8')
 
         # Verify increased playback screen height in non-fullscreen mobile mode
-        self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(44vh,400px);min-height:290px;max-height:55vh}}', html)
+        self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(52vh,460px);min-height:330px;max-height:60vh}}', html)
 
-        # Verify removal of redundant skip +/-10s, shortcuts, and mute buttons on mobile
-        self.assertIn('#volume,#skipBackBtn,#skipForwardBtn,#shortcutsBtn,#mute{display:none!important}', html)
+        # Verify removal of redundant skip +/-10s, shortcuts, mute, and restart buttons on mobile
+        self.assertIn('#volume,#skipBackBtn,#skipForwardBtn,#shortcutsBtn,#mute,#restartBtn{display:none!important}', html)
 
         # Verify clutter-free space-between controls-row on mobile
         self.assertIn('overflow-x:visible;justify-content:space-between;width:100%', html)
+
+        # Verify streamlined single-row player-header on mobile
+        self.assertIn('.player-header{flex-direction:row;justify-content:space-between;align-items:center;gap:.5rem;padding:.45rem .85rem;min-height:44px}', html)
+
+        # Verify elevated mobile subtitle cues
+        self.assertIn('isMob?(isHuge?-5.8:-5.0):(isHuge?-4.8:-4)', html)
 
         # Verify polished seek-ripple pill styling
         self.assertIn('.seek-ripple{display:none;position:absolute;top:50%;transform:translateY(-50%)', html)

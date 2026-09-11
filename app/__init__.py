@@ -184,7 +184,11 @@ def create_app(test_config=None):
             )
 
         import sys
-        if 'app' in sys.modules and hasattr(sys.modules['app'], 'CSS'):
+        if 'app' in sys.modules and hasattr(sys.modules['app'], 'CSS') and sys.modules['app'].CSS != CSS:
+            css_content = sys.modules['app'].CSS
+        elif _STATIC_CSS_PATH.is_file():
+            css_content = _STATIC_CSS_PATH.read_text(encoding='utf-8')
+        elif 'app' in sys.modules and hasattr(sys.modules['app'], 'CSS'):
             css_content = sys.modules['app'].CSS
         else:
             css_content = CSS
