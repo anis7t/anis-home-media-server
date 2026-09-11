@@ -625,5 +625,25 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn("document.addEventListener('click',e=>{if(typeof subSettingsModal!=='undefined'", html)
         self.assertIn("if(e.key==='Escape')", html)
 
+    def test_mobile_player_height_and_controls_row_responsiveness(self):
+        mkv = Path(TMP.name) / 'MobilePlayerTest.2026.mkv'
+        mkv.write_bytes(b'dummy-content')
+        res = self.client.get('/watch/MobilePlayerTest.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+
+        # Verify increased playback screen height in non-fullscreen mobile mode
+        self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(44vh,400px);min-height:290px;max-height:55vh}}', html)
+
+        # Verify removal of redundant skip +/-10s, shortcuts, and mute buttons on mobile
+        self.assertIn('#volume,#skipBackBtn,#skipForwardBtn,#shortcutsBtn,#mute{display:none!important}', html)
+
+        # Verify clutter-free space-between controls-row on mobile
+        self.assertIn('overflow-x:visible;justify-content:space-between;width:100%', html)
+
+        # Verify polished seek-ripple pill styling
+        self.assertIn('.seek-ripple{display:none;position:absolute;top:50%;transform:translateY(-50%)', html)
+        self.assertIn('background:rgba(18,22,32,.82)', html)
+
 
 
