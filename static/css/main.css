@@ -593,3 +593,124 @@ html.devices-html, body.devices-page{width:100%;max-width:100%;overflow-x:hidden
 video.rotate-90{transform:rotate(90deg);transform-origin:center center}
 video.rotate-180{transform:rotate(180deg);transform-origin:center center}
 video.rotate-270{transform:rotate(270deg);transform-origin:center center}
+
+/* ==========================================================================
+   Navigation Transitions & Progress Indicator
+   ========================================================================== */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: 160ms cubic-bezier(0.4, 0, 1, 1) both vtFadeOut;
+}
+::view-transition-new(root) {
+  animation: 240ms cubic-bezier(0, 0, 0.2, 1) both vtFadeIn;
+}
+
+@keyframes vtFadeOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-4px) scale(0.996); }
+}
+
+@keyframes vtFadeIn {
+  from { opacity: 0; transform: translateY(6px) scale(1.004); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Slim Glowing Top Progress Bar (YouTube / Netflix style) */
+.nav-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 9999999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.nav-progress-bar.active {
+  opacity: 1;
+}
+.nav-progress-bar.fade-out {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.nav-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ff2a3b 0%, #e50914 60%, #ff4b59 100%);
+  box-shadow: 0 0 10px rgba(229, 9, 20, 0.85), 0 0 4px #ff2a3b;
+  border-radius: 0 99px 99px 0;
+  position: relative;
+  overflow: hidden;
+}
+.nav-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: navShimmer 1.2s infinite;
+}
+@keyframes navShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Page leaving micro-dimming */
+body.page-navigating main,
+body.page-navigating .details-hero,
+body.page-navigating .manage-main,
+body.page-navigating .devices-main {
+  opacity: 0.86;
+  transition: opacity 0.2s ease;
+}
+
+/* Smooth Page-Enter Animation */
+@keyframes pageEnterFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  main:not(#shell):not(.watch-info),
+  .details-hero,
+  .manage-main,
+  .devices-main {
+    animation: pageEnterFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/* Interactive Navigation Tactile Feedback */
+.card, .header-nav-btn, .back-btn, .btn-primary-play, .btn-sub-action, .transcode-card {
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+.card:active, .header-nav-btn:active, .back-btn:active, .transcode-card:active {
+  transform: scale(0.975);
+}
+
+/* Motion Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .nav-progress-bar {
+    display: none !important;
+  }
+}
+

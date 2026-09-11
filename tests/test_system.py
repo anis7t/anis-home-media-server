@@ -86,6 +86,32 @@ class SystemTelemetryTests(unittest.TestCase):
         self.assertIn('resetFsCursor', PLAYER_HTML)
         self.assertIn('hide-cursor', PLAYER_HTML)
 
+    def test_navigation_transitions_and_progress_indicator(self):
+        # Verify CSS View Transitions API and top progress bar styles
+        self.assertIn('@view-transition', CSS)
+        self.assertIn('navigation: auto', CSS)
+        self.assertIn('.nav-progress-bar', CSS)
+        self.assertIn('.nav-progress-fill', CSS)
+        self.assertIn('pageEnterFade', CSS)
+        self.assertIn('@media (prefers-reduced-motion: reduce)', CSS)
+
+        # Verify static asset nav.js is available
+        resp_js = self.client.get('/static/js/nav.js')
+        self.assertEqual(resp_js.status_code, 200)
+        self.assertIn(b'NavTransitions', resp_js.data)
+        self.assertIn(b'nav-progress-bar', resp_js.data)
+
+        # Verify templates link or include nav.js
+        home_html = self.client.get('/').data.decode()
+        self.assertIn('/static/js/nav.js', home_html)
+
+        manage_html = self.client.get('/manage').data.decode()
+        self.assertIn('/static/js/nav.js', manage_html)
+
+        devices_html = self.client.get('/devices').data.decode()
+        self.assertIn('/static/js/nav.js', devices_html)
+
 
 if __name__ == '__main__':
     unittest.main()
+
