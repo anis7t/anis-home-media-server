@@ -25,20 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 GENERIC_TAG_VALUES = {
-    "stereo",
-    "surround",
-    "5.1",
-    "7.1",
-    "sdh",
-    "forced",
-    "commentary",
-    "english",
-    "und",
+    "stereo", "surround", "5.1", "7.1", "sdh", "forced",
+    "commentary", "english", "und",
 }
 
-
-# A remux, cut, or slightly edited release can legitimately differ from the
-# TMDB runtime.  We allow at least 3 minutes and 12% of the catalogued runtime.
 RUNTIME_TOLERANCE_SECONDS = 180
 RUNTIME_TOLERANCE_RATIO = 0.12
 
@@ -56,18 +46,8 @@ def is_anonymous_name(name_or_stem: str) -> bool:
         return True
 
     generic_prefixes = (
-        "vid_",
-        "video_",
-        "mov_",
-        "movie_",
-        "dsc_",
-        "img_",
-        "untitled",
-        "unknown",
-        "file",
-        "upload",
-        "stream",
-        "part",
+        "vid_", "video_", "mov_", "movie_", "dsc_", "img_",
+        "untitled", "unknown", "file", "upload", "stream", "part",
     )
     lower = s.lower()
     for gp in generic_prefixes:
@@ -77,20 +57,17 @@ def is_anonymous_name(name_or_stem: str) -> bool:
 
 
 def _normalize_title(value: str) -> str:
-    """Normalize a title for conservative similarity checks."""
     value = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
     return re.sub(r"\s+", " ", value).strip()
 
 
 def _title_similarity(left: str, right: str) -> float:
-    """Return a simple 0..1 title similarity score."""
     a = _normalize_title(left)
     b = _normalize_title(right)
     if not a or not b:
         return 0.0
     if a == b:
         return 1.0
-
     a_tokens = set(a.split())
     b_tokens = set(b.split())
     token_score = len(a_tokens & b_tokens) / max(len(a_tokens | b_tokens), 1)
@@ -99,17 +76,13 @@ def _title_similarity(left: str, right: str) -> float:
 
 
 def _probe_duration_seconds(path: Path):
-    """Return the media duration in seconds using ffprobe, or None on failure."""
+    """Return media duration in seconds using ffprobe, or None on failure."""
     try:
         result = subprocess.run(
             [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
                 str(path),
             ],
             stdout=subprocess.PIPE,
@@ -125,20 +98,12 @@ def _probe_duration_seconds(path: Path):
 
 
 def _runtime_compatible(path: Path, movie: dict, session, token) -> bool:
-    """Validate a candidate against the actual file duration.
-
-    MovieHash is strong evidence, but the lookup service can still return a
-    wrong catalog item.  Runtime validation gives us an independent signal
-    from the physical media file before we commit metadata to the database.
-    """
+    """Validate a MovieHash candidate against the actual file duration."""
     import scanner
 
     local_duration = _probe_duration_seconds(path)
     if local_duration is None:
-        logger.warning(
-            "Rejecting MovieHash candidate for %s: local duration unavailable",
-            path.name,
-        )
+        logger.warning("Rejecting MovieHash candidate for %s: local duration unavailable", path.name)
         return False
 
     try:
@@ -148,33 +113,19 @@ def _runtime_compatible(path: Path, movie: dict, session, token) -> bool:
         details = scanner.get_movie_details(session, token, tmdb_id)
         tmdb_runtime = details.get("runtime")
         if not tmdb_runtime or tmdb_runtime <= 0:
-            logger.warning(
-                "Rejecting MovieHash candidate %s: TMDB runtime unavailable",
-                movie.get("title"),
-            )
+            logger.warning("Rejecting MovieHash candidate %s: TMDB runtime unavailable", movie.get("title"))
             return False
     except Exception as exc:
-        logger.warning(
-            "Rejecting MovieHash candidate %s: TMDB runtime check failed: %s",
-            movie.get("title"),
-            exc,
-        )
+        logger.warning("Rejecting MovieHash candidate %s: TMDB runtime check failed: %s", movie.get("title"), exc)
         return False
 
     expected = float(tmdb_runtime) * 60.0
     tolerance = max(RUNTIME_TOLERANCE_SECONDS, expected * RUNTIME_TOLERANCE_RATIO)
     delta = abs(local_duration - expected)
     compatible = delta <= tolerance
-
     logger.info(
         "MovieHash runtime check for %s -> %s: file=%.1fs tmdb=%ss delta=%.1fs tolerance=%.1fs compatible=%s",
-        path.name,
-        movie.get("title"),
-        local_duration,
-        tmdb_runtime,
-        delta,
-        tolerance,
-        compatible,
+        path.name, movie.get("title"), local_duration, tmdb_runtime, delta, tolerance, compatible,
     )
     return compatible
 
@@ -185,15 +136,10 @@ def find_movie_by_imdb_id(session, token, imdb_id):
         return None
     import scanner
 
-    clean_id = f"tt{str(imdb_id).lstrip('t') }"
+    clean_id = f"tt{str(imdb_id).lstrip('t')}"
     url = f"{scanner.TMDB_API}/find/{clean_id}"
     try:
-        data = scanner.tmdb_get(
-            session,
-            token,
-            url,
-            params={"external_source": "imdb_id"},
-        )
+        data = scanner.tmdb_get(session, token, url, params={"external_source": "imdb_id"})
         movie_results = data.get("movie_results", [])
         if movie_results:
             return movie_results[0]
@@ -209,16 +155,8 @@ def resolve_via_moviehash(path, session, token):
     if not h or not sz:
         return None, None
 
-    logger.info(
-        "Computing OpenSubtitles MovieHash for %s: hash=%s, size=%s",
-        path.name,
-        h,
-        sz,
-    )
-    headers = {
-        "User-Agent": "TemporaryUserAgent",
-        "Accept": "application/json",
-    }
+    logger.info("Computing OpenSubtitles MovieHash for %s: hash=%s, size=%s", path.name, h, sz)
+    headers = {"User-Agent": "TemporaryUserAgent", "Accept": "application/json"}
     url = f"https://rest.opensubtitles.org/search/moviebytesize-{sz}/moviehash-{h}"
 
     try:
@@ -256,26 +194,14 @@ def resolve_via_moviehash(path, session, token):
 
         if not movie:
             continue
-
         if not _runtime_compatible(path, movie, session, token):
-            logger.warning(
-                "Ignoring MovieHash candidate for %s: %s",
-                path.name,
-                movie.get("title"),
-            )
+            logger.warning("Ignoring MovieHash candidate for %s: %s", path.name, movie.get("title"))
             continue
 
-        logger.info(
-            "Resolved %s via validated MovieHash -> %s",
-            path.name,
-            movie.get("title"),
-        )
+        logger.info("Resolved %s via validated MovieHash -> %s", path.name, movie.get("title"))
         return movie, source
 
-    logger.warning(
-        "No validated MovieHash match for %s; leaving media unresolved",
-        path.name,
-    )
+    logger.warning("No validated MovieHash match for %s; leaving media unresolved", path.name)
     return None, None
 
 
@@ -283,14 +209,9 @@ def resolve_via_container_tags(path, session, token):
     """Identify media using internal container and stream metadata tags."""
     path = Path(path)
     cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format_tags:stream_tags",
-        "-of",
-        "json",
-        str(path),
+        "ffprobe", "-v", "error",
+        "-show_entries", "format_tags:stream_tags",
+        "-of", "json", str(path),
     ]
     try:
         res = subprocess.run(
@@ -327,12 +248,9 @@ def resolve_via_container_tags(path, session, token):
     seen = set()
     for candidate in candidate_strings:
         candidate_key = candidate.strip().lower()
-        if candidate_key in seen:
+        if candidate_key in seen or candidate_key in GENERIC_TAG_VALUES:
             continue
         seen.add(candidate_key)
-
-        if candidate_key in GENERIC_TAG_VALUES:
-            continue
 
         cand_title, cand_year = scanner.parse_filename(Path(candidate))
         if not cand_title or is_anonymous_name(cand_title):
@@ -342,27 +260,18 @@ def resolve_via_container_tags(path, session, token):
         if not movie:
             continue
 
-        # Do not accept a wildly unrelated TMDB result just because TMDB
-        # returned something for a garbage tag.  Metadata must resemble the
-        # catalogued title, otherwise continue to a safer strategy.
         result_title = movie.get("title") or movie.get("original_title") or ""
         similarity = _title_similarity(cand_title, result_title)
         if similarity < 0.65:
             logger.warning(
                 "Ignoring weak container-tag match for %s: tag=%r result=%r similarity=%.2f",
-                path.name,
-                cand_title,
-                result_title,
-                similarity,
+                path.name, cand_title, result_title, similarity,
             )
             continue
 
         logger.info(
             "Resolved %s via Container Tag %r -> %s (similarity %.2f)",
-            path.name,
-            candidate,
-            result_title,
-            similarity,
+            path.name, candidate, result_title, similarity,
         )
         return movie, f"container_tags:{candidate}"
 
@@ -370,30 +279,11 @@ def resolve_via_container_tags(path, session, token):
 
 
 def resolve_via_subtitles(path, session, token):
-    """Extract embedded subtitle dialogue for future/secondary identification."""
+    """Extract embedded subtitle dialogue without inventing a TMDB match."""
     path = Path(path)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(path),
-        "-map",
-        "0:s:0",
-        "-t",
-        "180",
-        "-f",
-        "webvtt",
-        "-",
-    ]
+    cmd = ["ffmpeg", "-y", "-i", str(path), "-map", "0:s:0", "-t", "180", "-f", "webvtt", "-"]
     try:
-        res = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=20,
-            check=False,
-        )
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=20, check=False)
         if res.returncode != 0 or not res.stdout:
             return None, None
         vtt = res.stdout
@@ -414,25 +304,15 @@ def resolve_via_subtitles(path, session, token):
     if not lines:
         return None, None
 
-    dialogue_sample = " ".join(lines[:10])
     logger.debug(
         "Extracted %d subtitle dialogue lines from %s: %s...",
-        len(lines),
-        path.name,
-        dialogue_sample[:160],
+        len(lines), path.name, " ".join(lines[:10])[:160],
     )
-
-    # Do not use raw dialogue as an automatic TMDB query.  Without a proper
-    # quote-search backend it is too easy to attach an unrelated movie.
     return None, None
 
 
 def resolve_media(path, session=None, token=None):
-    """Run conservative multi-tiered forensic identification.
-
-    Returns:
-        tuple: (tmdb_movie_dict, source_strategy) or (None, None)
-    """
+    """Run conservative multi-tiered forensic identification."""
     path = Path(path)
     import scanner
 
@@ -450,24 +330,17 @@ def resolve_media(path, session=None, token=None):
         return None, None
 
     try:
-        # Strategy 1: container metadata is closer to the file itself than a
-        # third-party hash database, so it gets first refusal.
         movie, src = resolve_via_container_tags(path, session, token)
         if movie:
             return movie, src
 
-        # Strategy 2: MovieHash can identify release copies, but only after an
-        # independent duration sanity check against TMDB.
         movie, src = resolve_via_moviehash(path, session, token)
         if movie:
             return movie, src
 
-        # Strategy 3: inspect embedded subtitle dialogue, but do not make an
-        # unsupported guess from raw text.
         movie, src = resolve_via_subtitles(path, session, token)
         if movie:
             return movie, src
-
     except Exception as exc:
         logger.error("Error during forensic media resolution for %s: %s", path.name, exc)
     finally:
