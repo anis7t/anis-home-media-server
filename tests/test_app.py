@@ -216,6 +216,10 @@ class MediaServerTests(unittest.TestCase):
     def test_player_aspect_ratio_controls_and_hud(self):
         html = self.client.get('/watch/Example.2026.mp4').data.decode()
         self.assertIn('id="aspectBtn"', html)
+        # Verify aspect ratio button uses an intuitive SVG framing icon instead of raw text
+        self.assertIn('<button id="aspectBtn" type="button" title="Aspect ratio (a)" aria-label="Aspect ratio"><svg', html)
+        self.assertNotIn('>Fit</button>', html)
+        self.assertNotIn('>Orig</button>', html)
         self.assertIn('id="playerHud"', html)
         self.assertIn('ASPECT_MODES', html)
         self.assertIn('nextAspect()', html)
@@ -226,6 +230,40 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn('aspect-16-9', html)
         self.assertIn('aspect-4-3', html)
         self.assertIn('aspect-orig', html)
+
+    def test_player_seek_time_row_and_elapsed_remaining_display(self):
+        html = self.client.get('/watch/Example.2026.mp4').data.decode()
+        # Verify seek-time-row is situated above the seek bar
+        self.assertIn('class="seek-time-row"', html)
+        self.assertIn('id="timeElapsed"', html)
+        self.assertIn('id="timeTotal"', html)
+        # Check order: seek-time-row appears before seek input
+        time_row_pos = html.find('class="seek-time-row"')
+        seek_input_pos = html.find('id="seek"')
+        self.assertTrue(time_row_pos < seek_input_pos)
+        # Verify backward-compatibility: #time still exists in controls-row with hidden attribute
+        self.assertIn('<span id="time" hidden>0:00 / 0:00</span>', html)
+        # Verify JS time update logic and total/remaining toggle
+        self.assertIn('updateTimeDisplay', html)
+        self.assertIn('showRemainingTime', html)
+        self.assertIn('media_show_remaining', html)
+        self.assertIn('.seek-time-row{display:flex;justify-content:space-between;align-items:center;', html)
+
+    def test_player_screen_rotation_button_and_shortcuts(self):
+        html = self.client.get('/watch/Example.2026.mp4').data.decode()
+        # Verify rotateBtn is present in controls-row with rotation SVG
+        self.assertIn('id="rotateBtn"', html)
+        self.assertIn('<button id="rotateBtn" type="button" title="Rotate screen (r)" aria-label="Rotate screen"><svg', html)
+        # Verify direct child in controls-row and Rule 8 invariant
+        controls_row = html.split('<div class="controls-row">')[1].split('</div>')[0]
+        self.assertIn('id="rotateBtn"', controls_row)
+        self.assertNotIn('<div', controls_row)
+        # Verify JS rotation function and keyboard shortcut
+        self.assertIn('toggleScreenRotation', html)
+        self.assertIn("e.key==='r'||e.key==='R'", html)
+        self.assertIn('<kbd>r</kbd>', html)
+        self.assertIn('Rotate Screen', html)
+        self.assertIn('video.rotate-90', html)
     def test_player_touch_gestures_and_double_tap_ripples(self):
         html = self.client.get('/watch/Example.2026.mp4').data.decode()
         self.assertIn('id="seekRippleLeft"', html)
