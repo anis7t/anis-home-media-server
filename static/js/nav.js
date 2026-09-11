@@ -153,3 +153,4 @@
     reset: resetProgress
   };
 })();
+
