@@ -1,4 +1,4 @@
-# Remote Internet Access via Cloudflare Quick Tunnel
+# Remote Internet Access via Cloudflare Tunnel
 
 ## Goal
 Expose the local Flask media server to the Internet despite an Airtel connection that uses CGNAT and does not provide a static public IPv4 address.
@@ -20,10 +20,10 @@ The home router's WAN IP was observed to differ from the public IP seen by Inter
 
 With CGNAT, inbound Internet connections generally cannot be forwarded directly from the public Internet to the home router using normal router port forwarding. A static public IPv4 address is also not required for the solution below.
 
-## Free solution used
-A Cloudflare **Quick Tunnel** (`trycloudflare.com`) was used. This requires no purchased domain, no static public IP, and no router port-forwarding rule.
+## Initial Quick Tunnel setup
+A Cloudflare **Quick Tunnel** (`trycloudflare.com`) was first used for testing. This required no purchased domain, no static public IP, and no router port-forwarding rule.
 
-Traffic path:
+Initial traffic path:
 
 ```text
 Internet
@@ -33,7 +33,9 @@ Internet
    -> 127.0.0.1:8000
 ```
 
-## Installation
+The Quick Tunnel was tested successfully from outside the local network.
+
+## cloudflared installation
 `cloudflared` was not available from the configured Kali APT repositories (`apt install cloudflared` returned `Unable to locate package cloudflared`).
 
 The official Debian package was therefore downloaded from Cloudflare's GitHub releases and installed with `dpkg`:
@@ -44,27 +46,114 @@ sudo dpkg -i cloudflared.deb
 cloudflared --version
 ```
 
-The version command completed successfully.
+The installation completed successfully.
 
-## Starting the tunnel
-The tunnel was started from a **normal Kali Linux terminal**, while the Flask application remained running from the **VS Code terminal**:
+## Domain and DNS setup
+A personal domain, `anisparvez.in`, was purchased from GoDaddy.
+
+Cloudflare was configured as the authoritative DNS provider by replacing the GoDaddy nameservers with the nameservers assigned by Cloudflare. DNSSEC was confirmed to be disabled at GoDaddy before the nameserver change.
+
+The Cloudflare zone is now active.
+
+GoDaddy remains the registrar; Cloudflare manages DNS for the domain.
+
+## Named Cloudflare Tunnel
+A named tunnel was created:
 
 ```bash
-cloudflared tunnel --url http://127.0.0.1:8000
+cloudflared tunnel create media-server
 ```
 
-Cloudflare returned a temporary public HTTPS URL under `https://*.trycloudflare.com`.
+Tunnel name:
 
-## Result
-The generated public URL was tested successfully from outside the local network, confirming that the media server was accessible over the Internet while the home connection remained behind CGNAT.
+```text
+media-server
+```
 
-## Operational notes
-- Keep the `cloudflared` process running; stopping that process stops the Quick Tunnel.
-- The Quick Tunnel URL is temporary/random and is not intended to be a permanent hostname.
-- No Airtel router configuration was required.
-- No paid domain or static public IP was required.
-- The public URL itself should not be treated as authentication. Anyone who obtains the URL may be able to access the application, so authentication/access control should be added before regular or wider use.
-- The Flask development server should not be treated as the final production Internet-facing deployment. A production WSGI server and appropriate security controls should be considered for long-term use.
+Tunnel ID:
+
+```text
+cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
+```
+
+The tunnel credential file was created at:
+
+```text
+~/.cloudflared/cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f.json
+```
+
+**The credential JSON is secret and must never be committed to Git or pasted into documentation.**
+
+The installed `cloudflared` version reported a recommendation to upgrade from `2026.9.0` to `2026.9.1`; this is a warning, not a tunnel-configuration failure.
+
+## Custom hostname routing
+The domain hostname `media.anisparvez.in` was attached to the named tunnel with:
+
+```bash
+cloudflared tunnel route dns media-server media.anisparvez.in
+```
+
+Cloudflare confirmed:
+
+```text
+Added CNAME media.anisparvez.in which will route to this tunnel
+```
+
+The intended public traffic path is now:
+
+```text
+Internet
+   -> https://media.anisparvez.in
+   -> Cloudflare DNS / Tunnel
+   -> named tunnel: media-server
+   -> cloudflared on Kali
+   -> http://127.0.0.1:8000
+   -> Flask media server
+```
+
+## Current tunnel configuration
+A configuration file was created at:
+
+```text
+~/.cloudflared/config.yml
+```
+
+Configuration:
+
+```yaml
+tunnel: cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
+credentials-file: /home/iamroot/.cloudflared/cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f.json
+
+ingress:
+  - hostname: media.anisparvez.in
+    service: http://127.0.0.1:8000
+
+  - service: http_status:404
+```
+
+The configuration was validated successfully with:
+
+```bash
+cloudflared tunnel ingress validate
+```
+
+Output:
+
+```text
+Validating rules from /home/iamroot/.cloudflared/config.yml
+OK
+```
+
+## Running the named tunnel
+Start the named tunnel from a **normal Kali Linux terminal**:
+
+```bash
+cloudflared tunnel run media-server
+```
+
+Keep this process running while remote access is needed.
+
+The Flask application should be run and managed separately from the **VS Code terminal**.
 
 ## Terminal separation used
 **VS Code terminal:** run and manage the `media-server-1` Flask application.
@@ -73,7 +162,47 @@ The generated public URL was tested successfully from outside the local network,
 
 This separation keeps application development and Internet tunneling independent.
 
+## Operational commands
+Start the current named tunnel:
+
+```bash
+cloudflared tunnel run media-server
+```
+
+Stop a foreground tunnel with:
+
+```text
+Ctrl+C
+```
+
+Stop a running cloudflared process from another terminal:
+
+```bash
+pkill cloudflared
+```
+
+Check whether cloudflared is running:
+
+```bash
+pgrep -a cloudflared
+```
+
+For the current development workflow, keeping the tunnel in a dedicated Kali terminal is preferred so tunnel errors remain visible.
+
+## Security notes
+- Never commit the tunnel credential JSON file.
+- Never commit API keys, passwords, tokens, or other secrets.
+- The custom domain is stable, but a hostname being stable does not itself provide authentication.
+- Authentication/access control should be added before wider public sharing.
+- The Flask development server should not be treated as the final production Internet-facing deployment. A production WSGI server and appropriate security controls should be considered for long-term use.
+
+## Video / large-file delivery consideration
+The public Cloudflare proxy path should not automatically be treated as a general-purpose CDN for the entire personal movie/TV library. Cloudflare's current service-specific terms and documentation place restrictions on serving video and disproportionate amounts of large files through the public CDN/proxy on Free, Pro, and Business plans. Review the current Cloudflare policy before designing high-volume media delivery through the public hostname.
+
+For private personal access, consider a private-network/VPN-oriented architecture so the web application and media transport can be separated appropriately.
+
 ## Next recommended improvements
-1. Add authentication/access protection to the media server before sharing the public URL.
-2. [Completed] Production WSGI deployment is live using Gunicorn (`gthread` worker, 8 threads, 120s streaming timeout) with `ProxyFix` middleware and managed by systemd (`media-server.service`).
-3. For a permanent public hostname later, replace the Quick Tunnel with a named Cloudflare Tunnel/domain or another stable reverse-tunnel/VPS architecture.
+1. Verify `https://media.anisparvez.in` externally with the named tunnel running.
+2. Add authentication/access protection to the media server before wider sharing.
+3. Install the named tunnel as a managed system service so it can start automatically after boot.
+4. Review the media-delivery architecture before using the public Cloudflare proxy to serve large video files at scale.
