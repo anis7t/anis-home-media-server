@@ -223,28 +223,9 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
     return result;
   }
 
-  function isAnonymousUploadFilename(filename) {
-    const stem = String(filename || '').replace(/\.[^.]+$/, '').trim();
-    if (!stem) return true;
-    if (/^\d+$/.test(stem)) return true;
-    if (/^[0-9a-f-]{8,}$/i.test(stem)) return true;
-    return /^(vid|video|mov|movie|dsc|img|untitled|unknown|file|upload|stream|part)_?\d*$/i.test(stem);
-  }
-
+  const originalStartUpload = startUpload;
   startUpload = async function() {
     if (!selectedUploadFile) return;
-
-    const titleInput = document.getElementById('uploadTitleInput');
-    const title = titleInput ? titleInput.value.trim() : '';
-    if (isAnonymousUploadFilename(selectedUploadFile.name) && !title) {
-      showUploadError('This mobile filename does not contain a movie title. Enter the movie title before uploading so the server does not guess the wrong movie.');
-      if (titleInput) {
-        titleInput.focus();
-        titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      return;
-    }
-
     const sb = document.getElementById('uploadSubmitBtn');
     const cb = document.getElementById('uploadCancelBtn');
     const pb = document.getElementById('uploadProgressBar');
@@ -304,6 +285,8 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
     };
 
     try {
+      const titleInput = document.getElementById('uploadTitleInput');
+      const title = titleInput ? titleInput.value.trim() : '';
       const result = await runChunkedUpload(selectedUploadFile, title, updateProgress);
       pb.style.width = '100%';
       pt.textContent = '100%';
