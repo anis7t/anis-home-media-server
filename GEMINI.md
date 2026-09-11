@@ -172,3 +172,19 @@
 - **Motion Accessibility**: All view transitions, progress bars, and page enter animations must provide `@media (prefers-reduced-motion: reduce)` overrides (`animation: none !important; transition: none !important; display: none !important;`).
 - **bfcache (Back/Forward Cache) Resilience**: Navigation progress indicators must bind to the `pageshow` event and check `e.persisted` to immediately reset animation and dimming states when users navigate with browser Back/Forward gestures.
 
+## 15. HTML5 Media Seeking, Range Streaming & Slider Invariants
+- **Direct Stream Isolation**: Never invoke transcode status polling (`checkPreparing`) or display transcoding overlay cards on native direct streams (`!source.dataset.transcoded`). Transcode status endpoints return `status: "idle"` for direct files, which must never set seek locks or leave `currentSeekTarget` frozen.
+- **Decoupled Seek Scrubbing & Commit**:
+  - Dragging/scrubbing gestures (`seek.oninput`) must only update visual seek fills and time HUD indicators (`isScrubbing = true`).
+  - Do NOT set `v.currentTime` synchronously on micro-pixel movements during drag, which floods the server with aborted HTTP range requests.
+  - Commit seeks (`v.currentTime = target`) strictly on gesture completion (`pointerup`, `touchend`, `change`, and window fallback listeners) and resume playback cleanly if the video was active prior to scrubbing.
+- **In-Flight Seek Snapback Prevention**:
+  - In `timeupdate` listeners, guard seek bar value updates with `!isScrubbing && !v.seeking`.
+  - Never allow `timeupdate` to overwrite `seek.value` back to old timestamps while the browser is actively fulfilling a byte-range seek request (`v.seeking === true`).
+- **Range Slider Keyboard Focus Immunity**:
+  - Interacting with range sliders (`<input id="seek" type="range">`) gives them DOM focus. Never use naive `e.target.matches('input,select')` in `keydown` listeners, as this disables all playback shortcuts (`Space`, `k`, `j`, `l`, `1`–`9`, arrow keys).
+  - Guard only text-entry inputs (`input:not([type="range"])`), and explicitly blur range sliders (`seek.blur()`) upon seek commit.
+- **Zero-Copy RFC 7233 Range Streaming**:
+  - In raw media streaming routes (`/media/<path:filename>`), use Flask/Werkzeug `send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)` rather than custom file chunk generators.
+  - This guarantees OS zero-copy streaming (`sendfile(2)`), RFC 7233 byte-range parsing, `If-Range` support, and clean socket closure upon client disconnect without blocking worker threads.
+
