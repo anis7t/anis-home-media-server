@@ -485,14 +485,18 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn('<a class="watch-back"', html_sub)
         self.assertIn('← Details</a>', html_sub)
         self.assertIn('class="watch-title-badge"', html_sub)
-        # Verify Subtitle Vertical Position select
+        # Verify Subtitle Vertical Position select with Lowered Bottom as default
         self.assertIn('id="subVerticalSelect"', html_sub)
-        self.assertIn('value="lowered"', html_sub)
+        self.assertIn('<option value="lowered" selected>Lowered Bottom (Default)</option>', html_sub)
         self.assertIn('value="bottom"', html_sub)
         self.assertIn('value="raised"', html_sub)
         self.assertIn('value="middle"', html_sub)
         self.assertIn('value="top"', html_sub)
         self.assertIn('id="subPosSelect"', html_sub)
+        self.assertIn("verticalPos:'lowered'", html_sub)
+        # Verify English track default selection
+        self.assertIn('findEnglishTrack', html_sub)
+        self.assertIn('selected>English', html_sub)
         # Verify Stats for Nerds button & HUD
         self.assertIn('id="nerdStatsBtn"', html_sub)
         self.assertIn('id="nerdStatsHud"', html_sub)

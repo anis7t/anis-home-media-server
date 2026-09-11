@@ -297,7 +297,9 @@ def tracks(path, movie_meta=None):
 
     # Default to first English track
     for t in result:
-        if t['lang'] == 'en':
+        lang = (t.get('lang') or '').lower()
+        label = (t.get('label') or '').lower()
+        if lang in {'en', 'eng'} or 'english' in label:
             t['default'] = True
             break
 
