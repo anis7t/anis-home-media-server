@@ -580,6 +580,22 @@ async function refreshTelemetry() {
 }
 setInterval(refreshTelemetry, 15000);
 </script>
+<footer class="site-footer">
+  <p class="footer-copy">© 2026 Anis' Media Server. All rights reserved.</p>
+  <ul class="footer-links">
+    <li><button onclick="document.getElementById('privacyModal').showModal()">Privacy Policy</button></li>
+    <li><a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT License</a></li>
+    <li><span>No registered trademarks</span></li>
+  </ul>
+</footer>
+<dialog id="privacyModal" aria-labelledby="privacyModalTitle">
+  <h2 id="privacyModalTitle">Privacy Policy</h2>
+  <p>Anis' Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
+  <p>Playback progress and connected device information are stored locally in a SQLite database on the server and are never uploaded externally.</p>
+  <p>Remote access is provided via a Cloudflare Quick Tunnel solely for convenience. No analytics or tracking scripts are embedded in this application.</p>
+  <p>This policy was last updated in 2026.</p>
+  <button class="modal-close-btn" onclick="document.getElementById('privacyModal').close()">Close</button>
+</dialog>
 <script src="/static/js/nav.js" defer></script>
 </body>
 </html>
