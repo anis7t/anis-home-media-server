@@ -155,7 +155,7 @@ The production-facing bottleneck is **not** the application. It is the home ISP 
 5. Disk I/O is essentially zero (OS page cache absorbs the 1.68 GB test file).
 
 The TTFB degradation at 10+ streams through the tunnel is caused by:
-- **Cloudflare QUIC multiplexing overhead** — 4 tunnel connections sharing 15+ concurrent HTTP/2 streams
+- **Cloudflare QUIC multiplexing overhead** — 4 tunnel connegh auth loginctions sharing 15+ concurrent HTTP/2 streams
 - **Airtel CGNAT queueing** — upstream packets queued as the upload pipe fills
 - **Round-trip latency amplification** — each Range request must traverse client → Cloudflare edge (Singapore) → tunnel → origin → response path
 
