@@ -321,3 +321,73 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
     }
   };
 }
+
+/* Player transcode UI guard:
+   The player can sometimes report HLS preparation after the background
+   transcode has already finished. The authoritative active-transcode API
+   decides whether the UI is allowed to show progress/preparation. */
+(function() {
+  if (!document.getElementById('video')) return;
+
+  const movieFilename = (() => {
+    const src = document.getElementById('source');
+    return src ? null : null;
+  })();
+
+  function currentFilename() {
+    const m = document.title.match(/^Watching (.+?) — Anis' Media Server$/);
+    return m ? null : null;
+  }
+
+  async function syncPlayerTranscodeUI() {
+    try {
+      const video = document.getElementById('video');
+      const card = document.getElementById('playerTranscodeCard');
+      const pill = document.getElementById('shellTranscodePill');
+      const cache = document.getElementById('cacheStatus');
+      if (!video || !card) return;
+
+      const filename = decodeURIComponent(
+        location.pathname.split('/watch/')[1] || ''
+      );
+
+      const r = await fetch('/api/transcodes', { cache: 'no-store' });
+      if (!r.ok) return;
+
+      const data = await r.json();
+      const active = (data.transcodes || []).some(
+        t => t.filename === filename && t.status === 'building'
+      );
+
+      if (!active) {
+        card.style.display = 'none';
+        if (pill) pill.style.display = 'none';
+        if (cache) cache.hidden = true;
+
+        const seekEta = document.getElementById('seekEta');
+        if (seekEta) seekEta.hidden = true;
+
+        if (window._mediaServerTranscodeGuardTimer) {
+          clearInterval(window._mediaServerTranscodeGuardTimer);
+          window._mediaServerTranscodeGuardTimer = null;
+        }
+      }
+    } catch (_) {
+      // Never interfere with normal playback.
+    }
+  }
+
+  syncPlayerTranscodeUI();
+  window._mediaServerTranscodeGuardTimer =
+    setInterval(syncPlayerTranscodeUI, 2000);
+
+  const cache = document.getElementById('cacheStatus');
+  if (cache) {
+    const observer = new MutationObserver(() => {
+      if (!cache.hidden) {
+        syncPlayerTranscodeUI();
+      }
+    });
+    observer.observe(cache, { attributes: true, attributeFilter: ['hidden', 'style'] });
+  }
+})();
