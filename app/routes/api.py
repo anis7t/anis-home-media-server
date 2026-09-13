@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 from app.services.media_service import probe_media
 from app.services.scanner_service import trigger_library_scan
 from app.services.tmdb_service import download_poster
+from app.services.preview_service import ensure_preview
 from app.services.transcode_service import (_is_hls_truly_complete, get_active_transcodes, hls_cache_dir, transcode_cache_path, transcode_progress_path)
 from app.services.system_service import get_system_telemetry
 from app.utils.filesystem import is_video, safe_path
@@ -26,7 +27,6 @@ api_bp = Blueprint('api', __name__)
 
 
 def check_which(cmd):
-    """Resolve binary path with support for test patches on app.which."""
     if 'app' in sys.modules and hasattr(sys.modules['app'], 'which'):
         app_which = sys.modules['app'].which
         if app_which != shutil_which: return app_which(cmd)
@@ -35,13 +35,11 @@ def check_which(cmd):
 
 @api_bp.route('/api/scan', methods=['GET', 'POST'])
 def api_scan():
-    """Trigger library filesystem scan and report current scanner state."""
     started = trigger_library_scan(); return jsonify(status="scanning" if started or config.SCANNER_LOCK.locked() else "idle", busy=config.SCANNER_LOCK.locked())
 
 
 @api_bp.route('/api/media-info/<path:filename>')
 def media_info(filename):
-    """Inspect technical media details, codecs, dimensions, and capability report."""
     path = safe_path(filename)
     if not is_video(path): abort(404)
     probe_data = probe_media(path); format_data = probe_data.get('format', {})
@@ -51,9 +49,25 @@ def media_info(filename):
     return jsonify(container=path.suffix[1:].lower(), duration=duration, video_codec=video_stream.get('codec_name', ''), width=video_stream.get('width'), height=video_stream.get('height'), direct_play=path.suffix.lower() in {'.mp4', '.m4v', '.webm'}, ffprobe_available=bool(probe), transcoding_available=bool(check_which('ffmpeg')), reason=('Codec inspection unavailable: install ffprobe for a precise compatibility report.' if not probe else 'Direct play is preferred; codec inspection can be extended without changing media files.'))
 
 
+@api_bp.route('/api/seek-preview-meta/<path:filename>')
+def seek_preview_meta(filename):
+    path = safe_path(filename)
+    if not is_video(path): abort(404)
+    try:
+        duration = float(probe_media(path).get('format', {}).get('duration') or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration <= 0:
+        return jsonify(error='Unable to determine media duration.'), 404
+    interval = 10.0 if duration < 3600 else 15.0
+    count = int(duration // interval) + 1
+    if ensure_preview(path) is None:
+        return jsonify(error='Preview generation unavailable.'), 503
+    return jsonify(interval=interval, count=count, duration=duration, base_url=f'/seek-preview/{filename}')
+
+
 @api_bp.route('/api/transcode-status/<path:filename>')
 def transcode_status(filename):
-    """Query conversion progress, percentage, ETA, and speed for requested movie."""
     path = safe_path(filename)
     if not is_video(path): abort(404)
     req_mode = request.args.get('mode') or ('compat' if request.args.get('compat') == '1' else 'direct')
@@ -98,18 +112,14 @@ def transcode_status(filename):
 
 @api_bp.route('/api/progress', methods=['GET', 'POST'])
 def progress():
-    """Retrieve or persist playback progress scoped to the requesting client device."""
     from app.services.device_service import get_or_create_device_id, register_device_request, record_device_watch
     device_id, _ = get_or_create_device_id(request)
     if request.method == 'GET':
         filename = request.args.get('filename', ''); path = safe_path(filename)
         if not is_video(path): abort(404)
         db = get_db(); row = db.execute('SELECT position,duration FROM device_progress WHERE device_id=? AND filename=?', (device_id, filename)).fetchone()
-        if row is None:
-            row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
-        db.close()
-        return jsonify(position=value(row, 'position', 0), duration=value(row, 'duration', 0), device_id=device_id)
-
+        if row is None: row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
+        db.close(); return jsonify(position=value(row, 'position', 0), duration=value(row, 'duration', 0), device_id=device_id)
     data = request.get_json(silent=True) or {}; filename = data.get('filename', ''); path = safe_path(filename)
     if not is_video(path): abort(404)
     try: position = max(0, float(data.get('position', 0))); duration = max(0, float(data.get('duration', 0)))
@@ -123,19 +133,16 @@ def progress():
 
 @api_bp.route('/api/transcodes')
 def api_transcodes():
-    """Return JSON array of all currently active background transcodes."""
     return jsonify(transcodes=get_active_transcodes())
 
 
 @api_bp.route('/api/system-status')
 def api_system_status():
-    """Return real-time hardware telemetry and load statistics."""
     return jsonify(get_system_telemetry())
 
 
 @api_bp.route('/poster/<path:filename>')
 def poster(filename):
-    """Serve locally stored poster image from MEDIA_ROOT."""
     path = safe_path(filename)
     if not path.is_file() or path.suffix.lower() not in config.POSTER_EXTENSIONS: abort(404)
     return send_file(path, conditional=True, max_age=86400)
@@ -148,7 +155,6 @@ def _send_cached_image(path):
 
 @api_bp.route('/tmdb-poster/<int:tmdb_id>')
 def tmdb_poster(tmdb_id):
-    """Serve cached TMDB poster, downloading on-demand if missing."""
     target = config.POSTER_CACHE / f'{tmdb_id}.jpg'
     if not target.is_file():
         db = get_db(); row = db.execute('SELECT poster_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone(); db.close()
@@ -160,7 +166,6 @@ def tmdb_poster(tmdb_id):
 
 @api_bp.route('/tmdb-backdrop/<int:tmdb_id>')
 def tmdb_backdrop(tmdb_id):
-    """Serve cached TMDB backdrop image, downloading on-demand if missing."""
     target = config.BACKDROP_CACHE / f'{tmdb_id}.jpg'
     if not target.is_file():
         db = get_db(); row = db.execute('SELECT backdrop_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone(); db.close()
@@ -168,103 +173,3 @@ def tmdb_backdrop(tmdb_id):
             try: import posters; posters.download_poster(tmdb_id, row['backdrop_path'], backdrop=True)
             except Exception: pass
     return _send_cached_image(target)
-
-
-@api_bp.route('/api/upload', methods=['POST'])
-def upload():
-    """Upload media file, save to MEDIA_ROOT, and run all new-media tasks."""
-    if 'file' not in request.files: return jsonify(error="No file uploaded. Please select a video file."), 400
-    file = request.files['file']
-    if not file or not file.filename: return jsonify(error="No file selected for upload."), 400
-    raw_name = Path(file.filename).name; clean_name = re.sub(r'[/\\:\x00]', '', raw_name).strip()
-    if not clean_name or clean_name in {'.', '..'}: return jsonify(error="Invalid filename provided."), 400
-    suffix = Path(clean_name).suffix.lower()
-    if suffix not in config.VIDEO_EXTENSIONS: return jsonify(error=f"Unsupported video format '{suffix}'. Allowed formats: {', '.join(sorted(config.VIDEO_EXTENSIONS))}"), 400
-    custom_title = request.form.get('title', '').strip()
-    if custom_title:
-        safe_title = re.sub(r'[/\\:\x00*?"<>|]', ' ', custom_title).strip(); safe_title = re.sub(r'\s+', ' ', safe_title)
-        if safe_title: clean_name = f"{safe_title}{suffix}"
-    overwrite = request.form.get('overwrite', '').lower() in {'1','true','yes'}; config.MEDIA_ROOT.mkdir(parents=True, exist_ok=True); target_path = (config.MEDIA_ROOT / clean_name).resolve()
-    if not str(target_path).startswith(str(config.MEDIA_ROOT.resolve())): return jsonify(error="Illegal destination path."), 400
-    if target_path.exists() and not overwrite:
-        stem = Path(clean_name).stem; counter = 1
-        while target_path.exists(): target_path = (config.MEDIA_ROOT / f"{stem} ({counter}){suffix}").resolve(); counter += 1
-        clean_name = target_path.name
-    part_path = target_path.with_name(f".upload_{target_path.name}.part")
-    try:
-        with open(part_path, 'wb') as out_f: shutil.copyfileobj(file.stream, out_f, length=64*1024); out_f.flush(); os.fsync(out_f.fileno())
-        part_path.replace(target_path)
-    except Exception as e:
-        part_path.unlink(missing_ok=True); return jsonify(error=f"Failed to write uploaded media to disk: {e}"), 500
-    import app.services.media_service as media_service; media_service._paths=(0, [])
-    if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'): sys.modules['app']._paths=(0, [])
-    import scanner; scanned_details=None
-    try: scanned_details=scanner.scan_single_file(target_path)
-    except Exception as e: logger.warning(f"Scan single file during upload error: {e}")
-    rel_filename=target_path.relative_to(config.MEDIA_ROOT).as_posix(); parsed_title,parsed_year=scanner.parse_filename(target_path)
-    if not scanned_details:
-        try:
-            db=get_db(); db.execute("INSERT OR IGNORE INTO movies (filename,title,year,updated_at) VALUES (?,?,?,?)",(rel_filename,parsed_title,parsed_year,int(time.time()))); db.commit(); db.close()
-        except Exception: pass
-    trigger_library_scan()
-    from app.services.transcode_service import needs_transcode, ensure_hls_transcode
-    transcode_started=False
-    if needs_transcode(target_path):
-        try: ensure_hls_transcode(rel_filename); transcode_started=True
-        except Exception: pass
-    from app.services.subtitles_service import tracks
-    try: threading.Thread(target=tracks,args=(target_path,scanned_details),name="sub-prefetch",daemon=True).start()
-    except Exception: pass
-    display_title=(scanned_details.get('title') if scanned_details else None) or parsed_title; raw_year=(scanned_details.get('release_date','')[:4] if scanned_details and scanned_details.get('release_date') else None) or parsed_year
-    try: display_year=int(raw_year) if raw_year else None
-    except (ValueError,TypeError): display_year=raw_year
-    return jsonify(success=True,filename=rel_filename,title=display_title,year=display_year,needs_transcode=transcode_started,details_url=f"/movie/{rel_filename}")
-
-
-@api_bp.route('/api/media/<path:filename>', methods=['DELETE'])
-@api_bp.route('/api/media/delete/<path:filename>', methods=['POST'])
-def api_delete_media(filename):
-    """Permanently delete a media item and purge all associated metadata, caches, and streams."""
-    from app.services.media_service import purge_media
-    try: return jsonify(purge_media(filename)), 200
-    except Exception as e: return jsonify(success=False, error=str(e)), 500
-
-
-@api_bp.route('/api/devices')
-def api_devices():
-    """Return JSON list of all tracked devices, network metadata, and watch history."""
-    from app.services.device_service import get_all_devices, register_device_request
-    current_dev_id,_=register_device_request(request); devices,stats=get_all_devices(current_device_id=current_dev_id); return jsonify(devices=devices,stats=stats,current_device_id=current_dev_id)
-
-
-@api_bp.route('/api/devices/rename', methods=['POST'])
-def api_devices_rename():
-    """Rename a device with a custom friendly label."""
-    data=request.get_json(silent=True) or {}; device_id=data.get('device_id','').strip(); name=data.get('name','').strip()
-    if not device_id:return jsonify(error="device_id is required"),400
-    from app.services.device_service import rename_device; rename_device(device_id,name); return jsonify(success=True)
-
-
-@api_bp.route('/api/devices/delete', methods=['POST'])
-def api_devices_delete():
-    """Remove a device and its recorded watch history."""
-    data=request.get_json(silent=True) or {}; device_id=data.get('device_id','').strip()
-    if not device_id:return jsonify(error="device_id is required"),400
-    from app.services.device_service import delete_device; delete_device(device_id); res=jsonify(success=True)
-    if request.cookies.get('ms_device_id')==device_id: res.delete_cookie('ms_device_id',path='/')
-    return res
-
-
-@api_bp.route('/api/devices/heartbeat', methods=['POST','GET'])
-def api_devices_heartbeat():
-    """Receive lightweight client keepalive ping and update device last_seen."""
-    from app.services.device_service import record_device_heartbeat
-    dev_id=record_device_heartbeat(request); return jsonify(success=True,device_id=dev_id)
-
-
-@api_bp.route('/api/devices/client-hints', methods=['POST'])
-def api_devices_client_hints():
-    """Receive client-side high-entropy userAgentData (model, platform, platformVersion)."""
-    data=request.get_json(silent=True) or {}; model=data.get('model'); platform=data.get('platform'); platform_version=data.get('platformVersion')
-    from app.services.device_service import get_or_create_device_id, update_device_client_hints
-    device_id,_=get_or_create_device_id(request); updated=update_device_client_hints(device_id,model=model,platform=platform,platform_version=platform_version); return jsonify(success=True,updated=updated,device_id=device_id)
