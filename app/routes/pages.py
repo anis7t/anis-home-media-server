@@ -201,6 +201,8 @@ def stamp_device_cookie(response):
     """Ensure persistent device tracking cookie is set on client page visits."""
     try:
         if response.mimetype == 'text/html':
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
             from app.services.device_service import register_device_request
             dev_id, is_new = register_device_request(request)
             if is_new or not request.cookies.get('ms_device_id'):
