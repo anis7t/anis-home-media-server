@@ -2,6 +2,7 @@
 import logging
 import os
 import sys
+import subprocess
 import threading
 import time
 
@@ -16,6 +17,36 @@ from app.services.transcode_service import (
 from app.utils.filesystem import is_video
 
 logger = logging.getLogger(__name__)
+
+
+def _deprioritize_background_process(proc):
+    """Lower CPU and disk-I/O scheduling priority without imposing a resource cap."""
+    pid = getattr(proc, 'pid', None)
+    if not pid:
+        return
+
+    # Increasing niceness makes background FFmpeg yield CPU to normal-priority
+    # web/streaming work when the machine is busy, while still allowing it to
+    # use all available CPU when higher-priority work is idle.
+    try:
+        os.setpriority(os.PRIO_PROCESS, pid, 10)
+    except (AttributeError, PermissionError, ProcessLookupError, OSError) as exc:
+        logger.debug("Could not lower CPU priority for background FFmpeg pid %s: %s", pid, exc)
+
+    # Linux idle I/O class lets uploads and interactive media reads/writes win
+    # disk access. ionice is optional, so the server remains portable.
+    try:
+        if shutil_which := getattr(__import__('shutil'), 'which', None):
+            ionice = shutil_which('ionice')
+            if ionice:
+                subprocess.run(
+                    [ionice, '-c', '3', '-p', str(pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("Could not lower I/O priority for background FFmpeg pid %s: %s", pid, exc)
 
 
 def auto_transcoder_loop():
@@ -37,6 +68,7 @@ def auto_transcoder_loop():
                 if not _is_hls_truly_complete(pl_file, p):
                     proc = ensure_hls_transcode(rel)
                     if proc is not None:
+                        _deprioritize_background_process(proc)
                         while not config.SHUTDOWN_EVENT.is_set():
                             if proc.poll() is not None:
                                 break
@@ -56,4 +88,3 @@ def start_auto_transcoder_worker():
 def start_precache_worker():
     """Backwards-compatible alias for start_auto_transcoder_worker."""
     start_auto_transcoder_worker()
-
