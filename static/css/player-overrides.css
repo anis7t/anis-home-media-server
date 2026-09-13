@@ -19,9 +19,7 @@
   pointer-events: auto;
 }
 
-/* A deliberately large hit box surrounds the visible timeline. The JS layer also
-   maps pointer coordinates directly to the timeline, which is more reliable on TV
-   browsers than relying solely on the native range-input hit testing. */
+/* Large transparent interaction zone around the visible timeline. */
 #controls .seek-hit-area {
   position: relative;
   display: flex;
@@ -34,6 +32,7 @@
   cursor: pointer;
   touch-action: none;
   pointer-events: auto;
+  overflow: visible;
 }
 
 #controls #seek {
@@ -46,13 +45,14 @@
   padding: 0 !important;
   border: 0 !important;
   border-radius: 999px;
+  /* Keep the input itself large while rendering the timeline as a centered strip. */
   background: linear-gradient(to right,
     #e50914 0%,
     #e50914 var(--seek-pct, 0%),
     rgba(255,255,255,.82) var(--seek-pct, 0%),
     rgba(255,255,255,.82) var(--buffer-pct, 0%),
     rgba(255,255,255,.30) var(--buffer-pct, 0%),
-    rgba(255,255,255,.30) 100%) !important;
+    rgba(255,255,255,.30) 100%) center / 100% var(--seek-track-size) no-repeat !important;
   cursor: pointer;
   touch-action: none;
   accent-color: #e50914;
@@ -92,13 +92,13 @@
   height: var(--seek-track-size) !important;
   border: 0 !important;
   border-radius: 999px;
-  background: rgba(255,255,255,.30) !important;
+  background: transparent !important;
 }
 
 #controls #seek::-moz-range-progress {
   height: var(--seek-track-size) !important;
   border-radius: 999px;
-  background: #e50914 !important;
+  background: transparent !important;
 }
 
 #controls #seek::-moz-range-thumb {
