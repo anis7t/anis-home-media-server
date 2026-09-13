@@ -93,12 +93,14 @@ def watch(filename):
     db.close()
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    return render_template(
+    html = render_template(
         'player.html',
         movie=m,
         tracks=tracks(path, m),
         transcode_info=transcode_info
     )
+    prefs_script = '<script src="/static/js/player-prefs.js" defer></script>'
+    return html.replace('</body>', prefs_script + '</body>') if '</body>' in html else html + prefs_script
 
 
 @pages_bp.route('/manifest.webmanifest')
