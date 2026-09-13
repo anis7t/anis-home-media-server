@@ -110,7 +110,10 @@
   };
 
   const beginScrub = (event) => {
+    // Hover/move must never seek. Only a primary-button press starts scrubbing.
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
+    event.stopPropagation();
     scrubbing = true;
     wasPlaying = !video.paused;
     wrapper.classList.add('is-scrubbing');
@@ -120,6 +123,7 @@
   };
 
   const setByPointer = (event) => {
+    if (!scrubbing) return;
     const d = duration();
     if (!d) return;
     const p = pointerPercent(event.clientX);
@@ -138,6 +142,7 @@
 
   const finishScrub = (event) => {
     if (!scrubbing) return;
+    event.stopPropagation();
     setByPointer(event);
     scrubbing = false;
     wrapper.classList.remove('is-scrubbing');
@@ -153,7 +158,8 @@
     if (scrubbing) setByPointer(event);
   });
   wrapper.addEventListener('pointerup', finishScrub);
-  wrapper.addEventListener('pointercancel', () => {
+  wrapper.addEventListener('pointercancel', (event) => {
+    event.stopPropagation();
     scrubbing = false;
     wrapper.classList.remove('is-scrubbing');
     clearHover();
