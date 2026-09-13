@@ -22,7 +22,7 @@ Automatic pre-cache HLS transcoding is deliberately deprioritized at the FFmpeg 
 
 Interactive HLS/direct transcoding is not given this background priority and therefore remains at the normal process priority.
 
-This does **not** cap FFmpeg CPU usage and does not impose a fixed GPU limit. A background transcode can still consume available CPU/GPU capacity when interactive work does not need it.
+This does **not** cap FFmpeg CPU usage and does not impose a fixed GPU limit. A background transcode can still consume substantial available CPU/GPU capacity when interactive work does not need it.
 
 ## Verification
 
