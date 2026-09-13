@@ -5,11 +5,13 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from shutil import which as shutil_which
 from flask import Blueprint, Response, abort, jsonify, request, send_file
 
 from app import config
 from app.services.media_service import probe_media
+from app.services.preview_service import ensure_preview_thumbnail, preview_meta, preview_dir
 from app.services.transcode_service import (
     compat_transcode_args,
     ensure_hls_transcode,
@@ -143,3 +145,29 @@ def hls_segment(filename, segment):
     seg_mimetype = 'video/mp2t' if segment.endswith('.ts') else 'video/mp4'
     return send_file(target, mimetype=seg_mimetype, max_age=3600)
 
+
+@media_bp.route('/api/seek-preview-meta/<path:filename>')
+def seek_preview_meta(filename):
+    """Return metadata used by the seek-bar hover preview."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    meta = preview_meta(path)
+    if not meta:
+        abort(404)
+    directory = meta['directory']
+    base_url = f"/seek-preview/{filename}"
+    return jsonify(duration=meta['duration'], interval=meta['interval'], count=meta['count'], base_url=base_url, cache_key=directory.name)
+
+
+@media_bp.route('/seek-preview/<path:filename>/<thumb>')
+def seek_preview_thumbnail(filename, thumb):
+    """Generate and serve one seek-bar preview thumbnail on demand."""
+    path = safe_path(filename)
+    match = re.fullmatch(r'thumb_(\d{5})\.jpg', thumb)
+    if not is_video(path) or not match:
+        abort(404)
+    target = ensure_preview_thumbnail(path, int(match.group(1)))
+    if target is None:
+        abort(404)
+    return send_file(target, mimetype='image/jpeg', max_age=86400, conditional=True, etag=True)
