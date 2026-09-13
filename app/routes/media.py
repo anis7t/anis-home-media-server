@@ -5,11 +5,13 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from shutil import which as shutil_which
 from flask import Blueprint, Response, abort, jsonify, request, send_file
 
 from app import config
 from app.services.media_service import probe_media
+from app.services.preview_service import ensure_preview, preview_dir
 from app.services.transcode_service import (
     compat_transcode_args,
     ensure_hls_transcode,
@@ -143,3 +145,17 @@ def hls_segment(filename, segment):
     seg_mimetype = 'video/mp2t' if segment.endswith('.ts') else 'video/mp4'
     return send_file(target, mimetype=seg_mimetype, max_age=3600)
 
+
+@media_bp.route('/seek-preview/<path:filename>/<thumb>')
+def seek_preview_thumbnail(filename, thumb):
+    """Serve generated seek-bar preview thumbnails."""
+    path = safe_path(filename)
+    if not is_video(path) or not re.fullmatch(r'thumb_\d{5}\.jpg', thumb):
+        abort(404)
+    directory = ensure_preview(path)
+    if directory is None:
+        abort(404)
+    target = directory / thumb
+    if not target.is_file():
+        abort(404)
+    return send_file(target, mimetype='image/jpeg', max_age=86400, conditional=True, etag=True)
