@@ -94,6 +94,9 @@ from app.services.worker_service import (
 # Frontend assets & templates for test assertions and backwards compatibility
 _STATIC_CSS_PATH = BASE_DIR / 'static' / 'css' / 'main.css'
 CSS = _STATIC_CSS_PATH.read_text(encoding='utf-8') if _STATIC_CSS_PATH.is_file() else ""
+_PLAYER_CSS_PATH = BASE_DIR / 'static' / 'css' / 'player-overrides.css'
+if _PLAYER_CSS_PATH.is_file():
+    CSS += '\n' + _PLAYER_CSS_PATH.read_text(encoding='utf-8')
 
 _TEMPLATES_DIR = BASE_DIR / 'templates'
 DETAILS_HTML = (_TEMPLATES_DIR / 'details.html').read_text(encoding='utf-8') if (_TEMPLATES_DIR / 'details.html').is_file() else ""
@@ -143,11 +146,13 @@ if __name__ == '__main__':
                 def load(self):
                     return self.application
 
+            gunicorn_workers = int(os.environ.get('GUNICORN_WORKERS', '2'))
+            gunicorn_threads = int(os.environ.get('GUNICORN_THREADS', '4'))
             gunicorn_opts = {
                 'bind': f'{host}:{port}',
-                'workers': int(os.environ.get('GUNICORN_WORKERS', '1')),
+                'workers': gunicorn_workers,
                 'worker_class': 'gthread',
-                'threads': int(os.environ.get('GUNICORN_THREADS', '8')),
+                'threads': gunicorn_threads,
                 'timeout': int(os.environ.get('GUNICORN_TIMEOUT', '120')),
                 'keepalive': int(os.environ.get('GUNICORN_KEEPALIVE', '5')),
                 'accesslog': '-',
@@ -155,7 +160,10 @@ if __name__ == '__main__':
                 'loglevel': os.environ.get('LOG_LEVEL', 'info').lower(),
                 'proc_name': 'media-server',
             }
-            logging.info(f"Starting production Gunicorn WSGI server on {host}:{port} with 8 worker threads...")
+            logging.info(
+                f"Starting production Gunicorn WSGI server on {host}:{port} "
+                f"with {gunicorn_workers} workers × {gunicorn_threads} threads..."
+            )
             StandaloneGunicornApp(app, gunicorn_opts).run()
             sys.exit(0)
         except Exception as e:

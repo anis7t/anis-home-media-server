@@ -1,0 +1,146 @@
+/* Player interaction refinements: accessible hit targets, strong timeline, buffered timeline, and hover persistence. */
+#controls {
+  --seek-track-size: 12px;
+  --seek-hit-size: 64px;
+  isolation: isolate;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #shell:hover #controls,
+  #controls:hover,
+  #controls:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+#controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Large transparent interaction zone around the visible timeline. */
+#controls .seek-hit-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--seek-hit-size);
+  min-height: 56px;
+  margin: 0 !important;
+  padding: 0 !important;
+  cursor: pointer;
+  touch-action: none;
+  pointer-events: auto;
+  overflow: visible;
+}
+
+#controls #seek {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--seek-hit-size) !important;
+  min-height: 56px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 999px;
+  /* Keep the input itself large while rendering the timeline as a centered strip. */
+  background: linear-gradient(to right,
+    #e50914 0%,
+    #e50914 var(--seek-pct, 0%),
+    rgba(255,255,255,.82) var(--seek-pct, 0%),
+    rgba(255,255,255,.82) var(--buffer-pct, 0%),
+    rgba(255,255,255,.30) var(--buffer-pct, 0%),
+    rgba(255,255,255,.30) 100%) center / 100% var(--seek-track-size) no-repeat !important;
+  cursor: pointer;
+  touch-action: none;
+  accent-color: #e50914;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: none;
+}
+
+#controls #seek::-webkit-slider-runnable-track {
+  width: 100%;
+  height: var(--seek-track-size) !important;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+}
+
+#controls #seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px !important;
+  height: 26px !important;
+  margin-top: calc((var(--seek-track-size) - 26px) / 2);
+  border: 2px solid rgba(9,11,16,.95) !important;
+  border-radius: 50%;
+  background: #fff !important;
+  box-shadow: 0 1px 7px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.6);
+  cursor: grab;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+#controls #seek:hover::-webkit-slider-thumb,
+#controls #seek:focus-visible::-webkit-slider-thumb { transform: scale(1.15); }
+#controls #seek:active::-webkit-slider-thumb { cursor: grabbing; transform: scale(1.28); }
+
+#controls #seek::-moz-range-track {
+  width: 100%;
+  height: var(--seek-track-size) !important;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+}
+
+#controls #seek::-moz-range-progress {
+  height: var(--seek-track-size) !important;
+  border-radius: 999px;
+  background: transparent !important;
+}
+
+#controls #seek::-moz-range-thumb {
+  width: 26px !important;
+  height: 26px !important;
+  border: 2px solid rgba(9,11,16,.95) !important;
+  border-radius: 50%;
+  background: #fff !important;
+  box-shadow: 0 1px 7px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.6);
+  cursor: grab;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+#controls #seek:hover::-moz-range-thumb,
+#controls #seek:focus-visible::-moz-range-thumb { transform: scale(1.15); }
+#controls #seek:active::-moz-range-thumb { cursor: grabbing; transform: scale(1.28); }
+
+#controls #seek:focus-visible {
+  outline: 2px solid rgba(255,255,255,.78);
+  outline-offset: 3px;
+}
+
+@media (pointer: coarse), (max-width: 768px), (max-height: 500px) {
+  #controls {
+    --seek-hit-size: 68px;
+    --seek-track-size: 12px;
+  }
+  #controls .seek-hit-area {
+    min-height: 60px;
+  }
+  #controls #seek {
+    min-height: 60px !important;
+  }
+  #controls #seek::-webkit-slider-thumb {
+    width: 28px !important;
+    height: 28px !important;
+    margin-top: calc((var(--seek-track-size) - 28px) / 2);
+  }
+  #controls #seek::-moz-range-thumb { width: 28px !important; height: 28px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #controls #seek::-webkit-slider-thumb,
+  #controls #seek::-moz-range-thumb { transition: none; }
+}

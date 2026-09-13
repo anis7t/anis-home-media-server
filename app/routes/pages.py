@@ -57,8 +57,10 @@ def details(filename):
     path = safe_path(filename)
     if not is_video(path):
         abort(404)
+    from app.services.device_service import get_or_create_device_id
+    device_id, _ = get_or_create_device_id(request)
     db = get_db()
-    m = movie(path, db)
+    m = movie(path, db, device_id=device_id)
     backdrop = m['tmdb_id'] if m['tmdb_id'] and (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file() else None
     extended = {}
     if m.get('details_json'):
@@ -71,7 +73,7 @@ def details(filename):
     formatted_runtime = format_runtime_display(m.get('runtime'))
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    return render_template(
+    html = render_template(
         'details.html',
         movie=m,
         backdrop=backdrop,
@@ -80,6 +82,8 @@ def details(filename):
         formatted_runtime=formatted_runtime,
         transcode_info=transcode_info
     )
+    details_script = '<script src="/static/js/details-enhancements.js?v=1" defer></script>'
+    return html.replace('</body>', details_script + '</body>') if '</body>' in html else html + details_script
 
 
 @pages_bp.route('/watch/<path:filename>')
@@ -88,17 +92,23 @@ def watch(filename):
     path = safe_path(filename)
     if not is_video(path):
         abort(404)
+    from app.services.device_service import get_or_create_device_id
+    device_id, _ = get_or_create_device_id(request)
     db = get_db()
-    m = movie(path, db)
+    m = movie(path, db, device_id=device_id)
     db.close()
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    return render_template(
+    html = render_template(
         'player.html',
         movie=m,
         tracks=tracks(path, m),
         transcode_info=transcode_info
     )
+    prefs_script = '<script src="/static/js/player-prefs.js?v=5" defer></script>'
+    enhancement_script = '<script src="/static/js/player-enhancements.js?v=3" defer></script>'
+    injected = prefs_script + enhancement_script
+    return html.replace('</body>', injected + '</body>') if '</body>' in html else html + injected
 
 
 @pages_bp.route('/manifest.webmanifest')
@@ -152,7 +162,6 @@ def manage():
     items = get_managed_media_items()
     total_size = sum(i['size_bytes'] for i in items)
 
-    # Calculate transcode & stream cache size
     cache_dir = get_cache_dir()
     hls_dir = cache_dir / 'hls'
     transcode_dir = cache_dir / 'transcodes'
@@ -191,8 +200,9 @@ def devices():
 def stamp_device_cookie(response):
     """Ensure persistent device tracking cookie is set on client page visits."""
     try:
-        # Only stamp HTML page responses, avoid static/sw/manifest
         if response.mimetype == 'text/html':
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
             from app.services.device_service import register_device_request
             dev_id, is_new = register_device_request(request)
             if is_new or not request.cookies.get('ms_device_id'):
@@ -206,5 +216,3 @@ def stamp_device_cookie(response):
     except Exception:
         pass
     return response
-
-
