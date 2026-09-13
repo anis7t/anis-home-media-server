@@ -8,6 +8,55 @@
   const speed = document.querySelector('#speed');
   if (!video) return;
 
+  // The visual timeline is intentionally slim, but the interactive target is much larger.
+  // This matters especially on TV browsers where a native range input may only respond
+  // reliably when the pointer lands very close to its rendered track.
+  if (seek && !seek.parentElement.classList.contains('seek-hit-area')) {
+    const hitArea = document.createElement('div');
+    hitArea.className = 'seek-hit-area';
+    hitArea.setAttribute('role', 'presentation');
+    seek.parentNode.insertBefore(hitArea, seek);
+    hitArea.appendChild(seek);
+
+    let pointerSeeking = false;
+
+    const seekFromClientX = clientX => {
+      const rect = hitArea.getBoundingClientRect();
+      if (!rect.width) return;
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      const duration = Number(video.duration) || 0;
+      if (!duration) return;
+      const position = ratio * duration;
+      seek.value = String(ratio * 100);
+      video.currentTime = position;
+      seek.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    hitArea.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      pointerSeeking = true;
+      hitArea.setPointerCapture?.(event.pointerId);
+      seekFromClientX(event.clientX);
+      event.preventDefault();
+    }, { passive: false });
+
+    hitArea.addEventListener('pointermove', event => {
+      if (!pointerSeeking) return;
+      seekFromClientX(event.clientX);
+      event.preventDefault();
+    }, { passive: false });
+
+    const stopPointerSeek = event => {
+      if (!pointerSeeking) return;
+      seekFromClientX(event.clientX);
+      pointerSeeking = false;
+      if (hitArea.hasPointerCapture?.(event.pointerId)) hitArea.releasePointerCapture(event.pointerId);
+      event.preventDefault();
+    };
+    hitArea.addEventListener('pointerup', stopPointerSeek, { passive: false });
+    hitArea.addEventListener('pointercancel', stopPointerSeek, { passive: false });
+  }
+
   const getDeviceId = () => {
     try {
       const stored = localStorage.getItem('media_device_id');
