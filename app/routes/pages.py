@@ -103,8 +103,8 @@ def watch(filename):
         tracks=tracks(path, m),
         transcode_info=transcode_info
     )
-    prefs_script = '<script src="/static/js/player-prefs.js?v=4" defer></script>'
-    enhancement_script = '<script src="/static/js/player-enhancements.js?v=1"></script>'
+    prefs_script = '<script src="/static/js/player-prefs.js?v=5" defer></script>'
+    enhancement_script = '<script src="/static/js/player-enhancements.js?v=2" defer></script>'
     injected = prefs_script + enhancement_script
     return html.replace('</body>', injected + '</body>') if '</body>' in html else html + injected
 
