@@ -73,7 +73,7 @@ def details(filename):
     formatted_runtime = format_runtime_display(m.get('runtime'))
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    return render_template(
+    html = render_template(
         'details.html',
         movie=m,
         backdrop=backdrop,
@@ -82,6 +82,8 @@ def details(filename):
         formatted_runtime=formatted_runtime,
         transcode_info=transcode_info
     )
+    details_script = '<script src="/static/js/details-enhancements.js?v=1" defer></script>'
+    return html.replace('</body>', details_script + '</body>') if '</body>' in html else html + details_script
 
 
 @pages_bp.route('/watch/<path:filename>')
