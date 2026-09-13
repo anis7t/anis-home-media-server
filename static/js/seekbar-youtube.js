@@ -25,16 +25,19 @@
   const preview = document.createElement('div');
   preview.id = 'seekPreview';
   preview.className = 'seek-preview';
+  preview.hidden = true;
   preview.setAttribute('aria-hidden', 'true');
+  const previewImage = document.createElement('img');
+  previewImage.alt = '';
+  previewImage.loading = 'eager';
+  previewImage.decoding = 'async';
+  const previewMissing = document.createElement('div');
+  previewMissing.className = 'seek-preview-missing';
+  previewMissing.textContent = 'Preview unavailable';
   const previewTime = document.createElement('div');
   previewTime.className = 'seek-preview-time';
-  preview.appendChild(previewTime);
+  preview.append(previewImage, previewMissing, previewTime);
   wrapper.appendChild(preview);
-
-  input.setAttribute('aria-label', 'Seek');
-  input.setAttribute('aria-valuemin', '0');
-  input.setAttribute('aria-valuemax', '100');
-  input.setAttribute('aria-valuenow', input.value || '0');
 
   const duration = () => {
     const d = Number(window.timelineDuration?.() ?? video.duration);
@@ -79,17 +82,29 @@
     return Math.max(0, Math.min(100, ((clientX - rect.left) / Math.max(rect.width, 1)) * 100));
   };
 
+  const previewCache = new Map();
+  let previewMetaPromise = null;
   let scrubbing = false;
   let wasPlaying = false;
   let hoverRaf = 0;
   let lastHoverX = null;
+
+  const loadPreviewMeta = () => {
+    if (!previewMetaPromise) {
+      const path = encodeURIComponent((location.pathname.split('/watch/')[1] || '').split('?')[0]);
+      previewMetaPromise = fetch(`/api/seek-preview-meta/${path}`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null);
+    }
+    return previewMetaPromise;
+  };
 
   const renderHover = (event) => {
     const d = duration();
     if (!d) return;
     lastHoverX = event.clientX;
     if (hoverRaf) return;
-    hoverRaf = requestAnimationFrame(() => {
+    hoverRaf = requestAnimationFrame(async () => {
       hoverRaf = 0;
       if (lastHoverX == null) return;
       const p = pointerPercent(lastHoverX);
@@ -99,8 +114,24 @@
       preview.style.left = `${p}%`;
       preview.hidden = false;
       previewTime.textContent = fmt(target);
-      if (tooltip) {
-        tooltip.hidden = true;
+      if (tooltip) tooltip.hidden = true;
+
+      const meta = await loadPreviewMeta();
+      if (!meta || !meta.interval || !meta.count) {
+        previewImage.hidden = true;
+        previewMissing.hidden = false;
+        return;
+      }
+      const idx = Math.max(0, Math.min(meta.count - 1, Math.floor(target / meta.interval)));
+      const url = meta.base_url + `/thumb_${String(idx).padStart(5, '0')}.jpg`;
+      if (previewCache.get('idx') !== idx) {
+        previewCache.set('idx', idx);
+        previewImage.onload = () => { previewMissing.hidden = true; previewImage.hidden = false; };
+        previewImage.onerror = () => { previewImage.hidden = true; previewMissing.hidden = false; };
+        previewImage.src = url;
+      } else if (previewImage.complete && previewImage.naturalWidth) {
+        previewMissing.hidden = true;
+        previewImage.hidden = false;
       }
     });
   };
@@ -184,8 +215,6 @@
     video.addEventListener(eventName, sync);
   });
 
-  const observerTarget = document.querySelector('#source');
-  if (observerTarget) observerTarget.addEventListener('load', renderBuffered);
   setInterval(renderBuffered, 500);
   renderBuffered();
   sync();
