@@ -1,0 +1,143 @@
+/* Player interaction refinements: accessible hit targets, buffered timeline, and hover persistence. */
+#controls {
+  --seek-track-size: 6px;
+  --seek-hit-size: 36px;
+  isolation: isolate;
+}
+
+/* Keep the controls available while the pointer/focus is inside the control surface. */
+#controls:hover,
+#controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#seek {
+  position: relative;
+  width: 100%;
+  height: var(--seek-hit-size);
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    #fff 0%,
+    #fff var(--seek-pct, 0%),
+    rgba(255,255,255,.42) var(--seek-pct, 0%),
+    rgba(255,255,255,.42) var(--buffer-pct, 0%),
+    rgba(255,255,255,.24) var(--buffer-pct, 0%),
+    rgba(255,255,255,.24) 100%
+  );
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: manipulation;
+  accent-color: #fff;
+  transition: none;
+}
+
+/* The input itself is deliberately tall; the track remains visually slim. */
+#seek::-webkit-slider-runnable-track {
+  width: 100%;
+  height: var(--seek-track-size);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+#seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: calc((var(--seek-track-size) - 18px) / 2);
+  border: 2px solid rgba(9,11,16,.9);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
+  cursor: grab;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+#seek:hover::-webkit-slider-thumb,
+#seek:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 2px 9px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.16);
+}
+
+#seek:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.28);
+}
+
+#seek::-moz-range-track {
+  width: 100%;
+  height: var(--seek-track-size);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+#seek::-moz-range-progress {
+  height: var(--seek-track-size);
+  border-radius: 999px;
+  background: transparent;
+}
+
+#seek::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(9,11,16,.9);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
+  cursor: grab;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+#seek:hover::-moz-range-thumb,
+#seek:focus-visible::-moz-range-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 2px 9px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.16);
+}
+
+#seek:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.28);
+}
+
+#seek:focus-visible {
+  outline: 2px solid rgba(255,255,255,.72);
+  outline-offset: 3px;
+}
+
+@media (pointer: coarse) {
+  #seek {
+    --seek-hit-size: 44px;
+  }
+}
+
+@media (max-width: 768px), (max-height: 500px) {
+  #seek {
+    --seek-hit-size: 44px;
+    min-height: 40px;
+  }
+
+  #seek::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+    margin-top: calc((var(--seek-track-size) - 20px) / 2);
+  }
+
+  #seek::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #seek::-webkit-slider-thumb,
+  #seek::-moz-range-thumb {
+    transition: none;
+  }
+}
