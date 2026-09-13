@@ -14,51 +14,52 @@ def preview_dir(path):
     return get_cache_dir() / "previews" / key
 
 
-def _duration(path):
-    try:
-        return float(probe_media(path).get("format", {}).get("duration") or 0)
-    except (TypeError, ValueError, OSError):
-        return 0.0
-
-
-def ensure_preview(path):
-    """Generate a compact VTT + JPEG thumbnail set on first request."""
+def preview_meta(path):
+    """Return stable preview sampling metadata without generating every frame."""
     path = Path(path)
-    directory = preview_dir(path)
-    vtt = directory / "preview.vtt"
-    if vtt.is_file() and vtt.stat().st_size:
-        return directory
-    ffmpeg = config.FFMPEG_BIN if hasattr(config, "FFMPEG_BIN") else "ffmpeg"
-    duration = _duration(path)
+    try:
+        duration = float(probe_media(path).get("format", {}).get("duration") or 0)
+    except (TypeError, ValueError, OSError):
+        duration = 0.0
     if duration <= 0:
         return None
+    interval = 5.0 if duration < 1800 else 10.0 if duration < 7200 else 15.0
+    count = max(1, int((duration - 0.001) // interval) + 1)
+    return {
+        "duration": duration,
+        "interval": interval,
+        "count": count,
+        "directory": preview_dir(path),
+    }
+
+
+def ensure_preview_thumbnail(path, index):
+    """Generate one cached JPEG frame for a preview index on demand."""
+    path = Path(path)
+    meta = preview_meta(path)
+    if not meta:
+        return None
+    try:
+        index = max(0, min(int(index), meta["count"] - 1))
+    except (TypeError, ValueError):
+        return None
+    directory = meta["directory"]
     directory.mkdir(parents=True, exist_ok=True)
-    interval = 10.0 if duration < 3600 else 15.0
-    count = int(duration // interval) + 1
-    for idx in range(count):
-        t = min(duration, idx * interval)
-        out = directory / f"thumb_{idx:05d}.jpg"
-        if out.is_file() and out.stat().st_size:
-            continue
-        try:
-            subprocess.run([
-                ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", f"{t:.3f}",
-                "-i", str(path), "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", "-y", str(out)
-            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except (OSError, subprocess.SubprocessError):
-            return None
-    lines = ["WEBVTT", ""]
-    for idx in range(count):
-        start = idx * interval
-        end = min(duration, start + interval)
-        if start >= duration:
-            break
-        def ts(value):
-            value = max(0.0, value)
-            h = int(value // 3600)
-            m = int((value % 3600) // 60)
-            s = value % 60
-            return f"{h:02d}:{m:02d}:{s:06.3f}"
-        lines += [f"{ts(start)} --> {ts(end)}", f"/seek-preview/{path.name}/thumb_{idx:05d}.jpg", ""]
-    vtt.write_text("\n".join(lines), encoding="utf-8")
-    return directory
+    target = directory / f"thumb_{index:05d}.jpg"
+    if target.is_file() and target.stat().st_size:
+        return target
+    t = min(meta["duration"] - 0.05, index * meta["interval"])
+    t = max(0.0, t)
+    ffmpeg = config.FFMPEG_BIN if hasattr(config, "FFMPEG_BIN") else "ffmpeg"
+    temporary = target.with_suffix(".part.jpg")
+    try:
+        subprocess.run([
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", f"{t:.3f}",
+            "-i", str(path), "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", "-y", str(temporary)
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+        if temporary.is_file() and temporary.stat().st_size:
+            temporary.replace(target)
+            return target
+    except (OSError, subprocess.SubprocessError):
+        temporary.unlink(missing_ok=True)
+    return None
