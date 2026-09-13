@@ -20,7 +20,6 @@
     return [...speed.options].some(o => Number(o.value.replace('×', '')) === n) ? n : 1;
   };
 
-  // localStorage is the client-side source of identity. The cookie is only the transport mirror used by HTTP requests.
   let deviceId = read('media_device_id', '') || cookieDevice();
   if (!deviceId) deviceId = 'dev_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Date.now().toString(36) + Math.random().toString(36).slice(2));
   write('media_device_id', deviceId);
@@ -41,7 +40,10 @@
     if (saved && Number.isFinite(Number(saved.position))) localPosition = Math.max(0, Number(saved.position));
   } catch (_) {}
 
-  const savePrefs = () => write(prefKey, JSON.stringify({ version: 2, volume: video.volume, muted: video.muted, speed: video.playbackRate }));
+  const savePrefs = () => {
+    prefs = { version: 2, volume: video.volume, muted: video.muted, speed: video.playbackRate };
+    write(prefKey, JSON.stringify(prefs));
+  };
   const syncMuteControl = () => { if (mute) mute.setAttribute('aria-pressed', video.muted ? 'true' : 'false'); };
   let userChangedVolume = false;
 
@@ -70,20 +72,22 @@
     userChangedVolume = true;
     video.volume = validVolume(volume.value);
     video.muted = false;
+    prefs.volume = video.volume;
+    prefs.muted = false;
     savePrefs();
     syncMuteControl();
   });
-  if (mute) mute.addEventListener('click', () => setTimeout(() => { savePrefs(); syncMuteControl(); }, 0));
+  if (mute) mute.addEventListener('click', () => setTimeout(() => { prefs.muted = video.muted; prefs.volume = video.volume; savePrefs(); syncMuteControl(); }, 0));
   video.addEventListener('volumechange', () => { if (userChangedVolume) savePrefs(); }, { passive: true });
 
   if (speed) speed.addEventListener('change', () => {
     const selected = validSpeed(speed.value);
     video.playbackRate = selected;
     speed.value = String(selected);
+    prefs.speed = selected;
     savePrefs();
   });
 
-  // Keep the local copy authoritative for resume state and synchronize it to the server for the same device.
   const savePosition = () => {
     if (!movieFilename || !Number.isFinite(video.currentTime)) return;
     const duration = Number(video.duration) || 0;
@@ -101,7 +105,6 @@
   video.addEventListener('ended', savePosition, { passive: true });
   window.addEventListener('pagehide', () => { savePrefs(); savePosition(); }, { passive: true });
 
-  // Attach the local device ID to future API requests, even if the server-side cookie was stale before this script ran.
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {
     try {
@@ -115,13 +118,10 @@
     return nativeFetch(input, init);
   };
 
-  // Gesture seeking owns currentTime only. Never let pointer/touch gestures alter playback speed.
   const restoreSpeedAfterGesture = event => {
     if (event.target.closest && event.target.closest('#speed')) return;
     if (!speed) return;
-    let stored = 1;
-    try { stored = JSON.parse(read(prefKey, '{}')).speed ?? 1; } catch (_) {}
-    const selected = validSpeed(stored);
+    const selected = validSpeed(prefs.speed ?? 1);
     if (video.playbackRate !== selected) video.playbackRate = selected;
     speed.value = String(selected);
   };
