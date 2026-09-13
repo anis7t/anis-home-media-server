@@ -12,33 +12,24 @@
   wrapper.className = 'seek-track';
   wrapper.setAttribute('role', 'presentation');
 
-  const rail = document.createElement('span');
-  rail.className = 'seek-rail';
-  rail.setAttribute('aria-hidden', 'true');
-
-  const buffered = document.createElement('span');
-  buffered.id = 'seekBuffered';
-  buffered.className = 'seek-buffered';
-  buffered.setAttribute('aria-hidden', 'true');
-
-  const played = document.createElement('span');
-  played.id = 'seekPlayed';
-  played.className = 'seek-played';
-  played.setAttribute('aria-hidden', 'true');
-
-  const hover = document.createElement('span');
-  hover.id = 'seekHoverMarker';
-  hover.className = 'seek-hover-marker';
-  hover.setAttribute('aria-hidden', 'true');
-
-  const thumb = document.createElement('span');
-  thumb.id = 'seekThumb';
-  thumb.className = 'seek-thumb';
-  thumb.setAttribute('aria-hidden', 'true');
+  const rail = document.createElement('span'); rail.className = 'seek-rail'; rail.setAttribute('aria-hidden', 'true');
+  const buffered = document.createElement('span'); buffered.id = 'seekBuffered'; buffered.className = 'seek-buffered'; buffered.setAttribute('aria-hidden', 'true');
+  const played = document.createElement('span'); played.id = 'seekPlayed'; played.className = 'seek-played'; played.setAttribute('aria-hidden', 'true');
+  const hover = document.createElement('span'); hover.id = 'seekHoverMarker'; hover.className = 'seek-hover-marker'; hover.setAttribute('aria-hidden', 'true');
+  const thumb = document.createElement('span'); thumb.id = 'seekThumb'; thumb.className = 'seek-thumb'; thumb.setAttribute('aria-hidden', 'true');
 
   input.parentNode.insertBefore(wrapper, input);
   wrapper.append(rail, buffered, played, hover, thumb, input);
   if (tooltip) wrapper.appendChild(tooltip);
+
+  const preview = document.createElement('div');
+  preview.id = 'seekPreview';
+  preview.className = 'seek-preview';
+  preview.setAttribute('aria-hidden', 'true');
+  const previewTime = document.createElement('div');
+  previewTime.className = 'seek-preview-time';
+  preview.appendChild(previewTime);
+  wrapper.appendChild(preview);
 
   input.setAttribute('aria-label', 'Seek');
   input.setAttribute('aria-valuemin', '0');
@@ -53,8 +44,7 @@
   const fmt = (seconds) => {
     const s = Math.max(0, Math.floor(Number(seconds) || 0));
     return (s > 3599 ? `${Math.floor(s / 3600)}:` : '') +
-      String(Math.floor((s % 3600) / 60)).padStart(s > 3599 ? 2 : 1, '0') + ':' +
-      String(s % 60).padStart(2, '0');
+      String(Math.floor((s % 3600) / 60)).padStart(s > 3599 ? 2 : 1, '0') + ':' + String(s % 60).padStart(2, '0');
   };
 
   const setPlayed = (pct) => {
@@ -91,38 +81,38 @@
 
   let scrubbing = false;
   let wasPlaying = false;
+  let hoverRaf = 0;
+  let lastHoverX = null;
 
   const renderHover = (event) => {
     const d = duration();
-    const p = pointerPercent(event.clientX);
-    hover.style.left = `${p}%`;
-    if (tooltip) {
-      tooltip.hidden = !d;
-      tooltip.style.left = `${p}%`;
-      tooltip.textContent = fmt((p / 100) * d);
-    }
+    if (!d) return;
+    lastHoverX = event.clientX;
+    if (hoverRaf) return;
+    hoverRaf = requestAnimationFrame(() => {
+      hoverRaf = 0;
+      if (lastHoverX == null) return;
+      const p = pointerPercent(lastHoverX);
+      const target = (p / 100) * d;
+      hover.style.left = `${p}%`;
+      hover.style.opacity = '1';
+      preview.style.left = `${p}%`;
+      preview.hidden = false;
+      previewTime.textContent = fmt(target);
+      if (tooltip) {
+        tooltip.hidden = true;
+      }
+    });
   };
 
   const clearHover = () => {
     if (scrubbing) return;
     hover.style.opacity = '0';
+    preview.hidden = true;
     if (tooltip) tooltip.hidden = true;
   };
 
-  const beginScrub = (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    scrubbing = true;
-    wasPlaying = !video.paused;
-    wrapper.classList.add('is-scrubbing');
-    wrapper.setPointerCapture?.(event.pointerId);
-    renderHover(event);
-    setByPointer(event);
-  };
-
-  const setByPointer = (event) => {
-    if (!scrubbing) return;
+  const seekToEvent = (event) => {
     const d = duration();
     if (!d) return;
     const p = pointerPercent(event.clientX);
@@ -139,23 +129,34 @@
     if (time) time.textContent = `${fmt(target)} / ${fmt(d)}`;
   };
 
+  const beginScrub = (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    scrubbing = true;
+    wasPlaying = !video.paused;
+    wrapper.classList.add('is-scrubbing');
+    wrapper.setPointerCapture?.(event.pointerId);
+    seekToEvent(event);
+    renderHover(event);
+  };
+
   const finishScrub = (event) => {
     if (!scrubbing) return;
+    event.preventDefault();
     event.stopPropagation();
-    setByPointer(event);
+    seekToEvent(event);
     scrubbing = false;
     wrapper.classList.remove('is-scrubbing');
     wrapper.releasePointerCapture?.(event.pointerId);
-    if (wasPlaying || !video.paused) video.play().catch(() => {});
-    clearHover();
+    if (wasPlaying) video.play().catch(() => {});
     renderBuffered();
   };
 
   wrapper.addEventListener('pointerdown', beginScrub);
   wrapper.addEventListener('pointermove', (event) => {
     renderHover(event);
-    hover.style.opacity = '1';
-    if (scrubbing) setByPointer(event);
+    if (scrubbing) seekToEvent(event);
   });
   wrapper.addEventListener('pointerup', finishScrub);
   wrapper.addEventListener('pointercancel', (event) => {
@@ -165,10 +166,7 @@
     clearHover();
   });
   wrapper.addEventListener('pointerleave', clearHover);
-  wrapper.addEventListener('pointerenter', (event) => {
-    hover.style.opacity = '1';
-    renderHover(event);
-  });
+  wrapper.addEventListener('pointerenter', renderHover);
 
   input.addEventListener('input', () => setPlayed(Number(input.value) || 0));
   input.addEventListener('change', renderBuffered);
@@ -179,13 +177,16 @@
     if (scrubbing) return;
     const d = duration();
     setPlayed(d ? (video.currentTime / d) * 100 : 0);
+    renderBuffered();
   };
 
-  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied', 'waiting'].forEach((eventName) => {
-    video.addEventListener(eventName, () => { renderBuffered(); sync(); });
+  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied', 'waiting', 'timeupdate'].forEach((eventName) => {
+    video.addEventListener(eventName, sync);
   });
-  video.addEventListener('timeupdate', sync);
 
+  const observerTarget = document.querySelector('#source');
+  if (observerTarget) observerTarget.addEventListener('load', renderBuffered);
+  setInterval(renderBuffered, 500);
   renderBuffered();
   sync();
 })();
