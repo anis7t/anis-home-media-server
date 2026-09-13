@@ -33,11 +33,16 @@
   previewImage.decoding = 'async';
   const previewMissing = document.createElement('div');
   previewMissing.className = 'seek-preview-missing';
-  previewMissing.textContent = 'Preview unavailable';
+  previewMissing.textContent = 'Generating preview…';
   const previewTime = document.createElement('div');
   previewTime.className = 'seek-preview-time';
   preview.append(previewImage, previewMissing, previewTime);
   wrapper.appendChild(preview);
+
+  input.setAttribute('aria-label', 'Seek');
+  input.setAttribute('aria-valuemin', '0');
+  input.setAttribute('aria-valuemax', '100');
+  input.setAttribute('aria-valuenow', input.value || '0');
 
   const duration = () => {
     const d = Number(window.timelineDuration?.() ?? video.duration);
@@ -82,6 +87,18 @@
     return Math.max(0, Math.min(100, ((clientX - rect.left) / Math.max(rect.width, 1)) * 100));
   };
 
+  const source = document.querySelector('#source');
+  const mediaFilename = (() => {
+    if (!source?.src) return '';
+    try {
+      const url = new URL(source.src, location.origin);
+      if (!url.pathname.startsWith('/media/')) return '';
+      return decodeURIComponent(url.pathname.slice('/media/'.length));
+    } catch (_) {
+      return '';
+    }
+  })();
+
   const previewCache = new Map();
   let previewMetaPromise = null;
   let scrubbing = false;
@@ -90,9 +107,9 @@
   let lastHoverX = null;
 
   const loadPreviewMeta = () => {
+    if (!mediaFilename) return Promise.resolve(null);
     if (!previewMetaPromise) {
-      const path = encodeURIComponent((location.pathname.split('/watch/')[1] || '').split('?')[0]);
-      previewMetaPromise = fetch(`/api/seek-preview-meta/${path}`, { cache: 'no-store' })
+      previewMetaPromise = fetch(`/api/seek-preview-meta/${encodeURIComponent(mediaFilename).replace(/%2F/g, '/')}`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .catch(() => null);
     }
@@ -117,13 +134,13 @@
       if (tooltip) tooltip.hidden = true;
 
       const meta = await loadPreviewMeta();
-      if (!meta || !meta.interval || !meta.count) {
+      if (!meta || !meta.interval || !meta.count || !meta.base_url) {
         previewImage.hidden = true;
         previewMissing.hidden = false;
         return;
       }
       const idx = Math.max(0, Math.min(meta.count - 1, Math.floor(target / meta.interval)));
-      const url = meta.base_url + `/thumb_${String(idx).padStart(5, '0')}.jpg`;
+      const url = `${meta.base_url}/thumb_${String(idx).padStart(5, '0')}.jpg`;
       if (previewCache.get('idx') !== idx) {
         previewCache.set('idx', idx);
         previewImage.onload = () => { previewMissing.hidden = true; previewImage.hidden = false; };
