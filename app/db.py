@@ -23,6 +23,15 @@ def init_db():
         "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
     )
     db.execute(
+        "CREATE TABLE IF NOT EXISTS device_progress("
+        "device_id TEXT NOT NULL,"
+        "filename TEXT NOT NULL,"
+        "position REAL NOT NULL DEFAULT 0,"
+        "duration REAL NOT NULL DEFAULT 0,"
+        "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+        "PRIMARY KEY(device_id, filename))"
+    )
+    db.execute(
         "CREATE TABLE IF NOT EXISTS movies("
         "filename TEXT PRIMARY KEY,"
         "title TEXT,"
@@ -87,6 +96,7 @@ def init_db():
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_dwh_device ON device_watch_history(device_id, last_watched DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_device_progress_updated ON device_progress(device_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON progress(updated_at DESC)")
     db.execute("INSERT OR IGNORE INTO schema_migrations VALUES(1)")
     db.commit()
@@ -102,4 +112,3 @@ def value(row, key, default=None):
     if isinstance(row, dict):
         return row.get(key, default)
     return default
-
