@@ -116,22 +116,34 @@
   if (seek) {
     const updateSeek = () => {
       const duration = Number(video.duration) || 0;
-      const current = duration ? Math.min(100, Math.max(0, video.currentTime / duration * 100)) : 0;
-      let buffered = current;
+      const currentTime = Number(video.currentTime) || 0;
+      const current = duration ? Math.min(100, Math.max(0, currentTime / duration * 100)) : 0;
+      let bufferedEnd = currentTime;
+
       if (duration && video.buffered && video.buffered.length) {
         try {
-          for (let i = video.buffered.length - 1; i >= 0; i--) {
-            if (video.currentTime >= video.buffered.start(i) && video.currentTime <= video.buffered.end(i)) {
-              buffered = Math.min(100, video.buffered.end(i) / duration * 100);
-              break;
+          let bestEnd = currentTime;
+          let bestDistance = Infinity;
+          for (let i = 0; i < video.buffered.length; i++) {
+            const start = video.buffered.start(i);
+            const end = video.buffered.end(i);
+            if (end + 0.25 >= currentTime) {
+              const distance = Math.max(0, start - currentTime);
+              if (distance < bestDistance || (distance === bestDistance && end > bestEnd)) {
+                bestDistance = distance;
+                bestEnd = end;
+              }
             }
           }
+          bufferedEnd = Math.max(currentTime, bestEnd);
         } catch (_) {}
       }
+
+      const buffered = duration ? Math.min(100, Math.max(current, bufferedEnd / duration * 100)) : current;
       seek.style.setProperty('--seek-pct', current + '%');
-      seek.style.setProperty('--buffer-pct', Math.max(current, buffered) + '%');
+      seek.style.setProperty('--buffer-pct', buffered + '%');
     };
-    ['loadedmetadata', 'durationchange', 'progress', 'timeupdate', 'canplay'].forEach(event => video.addEventListener(event, updateSeek, { passive: true }));
+    ['loadedmetadata', 'durationchange', 'progress', 'timeupdate', 'canplay', 'playing', 'waiting', 'seeking', 'seeked'].forEach(event => video.addEventListener(event, updateSeek, { passive: true }));
     seek.addEventListener('input', updateSeek, { passive: true });
     updateSeek();
   }
