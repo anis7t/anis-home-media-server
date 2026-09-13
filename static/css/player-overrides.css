@@ -5,8 +5,17 @@
   isolation: isolate;
 }
 
-/* Keep the controls available while the pointer/focus is inside the control surface. */
-#controls:hover,
+/* Desktop: keep the control surface visible for as long as the pointer is over the player. */
+@media (hover: hover) and (pointer: fine) {
+  #shell:hover #controls,
+  #controls:hover,
+  #controls:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Keyboard users should never lose access to a focused control. */
 #controls:focus-within {
   opacity: 1;
   pointer-events: auto;
