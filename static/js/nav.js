@@ -14,6 +14,10 @@
   css.rel = 'stylesheet';
   css.href = '/static/css/seekbar-youtube.css';
   document.head.appendChild(css);
+  const previewCss = document.createElement('link');
+  previewCss.rel = 'stylesheet';
+  previewCss.href = '/static/css/seek-preview.css';
+  document.head.appendChild(previewCss);
   load('/static/js/nav-original.js').catch(() => {});
   load('/static/js/seekbar-youtube.js').catch(() => {});
 })();
