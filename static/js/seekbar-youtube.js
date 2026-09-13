@@ -68,21 +68,20 @@
 
   const renderBuffered = () => {
     const d = duration();
-    buffered.textContent = '';
+    buffered.replaceChildren();
     if (!d) return;
     try {
-      for (let i = 0; i < video.buffered.length; i += 1) {
-        const start = Math.max(0, Math.min(d, video.buffered.start(i)));
-        const end = Math.max(start, Math.min(d, video.buffered.end(i)));
-        if (end <= start) continue;
+      const ranges = video.buffered;
+      for (let i = 0; i < ranges.length; i += 1) {
+        const start = Math.max(0, Math.min(d, Number(ranges.start(i))));
+        const end = Math.max(start, Math.min(d, Number(ranges.end(i))));
+        if (!(end > start)) continue;
         const segment = document.createElement('i');
         segment.style.left = `${(start / d) * 100}%`;
         segment.style.width = `${((end - start) / d) * 100}%`;
         buffered.appendChild(segment);
       }
-    } catch (_) {
-      // Media TimeRanges can briefly become unavailable during source changes.
-    }
+    } catch (_) {}
   };
 
   const pointerPercent = (clientX) => {
@@ -94,12 +93,13 @@
   let wasPlaying = false;
 
   const renderHover = (event) => {
+    const d = duration();
     const p = pointerPercent(event.clientX);
     hover.style.left = `${p}%`;
     if (tooltip) {
-      tooltip.hidden = false;
+      tooltip.hidden = !d;
       tooltip.style.left = `${p}%`;
-      tooltip.textContent = fmt((p / 100) * duration());
+      tooltip.textContent = fmt((p / 100) * d);
     }
   };
 
@@ -110,7 +110,6 @@
   };
 
   const beginScrub = (event) => {
-    // Hover/move must never seek. Only a primary-button press starts scrubbing.
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -149,6 +148,7 @@
     wrapper.releasePointerCapture?.(event.pointerId);
     if (wasPlaying || !video.paused) video.play().catch(() => {});
     clearHover();
+    renderBuffered();
   };
 
   wrapper.addEventListener('pointerdown', beginScrub);
@@ -170,14 +170,10 @@
     renderHover(event);
   });
 
-  input.addEventListener('input', () => {
-    const p = Number(input.value) || 0;
-    setPlayed(p);
-  });
+  input.addEventListener('input', () => setPlayed(Number(input.value) || 0));
+  input.addEventListener('change', renderBuffered);
   input.addEventListener('focus', () => wrapper.classList.add('is-scrubbing'));
-  input.addEventListener('blur', () => {
-    if (!scrubbing) wrapper.classList.remove('is-scrubbing');
-  });
+  input.addEventListener('blur', () => { if (!scrubbing) wrapper.classList.remove('is-scrubbing'); });
 
   const sync = () => {
     if (scrubbing) return;
@@ -185,11 +181,8 @@
     setPlayed(d ? (video.currentTime / d) * 100 : 0);
   };
 
-  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied'].forEach((eventName) => {
-    video.addEventListener(eventName, () => {
-      renderBuffered();
-      sync();
-    });
+  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied', 'waiting'].forEach((eventName) => {
+    video.addEventListener(eventName, () => { renderBuffered(); sync(); });
   });
   video.addEventListener('timeupdate', sync);
 
