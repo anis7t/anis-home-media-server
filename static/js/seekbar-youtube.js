@@ -25,16 +25,19 @@
   const preview = document.createElement('div');
   preview.id = 'seekPreview';
   preview.className = 'seek-preview';
+  preview.hidden = true;
   preview.setAttribute('aria-hidden', 'true');
+  const previewImage = document.createElement('img');
+  previewImage.alt = '';
+  previewImage.decoding = 'async';
+  previewImage.hidden = true;
+  const previewMissing = document.createElement('div');
+  previewMissing.className = 'seek-preview-missing';
+  previewMissing.textContent = 'Generating preview…';
   const previewTime = document.createElement('div');
   previewTime.className = 'seek-preview-time';
-  preview.appendChild(previewTime);
+  preview.append(previewImage, previewMissing, previewTime);
   wrapper.appendChild(preview);
-
-  input.setAttribute('aria-label', 'Seek');
-  input.setAttribute('aria-valuemin', '0');
-  input.setAttribute('aria-valuemax', '100');
-  input.setAttribute('aria-valuenow', input.value || '0');
 
   const duration = () => {
     const d = Number(window.timelineDuration?.() ?? video.duration);
@@ -53,7 +56,6 @@
     thumb.style.left = `${p}%`;
     input.style.setProperty('--seek-pct', `${p}%`);
     input.setAttribute('aria-valuenow', p.toFixed(2));
-    return p;
   };
 
   const renderBuffered = () => {
@@ -61,14 +63,13 @@
     buffered.replaceChildren();
     if (!d) return;
     try {
-      const ranges = video.buffered;
-      for (let i = 0; i < ranges.length; i += 1) {
-        const start = Math.max(0, Math.min(d, Number(ranges.start(i))));
-        const end = Math.max(start, Math.min(d, Number(ranges.end(i))));
+      for (let i = 0; i < video.buffered.length; i += 1) {
+        const start = Math.max(0, Math.min(d, Number(video.buffered.start(i))));
+        const end = Math.max(start, Math.min(d, Number(video.buffered.end(i))));
         if (!(end > start)) continue;
         const segment = document.createElement('i');
-        segment.style.left = `${(start / d) * 100}%`;
-        segment.style.width = `${((end - start) / d) * 100}%`;
+        segment.style.left = `${start / d * 100}%`;
+        segment.style.width = `${(end - start) / d * 100}%`;
         buffered.appendChild(segment);
       }
     } catch (_) {}
@@ -76,37 +77,91 @@
 
   const pointerPercent = (clientX) => {
     const rect = wrapper.getBoundingClientRect();
-    return Math.max(0, Math.min(100, ((clientX - rect.left) / Math.max(rect.width, 1)) * 100));
+    return Math.max(0, Math.min(100, (clientX - rect.left) / Math.max(rect.width, 1) * 100));
   };
 
+  const source = document.querySelector('#source');
+  const mediaFilename = (() => {
+    try {
+      const url = new URL(source?.src || '', location.origin);
+      return url.pathname.startsWith('/media/') ? decodeURIComponent(url.pathname.slice(7)) : '';
+    } catch (_) { return ''; }
+  })();
+
+  let previewMetaPromise = null;
+  let previewIndex = -1;
+  let previewRequest = 0;
   let scrubbing = false;
   let wasPlaying = false;
   let hoverRaf = 0;
   let lastHoverX = null;
+
+  const loadPreviewMeta = () => {
+    if (!mediaFilename) return Promise.resolve(null);
+    if (!previewMetaPromise) {
+      const encoded = encodeURIComponent(mediaFilename).replace(/%2F/g, '/');
+      previewMetaPromise = fetch(`/api/seek-preview-meta/${encoded}`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null);
+    }
+    return previewMetaPromise;
+  };
 
   const renderHover = (event) => {
     const d = duration();
     if (!d) return;
     lastHoverX = event.clientX;
     if (hoverRaf) return;
-    hoverRaf = requestAnimationFrame(() => {
+    hoverRaf = requestAnimationFrame(async () => {
       hoverRaf = 0;
       if (lastHoverX == null) return;
       const p = pointerPercent(lastHoverX);
-      const target = (p / 100) * d;
+      const target = p / 100 * d;
+      const requestId = ++previewRequest;
+
       hover.style.left = `${p}%`;
       hover.style.opacity = '1';
       preview.style.left = `${p}%`;
       preview.hidden = false;
       previewTime.textContent = fmt(target);
-      if (tooltip) {
-        tooltip.hidden = true;
+      if (tooltip) tooltip.hidden = true;
+
+      const meta = await loadPreviewMeta();
+      if (requestId !== previewRequest) return;
+      if (!meta?.interval || !meta?.count || !meta?.base_url) {
+        previewImage.hidden = true;
+        previewMissing.hidden = false;
+        return;
+      }
+
+      const index = Math.max(0, Math.min(meta.count - 1, Math.floor(target / meta.interval)));
+      const url = `${meta.base_url}/thumb_${String(index).padStart(5, '0')}.jpg`;
+      if (previewIndex !== index || previewImage.dataset.src !== url) {
+        previewIndex = index;
+        previewImage.dataset.src = url;
+        previewImage.onload = () => {
+          if (requestId === previewRequest) {
+            previewMissing.hidden = true;
+            previewImage.hidden = false;
+          }
+        };
+        previewImage.onerror = () => {
+          if (requestId === previewRequest) {
+            previewImage.hidden = true;
+            previewMissing.hidden = false;
+          }
+        };
+        previewImage.src = url;
+      } else if (previewImage.complete && previewImage.naturalWidth) {
+        previewMissing.hidden = true;
+        previewImage.hidden = false;
       }
     });
   };
 
   const clearHover = () => {
     if (scrubbing) return;
+    previewRequest += 1;
     hover.style.opacity = '0';
     preview.hidden = true;
     if (tooltip) tooltip.hidden = true;
@@ -116,17 +171,11 @@
     const d = duration();
     if (!d) return;
     const p = pointerPercent(event.clientX);
-    const target = (p / 100) * d;
+    const target = p / 100 * d;
     input.value = p;
     setPlayed(p);
     video.currentTime = target;
     if (typeof window.checkPreparing === 'function') window.checkPreparing(target);
-    const timeElapsed = document.querySelector('#timeElapsed');
-    const timeTotal = document.querySelector('#timeTotal');
-    const time = document.querySelector('#time');
-    if (timeElapsed) timeElapsed.textContent = fmt(target);
-    if (timeTotal) timeTotal.textContent = fmt(d);
-    if (time) time.textContent = `${fmt(target)} / ${fmt(d)}`;
   };
 
   const beginScrub = (event) => {
@@ -154,38 +203,23 @@
   };
 
   wrapper.addEventListener('pointerdown', beginScrub);
-  wrapper.addEventListener('pointermove', (event) => {
-    renderHover(event);
-    if (scrubbing) seekToEvent(event);
-  });
+  wrapper.addEventListener('pointermove', event => { renderHover(event); if (scrubbing) seekToEvent(event); });
   wrapper.addEventListener('pointerup', finishScrub);
-  wrapper.addEventListener('pointercancel', (event) => {
-    event.stopPropagation();
-    scrubbing = false;
-    wrapper.classList.remove('is-scrubbing');
-    clearHover();
-  });
-  wrapper.addEventListener('pointerleave', clearHover);
+  wrapper.addEventListener('pointercancel', event => { event.stopPropagation(); scrubbing = false; wrapper.classList.remove('is-scrubbing'); clearHover(); });
   wrapper.addEventListener('pointerenter', renderHover);
+  wrapper.addEventListener('pointerleave', clearHover);
 
   input.addEventListener('input', () => setPlayed(Number(input.value) || 0));
   input.addEventListener('change', renderBuffered);
-  input.addEventListener('focus', () => wrapper.classList.add('is-scrubbing'));
-  input.addEventListener('blur', () => { if (!scrubbing) wrapper.classList.remove('is-scrubbing'); });
 
   const sync = () => {
     if (scrubbing) return;
     const d = duration();
-    setPlayed(d ? (video.currentTime / d) * 100 : 0);
+    setPlayed(d ? video.currentTime / d * 100 : 0);
     renderBuffered();
   };
 
-  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied', 'waiting', 'timeupdate'].forEach((eventName) => {
-    video.addEventListener(eventName, sync);
-  });
-
-  const observerTarget = document.querySelector('#source');
-  if (observerTarget) observerTarget.addEventListener('load', renderBuffered);
+  ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied', 'waiting', 'timeupdate'].forEach(name => video.addEventListener(name, sync));
   setInterval(renderBuffered, 500);
   renderBuffered();
   sync();
