@@ -1,11 +1,10 @@
 /* Player interaction refinements: accessible hit targets, buffered timeline, and hover persistence. */
 #controls {
-  --seek-track-size: 6px;
-  --seek-hit-size: 36px;
+  --seek-track-size: 8px;
+  --seek-hit-size: 48px;
   isolation: isolate;
 }
 
-/* Desktop: keep the control surface visible for as long as the pointer is over the player. */
 @media (hover: hover) and (pointer: fine) {
   #shell:hover #controls,
   #controls:hover,
@@ -15,138 +14,123 @@
   }
 }
 
-/* Keyboard users should never lose access to a focused control. */
 #controls:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
 
-#seek {
+#controls #seek {
   position: relative;
+  display: block;
   width: 100%;
   height: var(--seek-hit-size);
-  min-height: 32px;
+  min-height: 44px;
   margin: 0;
   padding: 0;
   border: 0;
+  border-radius: 999px;
   background: linear-gradient(
     to right,
     #fff 0%,
     #fff var(--seek-pct, 0%),
-    rgba(255,255,255,.42) var(--seek-pct, 0%),
-    rgba(255,255,255,.42) var(--buffer-pct, 0%),
-    rgba(255,255,255,.24) var(--buffer-pct, 0%),
-    rgba(255,255,255,.24) 100%
-  );
-  border-radius: 999px;
+    rgba(255,255,255,.48) var(--seek-pct, 0%),
+    rgba(255,255,255,.48) var(--buffer-pct, 0%),
+    rgba(255,255,255,.22) var(--buffer-pct, 0%),
+    rgba(255,255,255,.22) 100%
+  ) !important;
   cursor: pointer;
   touch-action: manipulation;
   accent-color: #fff;
+  appearance: none;
+  -webkit-appearance: none;
   transition: none;
 }
 
-/* The input itself is deliberately tall; the track remains visually slim. */
-#seek::-webkit-slider-runnable-track {
+#controls #seek::-webkit-slider-runnable-track {
   width: 100%;
   height: var(--seek-track-size);
   border: 0;
   border-radius: 999px;
-  background: transparent;
+  background: transparent !important;
 }
 
-#seek::-webkit-slider-thumb {
+#controls #seek::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
-  margin-top: calc((var(--seek-track-size) - 18px) / 2);
+  width: 22px;
+  height: 22px;
+  margin-top: calc((var(--seek-track-size) - 22px) / 2);
   border: 2px solid rgba(9,11,16,.9);
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 6px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
+  box-shadow: 0 1px 7px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
   cursor: grab;
   transition: transform .14s ease, box-shadow .14s ease;
 }
 
-#seek:hover::-webkit-slider-thumb,
-#seek:focus-visible::-webkit-slider-thumb {
+#controls #seek:hover::-webkit-slider-thumb,
+#controls #seek:focus-visible::-webkit-slider-thumb {
   transform: scale(1.18);
-  box-shadow: 0 2px 9px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.16);
+  box-shadow: 0 2px 10px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.18);
 }
 
-#seek:active::-webkit-slider-thumb {
+#controls #seek:active::-webkit-slider-thumb {
   cursor: grabbing;
   transform: scale(1.28);
 }
 
-#seek::-moz-range-track {
+#controls #seek::-moz-range-track {
   width: 100%;
   height: var(--seek-track-size);
   border: 0;
   border-radius: 999px;
-  background: transparent;
+  background: transparent !important;
 }
 
-#seek::-moz-range-progress {
+#controls #seek::-moz-range-progress {
   height: var(--seek-track-size);
   border-radius: 999px;
-  background: transparent;
+  background: transparent !important;
 }
 
-#seek::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+#controls #seek::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
   border: 2px solid rgba(9,11,16,.9);
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 6px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
+  box-shadow: 0 1px 7px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.45);
   cursor: grab;
   transition: transform .14s ease, box-shadow .14s ease;
 }
 
-#seek:hover::-moz-range-thumb,
-#seek:focus-visible::-moz-range-thumb {
+#controls #seek:hover::-moz-range-thumb,
+#controls #seek:focus-visible::-moz-range-thumb {
   transform: scale(1.18);
-  box-shadow: 0 2px 9px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.16);
+  box-shadow: 0 2px 10px rgba(0,0,0,.65), 0 0 0 3px rgba(255,255,255,.18);
 }
 
-#seek:active::-moz-range-thumb {
+#controls #seek:active::-moz-range-thumb {
   cursor: grabbing;
   transform: scale(1.28);
 }
 
-#seek:focus-visible {
+#controls #seek:focus-visible {
   outline: 2px solid rgba(255,255,255,.72);
   outline-offset: 3px;
 }
 
 @media (pointer: coarse) {
-  #seek {
-    --seek-hit-size: 44px;
-  }
+  #controls #seek { --seek-hit-size: 52px; }
 }
 
 @media (max-width: 768px), (max-height: 500px) {
-  #seek {
-    --seek-hit-size: 44px;
-    min-height: 40px;
-  }
-
-  #seek::-webkit-slider-thumb {
-    width: 20px;
-    height: 20px;
-    margin-top: calc((var(--seek-track-size) - 20px) / 2);
-  }
-
-  #seek::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-  }
+  #controls #seek { --seek-hit-size: 52px; min-height: 44px; }
+  #controls #seek::-webkit-slider-thumb { width: 24px; height: 24px; margin-top: calc((var(--seek-track-size) - 24px) / 2); }
+  #controls #seek::-moz-range-thumb { width: 24px; height: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #seek::-webkit-slider-thumb,
-  #seek::-moz-range-thumb {
-    transition: none;
-  }
+  #controls #seek::-webkit-slider-thumb,
+  #controls #seek::-moz-range-thumb { transition: none; }
 }
