@@ -1,3 +1,10 @@
+# Core web application
 Flask>=3.0,<4
 requests>=2.31,<3
-gunicorn>=23.0
+python-dotenv>=1.0,<2
+
+# Production WSGI servers
+# Waitress is the cross-platform production server used on Windows.
+waitress>=3.0,<4
+# Gunicorn is used for Linux/Unix deployments; it is not a Windows production server.
+gunicorn>=23.0; platform_system != "Windows"
