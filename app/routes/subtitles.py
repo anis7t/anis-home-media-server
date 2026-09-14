@@ -1,5 +1,5 @@
 """Subtitle delivery and track catalog routes."""
-from flask import Blueprint, Response, abort, jsonify, send_file
+from flask import Blueprint, Response, abort, jsonify, request, send_file
 
 from app import config
 from app.db import get_db
@@ -15,9 +15,12 @@ from app.utils.subtitles import srt_to_vtt
 subtitles_bp = Blueprint('subtitles', __name__)
 
 
-@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')
-def subtitle(filename, name):
+@subtitles_bp.route('/subtitles/<path:filename>')
+def subtitle(filename):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
+    name = request.args.get('name', '')
+    if not name or '/' in name or '\\' in name or name in {'.', '..'}:
+        abort(404)
     video = safe_path(filename)
     sub = (video.parent / name).resolve()
     if not is_video(video) or sub.parent != video.parent or not sub.is_file() or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
@@ -63,4 +66,3 @@ def api_subtitles(filename):
     m = movie(video, db)
     db.close()
     return jsonify(tracks=tracks(video, m))
-
