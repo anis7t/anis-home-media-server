@@ -79,19 +79,64 @@ def compat_transcode_args(vaapi_available=False):
     """Return FFmpeg video filter and encoder arguments for compatibility transcode."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
+
+    if config.is_amf_enabled():
+        return [
+            '-vf', 'scale=-2:1080,format=nv12',
+            '-c:v', 'h264_amf',
+            '-quality', 'speed',
+            '-pix_fmt', 'nv12'
+        ]
+
     if vaapi_available:
-        return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
-    return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p']
+        return [
+            '-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2',
+            '-c:v', 'h264_vaapi',
+            '-qp', '24',
+            '-pix_fmt', 'nv12'
+        ]
+
+    return [
+        '-vf', 'scale=-2:1080,format=yuv420p',
+        '-c:v', 'libx264',
+        '-preset', preset,
+        '-crf', crf,
+        '-pix_fmt', 'yuv420p'
+    ]
 
 
 def hls_transcode_args(vaapi_available=False):
     """Return FFmpeg video filter and encoder arguments for HLS transcoding."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
-    if vaapi_available:
-        return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
-    return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1']
 
+    if config.is_amf_enabled():
+        return [
+            '-vf', 'scale=-2:1080,format=nv12',
+            '-c:v', 'h264_amf',
+            '-quality', 'speed',
+            '-pix_fmt', 'nv12',
+            '-profile:v', 'high',
+            '-level', '4.1'
+        ]
+
+    if vaapi_available:
+        return [
+            '-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2',
+            '-c:v', 'h264_vaapi',
+            '-qp', '24',
+            '-pix_fmt', 'nv12'
+        ]
+
+    return [
+        '-vf', 'scale=-2:1080,format=yuv420p',
+        '-c:v', 'libx264',
+        '-preset', preset,
+        '-crf', crf,
+        '-pix_fmt', 'yuv420p',
+        '-profile:v', 'high',
+        '-level', '4.1'
+    ]
 
 def cleanup_cache():
     """Remove orphaned .part.mp4 files and enforce size cap on transcode cache."""
@@ -301,8 +346,12 @@ def ensure_hls_transcode(filename):
                     pass
             streams = probe_media(path).get('streams', [])
             video = next((s for s in streams if s.get('codec_type') == 'video'), {})
+            amf = config.is_amf_enabled()
             vaapi = config.is_vaapi_enabled()
-            if vaapi:
+            if amf:
+                input_args = []
+                video_args = hls_transcode_args(False)
+            elif vaapi:
                 dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
                 input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev]
                 video_args = hls_transcode_args(True)

@@ -61,3 +61,7 @@ def is_vaapi_enabled():
         return Path(dev).exists() and os.access(dev, os.R_OK | os.W_OK)
     return False
 
+
+def is_amf_enabled():
+    """Check whether AMD AMF hardware encoding is enabled by configuration."""
+    return os.environ.get("MEDIA_SERVER_ENABLE_AMF", "0").lower() in {"1", "true", "yes"}
