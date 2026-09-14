@@ -226,6 +226,17 @@ def create_app(test_config=None):
 
     return app_instance
 
+def initialize_runtime():
+    """Initialize directories, database, caches, and background workers."""
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    POSTER_CACHE.mkdir(parents=True, exist_ok=True)
+    BACKDROP_CACHE.mkdir(parents=True, exist_ok=True)
+    SUBTITLE_EMBEDDED_CACHE.mkdir(parents=True, exist_ok=True)
+    SUBTITLE_ONLINE_CACHE.mkdir(parents=True, exist_ok=True)
 
+    cleanup_cache_on_startup()
+    init_db()
+    start_auto_transcoder_worker()
+    start_media_scanner_worker()
 app = create_app()
 

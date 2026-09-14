@@ -109,66 +109,25 @@ from app import create_app
 
 app = create_app()
 
-if __name__ == '__main__':
+def initialize_runtime():
+    """Initialize directories, database, cache, and background workers."""
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
     POSTER_CACHE.mkdir(parents=True, exist_ok=True)
     BACKDROP_CACHE.mkdir(parents=True, exist_ok=True)
     SUBTITLE_EMBEDDED_CACHE.mkdir(parents=True, exist_ok=True)
     SUBTITLE_ONLINE_CACHE.mkdir(parents=True, exist_ok=True)
+
     cleanup_cache_on_startup()
     init_db()
     start_auto_transcoder_worker()
     start_media_scanner_worker()
+
+
+if __name__ == '__main__':
+    initialize_runtime()
+
     port = int(os.environ.get('PORT', 8000))
     host = os.environ.get('HOST', '0.0.0.0')
-
-    use_gunicorn = os.environ.get('FLASK_DEBUG', '0') != '1' and not os.environ.get('USE_DEV_SERVER')
-    if use_gunicorn:
-        try:
-            import importlib
-            import logging
-            import sys
-
-            gunicorn_base = importlib.import_module('gunicorn.app.base')
-            BaseApplication = gunicorn_base.BaseApplication
-
-            class StandaloneGunicornApp(BaseApplication):
-                def __init__(self, wsgi_app, options=None):
-                    self.options = options or {}
-                    self.application = wsgi_app
-                    super().__init__()
-
-                def load_config(self):
-                    for key, val in self.options.items():
-                        if key in self.cfg.settings and val is not None:
-                            self.cfg.set(key.lower(), val)
-
-                def load(self):
-                    return self.application
-
-            gunicorn_workers = int(os.environ.get('GUNICORN_WORKERS', '2'))
-            gunicorn_threads = int(os.environ.get('GUNICORN_THREADS', '4'))
-            gunicorn_opts = {
-                'bind': f'{host}:{port}',
-                'workers': gunicorn_workers,
-                'worker_class': 'gthread',
-                'threads': gunicorn_threads,
-                'timeout': int(os.environ.get('GUNICORN_TIMEOUT', '120')),
-                'keepalive': int(os.environ.get('GUNICORN_KEEPALIVE', '5')),
-                'accesslog': '-',
-                'errorlog': '-',
-                'loglevel': os.environ.get('LOG_LEVEL', 'info').lower(),
-                'proc_name': 'media-server',
-            }
-            logging.info(
-                f"Starting production Gunicorn WSGI server on {host}:{port} "
-                f"with {gunicorn_workers} workers × {gunicorn_threads} threads..."
-            )
-            StandaloneGunicornApp(app, gunicorn_opts).run()
-            sys.exit(0)
-        except Exception as e:
-            import logging
-            logging.warning(f"Gunicorn startup failed ({e}); falling back to Werkzeug development server.")
 
     app.run(
         host=host,
