@@ -212,7 +212,9 @@ def tracks(path, movie_meta=None):
                         try:
                             src = url_for('subtitle', filename=rel_filename, name=sub.name)
                         except Exception:
-                            src = f"/subtitles/{rel_filename}/{sub.name}"
+                            src = f"/subtitles/{rel_filename}?name={urllib.parse.quote(sub.name)}"
+                    if '?' not in src:
+                        src = f"{src}?name={urllib.parse.quote(sub.name)}"
                     result.append(dict(
                         id=f"dir:{sub.name}",
                         name=sub.name,
