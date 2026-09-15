@@ -301,8 +301,16 @@ def ensure_hls_transcode(filename):
                     pass
             streams = probe_media(path).get('streams', [])
             video = next((s for s in streams if s.get('codec_type') == 'video'), {})
+            amf = config.is_amf_enabled()
             vaapi = config.is_vaapi_enabled()
-            if vaapi:
+            if amf:
+                input_args = [
+                    '-init_hw_device', 'd3d11va=dx11:1',
+                    '-init_hw_device', 'amf=amf@dx11',
+                    '-filter_hw_device', 'amf'
+                ]
+                video_args = hls_transcode_args(False)
+            elif vaapi:
                 dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
                 input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev]
                 video_args = hls_transcode_args(True)

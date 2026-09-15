@@ -4,6 +4,10 @@ import signal
 import threading
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Base directories
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).resolve().parent.parent)).resolve()
 MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "/home/iamroot/Media/Movies")).resolve()
@@ -57,4 +61,8 @@ def is_vaapi_enabled():
         dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
         return Path(dev).exists() and os.access(dev, os.R_OK | os.W_OK)
     return False
+
+def is_amf_enabled():
+    """Check whether AMD AMF hardware encoding is enabled by configuration."""
+    return os.environ.get("MEDIA_SERVER_ENABLE_AMF", "0").lower() in {"1", "true", "yes"}
 
