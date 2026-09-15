@@ -9,6 +9,7 @@
 - Root `app.py` is intentionally a lightweight executable entry point; `app/__init__.py` owns the application factory and compatibility exports.
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
+- `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` is the design reference for the proposed dynamic multi-GPU chunked transcoding architecture. It is **proposal-only** until benchmarks and capability tests justify implementation.
 
 ## 2. Current architecture
 
@@ -96,6 +97,12 @@ The current project includes:
 
 8. **Production concurrency tuning:** Linux currently uses one Gunicorn gthread worker with eight threads in the documented baseline. Benchmark any change; remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
+9. **Permanent media purge is cross-platform fragile and can leave cache artifacts.** See GitHub Issue #7. The Windows purge path can fail with `signal.SIGKILL`; the purge pipeline must be made failure-tolerant and the ~1 GB residual transcode-cache case must be reconciled with actual cache contents.
+
+### Investigations / enhancements
+
+10. **Dynamic multi-GPU chunked transcoding proposal.** See GitHub Issue #8 and `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md`. The target host has a discrete RTX 560X/RX 560X-class adapter plus AMD Radeon Vega 8, with the discrete GPU observed near 97% utilization while Vega 8 is nearly idle. The preferred idea is not to split one frame across GPUs; it is to treat each GPU as an independent FFmpeg worker and dynamically assign larger, keyframe-aware chunks of the same source to different workers. This remains **proposal/investigation only** until hardware capability discovery and benchmarks demonstrate a real benefit.
+
 ## 5. Platform/dependency rules
 
 ### Linux/Kali
@@ -173,6 +180,7 @@ Tunnel credentials live outside the repository. Preserve that separation.
 - Preserve heartbeat behavior and bounded active/offline thresholds.
 - Do not fabricate hardware, network or location data when the browser/server cannot provide it.
 - Keep telemetry collection behavior consistent with the application's privacy expectations.
+- Future multi-GPU work must report adapters independently; do not collapse multiple GPUs into a single generic GPU value where per-device telemetry is available.
 
 ## 11. Git/change-management rules
 
@@ -212,6 +220,17 @@ For Windows AMF changes:
 5. Confirm the RX 560X, not Vega 8, performs the intended workload.
 6. Run the relevant Python tests.
 
+For future multi-GPU/chunked-transcoding work:
+
+1. Read `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` and GitHub Issues #7 and #8 before altering transcoding or worker architecture.
+2. Enumerate actual GPU/FFmpeg capabilities before implementation.
+3. Benchmark discrete-only, Vega-only, dual independent jobs, and chunked dual-GPU candidates.
+4. Test chunk sizes empirically rather than hard-coding 4-second HLS segments as worker granularity.
+5. Preserve keyframe alignment, timestamp continuity, audio synchronization, HLS ordering, resume semantics, and cache cleanup.
+6. Never assume Task Manager GPU numbering equals FFmpeg adapter numbering.
+7. Keep CPU-only and single-GPU fallback paths working.
+8. Do not ship the feature solely because both GPUs show activity; require measurable throughput/startup benefit and valid playback.
+
 For remote-access changes, preserve the CGNAT-compatible named-tunnel architecture unless the user explicitly requests a replacement.
 
 ## 13. Immediate priority order
@@ -219,8 +238,10 @@ For remote-access changes, preserve the CGNAT-compatible named-tunnel architectu
 1. Finish explicit RX 560X/FFmpeg D3D11 adapter binding on the AMF branch.
 2. Validate AMF with a real HEVC movie and Task Manager.
 3. Diagnose and fix the blinking playback transcoding pill.
-4. Run complete tests and player regression checks.
-5. Finish Windows automatic Waitress + cloudflared startup.
-6. Add authentication/access control before wider sharing.
-7. Reassess Cloudflare media-delivery suitability/policies.
-8. Only then resume parked player/OpenSubtitles work as explicitly requested.
+4. Fix the cross-platform permanent-purge/SIGKILL and cache-cleanup issue (#7).
+5. Run complete tests and player regression checks.
+6. Finish Windows automatic Waitress + cloudflared startup.
+7. Add authentication/access control before wider sharing.
+8. Reassess Cloudflare media-delivery suitability/policies.
+9. Benchmark the dynamic multi-GPU chunked transcoding proposal (#8) before implementation.
+10. Only then resume parked player/OpenSubtitles work as explicitly requested.
