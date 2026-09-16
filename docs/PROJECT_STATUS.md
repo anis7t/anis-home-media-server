@@ -10,11 +10,10 @@ This is a Flask-based personal media server designed for LAN playback and remote
 
 The system is deployed on Windows 11 as persistent background Windows Services (`MediaServer` via NSSM and `Cloudflared`), surviving reboots without user login and supporting automatic crash recovery. Hardware transcoding is fully operational using dual AMD GPUs (Radeon RX 560X discrete + Radeon Vega 8 integrated).
 
-The immediate work queue focuses on four specific feature enhancements and refinements:
-1. In-transcode playback synchronization / sliding-window timeline offset & stall issue.
-2. 4-hour periodic TMDb metadata refresh & manual scan trigger.
-3. Server-wide manual subtitle upload with language auto-detection and standardized naming format.
-4. Post-transcode original file retention strategy and safe orphaned cache purge.
+The immediate work queue focuses on three specific feature enhancements and refinements:
+1. 4-hour periodic TMDb metadata refresh & manual scan trigger.
+2. Server-wide manual subtitle upload with language auto-detection and standardized naming format.
+3. Post-transcode original file retention strategy and safe orphaned cache purge.
 
 ---
 
@@ -92,6 +91,9 @@ The immediate work queue focuses on four specific feature enhancements and refin
 ### Core library, media & subtitle features
 - Direct byte-range streaming for MP4/M4V/WebM media with zero-copy RFC 7233 delivery.
 - On-demand HLS transcoding for MKV/HEVC with cache resume and cleanup.
+- **In-Progress Transcode HLS Timeline Synchronization:** Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding, monotonic `-output_ts_offset` preventing PTS resets, and dynamic `#EXTINF` duration parsing to resolve timeline drift and mid-stream stalling.
+- **Subdirectory Subtitles & Language Auto-Detection:** Resolved Werkzeug route collision (`<path:filename>/<name>`) for media in subdirectories, and integrated `detect_subtitle_language()` heuristic for local `.srt`/`.vtt` content language classification and local default precedence over OpenSubtitles.
+- **Purge Worker Termination Safety:** Thread-safe chunk worker tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards ensuring background FFmpeg workers terminate cleanly without affecting the server process.
 - Local `.srt` and `.vtt` discovery, delivery, and in-memory WebVTT conversion with dual-axis positioning (horizontal and vertical elevation).
 - TMDb metadata resolution with forensic filename identification.
 - Connected device telemetry dashboard (`/devices`) with Chromium High-Entropy Client Hints, network classification, and heartbeats.
@@ -101,17 +103,7 @@ The immediate work queue focuses on four specific feature enhancements and refin
 
 ## 4. Next steps & active roadmap
 
-### 1. In-transcode playback timeline offset & stoppage
-- **Problem Description:** When a file (e.g. MKV/HEVC) is actively being transcoded into HLS, starting playback does not begin from 0:00. Instead, it plays somewhere midway into the timeline, even though the seek bar indicator displays 0:00. Seeking fails or behaves erratically, and playback frequently halts after a few seconds.
-- **Technical Analysis:**
-  - In dynamic HLS generation, if FFmpeg produces an event/live playlist before `#EXT-X-ENDLIST` is appended, HLS.js treats the stream using live-sliding-window heuristics.
-  - Initial non-zero presentation timestamps (PTS) or missing `#EXT-X-DISCONTINUITY` tags cause an offset between the HTML5 video element's internal clock and the segment presentation timestamps.
-  - When the client's playback catches up to the active transcode front (buffer underrun), the browser stalls because subsequent segments are not yet committed to the playlist.
-- **Engineering Solutions:**
-  - *Option A (Playlist Synchronization):* Enforce `#EXT-X-PLAYLIST-TYPE:EVENT` with explicit `#EXT-X-START:TIME-OFFSET=0` in the master/media playlists. Tune HLS.js configuration (`liveSyncDurationCount`, `liveMaxLatencyDurationCount`, `initialLiveManifestSize`).
-  - *Option B (Playback Gating):* Gate playback while transcoding is in progress. Present an informative transcode progress screen with live progress percentage, speed, and ETA until either the entire file completes transcoding or a minimum safe initial buffer (e.g., first 5 minutes / 10%) is fully written and verified.
-
-### 2. Periodic (4-hour) TMDb metadata refresh & manual scan trigger
+### 1. Periodic (4-hour) TMDb metadata refresh & manual scan trigger
 - **Problem Description:** Movie ratings, vote counts, popularity scores, and backdrop/poster artwork on TMDb evolve over time. Currently, TMDb metadata is fetched once during library ingestion and remains static.
 - **Proposed Architecture:**
   - Add a recurring background task in `worker_service.py` that triggers every 4 hours.
@@ -119,7 +111,7 @@ The immediate work queue focuses on four specific feature enhancements and refin
   - Wire the existing "↻ Scan" / "Scan Library" UI button to trigger both local filesystem scanning AND metadata re-synchronization.
   - Add a `last_metadata_refresh` timestamp column to the SQLite database schema to prevent redundant API queries.
 
-### 3. Server-wide manual subtitle upload with language auto-detection
+### 2. Server-wide manual subtitle upload with language auto-detection
 - **Problem Description:** Users frequently possess external subtitles (`.srt` / `.vtt`) that were not included in the original upload or library scan.
 - **Proposed Architecture:**
   - Add a manual subtitle upload modal / dropzone on the movie details page (`/details/<filename>`).
@@ -130,7 +122,7 @@ The immediate work queue focuses on four specific feature enhancements and refin
     (e.g., `moana_en_1.srt`, `moana_en_2.srt`, `the_odyssey_fr_1.vtt`).
   - Auto-convert uploaded `.srt` to `.vtt` and update subtitle tracks in the player.
 
-### 4. Post-transcode storage strategy & safe orphaned cache purge
+### 3. Post-transcode storage strategy & safe orphaned cache purge
 - **Problem Description:** Source video files (4K/1080p MKV/HEVC) consume substantial disk space (5–20 GB per title). Once a movie is 100% transcoded into optimized HLS/MP4, keeping both the heavy original file and the full transcode cache causes rapid disk exhaustion.
 - **Proposed Architecture:**
   - **Configurable Retention Policy:** Implement an application setting allowing users to choose whether to retain original source files or archive/delete them once 100% transcode completion and stream validation are confirmed.
@@ -167,7 +159,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (125 tests)
+# Full automated test suite (131 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -183,7 +175,6 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **Resolve in-transcode playback timeline offset & stoppage:** Implement VOD playlist synchronization or transcode-complete gating.
-2. **Implement 4-hour periodic TMDb metadata refresh:** Add background scheduler and connect the UI "↻ Scan" trigger.
-3. **Build server-wide manual subtitle upload:** Implement upload UI, language auto-detection, and standardized filename persistence.
-4. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.
+1. **Implement 4-hour periodic TMDb metadata refresh:** Add background scheduler and connect the UI "↻ Scan" trigger.
+2. **Build server-wide manual subtitle upload:** Implement upload UI, language auto-detection, and standardized filename persistence.
+3. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.

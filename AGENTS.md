@@ -65,33 +65,31 @@ The current project includes:
 - **Carousel Optimization:** Compacted "Continue watching" rail cards to 140px desktop / 115px mobile.
 - **Dual-Axis Subtitles:** Horizontal alignment plus lowered/bottom/raised/middle/top vertical positions with playback-control cue elevation.
 - **Connected Devices Dashboard:** Chromium High-Entropy Client Hints, network path detection, active/offline states, friendly renaming, and watch history.
+- **In-Progress Transcode HLS Synchronization:** Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding, monotonic `-output_ts_offset` preventing PTS resets, and dynamic `#EXTINF` duration parsing to resolve timeline drift and mid-stream stalling.
+- **Subdirectory Subtitles & Language Auto-Detection:** Resolved Werkzeug route collision (`<path:filename>/<name>`) for media in subdirectories, and integrated `detect_subtitle_language()` heuristic for local `.srt`/`.vtt` content language classification and local default precedence over OpenSubtitles.
+- **Purge Worker Termination Safety:** Thread-safe chunk worker tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards ensuring background FFmpeg workers terminate cleanly without affecting the server process.
 
 ## 4. Known unresolved issues & active roadmap
 
 ### Highest priority — immediate work queue
 
-1. **In-transcode playback timeline offset & stoppage:**
-   When an MKV/HEVC file is actively being transcoded into HLS, playback does not start from `0:00`; it starts midway into the timeline despite the seekbar showing `0:00`. Seeking behaves erratically and playback halts after several seconds.
-   - *Investigation:* HLS sliding-window live playlist semantics, non-zero initial PTS, and player buffer underruns when catching up to active transcoding.
-   - *Fix:* Enforce VOD playlist synchronization (`#EXT-X-PLAYLIST-TYPE:EVENT`, `#EXT-X-START:TIME-OFFSET=0`) or gate playback with an informative transcode progress screen until a safe initial buffer or full transcode completes.
-
-2. **Periodic (4-hour) TMDb metadata refresh & manual scan trigger:**
+1. **Periodic (4-hour) TMDb metadata refresh & manual scan trigger:**
    Ratings, vote counts, popularity scores, and artwork on TMDb evolve continuously. Add a background scheduler in `worker_service.py` running every 4 hours to refresh TMDb details for all records in `media.db`. Wire up the UI "↻ Scan" button to trigger metadata re-synchronization.
 
-3. **Server-wide manual subtitle upload with language auto-detection:**
+2. **Server-wide manual subtitle upload with language auto-detection:**
    Add subtitle upload UI on `/details/<filename>`. Detect language from content text (character analysis / NLP heuristic), and save files server-wide in the media directory using the strict format:
    `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
    (e.g. `moana_en_1.srt`, `the_odyssey_fr_1.vtt`).
 
-4. **Post-transcode storage retention & safe orphaned cache purge:**
+3. **Post-transcode storage retention & safe orphaned cache purge:**
    Add user-configurable retention policies to choose whether to keep large original MKV/HEVC sources after 100% verified transcode. Implement automated auditing of `cache/hls/` against active database entries to safely purge orphaned transcode artifacts.
 
 ### Secondary / parked
 
-5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-6. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
-7. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
-8. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
+4. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
+5. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
+6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
+7. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
 ## 5. Platform/dependency rules
 

@@ -14,6 +14,10 @@
 - **Multi-Format Regression Checks**: When updating HLS segmentation for MKV/HEVC or seek handling, verify that:
   - Both MKV (HLS) and direct MP4/AAC streams (*Oculus*, *Spider-Man*, *GTA VI*, *Ghost in the Cell*) remain playable.
   - Seeking to time `0:00` functions smoothly without freezing or indefinite "Preparing media" states.
+- **In-Progress Transcode HLS Timeline Synchronization**:
+  - Dynamic chunk-based HLS playlists must specify `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` while transcoding is active. This prevents HLS.js and native video elements from treating the stream as a live sliding window and skipping forward to the live edge.
+  - Chunk worker encoders must apply `-output_ts_offset <start_time>` corresponding to each chunk's timeline offset to maintain monotonic presentation timestamps (PTS) across chunk transitions.
+  - Master playlist assembly must parse actual `#EXTINF:<duration>,` segment durations from individual chunk playlists (`chunk_{id}.m3u8`) rather than assuming constant segment lengths, preventing cumulative timeline drift.
 
 ## 4. Video Player & Subtitle Viewport Invariants
 - **Viewport Clamping**: In CSS, never allow `<video>` to expand container height via intrinsic aspect ratio or unconstrained CSS Grid rows. Use:
@@ -196,3 +200,14 @@
   - When creating `tempfile.TemporaryDirectory()`, always pass `ignore_cleanup_errors=True` on Python 3.10+.
 - **Terminal Environment Relaunch Settings**:
   - Keep `"terminal.integrated.environmentChangesRelaunch": true` and `"python.terminal.shellIntegration.enabled": false` in `.vscode/settings.json` to prevent VS Code extension environment contributions (e.g. `ms-python.debugpy`, `copilot-chat`) from stalling terminals or showing blocking relaunch prompt banners.
+
+## 17. Subdirectory Routing & Subtitle Language Auto-Detection Invariants
+- **Werkzeug Multi-Path Greedy Collision**:
+  - Never configure consecutive `<path:...>` parameters separated by slashes (e.g. `@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')`). Werkzeug's first path parameter captures non-greedily up to the first slash, which breaks whenever files reside in subdirectories (such as `Folder/Video.mkv`), matching only the directory and returning a 404.
+  - Always terminate multi-segment paths with a single component: `@subtitles_bp.route('/subtitles/<path:filename>/<name>')`.
+- **Subtitle Language Auto-Detection & Priority**:
+  - Subtitle files without language suffixes (e.g., `movie.srt`) must not be left unclassified (`und`).
+  - Use `detect_subtitle_language()` to analyze script unicode characters (Devanagari, Cyrillic, Hanzi, Hiragana, Hangul, Arabic, Bengali) and vocabulary stop-word frequency before defaulting to unknown.
+  - Local subtitles must always take priority over external API lookups (e.g. OpenSubtitles) when verified to match language, setting `default: True` and preventing redundant network requests.
+- **Windows Service Privileges & NSSM Management**:
+  - The production `MediaServer` service runs under `NT AUTHORITY\SYSTEM`. Stopping or restarting it requires elevated privileges. Use `scripts/restart_service.bat` (which requests UAC elevation via `Start-Process ... -Verb RunAs`) or an elevated PowerShell terminal (`Restart-Service MediaServer`).

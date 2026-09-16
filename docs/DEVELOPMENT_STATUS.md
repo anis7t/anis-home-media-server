@@ -52,26 +52,32 @@ Venv:          C:\MediaServer\venv
 - Enforced uniform 36px circular button geometries and enlarged SVG icons from 18px to 21px.
 - Compacted "Continue watching" rail cards to 140px on desktop (115px on mobile).
 
+### In-Progress Transcode HLS Synchronization & Purge Safety
+- Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding until full completion (`#EXT-X-ENDLIST`).
+- Configured monotonic `-output_ts_offset` to prevent PTS resets across chunk boundaries.
+- Dynamically parsed real `#EXTINF` segment durations from chunk playlists to eliminate timeline drift.
+- Added thread-safe worker PID tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards for safe cache purging.
+
+### Subdirectory Subtitles & Language Auto-Detection
+- Resolved Werkzeug `<path:filename>/<name>` route collision for media stored in subfolders.
+- Implemented `detect_subtitle_language()` heuristic analyzing Unicode character scripts and stop-word frequency to auto-detect language (`en`, `es`, `fr`, `de`, `it`, `pt`, `ru`, `zh`, `ja`, `ko`, `ar`, `bn`).
+- Prioritized local subtitles as default (`default: True`) over external OpenSubtitles downloads when language matches.
+
 ---
 
 ## 3. Active Next Steps & Engineering Tasks
 
-### Issue 1: In-Transcode Playback Timeline Offset & Stoppage
-- **Problem:** When an MKV/HEVC movie is actively transcoding, starting playback does not begin from `0:00`. It begins midway through the timeline, seeking fails, and playback halts after a few seconds.
-- **Root Cause:** Sliding-window live playlist generation, non-zero presentation timestamps (PTS), and buffer underruns when the player catches up to the transcode front.
-- **Action Plan:** Implement VOD playlist synchronization (`#EXT-X-PLAYLIST-TYPE:EVENT` with explicit `#EXT-X-START:TIME-OFFSET=0`) or gate playback with an informative transcode progress screen until a safe initial buffer (or full completion) is ready.
-
-### Issue 2: Periodic (4-Hour) TMDb Metadata Refresh & Manual Trigger
+### Issue 1: Periodic (4-Hour) TMDb Metadata Refresh & Manual Trigger
 - **Problem:** Ratings, vote averages, popularity, and posters evolve on TMDb but remain static after initial ingestion.
 - **Action Plan:** Add a 4-hour background scheduler in `worker_service.py` to refresh TMDb details for all records in `media.db`. Wire up the UI "↻ Scan" button to trigger metadata re-synchronization.
 
-### Issue 3: Server-Wide Manual Subtitle Upload with Language Auto-Detection
+### Issue 2: Server-Wide Manual Subtitle Upload with Language Auto-Detection
 - **Problem:** Users need to manually upload external `.srt` / `.vtt` subtitles persisted server-wide.
 - **Action Plan:** Add upload modal on `/details/<filename>`, detect language from text content, and save using the standardized format:
   `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
   (e.g., `moana_en_1.srt`, `the_odyssey_fr_1.vtt`).
 
-### Issue 4: Post-Transcode Storage Retention & Safe Orphaned Cache Purge
+### Issue 3: Post-Transcode Storage Retention & Safe Orphaned Cache Purge
 - **Problem:** Storing multi-gigabyte source files alongside full transcode caches causes disk bloat. Aborted transcodes leave residual artifacts.
 - **Action Plan:** Add configurable retention policies allowing users to delete/archive original sources post-transcode, and implement comprehensive orphaned cache auditing in `cache/hls/` against active database entries.
 
@@ -82,6 +88,7 @@ Venv:          C:\MediaServer\venv
 Before committing changes, execute:
 
 ```powershell
-# Automated Test Suite (125 tests)
+# Automated Test Suite (131 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
+
