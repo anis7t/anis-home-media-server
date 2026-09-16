@@ -30,6 +30,7 @@ POSTER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB transcode cache limit
 PRECACHE_INTERVAL = 30
 SCAN_INTERVAL = 120
+METADATA_REFRESH_INTERVAL = int(os.environ.get("MEDIA_SERVER_METADATA_REFRESH_INTERVAL", 4 * 3600))  # 4 hours in seconds
 
 # Concurrency & process registries
 SHUTDOWN_EVENT = threading.Event()

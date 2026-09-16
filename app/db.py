@@ -37,7 +37,12 @@ def init_db():
         "updated_at INTEGER)"
     )
     columns = {r['name'] for r in db.execute("PRAGMA table_info(movies)")}
-    for name, spec in (("release_date", "TEXT"), ("added_at", "INTEGER"), ("details_json", "TEXT")):
+    for name, spec in (
+        ("release_date", "TEXT"),
+        ("added_at", "INTEGER"),
+        ("details_json", "TEXT"),
+        ("last_metadata_refresh", "INTEGER"),
+    ):
         if name not in columns:
             db.execute(f"ALTER TABLE movies ADD COLUMN {name} {spec}")
     db.execute(

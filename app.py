@@ -68,6 +68,8 @@ from app.services.tmdb_service import (
     download_poster,
     get_movie_details,
     load_token,
+    refresh_all_library_metadata,
+    refresh_movie_metadata,
 )
 from app.services.transcode_service import (
     ProcessProxy,
@@ -87,7 +89,9 @@ from app.services.transcode_service import (
 )
 from app.services.worker_service import (
     auto_transcoder_loop,
+    metadata_refresh_loop,
     start_auto_transcoder_worker,
+    start_metadata_refresh_worker,
     start_precache_worker,
 )
 
@@ -116,6 +120,7 @@ if __name__ == '__main__':
     init_db()
     start_auto_transcoder_worker()
     start_media_scanner_worker()
+    start_metadata_refresh_worker()
     port = int(os.environ.get('PORT', 8000))
     host = os.environ.get('HOST', '0.0.0.0')
 

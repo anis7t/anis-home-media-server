@@ -129,6 +129,8 @@ def setup_database(conn):
         conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
     if "details_json" not in columns:
         conn.execute("ALTER TABLE movies ADD COLUMN details_json TEXT")
+    if "last_metadata_refresh" not in columns:
+        conn.execute("ALTER TABLE movies ADD COLUMN last_metadata_refresh INTEGER")
 
     conn.commit()
 
@@ -358,6 +360,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
             "trailer_key": trailer_key,
         })
 
+        now_ts = int(time.time())
         conn.execute(
             """
             INSERT OR REPLACE INTO movies (
@@ -373,9 +376,10 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                 vote_average,
                 updated_at,
                 release_date,
-                details_json
+                details_json,
+                last_metadata_refresh
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 relative,
@@ -388,9 +392,10 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                 details.get("runtime"),
                 genres,
                 details.get("vote_average"),
-                int(time.time()),
+                now_ts,
                 release_date,
                 details_json,
+                now_ts,
             ),
         )
         conn.commit()

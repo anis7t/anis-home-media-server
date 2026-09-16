@@ -57,3 +57,31 @@ def start_precache_worker():
     """Backwards-compatible alias for start_auto_transcoder_worker."""
     start_auto_transcoder_worker()
 
+
+def metadata_refresh_loop():
+    """Periodic daemon loop that refreshes TMDb metadata every 4 hours."""
+    time.sleep(30)
+    while not config.SHUTDOWN_EVENT.is_set():
+        try:
+            if not config.SCANNER_LOCK.locked():
+                with config.SCANNER_LOCK:
+                    from app.services.tmdb_service import refresh_all_library_metadata
+                    refresh_all_library_metadata(force=False, max_age_seconds=config.METADATA_REFRESH_INTERVAL)
+        except Exception as e:
+            logger.warning(f"Metadata refresh loop error: {e}")
+
+        # Sleep in intervals to remain responsive to shutdown events
+        elapsed = 0
+        interval = config.METADATA_REFRESH_INTERVAL
+        while elapsed < interval and not config.SHUTDOWN_EVENT.is_set():
+            time.sleep(min(5, interval - elapsed))
+            elapsed += 5
+
+
+def start_metadata_refresh_worker():
+    """Start background TMDb metadata refresh thread unless disabled by environment."""
+    if 'pytest' in sys.modules or os.environ.get('MEDIA_SERVER_DISABLE_METADATA_REFRESH', '0') == '1':
+        return
+    threading.Thread(target=metadata_refresh_loop, name='metadata-refresh-worker', daemon=True).start()
+
+

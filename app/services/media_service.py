@@ -109,7 +109,8 @@ def movie(path, db):
         percent=min(100, pos / dur * 100) if dur else 0,
         updated_at=value(progress, 'updated_at', ''),
         backdrop_path=value(meta, 'backdrop_path', ''),
-        details_json=value(meta, 'details_json', '')
+        details_json=value(meta, 'details_json', ''),
+        last_metadata_refresh=value(meta, 'last_metadata_refresh')
     )
 
 
