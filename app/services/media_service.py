@@ -438,6 +438,7 @@ def get_managed_media_items():
             'size_str': size_str,
             'container': suffix,
             'is_mkv': is_mkv,
+            'hls_cached': hls_cached,
             'stream_status': stream_status,
             'progress_percent': m.get('percent', 0),
             'mtime': st.st_mtime if st else 0

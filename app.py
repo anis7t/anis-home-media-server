@@ -91,6 +91,7 @@ from app.services.worker_service import (
     auto_transcoder_loop,
     metadata_refresh_loop,
     start_auto_transcoder_worker,
+    start_cache_maintenance_worker,
     start_metadata_refresh_worker,
     start_precache_worker,
 )
@@ -121,6 +122,7 @@ if __name__ == '__main__':
     start_auto_transcoder_worker()
     start_media_scanner_worker()
     start_metadata_refresh_worker()
+    start_cache_maintenance_worker()
     port = int(os.environ.get('PORT', 8000))
     host = os.environ.get('HOST', '0.0.0.0')
 

@@ -32,6 +32,11 @@ PRECACHE_INTERVAL = 30
 SCAN_INTERVAL = 120
 METADATA_REFRESH_INTERVAL = int(os.environ.get("MEDIA_SERVER_METADATA_REFRESH_INTERVAL", 4 * 3600))  # 4 hours in seconds
 
+# Storage Retention Policies ('keep', 'archive', 'purge_cache')
+DEFAULT_RETENTION_POLICY = os.environ.get("MEDIA_SERVER_RETENTION_POLICY", "keep").lower()
+ARCHIVE_DIR = Path(os.environ.get("MEDIA_SERVER_ARCHIVE_DIR", MEDIA_ROOT / ".archive")).resolve()
+ALLOWED_RETENTION_POLICIES = {"keep", "archive", "purge_cache"}
+
 # Concurrency & process registries
 SHUTDOWN_EVENT = threading.Event()
 SUBTITLE_LOCKS = {}

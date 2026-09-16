@@ -146,7 +146,9 @@ def sw():
 def manage():
     """Render media library management dashboard with delete/purge actions and storage metrics."""
     from app.services.media_service import get_managed_media_items
-    from app.services.transcode_service import get_active_transcodes, get_cache_dir
+    from app.services.transcode_service import audit_orphaned_caches, get_active_transcodes, get_cache_dir
+    from app.services.system_service import get_system_telemetry
+    from app.db import get_setting
     from app.utils.formatting import format_bytes_display
 
     items = get_managed_media_items()
@@ -161,6 +163,10 @@ def manage():
     total_cache_size = hls_size + mp4_size
 
     active_transcodes = get_active_transcodes()
+    audit_data = audit_orphaned_caches()
+    retention_policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+    telemetry = get_system_telemetry()
+    storage_telemetry = telemetry.get('storage', {})
 
     return render_template(
         'manage.html',
@@ -169,6 +175,14 @@ def manage():
         total_size_str=format_bytes_display(total_size),
         total_cache_str=format_bytes_display(total_cache_size),
         active_transcodes=active_transcodes,
+        audit=audit_data,
+        orphaned_count=audit_data.get('total_orphaned_dirs', 0),
+        orphaned_size_str=format_bytes_display(audit_data.get('total_orphaned_bytes', 0)),
+        retention_policy=retention_policy,
+        archive_dir=str(config.ARCHIVE_DIR),
+        disk_free_str=format_bytes_display(storage_telemetry.get('free_bytes', 0)),
+        disk_total_str=format_bytes_display(storage_telemetry.get('total_bytes', 0)),
+        disk_percent=storage_telemetry.get('percent', 0),
     )
 
 

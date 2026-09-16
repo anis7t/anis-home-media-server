@@ -41,6 +41,16 @@ def auto_transcoder_loop():
                             if proc.poll() is not None:
                                 break
                             time.sleep(2)
+                # Check post-transcode retention policy if transcode is complete
+                if _is_hls_truly_complete(pl_file, p):
+                    try:
+                        from app.db import get_setting
+                        policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+                        if policy == 'archive':
+                            from app.services.transcode_service import apply_post_transcode_policy
+                            apply_post_transcode_policy(p, policy='archive')
+                    except Exception as e:
+                        logger.warning(f"Failed to apply post-transcode policy for {p}: {e}")
         except Exception as e:
             logger.warning(f"Auto-transcoder loop error: {e}")
         time.sleep(config.PRECACHE_INTERVAL)
@@ -83,5 +93,33 @@ def start_metadata_refresh_worker():
     if 'pytest' in sys.modules or os.environ.get('MEDIA_SERVER_DISABLE_METADATA_REFRESH', '0') == '1':
         return
     threading.Thread(target=metadata_refresh_loop, name='metadata-refresh-worker', daemon=True).start()
+
+
+def cache_maintenance_loop():
+    """Periodic daemon loop that audits and safely purges orphaned transcode caches every 2 hours."""
+    time.sleep(60)
+    while not config.SHUTDOWN_EVENT.is_set():
+        try:
+            from app.services.transcode_service import purge_orphaned_caches
+            res = purge_orphaned_caches(dry_run=False)
+            if res.get('purged_count', 0) > 0:
+                logger.info(
+                    f"Periodic cache maintenance purged {res['purged_count']} orphaned directories ({res['freed_bytes']} bytes freed)"
+                )
+        except Exception as e:
+            logger.warning(f"Cache maintenance loop error: {e}")
+
+        elapsed = 0
+        interval = 7200  # 2 hours
+        while elapsed < interval and not config.SHUTDOWN_EVENT.is_set():
+            time.sleep(min(5, interval - elapsed))
+            elapsed += 5
+
+
+def start_cache_maintenance_worker():
+    """Start background cache maintenance thread unless disabled by environment."""
+    if 'pytest' in sys.modules or os.environ.get('MEDIA_SERVER_DISABLE_CACHE_MAINTENANCE', '0') == '1':
+        return
+    threading.Thread(target=cache_maintenance_loop, name='cache-maintenance-worker', daemon=True).start()
 
 

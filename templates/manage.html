@@ -78,6 +78,73 @@
     </div>
   </section>
 
+  <!-- Storage Retention & Transcode Cache Governance -->
+  <section class="manage-storage-governance">
+    <div class="storage-card">
+      <div class="storage-card-header">
+        <div class="sc-title-wrap">
+          <span class="sc-icon">🗄️</span>
+          <div>
+            <h2 class="sc-title">Storage Retention & Transcode Cache Governance</h2>
+            <p class="sc-subtitle">Configure post-transcode retention policies and purge orphaned transcode artifacts.</p>
+          </div>
+        </div>
+        <div class="sc-status-pill {%if orphaned_count > 0%}pill-warning{%else%}pill-healthy{%endif%}">
+          {%if orphaned_count > 0%}⚠️ {{orphaned_count}} Orphaned Caches ({{orphaned_size_str}}){%else%}✓ Caches in Sync{%endif%}
+        </div>
+      </div>
+
+      <div class="storage-card-grid">
+        <!-- Host Disk Space -->
+        <div class="sc-grid-col">
+          <div class="sc-col-label">Host Storage Pool</div>
+          <div class="sc-disk-bar-wrap">
+            <div class="sc-disk-bar-header">
+              <span>Free: <b>{{disk_free_str}}</b></span>
+              <span>Total: {{disk_total_str}}</span>
+            </div>
+            <div class="sc-disk-bar-track">
+              <div class="sc-disk-bar-fill {%if disk_percent > 90%}fill-danger{%elif disk_percent > 80%}fill-warning{%endif%}" style="width: {{disk_percent}}%"></div>
+            </div>
+            <div class="sc-disk-bar-footer">
+              <span>Disk Utilization: <b>{{disk_percent}}%</b></span>
+            </div>
+          </div>
+          <p class="sc-col-hint">Underlying host filesystem capacity and headroom.</p>
+        </div>
+
+        <!-- Post-Transcode Retention Policy -->
+        <div class="sc-grid-col">
+          <div class="sc-col-label">Post-Transcode Retention Policy</div>
+          <div class="sc-policy-control">
+            <select id="retentionPolicySelect" class="sc-policy-select" onchange="updateRetentionPolicy(this.value)">
+              <option value="keep" {%if retention_policy == 'keep'%}selected{%endif%}>Keep original MKV & HLS transcode (Default)</option>
+              <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original MKV to .archive after 100% transcode</option>
+              <option value="purge_cache" {%if retention_policy == 'purge_cache'%}selected{%endif%}>Purge HLS cache after transcode (Direct play only)</option>
+            </select>
+            <div id="policyStatusToast" class="sc-policy-toast" style="display:none">Saved!</div>
+          </div>
+          <p class="sc-col-hint">Applies once transcoding reaches 100% verified stream segments.</p>
+        </div>
+
+        <!-- Orphaned Cache Actions -->
+        <div class="sc-grid-col">
+          <div class="sc-col-label">Orphaned Transcode Caches</div>
+          <div class="sc-orphans-action-box">
+            <div class="sc-orphans-meta">
+              <span id="orphanCountBadge" class="sc-orphan-count">{{orphaned_count}} folders</span>
+              <span id="orphanSizeBadge" class="sc-orphan-size">{{orphaned_size_str}} orphaned</span>
+            </div>
+            <button id="cleanOrphansBtn" type="button" class="btn-clean-orphans" {%if orphaned_count == 0%}disabled{%endif%} onclick="openCleanOrphansModal()">
+              🧹 Clean Orphaned Caches
+            </button>
+          </div>
+          <p class="sc-col-hint">Removes cached HLS chunks & previews for media no longer in your library.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Filter & Search Toolbar -->
   <section class="manage-toolbar-section">
     <div class="toolbar-search-wrap">
@@ -154,6 +221,9 @@
                 <div class="item-actions">
                   <a href="/watch/{{m.filename}}" class="item-btn btn-watch" title="Watch Media">▶ Watch</a>
                   <a href="/movie/{{m.filename}}" class="item-btn btn-details" title="Movie Details & Specs">ℹ Details</a>
+                  {%if m.is_mkv and m.hls_cached%}
+                    <button type="button" class="item-btn btn-archive" data-filename="{{m.filename|e}}" onclick="archiveMovieSource(this.dataset.filename)" title="Move original MKV to .archive to save disk space while keeping HLS stream">📦 Archive</button>
+                  {%endif%}
                   <button type="button" class="item-btn btn-delete" data-filename="{{m.filename|e}}" data-title="{{m.title|e}}" data-size="{{m.size_str|e}}" onclick="openPurgeModal(this.dataset.filename, this.dataset.title, this.dataset.size)" title="Delete media and purge all data">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -176,6 +246,46 @@
     </div>
   </section>
 </main>
+
+<!-- Clean Orphaned Caches Confirmation Modal -->
+<dialog id="cleanOrphansModal" class="purge-modal" aria-labelledby="cleanOrphansTitle">
+  <div class="purge-modal-content">
+    <div class="purge-modal-header">
+      <div class="purge-title-wrap">
+        <span class="purge-warn-icon">🧹</span>
+        <span id="cleanOrphansTitle" class="purge-title" style="color:#38bdf8">Clean Orphaned Transcode Caches</span>
+      </div>
+      <button type="button" class="purge-modal-close" onclick="closeCleanOrphansModal()" title="Close (Esc)" aria-label="Close">✕</button>
+    </div>
+
+    <div class="purge-modal-body">
+      <p class="purge-prompt">
+        Safely purge <b><span id="modalOrphanCount">{{orphaned_count}}</span> obsolete cache directories</b> to reclaim <b><span id="modalOrphanSize">{{orphaned_size_str}}</span></b> of disk space?
+      </p>
+
+      <div class="purge-checklist-box" style="background:rgba(56,189,248,0.06);border-color:rgba(56,189,248,0.2)">
+        <span class="purge-check-heading" style="color:#38bdf8">What will be safely cleaned:</span>
+        <ul class="purge-list">
+          <li><span>🗑️</span><span>Unreferenced HLS chunks from deleted or replaced media</span></li>
+          <li><span>🖼️</span><span>Orphaned seek hover preview thumbnail folders</span></li>
+          <li><span>🛡️</span><span>Active library media & in-progress streams remain 100% untouched</span></li>
+        </ul>
+      </div>
+
+      <div id="cleanOrphansErrorBox" class="purge-error-box" style="display:none">
+        <span>⚠️</span><span id="cleanOrphansErrorMessage">Failed to clean caches</span>
+      </div>
+    </div>
+
+    <div class="purge-modal-footer">
+      <button type="button" id="cleanOrphansCancelBtn" class="upload-btn-secondary" onclick="closeCleanOrphansModal()">Cancel</button>
+      <button type="button" id="cleanOrphansConfirmBtn" class="upload-btn-primary" style="background:#0284c7;border-color:#38bdf8" onclick="executeCleanOrphans()">
+        <span id="cleanOrphansSpinner" class="btn-spinner" style="display:none"></span>
+        <span id="cleanOrphansBtnText">Clean Caches Now</span>
+      </button>
+    </div>
+  </div>
+</dialog>
 
 <!-- Delete & Purge Confirmation Modal -->
 <dialog id="purgeModal" class="purge-modal" aria-labelledby="purgeModalTitle">
@@ -398,6 +508,105 @@ function triggerScan(btn) {
     .catch(() => {
       btn.disabled = false;
       btn.textContent = '↻ Scan';
+    });
+}
+
+function updateRetentionPolicy(val) {
+  const toast = document.getElementById('policyStatusToast');
+  fetch('/api/storage/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({retention_policy: val})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success && toast) {
+      toast.textContent = 'Saved!';
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 2000);
+    }
+  })
+  .catch(err => {
+    if (toast) {
+      toast.textContent = 'Error!';
+      toast.style.background = '#ef4444';
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; toast.style.background = '#22c55e'; }, 2500);
+    }
+  });
+}
+
+function openCleanOrphansModal() {
+  const modal = document.getElementById('cleanOrphansModal');
+  const errBox = document.getElementById('cleanOrphansErrorBox');
+  if (errBox) errBox.style.display = 'none';
+  const btn = document.getElementById('cleanOrphansConfirmBtn');
+  if (btn) btn.disabled = false;
+  const sp = document.getElementById('cleanOrphansSpinner');
+  if (sp) sp.style.display = 'none';
+  const txt = document.getElementById('cleanOrphansBtnText');
+  if (txt) txt.textContent = 'Clean Caches Now';
+
+  if (modal) {
+    if (typeof modal.showModal === 'function') modal.showModal();
+    else modal.setAttribute('open', '');
+  }
+}
+
+function closeCleanOrphansModal() {
+  const modal = document.getElementById('cleanOrphansModal');
+  if (modal) {
+    if (typeof modal.close === 'function') modal.close();
+    else modal.removeAttribute('open');
+  }
+}
+
+function executeCleanOrphans() {
+  const btn = document.getElementById('cleanOrphansConfirmBtn');
+  const cancelBtn = document.getElementById('cleanOrphansCancelBtn');
+  const sp = document.getElementById('cleanOrphansSpinner');
+  const txt = document.getElementById('cleanOrphansBtnText');
+  const errBox = document.getElementById('cleanOrphansErrorBox');
+  const errMsg = document.getElementById('cleanOrphansErrorMessage');
+
+  btn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+  if (sp) sp.style.display = 'inline-block';
+  if (txt) txt.textContent = 'Cleaning caches...';
+  if (errBox) errBox.style.display = 'none';
+
+  fetch('/api/storage/purge-orphans', { method: 'POST' })
+    .then(r => {
+      if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Purge failed'); });
+      return r.json();
+    })
+    .then(data => {
+      closeCleanOrphansModal();
+      location.reload();
+    })
+    .catch(err => {
+      btn.disabled = false;
+      if (cancelBtn) cancelBtn.disabled = false;
+      if (sp) sp.style.display = 'none';
+      if (txt) txt.textContent = 'Retry Clean';
+      if (errMsg) errMsg.textContent = err.message || 'Purge failed';
+      if (errBox) errBox.style.display = 'flex';
+    });
+}
+
+function archiveMovieSource(filename) {
+  if (!confirm('Move original source file for "' + filename + '" to .archive? The movie will continue to play smoothly via HLS.')) return;
+  fetch('/api/storage/archive/' + encodeURIComponent(filename), { method: 'POST' })
+    .then(r => {
+      if (!r.ok) return r.json().then(d => { throw new Error(d.error || (d.result && d.result.message) || 'Archive failed'); });
+      return r.json();
+    })
+    .then(data => {
+      alert('Original source file archived successfully to ' + (data.result ? data.result.archived_to : '.archive'));
+      location.reload();
+    })
+    .catch(err => {
+      alert('Failed to archive source: ' + err.message);
     });
 }
 

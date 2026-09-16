@@ -41,7 +41,7 @@ from app.config import (
 )
 
 # Database re-exports
-from app.db import get_db, init_db, value
+from app.db import get_db, get_setting, init_db, set_setting, value
 
 # Utility re-exports
 from app.utils.filesystem import is_video, mimetype, parse_range, safe_path
@@ -84,6 +84,8 @@ from app.services.transcode_service import (
     is_pid_alive,
     _hls_resume_point,
     _is_hls_truly_complete,
+    apply_post_transcode_policy,
+    audit_orphaned_caches,
     cleanup_cache,
     cleanup_cache_on_startup,
     compat_transcode_args,
@@ -93,6 +95,7 @@ from app.services.transcode_service import (
     hls_cache_dir,
     hls_transcode_args,
     needs_transcode,
+    purge_orphaned_caches,
     purge_transcode_caches_for_media,
     stop_transcodes_for_media,
     transcode_cache_path,
@@ -100,8 +103,10 @@ from app.services.transcode_service import (
 )
 from app.services.worker_service import (
     auto_transcoder_loop,
+    cache_maintenance_loop,
     metadata_refresh_loop,
     start_auto_transcoder_worker,
+    start_cache_maintenance_worker,
     start_metadata_refresh_worker,
     start_precache_worker,
 )

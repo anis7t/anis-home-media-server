@@ -543,4 +543,85 @@ def api_upload_subtitle(filename):
     )
 
 
+# ---------------------------------------------------------------------------
+# Storage Retention & Cache Purge Endpoints
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/api/storage/audit', methods=['GET'])
+def storage_audit():
+    """Audit HLS and preview cache directories for active vs orphaned status."""
+    from app.services.transcode_service import audit_orphaned_caches
+    from app.services.system_service import get_system_telemetry
+
+    audit_data = audit_orphaned_caches()
+    telemetry = get_system_telemetry()
+    storage = telemetry.get('storage', {})
+
+    return jsonify({
+        'storage': storage,
+        'audit': audit_data,
+    })
+
+
+@api_bp.route('/api/storage/purge-orphans', methods=['POST'])
+def storage_purge_orphans():
+    """Purge all safely verified orphaned transcode caches."""
+    from app.services.transcode_service import purge_orphaned_caches
+
+    dry_run = (
+        request.args.get('dry_run') in ('1', 'true', 'yes')
+        or (request.is_json and request.get_json(silent=True) and request.get_json().get('dry_run') is True)
+    )
+    res = purge_orphaned_caches(dry_run=dry_run)
+    return jsonify({
+        'success': True,
+        'result': res,
+    })
+
+
+@api_bp.route('/api/storage/settings', methods=['GET', 'POST'])
+def storage_settings():
+    """Get or update post-transcode storage retention settings."""
+    from app.db import get_setting, set_setting
+
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form or {}
+        policy = data.get('retention_policy')
+        if not policy or policy not in config.ALLOWED_RETENTION_POLICIES:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid retention policy. Allowed: {sorted(list(config.ALLOWED_RETENTION_POLICIES))}',
+            }), 400
+
+        set_setting('retention_policy', policy)
+        return jsonify({
+            'success': True,
+            'retention_policy': policy,
+        })
+
+    current_policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+    return jsonify({
+        'retention_policy': current_policy,
+        'allowed_policies': sorted(list(config.ALLOWED_RETENTION_POLICIES)),
+        'archive_dir': str(config.ARCHIVE_DIR),
+    })
+
+
+@api_bp.route('/api/storage/archive/<path:filename>', methods=['POST'])
+def storage_archive_media(filename):
+    """Manually move an original media source to ARCHIVE_DIR if its HLS transcode is complete."""
+    from app.services.transcode_service import apply_post_transcode_policy
+
+    media_path = safe_path(filename)
+    if not media_path or not media_path.is_file():
+        return jsonify({'success': False, 'error': 'Media file not found.'}), 404
+
+    res = apply_post_transcode_policy(media_path, policy='archive')
+    if res.get('status') == 'archived':
+        return jsonify({'success': True, 'result': res})
+    else:
+        return jsonify({'success': False, 'result': res}), 400
+
+
+
 

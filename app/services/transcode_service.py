@@ -147,8 +147,245 @@ def cleanup_cache():
 
 
 def cleanup_cache_on_startup():
-    """Clean orphaned part files and enforce cache size cap on server start."""
+    """Clean orphaned part files, purge orphaned HLS/preview directories, and enforce cache size cap on server start."""
     cleanup_cache()
+    try:
+        purge_orphaned_caches()
+    except Exception as e:
+        logger.warning("Startup orphaned cache purge error: %s", e)
+
+
+def audit_orphaned_caches():
+    """Audit HLS, preview, and transcode caches against active database/filesystem media.
+
+    Returns a comprehensive audit report detailing:
+    - orphaned_hls: list of dicts for unreferenced HLS directories
+    - orphaned_previews: list of dicts for unreferenced preview directories
+    - active_hls: list of dicts for active HLS directories
+    - active_previews: list of dicts for active preview directories
+    - total_orphaned_bytes: sum of orphaned bytes
+    - total_orphaned_dirs: count of orphaned directories
+    - total_active_bytes: sum of active cache bytes
+    """
+    from app.services.preview_service import preview_dir
+
+    cache_dir = get_cache_dir()
+    hls_base = cache_dir / 'hls'
+    previews_base = cache_dir / 'previews'
+
+    # Gather active cache directories from currently known video files
+    try:
+        active_videos = video_paths()
+    except Exception:
+        active_videos = []
+
+    active_hls_map = {}       # dir_name -> source Path
+    active_preview_map = {}   # dir_name -> source Path
+
+    for p in active_videos:
+        try:
+            p_obj = Path(p)
+            if p_obj.is_file():
+                hd = hls_cache_dir(p_obj)
+                active_hls_map[hd.name] = p_obj
+                pd = preview_dir(p_obj)
+                active_preview_map[pd.name] = p_obj
+        except Exception:
+            continue
+
+    # Check if any in-flight transcode job has an active hls_dir
+    active_job_hls_names = set()
+    for job in list(config.HLS_PROCESSES.values()):
+        hd = getattr(job, 'hls_dir', None)
+        if hd:
+            active_job_hls_names.add(Path(hd).name)
+
+    # 1. Audit HLS cache directories
+    orphaned_hls = []
+    active_hls = []
+    if hls_base.is_dir():
+        for d in hls_base.iterdir():
+            if not d.is_dir():
+                continue
+            dir_name = d.name
+            size = 0
+            count = 0
+            mtime = 0
+            try:
+                st = d.stat()
+                mtime = st.st_mtime
+                for f in d.iterdir():
+                    if f.is_file():
+                        size += f.stat().st_size
+                        count += 1
+            except OSError:
+                pass
+
+            is_active = (dir_name in active_hls_map) or (dir_name in active_job_hls_names)
+            item = {
+                'name': dir_name,
+                'path': str(d),
+                'size_bytes': size,
+                'file_count': count,
+                'mtime': mtime,
+                'source_file': str(active_hls_map[dir_name].name) if dir_name in active_hls_map else None,
+            }
+
+            if is_active:
+                active_hls.append(item)
+            else:
+                orphaned_hls.append(item)
+
+    # 2. Audit Previews cache directories
+    orphaned_previews = []
+    active_previews = []
+    if previews_base.is_dir():
+        for d in previews_base.iterdir():
+            if not d.is_dir():
+                continue
+            dir_name = d.name
+            size = 0
+            count = 0
+            mtime = 0
+            try:
+                st = d.stat()
+                mtime = st.st_mtime
+                for f in d.iterdir():
+                    if f.is_file():
+                        size += f.stat().st_size
+                        count += 1
+            except OSError:
+                pass
+
+            is_active = dir_name in active_preview_map
+            item = {
+                'name': dir_name,
+                'path': str(d),
+                'size_bytes': size,
+                'file_count': count,
+                'mtime': mtime,
+                'source_file': str(active_preview_map[dir_name].name) if dir_name in active_preview_map else None,
+            }
+
+            if is_active:
+                active_previews.append(item)
+            else:
+                orphaned_previews.append(item)
+
+    total_orphaned_bytes = sum(i['size_bytes'] for i in orphaned_hls) + sum(i['size_bytes'] for i in orphaned_previews)
+    total_active_bytes = sum(i['size_bytes'] for i in active_hls) + sum(i['size_bytes'] for i in active_previews)
+
+    return {
+        'orphaned_hls': orphaned_hls,
+        'orphaned_previews': orphaned_previews,
+        'active_hls': active_hls,
+        'active_previews': active_previews,
+        'total_orphaned_bytes': total_orphaned_bytes,
+        'total_orphaned_dirs': len(orphaned_hls) + len(orphaned_previews),
+        'total_active_bytes': total_active_bytes,
+        'total_active_dirs': len(active_hls) + len(active_previews),
+    }
+
+
+def purge_orphaned_caches(dry_run=False):
+    """Purge all verified orphaned HLS and preview cache directories.
+
+    Uses _remove_path_with_retries to ensure Windows file locks are handled safely.
+    Returns dict with freed_bytes, purged_dirs, failed_dirs, dry_run.
+    """
+    audit = audit_orphaned_caches()
+    orphans = audit['orphaned_hls'] + audit['orphaned_previews']
+
+    freed_bytes = 0
+    purged_dirs = []
+    failed_dirs = []
+
+    for item in orphans:
+        target = Path(item['path'])
+        if dry_run:
+            purged_dirs.append(item['path'])
+            freed_bytes += item['size_bytes']
+            continue
+
+        success, remaining = _remove_path_with_retries(target)
+        if success:
+            purged_dirs.append(item['path'])
+            freed_bytes += item['size_bytes']
+            logger.info("Purged orphaned cache directory: %s (%d bytes)", target, item['size_bytes'])
+        else:
+            failed_dirs.append({'path': item['path'], 'remaining': remaining})
+            logger.warning("Failed to purge orphaned directory: %s", target)
+
+    return {
+        'freed_bytes': freed_bytes,
+        'purged_count': len(purged_dirs),
+        'purged_dirs': purged_dirs,
+        'failed_count': len(failed_dirs),
+        'failed_dirs': failed_dirs,
+        'dry_run': dry_run,
+    }
+
+
+def apply_post_transcode_policy(path, policy=None):
+    """Apply post-transcode retention policy to a media file whose transcode is verified 100% complete.
+
+    Supported policies:
+    - 'keep' (default): Retain original source file and HLS cache.
+    - 'archive': Move original source file to ARCHIVE_DIR preserving relative subdirectories.
+    - 'purge_cache': Purge HLS cache to save SSD space, keeping original source.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return {'status': 'error', 'message': f'Source file {path} not found'}
+
+    hls_dir = hls_cache_dir(path)
+    pl_file = hls_dir / 'playlist.m3u8'
+    if not _is_hls_truly_complete(pl_file, path):
+        return {'status': 'incomplete', 'message': 'Transcode is not yet 100% complete'}
+
+    from app.db import get_setting
+    if not policy:
+        policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+    policy = (policy or 'keep').lower()
+
+    if policy == 'archive':
+        archive_base = config.ARCHIVE_DIR
+        archive_base.mkdir(parents=True, exist_ok=True)
+        try:
+            rel = path.relative_to(config.MEDIA_ROOT)
+        except ValueError:
+            rel = Path(path.name)
+        target_path = archive_base / rel
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            shutil.move(str(path), str(target_path))
+            logger.info("Post-transcode policy 'archive': Moved %s -> %s", path, target_path)
+            return {
+                'status': 'archived',
+                'policy': 'archive',
+                'source': str(path),
+                'archived_to': str(target_path),
+            }
+        except Exception as e:
+            logger.error("Failed to archive source %s: %s", path, e)
+            return {'status': 'error', 'message': str(e)}
+
+    elif policy == 'purge_cache':
+        res = purge_transcode_caches_for_media(path)
+        logger.info("Post-transcode policy 'purge_cache': Purged HLS cache for %s", path)
+        return {
+            'status': 'cache_purged',
+            'policy': 'purge_cache',
+            'source': str(path),
+            'purged': res,
+        }
+
+    return {
+        'status': 'kept',
+        'policy': 'keep',
+        'source': str(path),
+    }
 
 
 def find_ffmpeg_info_for_path(path):

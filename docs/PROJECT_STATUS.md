@@ -1,17 +1,14 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-16
+Last reviewed: 2026-09-17
 Repository: `anis7t/media-server`
-Working branch: `fix/windows-purge-reliability`
+Working branch: `feat/storage-retention-cache-purge`
 
 ## 1. Executive summary
 
-This is a Flask-based personal media server designed for LAN playback and remote access. The codebase has been substantially modularized from the earlier monolithic application into an `app/` package containing routes, services, utilities, configuration, and database code. The server supports direct media streaming, on-demand HLS transcoding, dynamic multi-GPU chunked transcoding, TMDb metadata, local subtitles, resumable uploads, library management, device telemetry, live playback telemetry, live video seek preview thumbnails, and Cloudflare Tunnel remote access.
+This is a Flask-based personal media server designed for LAN playback and remote access. The codebase has been substantially modularized from the earlier monolithic application into an `app/` package containing routes, services, utilities, configuration, and database code. The server supports direct media streaming, on-demand HLS transcoding, dynamic multi-GPU chunked transcoding, TMDb metadata, local subtitles, resumable uploads, library management, device telemetry, live playback telemetry, live video seek preview thumbnails, storage retention policies, automated orphaned cache governance, and Cloudflare Tunnel remote access.
 
 The system is deployed on Windows 11 as persistent background Windows Services (`MediaServer` via NSSM and `Cloudflared`), surviving reboots without user login and supporting automatic crash recovery. Hardware transcoding is fully operational using dual AMD GPUs (Radeon RX 560X discrete + Radeon Vega 8 integrated).
-
-The immediate work queue focuses on post-transcode storage retention and safe orphaned cache purge:
-1. Post-transcode original file retention strategy and safe orphaned cache purge.
 
 ---
 
@@ -101,14 +98,22 @@ The immediate work queue focuses on post-transcode storage retention and safe or
 
 ---
 
+### Post-transcode storage retention & safe orphaned cache purge
+- **Configurable Retention Policies:** Implemented user-configurable post-transcode retention policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table. Default `'keep'` guarantees non-destructive operation while `'archive'` moves original source MKVs to `C:\Flicks\.archive` to free active library storage while preserving smooth HLS streaming.
+- **Automated Orphaned Cache Auditing:** Implemented `audit_orphaned_caches()` in `transcode_service.py` to reconcile all directories under `cache/hls/` and `cache/previews/` against active video paths and in-flight transcodes.
+- **Safe Orphaned Cache Purge Engine:** Built `purge_orphaned_caches(dry_run=False)` with bounded Windows file-lock retry semantics (`_remove_path_with_retries`), automatically executed during server startup (`cleanup_cache_on_startup`) and by background daemon worker every 2 hours (`cache-maintenance-worker`). Reclaimed 57 orphaned cache directories on the host pool.
+- **REST API Endpoints:** Added `/api/storage/audit`, `/api/storage/purge-orphans`, `/api/storage/settings`, and `/api/storage/archive/<filename>` with input validation and dry-run preview support.
+- **Management UI & Governance Dashboard:** Enhanced `/manage` with Storage Retention & Cache Governance card showing host storage pool utilization, interactive retention policy selector with instant persistence toast, real-time orphaned cache counter badge, clean orphaned caches confirmation modal (`#cleanOrphansModal`), and per-item source archiving action.
+
+---
+
 ## 4. Next steps & active roadmap
 
-### 1. Post-transcode storage strategy & safe orphaned cache purge
-- **Problem Description:** Source video files (4K/1080p MKV/HEVC) consume substantial disk space (5–20 GB per title). Once a movie is 100% transcoded into optimized HLS/MP4, keeping both the heavy original file and the full transcode cache causes rapid disk exhaustion.
-- **Proposed Architecture:**
-  - **Configurable Retention Policy:** Implement an application setting allowing users to choose whether to retain original source files or archive/delete them once 100% transcode completion and stream validation are confirmed.
-  - **Safe Orphaned Cache Purge:** Enhance `purge_transcode_caches_for_media()` and `media_service.py` to audit `cache/hls/` against active database records. Automatically prune orphaned directories and dangling `.ts` segments left behind by aborted or deleted media.
-  - **Cross-Platform Safety:** Ensure all process terminations during purge use Win32 API process status checks (`is_pid_alive()`) without broadcasting console interrupts.
+### Secondary / parked
+1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
+2. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
+3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
+4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
 ---
 
@@ -140,7 +145,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (131 tests)
+# Full automated test suite (158 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -150,10 +155,11 @@ Manual playback & telemetry verification:
 3. Seek to `0:00` and arbitrary timestamps.
 4. Hover seekbar to verify live frame thumbnail previews.
 5. System Telemetry HUD displays active GPU engine utilization.
-6. Verify no mobile horizontal or vertical layout overflow.
+6. Storage Retention & Cache Governance card on `/manage` reports accurate cache and storage telemetry.
+7. Verify no mobile horizontal or vertical layout overflow.
 
 ---
 
 ## 7. Immediate work queue
 
-1. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.
+1. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote stream latency and Cloudflare tunnel limits.
