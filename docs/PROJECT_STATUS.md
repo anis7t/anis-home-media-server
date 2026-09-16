@@ -10,10 +10,8 @@ This is a Flask-based personal media server designed for LAN playback and remote
 
 The system is deployed on Windows 11 as persistent background Windows Services (`MediaServer` via NSSM and `Cloudflared`), surviving reboots without user login and supporting automatic crash recovery. Hardware transcoding is fully operational using dual AMD GPUs (Radeon RX 560X discrete + Radeon Vega 8 integrated).
 
-The immediate work queue focuses on three specific feature enhancements and refinements:
-1. 4-hour periodic TMDb metadata refresh & manual scan trigger.
-2. Server-wide manual subtitle upload with language auto-detection and standardized naming format.
-3. Post-transcode original file retention strategy and safe orphaned cache purge.
+The immediate work queue focuses on post-transcode storage retention and safe orphaned cache purge:
+1. Post-transcode original file retention strategy and safe orphaned cache purge.
 
 ---
 
@@ -94,6 +92,8 @@ The immediate work queue focuses on three specific feature enhancements and refi
 - **In-Progress Transcode HLS Timeline Synchronization:** Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding, monotonic `-output_ts_offset` preventing PTS resets, and dynamic `#EXTINF` duration parsing to resolve timeline drift and mid-stream stalling.
 - **Subdirectory Subtitles & Language Auto-Detection:** Resolved Werkzeug route collision (`<path:filename>/<name>`) for media in subdirectories, and integrated `detect_subtitle_language()` heuristic for local `.srt`/`.vtt` content language classification and local default precedence over OpenSubtitles.
 - **Purge Worker Termination Safety:** Thread-safe chunk worker tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards ensuring background FFmpeg workers terminate cleanly without affecting the server process.
+- **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Implemented automated daemon worker (`metadata-refresh-worker`) in `worker_service.py` to refresh TMDb metadata (ratings, vote averages, runtime, tagline, certifications, cast, artwork) every 4 hours, added `last_metadata_refresh` schema migration in SQLite, and synchronized manual UI "↻ Scan" trigger to refresh both filesystem additions and existing metadata.
+- **Server-Wide Manual Subtitle Upload with Language Auto-Detection:** Built full subtitle upload interfaces on `/movie/<filename>` and directly inside the in-player Subtitle Settings modal (`#subSettingsModal`). Auto-detects subtitle language from content text via script heuristics and stop-word frequency analysis, persisting files in canonical format `<short_movie_name>_<detected_language>_<incremental_number>.<ext>` alongside media, with dynamic `<track>` DOM creation and track dropdown selection without requiring page reload or interrupting playback.
 - Local `.srt` and `.vtt` discovery, delivery, and in-memory WebVTT conversion with dual-axis positioning (horizontal and vertical elevation).
 - TMDb metadata resolution with forensic filename identification.
 - Connected device telemetry dashboard (`/devices`) with Chromium High-Entropy Client Hints, network classification, and heartbeats.
@@ -103,26 +103,7 @@ The immediate work queue focuses on three specific feature enhancements and refi
 
 ## 4. Next steps & active roadmap
 
-### 1. Periodic (4-hour) TMDb metadata refresh & manual scan trigger
-- **Problem Description:** Movie ratings, vote counts, popularity scores, and backdrop/poster artwork on TMDb evolve over time. Currently, TMDb metadata is fetched once during library ingestion and remains static.
-- **Proposed Architecture:**
-  - Add a recurring background task in `worker_service.py` that triggers every 4 hours.
-  - Queries TMDb API for updated movie details (ratings, vote averages, runtime, tagline) for all existing records in `media.db`.
-  - Wire the existing "↻ Scan" / "Scan Library" UI button to trigger both local filesystem scanning AND metadata re-synchronization.
-  - Add a `last_metadata_refresh` timestamp column to the SQLite database schema to prevent redundant API queries.
-
-### 2. Server-wide manual subtitle upload with language auto-detection
-- **Problem Description:** Users frequently possess external subtitles (`.srt` / `.vtt`) that were not included in the original upload or library scan.
-- **Proposed Architecture:**
-  - Add a manual subtitle upload modal / dropzone on the movie details page (`/details/<filename>`).
-  - **Server-wide Persistence:** Save uploaded subtitles directly into the media directory alongside the video file (e.g., `C:\Flicks\subtitles\` or alongside the source movie) and index them in `media.db` so they are available across all user sessions and devices.
-  - **Language Auto-Detection:** Inspect subtitle text content using a lightweight language detection heuristic (e.g., character scripts, stop-word frequency analysis, or `langdetect` / `charset_normalizer`) to detect the language code (e.g., `en`, `es`, `fr`, `hi`).
-  - **Standardized Naming Convention:** Automatically save files using the strict format:
-    `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
-    (e.g., `moana_en_1.srt`, `moana_en_2.srt`, `the_odyssey_fr_1.vtt`).
-  - Auto-convert uploaded `.srt` to `.vtt` and update subtitle tracks in the player.
-
-### 3. Post-transcode storage strategy & safe orphaned cache purge
+### 1. Post-transcode storage strategy & safe orphaned cache purge
 - **Problem Description:** Source video files (4K/1080p MKV/HEVC) consume substantial disk space (5–20 GB per title). Once a movie is 100% transcoded into optimized HLS/MP4, keeping both the heavy original file and the full transcode cache causes rapid disk exhaustion.
 - **Proposed Architecture:**
   - **Configurable Retention Policy:** Implement an application setting allowing users to choose whether to retain original source files or archive/delete them once 100% transcode completion and stream validation are confirmed.
@@ -175,6 +156,4 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **Implement 4-hour periodic TMDb metadata refresh:** Add background scheduler and connect the UI "↻ Scan" trigger.
-2. **Build server-wide manual subtitle upload:** Implement upload UI, language auto-detection, and standardized filename persistence.
-3. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.
+1. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.

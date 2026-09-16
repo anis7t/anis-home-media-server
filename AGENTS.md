@@ -68,20 +68,14 @@ The current project includes:
 - **In-Progress Transcode HLS Synchronization:** Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding, monotonic `-output_ts_offset` preventing PTS resets, and dynamic `#EXTINF` duration parsing to resolve timeline drift and mid-stream stalling.
 - **Subdirectory Subtitles & Language Auto-Detection:** Resolved Werkzeug route collision (`<path:filename>/<name>`) for media in subdirectories, and integrated `detect_subtitle_language()` heuristic for local `.srt`/`.vtt` content language classification and local default precedence over OpenSubtitles.
 - **Purge Worker Termination Safety:** Thread-safe chunk worker tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards ensuring background FFmpeg workers terminate cleanly without affecting the server process.
+- **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Background scheduler (`metadata-refresh-worker`) in `worker_service.py` refreshing TMDb details (ratings, vote averages, runtime, tagline, cast, certification, artwork) every 4 hours, SQLite `last_metadata_refresh` schema migration, and synchronized manual UI "↻ Scan" trigger re-synchronizing metadata alongside newly discovered files.
+- **Server-Wide Manual Subtitle Upload with Language Auto-Detection:** Subtitle upload interface on movie details (`/movie/<filename>`) and integrated directly inside the in-player Subtitle Settings modal (`#subSettingsModal`). Auto-detects subtitle language from content text (Unicode character analysis & NLP heuristic), saving files server-wide alongside media in the canonical format `<short_movie_name>_<detected_language>_<incremental_number>.<ext>` with dynamic in-player `<track>` insertion and zero playback disruption.
 
 ## 4. Known unresolved issues & active roadmap
 
 ### Highest priority — immediate work queue
 
-1. **Periodic (4-hour) TMDb metadata refresh & manual scan trigger:**
-   Ratings, vote counts, popularity scores, and artwork on TMDb evolve continuously. Add a background scheduler in `worker_service.py` running every 4 hours to refresh TMDb details for all records in `media.db`. Wire up the UI "↻ Scan" button to trigger metadata re-synchronization.
-
-2. **Server-wide manual subtitle upload with language auto-detection:**
-   Add subtitle upload UI on `/details/<filename>`. Detect language from content text (character analysis / NLP heuristic), and save files server-wide in the media directory using the strict format:
-   `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
-   (e.g. `moana_en_1.srt`, `the_odyssey_fr_1.vtt`).
-
-3. **Post-transcode storage retention & safe orphaned cache purge:**
+1. **Post-transcode storage retention & safe orphaned cache purge:**
    Add user-configurable retention policies to choose whether to keep large original MKV/HEVC sources after 100% verified transcode. Implement automated auditing of `cache/hls/` against active database entries to safely purge orphaned transcode artifacts.
 
 ### Secondary / parked
