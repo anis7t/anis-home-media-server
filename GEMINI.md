@@ -5,13 +5,10 @@
 - **Selenium Cleanup**: All browser automation scripts must wrap driver lifecycles in `try ... finally: if driver: driver.quit()`.
 - **Bounded Wait Times**: Scripts must use bounded polling (max 15–20s) and explicitly exit. Never run blocking polling loops that hang conversational turns or force IDE restarts.
 
-## 2. Live Browser Testing Protocol
-- **Live Context Required**: When the user requests browser verification, run tests in the live desktop session using `DISPLAY=:0.0` so execution is visible.
-- **Driver Initialization**: In this Linux environment, Selenium Manager cannot auto-download binaries. Always explicitly configure:
-  ```python
-  service = Service('/usr/bin/geckodriver')
-  options.binary_location = '/usr/bin/firefox'
-  ```
+## 2. Browser Testing & Automation Protocol
+- **Autonomous Browser Automation Permitted**: The agent may use Selenium / WebDriver automation to inspect DOM state, test interactions, and capture screenshots for its own analysis and verification.
+- **No Interactive User Expectation**: Do not wait for the user to interact with the automated test browser, and do not expect browser windows to appear in the user's desktop session. Automated browser scripts must execute entirely autonomously and terminate promptly.
+- **Strict Process Safety & Teardown**: Always wrap driver instances in `try ... finally: if driver: driver.quit()` to ensure zero orphaned WebDriver or browser background processes.
 
 ## 3. Media Playback & Transcoding Invariants
 - **Multi-Format Regression Checks**: When updating HLS segmentation for MKV/HEVC or seek handling, verify that:
@@ -188,3 +185,14 @@
   - In raw media streaming routes (`/media/<path:filename>`), use Flask/Werkzeug `send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)` rather than custom file chunk generators.
   - This guarantees OS zero-copy streaming (`sendfile(2)`), RFC 7233 byte-range parsing, `If-Range` support, and clean socket closure upon client disconnect without blocking worker threads.
 
+## 16. Windows Process Probing & Test Harness Safety (Strict Guardrail)
+- **Zero Console Signal Broadcasting via `os.kill(pid, 0)`**:
+  - In Python on Windows, `signal.CTRL_C_EVENT == 0`.
+  - Calling `os.kill(pid, 0)` on Windows invokes `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`, broadcasting a `CTRL_C_EVENT` interrupt across the shared console process group.
+  - In IDE/agent execution sessions, this Ctrl+C interrupt terminates the IDE language server / Antigravity agent process (`agy.exe`), triggering sudden `"Action cancelled by user"` and `"Lost connection to the language server. Agent features may not work."`.
+  - **Strict Invariant**: NEVER call `os.kill(pid, 0)` to check process liveness on Windows. Always use `is_pid_alive(pid)` from `app.services.transcode_service` (exported in `app`), which safely queries process status using the Win32 API (`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)` + `GetExitCodeProcess`).
+- **TemporaryDirectory File Locks in Windows Pytest**:
+  - SQLite databases or temporary fixtures created during tests may trigger `[WinError 32] The process cannot access the file because it is being used by another process` on teardown due to Windows file-locking semantics.
+  - When creating `tempfile.TemporaryDirectory()`, always pass `ignore_cleanup_errors=True` on Python 3.10+.
+- **Terminal Environment Relaunch Settings**:
+  - Keep `"terminal.integrated.environmentChangesRelaunch": true` and `"python.terminal.shellIntegration.enabled": false` in `.vscode/settings.json` to prevent VS Code extension environment contributions (e.g. `ms-python.debugpy`, `copilot-chat`) from stalling terminals or showing blocking relaunch prompt banners.

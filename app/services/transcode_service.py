@@ -21,6 +21,28 @@ from app.utils.filesystem import is_video, safe_path
 logger = logging.getLogger(__name__)
 
 
+def is_pid_alive(pid):
+    """Safely check if a process is still running without sending signals."""
+    if not pid or pid <= 0:
+        return False
+    if sys.platform == 'win32':
+        import ctypes
+        SYNCHRONIZE = 0x00100000
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, int(pid))
+        if not handle:
+            return False
+        exit_code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return exit_code.value == 259  # STILL_ACTIVE = 259
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
 class ProcessProxy:
     """Lightweight proxy around an active external process PID."""
     def __init__(self, pid, hls_dir=None):
@@ -28,11 +50,9 @@ class ProcessProxy:
         self.hls_dir = hls_dir
 
     def poll(self):
-        try:
-            os.kill(self.pid, 0)
+        if is_pid_alive(self.pid):
             return None
-        except OSError:
-            return 0
+        return 0
 
     def wait(self, timeout=None):
         deadline = time.time() + (timeout if timeout is not None else 86400)
@@ -75,19 +95,23 @@ def needs_transcode(path):
     return Path(path).suffix.lower() not in {'.mp4', '.m4v', '.webm'}
 
 
-def compat_transcode_args(vaapi_available=False):
+def compat_transcode_args(vaapi_available=False, amf_available=False):
     """Return FFmpeg video filter and encoder arguments for compatibility transcode."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
+    if amf_available:
+        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p']
 
 
-def hls_transcode_args(vaapi_available=False):
+def hls_transcode_args(vaapi_available=False, amf_available=False):
     """Return FFmpeg video filter and encoder arguments for HLS transcoding."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
+    if amf_available:
+        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1']
@@ -303,17 +327,42 @@ def ensure_hls_transcode(filename):
             video = next((s for s in streams if s.get('codec_type') == 'video'), {})
             amf = config.is_amf_enabled()
             vaapi = config.is_vaapi_enabled()
+
+            # Dynamic Multi-GPU chunked transcoding path
+            try:
+                from app.services.gpu_service import is_dual_gpu_enabled
+                from app.services.chunk_transcode_service import start_dual_gpu_transcode
+                if (
+                    amf
+                    and is_dual_gpu_enabled()
+                    and 'pytest' not in sys.modules
+                    and not (
+                        video.get('codec_name') == 'h264'
+                        and (video.get('height') or 0) <= 1088
+                        and (video.get('width') or 0) <= 1920
+                        and video.get('pix_fmt', 'yuv420p') in {'yuv420p', 'yuvj420p'}
+                    )
+                ):
+                    job = start_dual_gpu_transcode(filename, path, directory, playlist)
+                    config.HLS_PROCESSES[filename] = job
+                    return job
+            except Exception as e:
+                logger.warning(f"Failed to initiate dual-GPU transcode for {filename}: {e}; falling back to single GPU.")
+
             if amf:
+                adapter = os.environ.get("MEDIA_SERVER_AMF_ADAPTER", "1")
                 input_args = [
-                    '-init_hw_device', 'd3d11va=dx11:1',
+                    '-init_hw_device', f'd3d11va=dx11:{adapter}',
                     '-init_hw_device', 'amf=amf@dx11',
-                    '-filter_hw_device', 'amf'
+                    '-filter_hw_device', 'amf',
+                    '-hwaccel', 'd3d11va',
+                    '-hwaccel_device', str(adapter)
                 ]
-                video_args = hls_transcode_args(False)
+                video_args = hls_transcode_args(amf_available=True)
             elif vaapi:
                 dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
                 input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev]
-                video_args = hls_transcode_args(True)
+                video_args = hls_transcode_args(vaapi_available=True)
             elif (
                 video.get('codec_name') == 'h264'
                 and (video.get('height') or 0) <= 1088
@@ -447,6 +496,16 @@ def get_active_transcodes():
             speed = float(values.get('speed', '0x').rstrip('x'))
         except (TypeError, ValueError):
             speed = 0
+
+        if speed <= 0 and encoded > 0 and playlist_file and playlist_file.is_file():
+            try:
+                first_seg = playlist_file.parent / "segment_000000.ts"
+                ref_time = first_seg.stat().st_mtime if first_seg.is_file() else playlist_file.parent.stat().st_ctime
+                elapsed = max(1.0, time.time() - ref_time)
+                speed = round(encoded / elapsed, 2)
+            except Exception:
+                pass
+
         percent = min(99.9, round(encoded / duration * 100, 1)) if duration > 0 else 0
         remaining = max(0, (duration - encoded) / speed) if speed > 0 else None
 
@@ -571,13 +630,7 @@ def get_active_transcodes():
 
 
 def _pid_is_running(pid):
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
+    return is_pid_alive(pid)
 
 
 def _wait_for_pid_exit(pid, timeout=5.0):

@@ -78,6 +78,7 @@ from app.services.tmdb_service import (
 )
 from app.services.transcode_service import (
     ProcessProxy,
+    is_pid_alive,
     _hls_resume_point,
     _is_hls_truly_complete,
     cleanup_cache,

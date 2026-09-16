@@ -326,7 +326,7 @@ def resolve_media(path, session=None, token=None):
         best = ranked[0]
         second_score = ranked[1]["score"] if len(ranked) > 1 else 0.0
         # Single-source hash/OCR guesses must be clearly stronger than alternatives.
-        if best["score"] < 3.0 or (second_score and best["score"] - second_score < 1.0):
+        if best["score"] < 3.0 or (second_score and best["score"] - second_score <= 1.0):
             logger.warning("Ambiguous identification for %s; evidence=%s", path.name, [(r["movie"].get("title"), r["score"]) for r in ranked])
             return None, None
         source = "consensus:" + ",".join(best["sources"])

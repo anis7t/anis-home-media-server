@@ -10,6 +10,7 @@ from flask import Blueprint, Response, abort, jsonify, request, send_file
 
 from app import config
 from app.services.media_service import probe_media
+from app.services.preview_service import ensure_preview_thumbnail, preview_meta
 from app.services.transcode_service import (
     compat_transcode_args,
     ensure_hls_transcode,
@@ -72,17 +73,32 @@ def transcode(filename):
         video = next((s for s in streams if s.get('codec_type') == 'video'), {})
         audio = next((s for s in streams if s.get('codec_type') == 'audio'), {})
         input_args = []
+        amf = config.is_amf_enabled()
         vaapi = config.is_vaapi_enabled()
         if mode == 'compat':
-            dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
-            input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev] if vaapi else []
-            video_args = compat_transcode_args(vaapi)
+            if amf:
+                adapter = os.environ.get("MEDIA_SERVER_AMF_ADAPTER", "1")
+                input_args = [
+                    '-init_hw_device', f'd3d11va=dx11:{adapter}',
+                    '-init_hw_device', 'amf=amf@dx11',
+                    '-filter_hw_device', 'amf',
+                    '-hwaccel', 'd3d11va',
+                    '-hwaccel_device', str(adapter)
+                ]
+                video_args = compat_transcode_args(amf_available=True)
+            elif vaapi:
+                dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
+                input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev]
+                video_args = compat_transcode_args(vaapi_available=True)
+            else:
+                input_args = []
+                video_args = compat_transcode_args()
         elif video.get('codec_name') in {'h264', 'hevc'}:
             video_args = ['-c:v', 'copy']
             if video.get('codec_name') == 'hevc':
                 video_args += ['-tag:v', 'hvc1']
         else:
-            video_args = compat_transcode_args(False)
+            video_args = compat_transcode_args()
         audio_args = ['-c:a', 'copy'] if audio.get('codec_name') == 'aac' else ['-c:a', 'aac']
         subprocess.run(
             ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error']
@@ -142,4 +158,34 @@ def hls_segment(filename, segment):
         abort(404)
     seg_mimetype = 'video/mp2t' if segment.endswith('.ts') else 'video/mp4'
     return send_file(target, mimetype=seg_mimetype, max_age=3600)
+
+
+@media_bp.route('/api/seek-preview-meta/<path:filename>')
+def seek_preview_meta(filename):
+    """Return seek-preview sampling metadata without generating all thumbnails."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+    meta = preview_meta(path)
+    if not meta:
+        return jsonify(error='Unable to determine media duration.'), 404
+    return jsonify(
+        duration=meta['duration'],
+        interval=meta['interval'],
+        count=meta['count'],
+        base_url=f'/seek-preview/{filename}',
+    )
+
+
+@media_bp.route('/seek-preview/<path:filename>/<thumb>')
+def seek_preview_thumbnail(filename, thumb):
+    """Generate and serve one seek-bar preview thumbnail on demand."""
+    path = safe_path(filename)
+    match = re.fullmatch(r'thumb_(\d{5})\.jpg', thumb)
+    if not is_video(path) or not match:
+        abort(404)
+    target = ensure_preview_thumbnail(path, int(match.group(1)))
+    if target is None:
+        abort(404)
+    return send_file(target, mimetype='image/jpeg', max_age=86400, conditional=True, etag=True)
 

@@ -270,6 +270,16 @@ def purge_media(filename):
     from app.services.subtitles_service import purge_subtitles_for_media
     purged_subs = purge_subtitles_for_media(path)
 
+    # 3b. Purge seek preview thumbnail cache
+    try:
+        from app.services.preview_service import preview_dir
+        import shutil
+        p_dir = preview_dir(path)
+        if p_dir.exists():
+            shutil.rmtree(p_dir, ignore_errors=True)
+    except Exception:
+        pass
+
     # 4. Purge TMDb posters and backdrops if not referenced by other items
     purged_posters = []
     if tmdb_id:

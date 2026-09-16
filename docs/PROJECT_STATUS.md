@@ -1,43 +1,55 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-15
+Last reviewed: 2026-09-16
 Repository: `anis7t/media-server`
-Default branch reviewed: `main`
+Working branch: `fix/windows-purge-reliability`
 
 ## 1. Executive summary
 
-This is a Flask-based personal media server designed for LAN playback and remote access. The codebase has been substantially modularized from the earlier monolithic application into an `app/` package containing routes, services, utilities, configuration, and database code. The server supports direct media streaming, on-demand HLS transcoding, TMDb metadata, local subtitles, uploads, library management, device telemetry, playback telemetry, and Cloudflare Tunnel remote access.
+This is a Flask-based personal media server designed for LAN playback and remote access. The codebase has been substantially modularized from the earlier monolithic application into an `app/` package containing routes, services, utilities, configuration, and database code. The server supports direct media streaming, on-demand HLS transcoding, dynamic multi-GPU chunked transcoding, TMDb metadata, local subtitles, resumable uploads, library management, device telemetry, live playback telemetry, live video seek preview thumbnails, and Cloudflare Tunnel remote access.
 
-The project is functional, but it is still a development-stage personal server rather than a finished hardened production product. The highest-priority unresolved items are: Windows GPU adapter selection for AMD AMF, the blinking playback transcoding indicator, reliable Windows automatic startup, authentication/access control, and validation of the public media-delivery architecture through Cloudflare.
+The system is deployed on Windows 11 as persistent background Windows Services (`MediaServer` via NSSM and `Cloudflared`), surviving reboots without user login and supporting automatic crash recovery. Hardware transcoding is fully operational using dual AMD GPUs (Radeon RX 560X discrete + Radeon Vega 8 integrated).
+
+The immediate work queue focuses on four specific feature enhancements and refinements:
+1. In-transcode playback synchronization / sliding-window timeline offset & stall issue.
+2. 4-hour periodic TMDb metadata refresh & manual scan trigger.
+3. Server-wide manual subtitle upload with language auto-detection and standardized naming format.
+4. Post-transcode original file retention strategy and safe orphaned cache purge.
+
+---
 
 ## 2. Current repository architecture
 
 ### Application entry points
 
 - `app.py` — lightweight executable entry point.
-- `app/__init__.py` — application factory and compatibility exports.
+- `app/__init__.py` — application factory, route registration, and compatibility exports.
 - `app/config.py` — environment-driven paths, limits, and runtime settings.
-- `app/db.py` — SQLite connection/schema/migration support.
+- `app/db.py` — SQLite connection, schema, and migration support.
+- `run_production.py` — production WSGI entry point (Waitress on Windows, Gunicorn on Linux).
 
 ### HTTP routes
 
-- `app/routes/pages.py` — HTML pages and page navigation.
-- `app/routes/api.py` — JSON/API endpoints including devices, metadata and playback state.
-- `app/routes/media.py` — media streaming/range delivery.
-- `app/routes/subtitles.py` — local subtitle/WebVTT delivery.
-- `app/routes/upload.py` — resumable/chunked upload workflow.
+- `app/routes/pages.py` — HTML pages and page navigation (`/`, `/library`, `/details/<file>`, `/watch/<file>`, `/devices`, `/manage`).
+- `app/routes/api.py` — JSON/API endpoints including devices, metadata, seek preview thumbnails, transcode progress, and playback state.
+- `app/routes/media.py` — media streaming, RFC 7233 byte-range delivery, and HLS segment serving.
+- `app/routes/subtitles.py` — local subtitle/WebVTT delivery and format conversion.
+- `app/routes/upload.py` — resumable/chunked upload workflow with smoothed ETA.
 
 ### Services
 
-- `media_service.py` — media probing, paths and media operations.
+- `chunk_transcode_service.py` — dynamic multi-GPU chunked transcoding engine dividing source media across multiple GPU workers.
+- `gpu_service.py` — hardware GPU capability detection, adapter binding, and engine utilization telemetry.
+- `transcode_service.py` — FFmpeg/HLS transcoding, hardware acceleration (AMF/VAAPI), caching, resume, and cleanup.
+- `preview_service.py` — video seek hover preview thumbnail extraction and caching.
+- `media_service.py` — media probing, paths, and media operations.
 - `media_resolver.py` — automatic/forensic media identification and TMDb matching.
 - `scanner_service.py` — library discovery and ingestion.
 - `tmdb_service.py` — TMDb API integration.
-- `transcode_service.py` — FFmpeg/HLS transcoding, caching, resume and cleanup.
 - `subtitles_service.py` — subtitle discovery/conversion/processing.
-- `device_service.py` — client/device identification, telemetry, heartbeats and device history.
+- `device_service.py` — client/device identification, telemetry, heartbeats, and device history.
 - `worker_service.py` — background worker coordination.
-- `system_service.py` — system-level status/telemetry functionality.
+- `system_service.py` — system-level status/telemetry functionality and multi-GPU utilization reporting.
 
 ### Utilities
 
@@ -45,339 +57,133 @@ The project is functional, but it is still a development-stage personal server r
 - `formatting.py` — display formatting helpers.
 - `subtitles.py` — subtitle parsing/conversion helpers.
 
+---
+
 ## 3. Completed major work
 
-### Media playback
+### Multi-GPU chunked transcoding & hardware acceleration
+- **Dual-GPU Utilization:** Treated discrete AMD Radeon RX 560X (`dx11:1` or Task Manager GPU 0) and integrated AMD Radeon Vega 8 (`dx11:0` or Task Manager GPU 1) as independent parallel transcoding workers.
+- **Dynamic Chunk Scheduling:** Implemented keyframe-aligned chunk allocation across available GPUs, enabling both GPUs to transcode separate segments simultaneously.
+- **Hardware Telemetry:** Multi-GPU utilization tracking via Windows Performance Counters / PyNVML exposed through `/api/system/stats` and displayed directly on the System Telemetry HUD.
+- **Cadence Optimization:** Reduced transcode status polling interval to 1-second cadence for real-time progress, speed (fps/multiplier), and smoothed ETA calculations.
 
-- Direct byte-range streaming for compatible MP4/M4V/WebM media.
-- On-demand HLS transcoding for formats requiring compatibility conversion, including MKV/HEVC workflows.
-- HLS cache reuse and resume handling for interrupted transcoding.
-- Transcode progress/status reporting.
-- Player controls, responsive layouts, gestures, picture-in-picture and fullscreen-related controls.
-- Playback state/resume persistence and throttled progress synchronization.
-- YouTube-style layered seek bar with played/buffered/hover visualization and pointer-friendly scrubbing.
-- Range/seek handling was hardened to avoid flooding the server with range requests during drag operations.
-- Direct-stream seeking regressions, including Oculus playback, were previously fixed.
+### Video seek hover preview thumbnails
+- **Live Frame Previews:** Hovering over the YouTube-style seekbar renders an accurate, high-fidelity frame preview thumbnail extracted at the cursor's hover timestamp.
+- **Dynamic Thumbnail Caching:** Implemented `preview_service.py` with fast keyframe extraction (`-ss` before `-i`) and server-side disk caching under `cache/previews/`.
+- **Seamless Player Integration:** Updated seekbar JavaScript and CSS to position hover previews smoothly with boundary clamping across desktop and mobile screens.
 
-### Subtitles
+### Windows persistent services & automatic startup
+- **MediaServer Windows Service:** Registered Waitress WSGI server as an automatic Windows Service via NSSM. Operates independently of user login sessions, restarts automatically on crash, rotates logs at 10 MB (`logs/waitress.log`), and injects FFmpeg paths.
+- **Cloudflared Windows Service:** Named Cloudflare Tunnel (`media.anisparvez.in`) operates as a persistent Windows Service with dynamic DNS overwrite capabilities.
+- **Lifecycle Management Scripts:** Created `scripts/install_service.bat`, `scripts/uninstall_service.bat`, `scripts/restart_service.bat`, and `scripts/service_status.ps1`.
 
-- Local `.srt` and `.vtt` discovery.
-- Local subtitle HTTP delivery.
-- In-memory SRT-to-WebVTT conversion.
-- Horizontal subtitle alignment.
-- Vertical subtitle positioning including lowered/bottom/raised/middle/top.
-- Subtitle placement was adjusted to avoid overlapping playback controls.
-- Incorrect automatic OpenSubtitles behavior remains intentionally parked.
+### Upload lifecycle UX hardening
+- **Post-Upload Abort Concealment:** Immediately hides the Cancel/Abort button upon 100% byte upload completion (`offset >= total`), preventing client-side cancellation during backend ingestion.
+- **Dynamic Cycling Ingestion Indicator:** Restored animated dynamic processing card showing cycling indexing labels (*Probing video stream...*, *Querying TMDb...*, *Caching posters...*, *Synchronizing subtitles...*).
+- **Resumable & Smoothed ETA:** Chunked transfers with exponential moving average speed smoothing.
 
-### Metadata and ingestion
+### Player UX & controls polish
+- **Hold-to-Speed Removal:** Completely removed hold-to-accelerate (2×) gesture from player pointer events and removed its entry from `#shortcutsModal` while preserving the standard speed dropdown.
+- **Dark Mode Native Selects:** Fixed broken white-on-white dropdown popups on Windows Chromium by applying `color-scheme: dark !important;` and custom dark option backgrounds to `#speed` and `#controls select`.
+- **Control Button Focus Boundary:** Added vertical padding (`padding: 4px 0 !important;`) to `.controls-row` to prevent hover lift (`translateY(-1px)`) and focus outlines from getting truncated at the top boundary.
+- **Circular Geometries & Icon Prominence:** Enforced uniform 36px circular button geometries and enlarged SVG icons from 18px to 21px for touch and desktop accessibility.
+- **Continue Watching Rail:** Compacted carousel cards to 140px width on desktop (115px on mobile) with sub-scroll gesture isolation (`overscroll-behavior-x: contain; touch-action: pan-x;`).
 
-- TMDb metadata lookup and local artwork caching.
-- Automatic media identification using multiple evidence sources.
-- Forensic matching improvements intended to reduce false TMDb matches.
-- Anonymous/mobile upload filenames can be handled without blindly guessing metadata.
-- Scanner and upload paths integrate automatic media resolution.
+### Core library, media & subtitle features
+- Direct byte-range streaming for MP4/M4V/WebM media with zero-copy RFC 7233 delivery.
+- On-demand HLS transcoding for MKV/HEVC with cache resume and cleanup.
+- Local `.srt` and `.vtt` discovery, delivery, and in-memory WebVTT conversion with dual-axis positioning (horizontal and vertical elevation).
+- TMDb metadata resolution with forensic filename identification.
+- Connected device telemetry dashboard (`/devices`) with Chromium High-Entropy Client Hints, network classification, and heartbeats.
+- Technical Stats for Nerds HUD (`n` / `N` key) reporting dropped frames, viewport resolution, forward buffer, and stream state.
 
-### Uploads and management
+---
 
-- Resumable chunked uploads for remote/Cloudflare use.
-- Upload speed smoothing and ETA display.
-- Post-upload processing status for probing, metadata, posters and subtitles.
-- Library management page with destructive purge handling.
-- Destructive confirmation modals were hardened against accidental backdrop dismissal.
+## 4. Next steps & active roadmap
 
-### Device telemetry
+### 1. In-transcode playback timeline offset & stoppage
+- **Problem Description:** When a file (e.g. MKV/HEVC) is actively being transcoded into HLS, starting playback does not begin from 0:00. Instead, it plays somewhere midway into the timeline, even though the seek bar indicator displays 0:00. Seeking fails or behaves erratically, and playback frequently halts after a few seconds.
+- **Technical Analysis:**
+  - In dynamic HLS generation, if FFmpeg produces an event/live playlist before `#EXT-X-ENDLIST` is appended, HLS.js treats the stream using live-sliding-window heuristics.
+  - Initial non-zero presentation timestamps (PTS) or missing `#EXT-X-DISCONTINUITY` tags cause an offset between the HTML5 video element's internal clock and the segment presentation timestamps.
+  - When the client's playback catches up to the active transcode front (buffer underrun), the browser stalls because subsequent segments are not yet committed to the playlist.
+- **Engineering Solutions:**
+  - *Option A (Playlist Synchronization):* Enforce `#EXT-X-PLAYLIST-TYPE:EVENT` with explicit `#EXT-X-START:TIME-OFFSET=0` in the master/media playlists. Tune HLS.js configuration (`liveSyncDurationCount`, `liveMaxLatencyDurationCount`, `initialLiveManifestSize`).
+  - *Option B (Playback Gating):* Gate playback while transcoding is in progress. Present an informative transcode progress screen with live progress percentage, speed, and ETA until either the entire file completes transcoding or a minimum safe initial buffer (e.g., first 5 minutes / 10%) is fully written and verified.
 
-- `/devices` dashboard.
-- Client type detection and Chromium high-entropy client hints.
-- Device make/model/OS decoding for common Android/OEM identifiers.
-- Local/LAN/remote network-path classification.
-- Public IP/ISP telemetry where available.
-- LAN MAC lookup where available from the server's ARP information.
-- Active/offline state with heartbeat and last-seen timestamps.
-- Device renaming, removal, filters and per-device watch history.
+### 2. Periodic (4-hour) TMDb metadata refresh & manual scan trigger
+- **Problem Description:** Movie ratings, vote counts, popularity scores, and backdrop/poster artwork on TMDb evolve over time. Currently, TMDb metadata is fetched once during library ingestion and remains static.
+- **Proposed Architecture:**
+  - Add a recurring background task in `worker_service.py` that triggers every 4 hours.
+  - Queries TMDb API for updated movie details (ratings, vote averages, runtime, tagline) for all existing records in `media.db`.
+  - Wire the existing "↻ Scan" / "Scan Library" UI button to trigger both local filesystem scanning AND metadata re-synchronization.
+  - Add a `last_metadata_refresh` timestamp column to the SQLite database schema to prevent redundant API queries.
 
-### Player telemetry
+### 3. Server-wide manual subtitle upload with language auto-detection
+- **Problem Description:** Users frequently possess external subtitles (`.srt` / `.vtt`) that were not included in the original upload or library scan.
+- **Proposed Architecture:**
+  - Add a manual subtitle upload modal / dropzone on the movie details page (`/details/<filename>`).
+  - **Server-wide Persistence:** Save uploaded subtitles directly into the media directory alongside the video file (e.g., `C:\Flicks\subtitles\` or alongside the source movie) and index them in `media.db` so they are available across all user sessions and devices.
+  - **Language Auto-Detection:** Inspect subtitle text content using a lightweight language detection heuristic (e.g., character scripts, stop-word frequency analysis, or `langdetect` / `charset_normalizer`) to detect the language code (e.g., `en`, `es`, `fr`, `hi`).
+  - **Standardized Naming Convention:** Automatically save files using the strict format:
+    `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
+    (e.g., `moana_en_1.srt`, `moana_en_2.srt`, `the_odyssey_fr_1.vtt`).
+  - Auto-convert uploaded `.srt` to `.vtt` and update subtitle tracks in the player.
 
-- Stats-for-Nerds HUD.
-- Dropped/total frame telemetry through `getVideoPlaybackQuality()` where supported.
-- Native versus viewport resolution reporting.
-- Forward-buffer calculation.
-- Transcode-state visibility.
+### 4. Post-transcode storage strategy & safe orphaned cache purge
+- **Problem Description:** Source video files (4K/1080p MKV/HEVC) consume substantial disk space (5–20 GB per title). Once a movie is 100% transcoded into optimized HLS/MP4, keeping both the heavy original file and the full transcode cache causes rapid disk exhaustion.
+- **Proposed Architecture:**
+  - **Configurable Retention Policy:** Implement an application setting allowing users to choose whether to retain original source files or archive/delete them once 100% transcode completion and stream validation are confirmed.
+  - **Safe Orphaned Cache Purge:** Enhance `purge_transcode_caches_for_media()` and `media_service.py` to audit `cache/hls/` against active database records. Automatically prune orphaned directories and dangling `.ts` segments left behind by aborted or deleted media.
+  - **Cross-Platform Safety:** Ensure all process terminations during purge use Win32 API process status checks (`is_pid_alive()`) without broadcasting console interrupts.
 
-### UI/UX
+---
 
-- Responsive mobile layouts.
-- Mobile overflow and long-title/metadata clamping fixes.
-- Modern player controls and SVG icons.
-- Page transitions and top progress indicator.
-- Reduced-motion handling.
-- Navigation/back-forward-cache resilience.
-- Site-wide footer/privacy UI on primary pages.
+## 5. Platform requirements
 
-### Deployment and remote access
-
-- Production WSGI path for Linux using Gunicorn/gthread.
-- Cross-platform production path for Windows using Waitress.
-- `ProxyFix` support for reverse-proxy/tunnel headers.
-- Named Cloudflare Tunnel architecture with custom hostname `media.anisparvez.in`.
-- CGNAT-compatible remote access without router port forwarding.
-- Linux systemd service/lingering guidance.
-- Windows setup documentation and AMD AMF development work are present.
-
-## 4. Verified performance baseline
-
-The documented Linux load test used Ryzen 5 3550H, 13 GB RAM, a single Gunicorn gthread worker with 8 threads, and direct H.264/AAC playback.
-
-- Local origin testing reached 100 concurrent streams with 100% request success.
-- Production testing through the Cloudflare Tunnel reached 10 concurrent streams within the documented TTFB threshold.
-- At 15 production streams, delivery still completed but average TTFB exceeded the 10-second acceptance threshold.
-- The documented production bottleneck is primarily upstream Internet bandwidth plus tunnel/network latency, not CPU or RAM.
-- The 8-thread Gunicorn pool also creates queuing at high local concurrency.
-
-These are capacity measurements for the tested environment, not guarantees for other networks, media bitrates, hardware, or clients.
-
-## 5. Known bugs / unresolved issues
-
-### P0/P1 — must resolve before calling the current build production-ready
-
-#### A. Playback transcoding indicator blinks repeatedly
-
-Observed on the playback page: `#shellTranscodePill` / `#stpDot` / `#stpText` repeatedly blinks while playback is running.
-
-Current status: **unresolved**.
-
-Do not guess at the cause. Inspect DevTools first and determine whether:
-
-1. polling alternates the element between shown/hidden states;
-2. JavaScript repeatedly replaces the DOM node; or
-3. a CSS animation is being restarted on every status update.
-
-Useful diagnostic areas: Network → Fetch/XHR and the element's computed/display state over time.
-
-#### B. Windows AMD AMF is not yet explicitly pinned to the discrete GPU
-
-The Windows machine has two AMD GPUs. A standalone FFmpeg D3D11 test established that FFmpeg adapter index `1` selects the discrete Radeon RX 560X on the tested machine.
-
-The AMF application branch currently needs explicit D3D11 adapter binding so the server cannot accidentally use the integrated Vega 8. Intended initialization:
-
-```text
--init_hw_device d3d11va=dx11:1
--init_hw_device amf=amf@dx11
--filter_hw_device amf
-```
-
-This must be verified with a real HEVC movie and Windows Task Manager before merge.
-
-#### C. Windows automatic startup is incomplete
-
-Waitress and cloudflared work manually, but reliable boot-time startup has not yet been finalized.
-
-Required end state:
-
-```text
-Windows boot/login
-  -> Media Server (Waitress) on 127.0.0.1:8000
-  -> named cloudflared tunnel
-  -> media.anisparvez.in
-```
-
-The startup mechanism must keep secrets outside Git and provide restart-on-failure behavior.
-
-### P2 — known functional/feature debt
-
-#### D. Hold-to-speed-up player gesture
-
-The request to remove hold-click/hold-press playback-speed acceleration while retaining the normal playback-speed dropdown is parked. A previous formatted player edit caused a Jinja/player regression and was reverted.
-
-Do not modify the player template for this item unless it is explicitly resumed.
-
-#### E. Automatic OpenSubtitles behavior
-
-Local subtitles work, but the incorrect automatic OpenSubtitles behavior is intentionally parked for later investigation.
-
-#### F. Authentication/access control
-
-The Cloudflare hostname provides stable remote routing but is not application authentication. Authentication/access control remains necessary before wider public sharing.
-
-#### G. Public video-delivery architecture needs policy review
-
-The current Cloudflare Tunnel path is technically functional, but the project's public media-delivery model should be reviewed against Cloudflare's current service-specific video/large-file policies and the intended usage. Do not assume a personal movie library should be delivered through the public CDN/proxy path at arbitrary scale.
-
-#### H. Production concurrency tuning is not finalized
-
-The tested Linux deployment uses one Gunicorn worker and eight gthread threads. Increasing threads or workers may reduce application-side queuing, but this must be benchmarked rather than assumed to improve end-to-end remote performance. The ISP upload path remains the dominant remote bottleneck.
-
-## 6. Platform requirements
+### Windows hosting (Current production workstation)
+- Windows 10/11 or supported Windows Server.
+- Python 3.14.3 in virtual environment `C:\MediaServer\venv`.
+- Dual AMD GPUs: Radeon RX 560X (discrete) + Radeon Vega 8 (integrated).
+- FFmpeg 9.0.1 essentials build with AMF & D3D11va support.
+- NSSM (Non-Sucking Service Manager) for persistent WSGI hosting (`MediaServer`).
+- Cloudflared 2026.9.1 running as an automatic Windows Service (`Cloudflared`).
 
 ### Linux / Kali / Debian-family hosting
-
-#### Required software
-
-- Python 3.10+; current development/testing uses Python 3.14.x.
+- Python 3.10+; current development uses Python 3.14.x.
 - `pip` and `venv`.
-- FFmpeg and FFprobe available on `PATH`.
-- Git.
-- Optional but recommended for production: systemd.
-- Optional for remote access: `cloudflared`.
+- FFmpeg and FFprobe on `PATH`.
+- Production WSGI: Gunicorn with `gthread` worker class (1 worker, 8 threads).
+- Systemd service with user lingering enabled.
+- Cloudflared named tunnel for remote access.
 
-#### Python dependencies
+---
 
-Install with:
+## 6. Testing & verification protocol
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-`requirements.txt` includes Flask, requests, python-dotenv, Waitress, and Gunicorn on non-Windows platforms.
-
-#### Recommended production topology
-
-```text
-Client
-  -> Cloudflare Tunnel (optional)
-  -> 127.0.0.1:8000
-  -> Gunicorn gthread
-  -> Flask app
-  -> FFmpeg / SQLite / media storage
-```
-
-Use a systemd service for the application and a managed cloudflared service for remote access. If using a user-level systemd service, enable lingering for the service account so it survives logout and starts at boot.
-
-#### Linux hardware/storage considerations
-
-- CPU matters for software H.264 transcoding.
-- A supported GPU/FFmpeg hardware encoder can reduce CPU load.
-- SSD storage is preferable for the database, transcode cache and high-concurrency media workloads.
-- Ensure sufficient free space for the configured transcode cache (currently capped at 10 GB by application configuration).
-- For large libraries, monitor cache growth, media storage and SQLite backups.
-
-### Windows hosting
-
-#### Required software
-
-- Windows 10/11 or a supported Windows Server release.
-- Python 3.10+; current tested workstation uses Python 3.14.3.
-- PowerShell.
-- FFmpeg and FFprobe available on `PATH` or configured through the application environment.
-- Git.
-- Optional for remote access: `cloudflared.exe`.
-
-#### Current tested layout
-
-```text
-C:\MediaServer       repository
-C:\Flicks            media root
-C:\MediaServer\media.db
-C:\MediaServer\venv
-C:\Cloudflared\cloudflared.exe
-```
-
-#### Python environment
+Before committing or deploying changes:
 
 ```powershell
-cd C:\MediaServer
-py -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+# Compile validation
+python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+
+# Full automated test suite (125 tests)
+.\venv\Scripts\python.exe -m pytest tests/
 ```
 
-#### Production server
+Manual playback & telemetry verification:
+1. Direct MP4/AAC playback (`Oculus`, `Spider-Man`).
+2. MKV/HEVC HLS playback (`The Odyssey`, `Moana`).
+3. Seek to `0:00` and arbitrary timestamps.
+4. Hover seekbar to verify live frame thumbnail previews.
+5. System Telemetry HUD displays active GPU engine utilization.
+6. Verify no mobile horizontal or vertical layout overflow.
 
-Use Waitress rather than Gunicorn on Windows:
+---
 
-```powershell
-python run_production.py
-```
+## 7. Immediate work queue
 
-Prefer binding the origin to `127.0.0.1:8000` when cloudflared is the remote-access front end. Do not expose the origin directly to the Internet unless there is a deliberate firewall/authentication design.
-
-#### AMD AMF
-
-For AMD hardware encoding, FFmpeg must expose the AMF encoders and the required D3D11 support. Verify with:
-
-```powershell
-ffmpeg -hide_banner -encoders | Select-String "amf"
-ffmpeg -hide_banner -hwaccels
-```
-
-Do not assume Windows Task Manager GPU numbering equals FFmpeg D3D11 adapter numbering. Adapter selection must be tested on the actual host.
-
-#### Windows startup requirement
-
-The final deployment should run both Waitress and the named cloudflared tunnel automatically, with restart-on-failure and no interactive terminal dependency. A service-based approach is preferred. Keep tunnel credentials and API tokens in protected local configuration, never in the repository.
-
-## 7. Configuration contract
-
-Recommended environment variables:
-
-```ini
-TMDB_API_TOKEN=<secret>
-MEDIA_SERVER_MEDIA_ROOT=<absolute media directory>
-MEDIA_SERVER_DATABASE=<absolute or project-relative SQLite path>
-MEDIA_SERVER_BASE_DIR=<project/cache base directory>
-MEDIA_SERVER_LOG_LEVEL=INFO
-MEDIA_SERVER_TRANSCODE_PRESET=superfast
-MEDIA_SERVER_TRANSCODE_CRF=23
-MEDIA_SERVER_ENABLE_VAAPI=0
-MEDIA_SERVER_VAAPI_DEVICE=/dev/dri/renderD128
-MEDIA_SERVER_ENABLE_AMF=0
-```
-
-`MEDIA_SERVER_ENABLE_AMF=1` is currently relevant to the Windows AMD work. Do not copy real secrets into documentation or agent instructions.
-
-## 8. Testing requirements before merging changes
-
-At minimum:
-
-```bash
-python -m py_compile app/config.py app/services/transcode_service.py
-python -m pytest tests/
-```
-
-For player/transcoding changes, additionally verify:
-
-- Direct MP4/AAC playback.
-- MKV/HEVC HLS playback.
-- Seeking to `0:00` and arbitrary positions.
-- Playback continues after a seek.
-- Seek-bar HUD does not freeze while video continues.
-- Subtitles remain correctly positioned.
-- Player does not overflow mobile viewports.
-- Transcoding status accurately reflects the backend state.
-
-For Windows AMF changes:
-
-- Verify the FFmpeg command contains the intended D3D11 adapter selection.
-- Start a real HEVC transcode.
-- Confirm `h264_amf` is actually used.
-- Confirm the discrete RX 560X receives the workload.
-- Confirm integrated Vega 8 is not unintentionally selected.
-
-## 9. Agent safety rules
-
-- Treat `testing` / known-good baselines as protected until explicitly approved.
-- Prefer small, isolated commits.
-- Never force-push or rewrite the protected baseline.
-- Never commit `.env`, TMDb tokens, Cloudflare credentials/tokens, passwords, private keys or other secrets.
-- Do not add local machine-specific startup scripts unless explicitly requested.
-- Do not perform broad player rewrites to fix a narrowly scoped playback issue.
-- Diagnose browser issues with DevTools before changing player JavaScript/CSS.
-- Preserve direct-stream versus transcoded-stream separation.
-- Preserve range-seeking invariants and avoid synchronous `currentTime` updates during seek-bar dragging.
-- Preserve subtitle horizontal/vertical positioning behavior.
-- Preserve destructive-modal touch immunity.
-- Preserve mobile overflow protections.
-
-## 10. Immediate work queue
-
-1. Fix/verify explicit AMD D3D11 adapter `1` → RX 560X binding on the AMF branch.
-2. Re-test a real HEVC movie and confirm discrete-GPU utilization.
-3. Diagnose and fix the blinking playback transcoding pill.
-4. Run the complete Python test suite and player regression checks.
-5. Finish Windows automatic startup for Waitress + cloudflared.
-6. Decide on authentication/access control before wider remote sharing.
-7. Re-evaluate Cloudflare media-delivery suitability and limits for the intended library/use pattern.
-8. Resume the hold-to-speed-up removal only when explicitly requested.
-9. Investigate automatic OpenSubtitles behavior after the higher-priority deployment/player items are stable.
+1. **Resolve in-transcode playback timeline offset & stoppage:** Implement VOD playlist synchronization or transcode-complete gating.
+2. **Implement 4-hour periodic TMDb metadata refresh:** Add background scheduler and connect the UI "↻ Scan" trigger.
+3. **Build server-wide manual subtitle upload:** Implement upload UI, language auto-detection, and standardized filename persistence.
+4. **Implement post-transcode storage retention & orphaned cache audit:** Add source retention options and automated `cache/hls/` reconciliation.

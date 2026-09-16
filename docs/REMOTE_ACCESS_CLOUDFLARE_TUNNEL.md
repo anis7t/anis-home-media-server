@@ -73,13 +73,13 @@ media-server
 Tunnel ID:
 
 ```text
-cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
+<TUNNEL_UUID>
 ```
 
-The tunnel credential file was created at:
+The tunnel credential file is created at:
 
 ```text
-~/.cloudflared/cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f.json
+~/.cloudflared/<TUNNEL_UUID>.json
 ```
 
 **The credential JSON is secret and must never be committed to Git or pasted into documentation.**
@@ -91,6 +91,12 @@ The domain hostname `media.anisparvez.in` was attached to the named tunnel with:
 
 ```bash
 cloudflared tunnel route dns media-server media.anisparvez.in
+```
+
+If replacing an existing tunnel or changing tunnel IDs, pass `--overwrite-dns` to replace older CNAME records:
+
+```bash
+cloudflared tunnel route dns --overwrite-dns media-server media.anisparvez.in
 ```
 
 Cloudflare confirmed:
@@ -106,7 +112,7 @@ Internet
    -> https://media.anisparvez.in
    -> Cloudflare DNS / Tunnel
    -> named tunnel: media-server
-   -> cloudflared on Kali
+   -> cloudflared on host
    -> http://127.0.0.1:8000
    -> Flask media server
 ```
@@ -118,11 +124,11 @@ A configuration file was created at:
 ~/.cloudflared/config.yml
 ```
 
-Configuration:
+Configuration template:
 
 ```yaml
-tunnel: cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
-credentials-file: /home/iamroot/.cloudflared/cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f.json
+tunnel: <TUNNEL_UUID_OR_NAME>
+credentials-file: /path/to/.cloudflared/<TUNNEL_UUID>.json
 
 ingress:
   - hostname: media.anisparvez.in

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-TMP = tempfile.TemporaryDirectory()
+TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
 os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
 import app
@@ -96,7 +96,8 @@ class MediaServerTests(unittest.TestCase):
             response = self.client.get('/transcode/Example.2026.mp4')
         self.assertEqual(response.status_code, 503)
     def test_vaapi_is_disabled_by_default_for_stability(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}):
+            os.environ.pop('MEDIA_SERVER_ENABLE_VAAPI', None)
             self.assertFalse(app.is_vaapi_enabled())
     def test_transcode_status_hls_mode_reports_progress_and_eta(self):
         movie = Path(TMP.name) / 'StatusHls.2026.mkv'

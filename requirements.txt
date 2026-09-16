@@ -8,3 +8,7 @@ python-dotenv>=1.0,<2
 waitress>=3.0,<4
 # Gunicorn is used for Linux/Unix deployments; it is not a Windows production server.
 gunicorn>=23.0; platform_system != "Windows"
+
+# Windows GPU & System Telemetry (Optional, graceful fallback if missing)
+pywin32>=306; platform_system == "Windows"
+WMI>=1.5.1; platform_system == "Windows"

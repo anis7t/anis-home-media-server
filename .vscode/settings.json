@@ -1,5 +1,39 @@
 {
   "html.validate.styles": false,
   "html.validate.scripts": false,
-  "css.lint.vendorPrefix": "ignore"
+  "css.lint.vendorPrefix": "ignore",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell"
+    },
+    "Command Prompt": {
+      "path": [
+        "${env:windir}\\Sysnative\\cmd.exe",
+        "${env:windir}\\System32\\cmd.exe"
+      ],
+      "args": [],
+      "icon": "terminal-cmd"
+    },
+    "Git Bash": {
+      "source": "Git Bash"
+    },
+    "zsh": {
+      "path": "C:\\msys64\\usr\\bin\\zsh.exe",
+      "args": [
+        "-l"
+      ],
+      "env": {
+        "CHERE_INVOKING": "1",
+        "MSYSTEM": "MSYS"
+      },
+      "icon": "terminal-bash"
+    }
+  },
+  "workbench.editor.enablePreviewFromCodeNavigation": true,
+  "workbench.editor.enablePreviewFromQuickOpen": true,
+  "terminal.integrated.environmentChangesRelaunch": true,
+  "python.terminal.shellIntegration.enabled": false,
+  "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

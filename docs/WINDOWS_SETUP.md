@@ -1,21 +1,19 @@
-# Windows Development Setup
+# Windows Development & Production Setup
 
-This document records the current Windows development environment for the Media Server. It supersedes older Linux/Kali-only development instructions for the current workstation; the existing Cloudflare/Kali document is retained as historical/remote-access documentation.
+This document records the complete Windows development and production environment for the Media Server on Windows 11.
 
-## Project layout
+---
 
-- Repository/worktree: `C:\MediaServer`
-- Media library: `C:\Flicks`
-- SQLite database: `C:\MediaServer\media.db`
-- Environment file: `C:\MediaServer\.env`
-- Virtual environment: `C:\MediaServer\venv`
-- Python: 3.14.3
-- FFmpeg: 9.0.1 essentials build from gyan.dev, with AMD AMF enabled
-- cloudflared: `C:\Cloudflared\cloudflared.exe`, version 2026.9.1
+## 1. Project Layout & Environment
 
-## Python environment
-
-From PowerShell:
+- **Repository Root:** `C:\MediaServer`
+- **Media Library:** `C:\Flicks`
+- **SQLite Database:** `C:\MediaServer\media.db`
+- **Environment File:** `C:\MediaServer\.env`
+- **Virtual Environment:** `C:\MediaServer\venv`
+- **Python Version:** 3.14.3
+- **FFmpeg:** 9.0.1 essentials build with AMD AMF & D3D11va
+- **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
 
 ```powershell
 cd C:\MediaServer
@@ -24,174 +22,77 @@ python --version
 pip install -r requirements.txt
 ```
 
-The application imports `python-dotenv`, and production mode uses Waitress. Both are therefore explicit runtime dependencies in `requirements.txt`.
+---
 
-## Required `.env` configuration
+## 2. Hardware Acceleration & Dual-GPU Setup
 
-The real `.env` is local-only and must never be committed. Current Windows values are conceptually:
+The Windows host features two AMD graphics processors:
+- **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
+- **Integrated GPU:** AMD Radeon Vega 8 Graphics — Task Manager GPU 1 / FFmpeg `dx11:0`
 
-```ini
-TMDB_API_TOKEN=<secret>
-MEDIA_SERVER_MEDIA_ROOT=C:\Flicks
-MEDIA_SERVER_DATABASE=C:\MediaServer\media.db
-MEDIA_SERVER_BASE_DIR=C:\MediaServer
-MEDIA_SERVER_ENABLE_AMF=1
-```
+> **Note on Adapter Numbering:** Windows Task Manager GPU indices are inverted compared to FFmpeg D3D11 adapter indices. Always verify with direct FFmpeg hardware device probe commands:
+> ```powershell
+> ffmpeg -hide_banner -init_hw_device d3d11va=dx11:1 -init_hw_device amf=amf@dx11 -filter_hw_device amf ...
+> ```
 
-Do not copy the real TMDb token into documentation, source control, agent prompts, screenshots, or issue comments.
+### Dynamic Multi-GPU Transcoding Architecture
+- Managed by `app/services/gpu_service.py` and `app/services/chunk_transcode_service.py`.
+- Both GPUs transcode separate, keyframe-aligned segments concurrently.
+- Real-time engine loads for both GPUs are tracked via Windows Performance Counters / PyNVML and displayed on the System Telemetry HUD.
+- Polling cadence is set to 1 second for live progress, speed, and ETA calculations.
 
-## FFmpeg / AMD AMF
+---
 
-The installed FFmpeg build supports AMD AMF:
+## 3. Persistent Windows Services
 
+The system runs completely detached as two persistent Windows Services that survive reboots without active user login:
+
+### A. MediaServer (Waitress WSGI)
+Registered using NSSM (Non-Sucking Service Manager):
+- **Service Name:** `MediaServer`
+- **Display Name:** `Media Server WSGI (Waitress)`
+- **Startup Type:** `Automatic`
+- **Binary:** `C:\MediaServer\venv\Scripts\python.exe`
+- **Arguments:** `run_production.py`
+- **Working Directory:** `C:\MediaServer`
+- **Log Files:** `C:\MediaServer\logs\waitress.log` and `waitress_error.log` (auto-rotated at 10 MB)
+- **Environment:** Injected `PATH` containing FFmpeg binaries.
+
+#### Management Scripts:
+- Install / Reinstall: `scripts\install_service.bat` (Run as Administrator)
+- Uninstall: `scripts\uninstall_service.bat` (Run as Administrator)
+- Restart: `scripts\restart_service.bat`
+- Health Diagnostic: `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1`
+
+### B. Cloudflared (Remote Named Tunnel)
+Runs as an automatic Windows Service pointing to `C:\Users\<USER>\.cloudflared\config.yml`:
+- **Hostname:** `media.anisparvez.in`
+- **Origin:** `http://127.0.0.1:8000`
+
+If DNS retains stale CNAME records from an earlier tunnel, update dynamically using:
 ```powershell
-ffmpeg -hide_banner -encoders | Select-String "amf"
-ffmpeg -hide_banner -hwaccels
-ffmpeg -hide_banner -filters | Select-String "amf|d3d11va"
+cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> media.anisparvez.in
 ```
 
-Expected AMF encoders include `h264_amf`, `hevc_amf`, and `av1_amf`. The available filters include AMF-related filters such as `vpp_amf`.
+---
 
-An independent encoder test succeeded:
+## 4. UI & Playback Polish
 
-```powershell
-ffmpeg -hide_banner -f lavfi -i testsrc2=size=1280x720:rate=30 -t 10 -c:v h264_amf -f null -
-```
+- **Live Seek Hover Previews:** Frame thumbnails are dynamically extracted on-demand via `app/services/preview_service.py` using fast input-seeking (`-ss` before `-i`) and cached in `cache/previews/`.
+- **Player Controls:** 36px circular control buttons, prominent 21px SVG icons, 4px vertical breathing room in `.controls-row` preventing top focus truncation.
+- **Native Dark Selects:** `color-scheme: dark !important;` prevents white-on-white dropdown rendering in Windows Chromium.
+- **Hold-to-Speed Removed:** Fast-forward hold gestures removed from pointer listeners and modal cheat-sheet.
+- **Upload Lifecycle:** Abort button hidden immediately upon 100% upload completion; animated cycling card shows background ingestion status (*Probing...*, *TMDb...*, *Posters...*, *Subtitles...*).
 
-This completed successfully at roughly 80 fps on the test system.
+---
 
-## Two AMD GPUs
+## 5. Active Next Steps & Engineering Tasks
 
-The Windows machine has:
-
-- GPU 0: Radeon RX 560X Series (discrete GPU)
-- GPU 1: AMD Radeon(TM) Vega 8 Graphics (integrated GPU)
-
-Windows Task Manager labels these in the opposite numerical order from the FFmpeg D3D11 adapter test used below. Do not infer FFmpeg adapter numbers from the Task Manager GPU number alone.
-
-A direct FFmpeg test established that **D3D11 adapter index `1` selects the Radeon RX 560X**:
-
-```powershell
-ffmpeg -hide_banner `
-  -init_hw_device d3d11va=dx11:1 `
-  -init_hw_device amf=amf@dx11 `
-  -filter_hw_device amf `
-  -f lavfi -i testsrc2=size=1920x1080:rate=30 `
-  -t 30 `
-  -vf "scale=1920:1080,format=nv12" `
-  -c:v h264_amf `
-  -quality speed `
-  -f null -
-```
-
-While this test ran, Task Manager showed the discrete RX 560X becoming active instead of the Vega 8. This is the authoritative adapter-selection result for the current machine.
-
-## Current AMF application state
-
-The branch `gpu-amf-transcoding` contains commit `8b21b2b` (`Add AMD AMF transcoding support`) on top of the known-good baseline `4ce82dad2775d816b84dd6767b8b252e6fcf639c`.
-
-The current implementation adds `MEDIA_SERVER_ENABLE_AMF` support and selects `h264_amf` for compatibility/HLS video transcoding. The actual Media Server HLS process was verified to use `h264_amf`.
-
-**Important pending change:** AMF currently needs explicit D3D11 adapter binding so the application selects the RX 560X rather than the Vega 8. The intended HLS command-level initialization is:
-
-```text
--init_hw_device d3d11va=dx11:1
--init_hw_device amf=amf@dx11
--filter_hw_device amf
-```
-
-Do not merge this pending adapter-selection change into `testing` until it has been tested on the real movie.
-
-## Production server on Windows
-
-`run_production.py` uses Waitress:
-
-```powershell
-cd C:\MediaServer
-.\venv\Scripts\Activate.ps1
-python run_production.py
-```
-
-Default configuration is port `8000` and 8 Waitress threads. For a machine hosting a reverse tunnel, binding the application to `127.0.0.1` is preferable to exposing port 8000 on all network interfaces.
-
-## Cloudflare Tunnel on Windows
-
-The Windows cloudflared executable is:
-
-```text
-C:\Cloudflared\cloudflared.exe
-```
-
-The named tunnel is `media-server` with ID `cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f` and the public hostname is `media.anisparvez.in`.
-
-The Windows config is:
-
-```yaml
-tunnel: cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
-ingress:
-  - hostname: media.anisparvez.in
-    service: http://127.0.0.1:8000
-  - service: http_status:404
-```
-
-The tunnel token/credential material is secret. Never put it in Git, documentation, or agent prompts.
-
-Automatic startup of Waitress + cloudflared on Windows is **not yet finished**. This is a future deployment task.
-
-## Git workflow / safety
-
-The known-good production/testing baseline is commit `4ce82da`.
-
-`testing` is intentionally preserved at that baseline. The AMF work is isolated on `gpu-amf-transcoding`.
-
-Before changing code:
-
-```powershell
-git status
-git branch --show-current
-git log --oneline -5
-```
-
-Do not accidentally add the local untracked `start_media_server.ps1` unless explicitly requested.
-
-Do not force-push. Do not reset or rewrite `testing` unless explicitly instructed.
-
-## Current troubleshooting item: playback transcoding indicator
-
-The playback page has a `#shellTranscodePill` / transcoding status indicator. It is currently observed to blink repeatedly while playback is running, as if the status is being repeatedly shown and hidden or the DOM/CSS animation is being restarted.
-
-This has **not** been fixed yet.
-
-Next diagnostic step:
-
-```javascript
-setInterval(() => {
-    const el = document.querySelector('#shellTranscodePill');
-    console.log(
-        new Date().toLocaleTimeString(),
-        'display=', el?.style.display,
-        'hidden=', el?.hidden,
-        'text=', el?.innerText
-    );
-}, 1000);
-```
-
-Also inspect DevTools Network → Fetch/XHR for repeatedly requested transcode/status/progress endpoints. Determine whether the issue is polling state toggling, DOM replacement, or a CSS animation restart before changing player code.
-
-## Parked player issue
-
-The previous request to remove hold-click playback-speed acceleration while retaining the normal speed dropdown is parked. Do not modify `templates/player.html` for that issue unless explicitly resumed. A prior formatted edit to the player caused a Jinja/player regression and was reverted.
-
-## Subtitle status
-
-Local `.srt`/`.vtt` playback is working. The local subtitle route was fixed to use a query-string `name` parameter to disambiguate subtitle filenames. The incorrect automatic OpenSubtitles behavior is intentionally parked for later.
-
-## Resume point for the next session
-
-1. Verify/implement explicit AMF adapter 1 selection for the RX 560X.
-2. Restart the server and transcode a real HEVC movie from `C:\Flicks`.
-3. Confirm Task Manager shows RX 560X activity rather than Vega 8 activity.
-4. Run Python syntax/tests.
-5. Inspect the playback transcoding-pill blinking issue.
-6. Only after these checks consider merging `gpu-amf-transcoding` into `testing`.
-7. Finish Windows automatic startup for Waitress + cloudflared later.
+1. **In-Transcode Playback Synchronization & Timeline Offset:**
+   Investigate sliding-window timeline offset and stoppage when playing media during active transcode. Apply `#EXT-X-PLAYLIST-TYPE:EVENT` with `#EXT-X-START:TIME-OFFSET=0` or gate playback with progress status screen until a safe initial buffer is written.
+2. **Periodic (4-Hour) TMDb Metadata Refresh:**
+   Implement background scheduler in `worker_service.py` to refresh movie ratings and vote averages every 4 hours, and connect UI "↻ Scan" button to trigger metadata re-synchronization.
+3. **Server-Wide Manual Subtitle Upload:**
+   Add subtitle upload modal on `/details/<filename>`, detect language from text content, and persist files server-wide using `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`.
+4. **Post-Transcode Storage Retention & Orphaned Cache Purge:**
+   Implement source retention options for large files and audit `cache/hls/` against active database entries to safely purge orphaned transcode artifacts.

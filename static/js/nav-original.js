@@ -2,7 +2,7 @@
  * Navigation Transitions & Progress Indicator
  * Provides instant visual feedback and smooth transitions across media server views.
  */
-(function() {
+(function () {
   'use strict';
 
   let progressBar = null;
@@ -86,7 +86,7 @@
     return true;
   }
 
-  document.addEventListener('click', function(e) {
+  document.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const link = e.target.closest('a');
@@ -104,7 +104,7 @@
     finishProgress();
   }
 
-  window.addEventListener('pageshow', function(e) {
+  window.addEventListener('pageshow', function (e) {
     if (e.persisted) resetProgress();
     else finishProgress();
   });
@@ -128,7 +128,7 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
     if (!chunkUploadId) return;
     const id = chunkUploadId;
     chunkUploadId = null;
-    fetch('/api/upload/chunk/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true }).catch(() => {});
+    fetch('/api/upload/chunk/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true }).catch(() => { });
   }
 
   function xhrUploadChunk(url, blob, offset, onProgress) {
@@ -148,10 +148,10 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
           catch (_) { reject(new Error('Invalid server response.')); }
         } else {
           let message = 'Upload chunk failed (' + xhr.status + ')';
-          try { const data = JSON.parse(xhr.responseText); if (data.error) message = data.error; } catch (_) {}
+          try { const data = JSON.parse(xhr.responseText); if (data.error) message = data.error; } catch (_) { }
           const error = new Error(message);
           error.status = xhr.status;
-          try { error.currentOffset = JSON.parse(xhr.responseText).current_offset; } catch (_) {}
+          try { error.currentOffset = JSON.parse(xhr.responseText).current_offset; } catch (_) { }
           reject(error);
         }
       });
@@ -213,6 +213,23 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
       }
     }
 
+    // Byte upload finished! Conceal abort button and start animated dynamic processing
+    const cb = document.getElementById('uploadCancelBtn');
+    if (cb) cb.style.display = 'none';
+    const pb = document.getElementById('uploadProgressBar'),
+      pt = document.getElementById('uploadPercentText'),
+      ps = document.getElementById('uploadStatusText'),
+      peta = document.getElementById('uploadEtaText'),
+      psp = document.getElementById('uploadSpeedText'),
+      tasksBox = document.getElementById('uploadTasksBox');
+    if (pb) pb.style.width = '100%';
+    if (pt) pt.textContent = '100%';
+    if (ps) ps.textContent = 'Processing media...';
+    if (peta) peta.textContent = 'Uploaded';
+    if (psp) psp.textContent = 'Done';
+    if (tasksBox) tasksBox.style.display = 'flex';
+    if (typeof startProcessingCycle === 'function') startProcessingCycle();
+
     const completeRes = await fetch(
       '/api/upload/chunk/' + encodeURIComponent(chunkUploadId) + '/complete',
       { method: 'POST' }
@@ -224,7 +241,7 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
   }
 
   const originalStartUpload = startUpload;
-  startUpload = async function() {
+  startUpload = async function () {
     if (!selectedUploadFile) return;
     const sb = document.getElementById('uploadSubmitBtn');
     const cb = document.getElementById('uploadCancelBtn');
@@ -237,6 +254,7 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
 
     sb.disabled = true;
     sb.style.display = 'none';
+    cb.style.display = 'inline-flex';
     cb.textContent = 'Abort';
     document.getElementById('uploadDropZone').style.display = 'none';
     document.getElementById('uploadTitleWrap').style.display = 'none';
@@ -274,7 +292,7 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
       return sec + 's';
     }
 
-    cb.onclick = function() {
+    cb.onclick = function () {
       if (uploadXHR && uploadXHR.readyState > 0 && uploadXHR.readyState < 4) uploadXHR.abort();
       abortChunkUploadSession();
       document.getElementById('uploadErrorMessage').textContent = 'Upload aborted.';
@@ -288,28 +306,25 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
       const titleInput = document.getElementById('uploadTitleInput');
       const title = titleInput ? titleInput.value.trim() : '';
       const result = await runChunkedUpload(selectedUploadFile, title, updateProgress);
-      pb.style.width = '100%';
-      pt.textContent = '100%';
-      pby.textContent = fmtSize(selectedUploadFile.size) + ' / ' + fmtSize(selectedUploadFile.size);
-      psp.textContent = 'Done';
-      if (peta) peta.textContent = 'Uploaded';
-      ps.textContent = 'Processing media...';
-      const tasksBox = document.getElementById('uploadTasksBox');
-      if (tasksBox) tasksBox.style.display = 'flex';
-      startProcessingCycle();
-
+      if (typeof stopProcessingCycle === 'function') stopProcessingCycle();
       document.getElementById('uploadProgressSection').style.display = 'none';
-      document.getElementById('uploadTasksBox').style.display = 'none';
+      const tasksBox = document.getElementById('uploadTasksBox');
+      if (tasksBox) tasksBox.style.display = 'none';
       document.getElementById('uploadFileCard').style.display = 'none';
       const sbox = document.getElementById('uploadSuccessBox');
       const smt = document.getElementById('successMovieTitle');
       if (smt) smt.textContent = (result.title || 'Media') + ' added successfully!';
-      sbox.style.display = 'flex';
-      stopProcessingCycle();
+      if (sbox) sbox.style.display = 'flex';
+      const vb = document.getElementById('uploadViewBtn');
+      if (result.details_url && vb) {
+        vb.href = result.details_url;
+        vb.style.display = 'inline-flex';
+      }
       setTimeout(() => location.reload(), 1500);
     } catch (err) {
-      stopProcessingCycle();
-      document.getElementById('uploadTasksBox').style.display = 'none';
+      if (typeof stopProcessingCycle === 'function') stopProcessingCycle();
+      const tasksBox = document.getElementById('uploadTasksBox');
+      if (tasksBox) tasksBox.style.display = 'none';
       showUploadError(err.message || 'Upload failed.');
       sb.style.display = 'inline-flex';
       sb.disabled = false;
@@ -322,72 +337,5 @@ if (document.getElementById('uploadModal') && typeof startUpload === 'function')
   };
 }
 
-/* Player transcode UI guard:
-   The player can sometimes report HLS preparation after the background
-   transcode has already finished. The authoritative active-transcode API
-   decides whether the UI is allowed to show progress/preparation. */
-(function() {
-  if (!document.getElementById('video')) return;
 
-  const movieFilename = (() => {
-    const src = document.getElementById('source');
-    return src ? null : null;
-  })();
 
-  function currentFilename() {
-    const m = document.title.match(/^Watching (.+?) — Anis' Media Server$/);
-    return m ? null : null;
-  }
-
-  async function syncPlayerTranscodeUI() {
-    try {
-      const video = document.getElementById('video');
-      const card = document.getElementById('playerTranscodeCard');
-      const pill = document.getElementById('shellTranscodePill');
-      const cache = document.getElementById('cacheStatus');
-      if (!video || !card) return;
-
-      const filename = decodeURIComponent(
-        location.pathname.split('/watch/')[1] || ''
-      );
-
-      const r = await fetch('/api/transcodes', { cache: 'no-store' });
-      if (!r.ok) return;
-
-      const data = await r.json();
-      const active = (data.transcodes || []).some(
-        t => t.filename === filename && t.status === 'building'
-      );
-
-      if (!active) {
-        card.style.display = 'none';
-        if (pill) pill.style.display = 'none';
-        if (cache) cache.hidden = true;
-
-        const seekEta = document.getElementById('seekEta');
-        if (seekEta) seekEta.hidden = true;
-
-        if (window._mediaServerTranscodeGuardTimer) {
-          clearInterval(window._mediaServerTranscodeGuardTimer);
-          window._mediaServerTranscodeGuardTimer = null;
-        }
-      }
-    } catch (_) {
-      // Never interfere with normal playback.
-    }
-  }
-
-  syncPlayerTranscodeUI();
-  window._mediaServerTranscodeGuardTimer =
-    setInterval(syncPlayerTranscodeUI, 2000);
-
-  const cache = document.getElementById('cacheStatus');
-  if (cache) {
-    const observer = new MutationObserver(() => {
-      if (!cache.hidden) {
-        syncPlayerTranscodeUI();
-      }
-    });
-    observer.observe(cache, { attributes: true, attributeFilter: ['hidden', 'style'] });
-  }
-})();

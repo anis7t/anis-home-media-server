@@ -816,3 +816,68 @@ body.page-navigating .devices-main {
     gap: .2rem .5rem;
   }
 }
+
+/* --- Player Controls Polish, Dark Scheme & Continue Watching Compact --- */
+.controls-row {
+  padding: 4px 0 !important;
+}
+
+#controls select,
+#speed,
+.sub-field select {
+  color-scheme: dark !important;
+}
+
+#controls select option,
+#speed option,
+.sub-field select option {
+  background-color: #1a1d26 !important;
+  color: #f1f5f9 !important;
+  padding: 6px 10px !important;
+}
+
+#controls button {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#controls button svg {
+  width: 21px !important;
+  height: 21px !important;
+}
+
+#speed {
+  height: 34px !important;
+  min-width: 48px !important;
+  border-radius: 18px !important;
+  padding: 0 8px !important;
+}
+
+#time {
+  padding: 0 4px !important;
+}
+
+.rail .card {
+  width: 140px !important;
+  min-width: 140px !important;
+  max-width: 140px !important;
+  flex: 0 0 140px !important;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+
+@media (max-width: 768px) {
+  .rail .card {
+    width: 115px !important;
+    min-width: 115px !important;
+    max-width: 115px !important;
+    flex: 0 0 115px !important;
+  }
+}

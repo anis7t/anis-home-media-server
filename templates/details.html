@@ -93,7 +93,7 @@
         </button>
 
         {%if extended.trailer_key%}
-        <button id="trailerBtn" type="button" class="btn-sub-action" onclick="openTrailer('{{extended.trailer_key}}')">
+        <button id="trailerBtn" type="button" class="btn-sub-action" data-trailer-key="{{extended.trailer_key|e}}" onclick="openTrailer(this.dataset.trailerKey)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M10 8.64L15.27 12 10 15.36V8.64M8 5v14l11-7L8 5z"/></svg> Trailer
         </button>
         {%endif%}

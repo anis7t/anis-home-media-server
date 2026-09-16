@@ -5,6 +5,7 @@
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Database
 media.db
@@ -22,3 +23,5 @@ app.py.phase2
 *.log
 .agents/
 skills-lock.json
+bin/
+logs/
