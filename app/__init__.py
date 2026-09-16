@@ -3,7 +3,7 @@ import logging
 import subprocess
 from pathlib import Path
 from shutil import which
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from markupsafe import Markup, escape
 
 from app import config
@@ -23,6 +23,7 @@ from app.config import (
     HLS_PROCESSES,
     LOG_LEVEL,
     MEDIA_ROOT,
+    METADATA_REFRESH_INTERVAL,
     POSTER_CACHE,
     POSTER_EXTENSIONS,
     PRECACHE_INTERVAL,
@@ -75,6 +76,8 @@ from app.services.tmdb_service import (
     download_poster,
     get_movie_details,
     load_token,
+    refresh_all_library_metadata,
+    refresh_movie_metadata,
 )
 from app.services.transcode_service import (
     ProcessProxy,
@@ -97,7 +100,9 @@ from app.services.transcode_service import (
 )
 from app.services.worker_service import (
     auto_transcoder_loop,
+    metadata_refresh_loop,
     start_auto_transcoder_worker,
+    start_metadata_refresh_worker,
     start_precache_worker,
 )
 from app.services.system_service import get_system_telemetry
@@ -206,12 +211,65 @@ def create_app(test_config=None):
         return render_template('error.html', code=403, message='That location is not available.'), 403
 
     @app_instance.after_request
-    def add_client_hints_headers(response):
+    def add_client_hints_and_caching_headers(response):
         response.headers['Accept-CH'] = (
             'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Platform, '
             'Sec-CH-UA-Mobile, Sec-CH-UA-Arch, Sec-CH-UA-Bitness'
         )
         response.headers['Permissions-Policy'] = 'ch-ua-model=*, ch-ua-platform-version=*'
+
+        # Developer Cache Bypass triggers (query param or request header)
+        bypass_query = (
+            request.args.get('nocache') in ('1', 'true', 'yes')
+            or request.args.get('bypass') in ('1', 'true', 'yes')
+            or request.args.get('dev') in ('1', 'true', 'yes')
+        )
+        bypass_header = (
+            request.headers.get('X-Bypass-Cache') in ('1', 'true', 'yes')
+            or request.headers.get('Cache-Control') == 'no-cache'
+            or request.headers.get('Pragma') == 'no-cache'
+        )
+
+        if bypass_query or bypass_header:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['CDN-Cache-Control'] = 'no-store'
+            response.headers['Cloudflare-CDN-Cache-Control'] = 'no-store'
+            response.headers['X-Cache-Bypass'] = 'true'
+            return response
+
+        # Edge Caching configuration by asset type
+        path = request.path
+        if (
+            path.startswith('/static/')
+            or path.startswith('/posters/')
+            or path.startswith('/backdrops/')
+            or path.startswith('/api/seek-preview/')
+            or (path.startswith('/hls/') and (path.endswith('.ts') or path.endswith('.m4s') or path.endswith('/init.mp4')))
+        ):
+            # Immutable media chunks & static assets: 7 days on Cloudflare edge, 1 day in browser
+            response.headers['Cache-Control'] = 'public, max-age=86400'
+            response.headers['CDN-Cache-Control'] = 'public, max-age=604800'
+            response.headers['Cloudflare-CDN-Cache-Control'] = 'public, max-age=604800'
+            response.headers['X-Cache-Strategy'] = 'edge-immutable'
+        elif path.startswith('/subtitles/'):
+            # Subtitle files: 1 day edge cache, 1 hour browser
+            response.headers['Cache-Control'] = 'public, max-age=3600'
+            response.headers['CDN-Cache-Control'] = 'public, max-age=86400'
+            response.headers['Cloudflare-CDN-Cache-Control'] = 'public, max-age=86400'
+            response.headers['X-Cache-Strategy'] = 'edge-subtitles'
+        elif path.startswith('/media/'):
+            # Direct media streaming: 1 day edge cache with byte-range support
+            response.headers['Cache-Control'] = 'public, max-age=86400'
+            response.headers['CDN-Cache-Control'] = 'public, max-age=86400'
+            response.headers['Cloudflare-CDN-Cache-Control'] = 'public, max-age=86400'
+            response.headers['X-Cache-Strategy'] = 'edge-media'
+        elif path.startswith('/api/') or (path.startswith('/hls/') and path.endswith('.m3u8')):
+            # Dynamic API routes and active in-flight playlists: prevent stale edge caching
+            response.headers['CDN-Cache-Control'] = 'no-store'
+            response.headers['Cloudflare-CDN-Cache-Control'] = 'no-store'
+            response.headers['X-Cache-Strategy'] = 'dynamic-origin'
+
         return response
 
     # Wrap with ProxyFix for reverse proxy and Cloudflare tunnel support
