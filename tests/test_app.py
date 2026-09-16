@@ -30,6 +30,29 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn(b'WEBVTT',self.client.get('/subtitles/Example.2026.mp4/Example.2026.en.srt').data)
         self.assertEqual(self.client.post('/api/progress',json={'filename':'Example.2026.mp4','position':15,'duration':10}).status_code,200)
         self.assertEqual(self.client.get('/api/progress?filename=Example.2026.mp4').json['position'],10)
+
+    def test_subdirectory_subtitles_delivery_and_language_detection(self):
+        sub_dir = Path(TMP.name) / "SubDir Movie.2026"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        movie_file = sub_dir / "Movie.2026.mkv"
+        movie_file.write_bytes(b"dummy mkv video content")
+        sub_file = sub_dir / "Movie.2026.srt"
+        sub_file.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello and welcome to the show.\n", encoding="utf-8")
+
+        # Verify delivery via route /subtitles/<path:filename>/<name>
+        rel_movie = "SubDir Movie.2026/Movie.2026.mkv"
+        res = self.client.get(f"/subtitles/{rel_movie}/Movie.2026.srt")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"WEBVTT", res.data)
+        self.assertIn(b"Hello and welcome to the show.", res.data)
+
+        # Verify tracks() detects language from text as 'en' and marks it default
+        from app.services.subtitles_service import tracks
+        trks = tracks(movie_file)
+        self.assertTrue(len(trks) >= 1)
+        self.assertEqual(trks[0]['lang'], 'en')
+        self.assertEqual(trks[0]['label'], 'English (Local)')
+        self.assertTrue(trks[0]['default'])
     def test_new_media_files_are_discovered_immediately(self):
         app._paths = (time.monotonic(), [Path(TMP.name) / 'Example.2026.mp4'])
         new_file = Path(TMP.name) / 'Late.2026.mp4'

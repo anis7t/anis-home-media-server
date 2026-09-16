@@ -16,7 +16,7 @@ from app import config
 from app.db import get_db
 from app.services.media_service import movie, probe_media
 from app.utils.filesystem import is_video
-from app.utils.subtitles import compute_opensubtitles_hash, srt_to_vtt
+from app.utils.subtitles import compute_opensubtitles_hash, detect_subtitle_language, srt_to_vtt
 
 
 def extract_embedded_subtitle(path, stream_idx):
@@ -200,10 +200,17 @@ def tracks(path, movie_meta=None):
                         if sub.stem.startswith(path.stem)
                         else ''
                     )
-                    lang_names = {'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French', 'de': 'German'}
+                    lang_names = {
+                        'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French',
+                        'de': 'German', 'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',
+                        'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'ar': 'Arabic', 'bn': 'Bengali'
+                    }
                     is_eng = ('eng' in sub.stem.lower() or 'english' in sub.stem.lower() or code in {'en', 'eng'})
                     detected_lang = 'en' if is_eng else (code or 'und')
-                    if detected_lang == 'en':
+                    if detected_lang == 'und':
+                        detected_lang = detect_subtitle_language(sub)
+                    if detected_lang in {'en', 'eng'}:
+                        detected_lang = 'en'
                         found_english = True
                     label = lang_names.get(detected_lang, detected_lang.upper() if detected_lang != 'und' else 'Subtitles')
                     try:

@@ -47,3 +47,66 @@ def srt_to_vtt(text):
             out.append(line)
     return '\n'.join(out)
 
+
+def detect_subtitle_language(source):
+    """Detect ISO 639-1 language code from a subtitle file path or text content."""
+    if isinstance(source, (str, Path)) and (isinstance(source, Path) or '\n' not in source):
+        path = Path(source)
+        if path.is_file():
+            try:
+                text = path.read_text(encoding='utf-8', errors='replace')
+            except Exception:
+                return 'und'
+        else:
+            text = str(source)
+    else:
+        text = str(source)
+
+    if not text:
+        return 'und'
+
+    lines = [
+        l.strip() for l in text.splitlines()
+        if l.strip() and not l.strip().isdigit() and '-->' not in l and not l.startswith('WEBVTT')
+    ]
+    sample = ' '.join(lines[:100]).lower()
+    if not sample:
+        return 'und'
+
+    # Non-Latin script checks
+    if any('\u0900' <= ch <= '\u097f' for ch in sample):
+        return 'hi'  # Hindi (Devanagari)
+    if any('\u0400' <= ch <= '\u04ff' for ch in sample):
+        return 'ru'  # Russian (Cyrillic)
+    if any('\u4e00' <= ch <= '\u9fff' for ch in sample):
+        return 'zh'  # Chinese
+    if any('\u3040' <= ch <= '\u30ff' for ch in sample):
+        return 'ja'  # Japanese (Hiragana/Katakana)
+    if any('\uac00' <= ch <= '\ud7af' for ch in sample):
+        return 'ko'  # Korean (Hangul)
+    if any('\u0600' <= ch <= '\u06ff' for ch in sample):
+        return 'ar'  # Arabic
+    if any('\u0980' <= ch <= '\u09ff' for ch in sample):
+        return 'bn'  # Bengali
+
+    words = set(re.findall(r'\b[a-z]{2,}\b', sample))
+    if not words:
+        return 'und'
+
+    word_lists = {
+        'en': {'the', 'and', 'to', 'of', 'in', 'is', 'it', 'you', 'that', 'he', 'was', 'for', 'on', 'are', 'with', 'as', 'his', 'they', 'at', 'have', 'this', 'from', 'or', 'had', 'by', 'not', 'but', 'what', 'some', 'we', 'can', 'out', 'other', 'were', 'all', 'there', 'when', 'up', 'your', 'how', 'said', 'an', 'each', 'she'},
+        'es': {'que', 'de', 'no', 'la', 'el', 'es', 'en', 'lo', 'un', 'por', 'me', 'una', 'te', 'los', 'se', 'con', 'para', 'mi', 'está', 'si', 'bien', 'pero', 'yo', 'eso', 'las', 'más'},
+        'fr': {'de', 'je', 'est', 'pas', 'que', 'le', 'la', 'tu', 'un', 'il', 'et', 'ce', 'en', 'on', 'une', 'les', 'pour', 'des', 'dans', 'moi', 'qui', 'nous', 'elle', 'mais', 'du'},
+        'de': {'das', 'ist', 'du', 'nicht', 'die', 'es', 'und', 'sie', 'der', 'was', 'wir', 'zu', 'ein', 'ich', 'in', 'dem', 'mit', 'den', 'so', 'eine', 'auf', 'mich', 'dass'},
+        'it': {'che', 'non', 'di', 'la', 'il', 'un', 'sono', 'per', 'una', 'in', 'mi', 'ho', 'ma', 'ha', 'si', 'lo', 'ti', 'le', 'cosa', 'con', 'ci', 'io', 'questo', 'bene'},
+        'pt': {'que', 'não', 'de', 'um', 'para', 'uma', 'com', 'ele', 'em', 'os', 'no', 'se', 'na', 'por', 'mais', 'as', 'dos', 'como', 'mas', 'foi', 'ao', 'ele', 'das'},
+    }
+
+    scores = {lang: len(words.intersection(vocab)) for lang, vocab in word_lists.items()}
+    best_lang, best_score = max(scores.items(), key=lambda item: item[1])
+    if best_score >= 3:
+        return best_lang
+    if scores['en'] >= 1:
+        return 'en'
+    return 'und'
+

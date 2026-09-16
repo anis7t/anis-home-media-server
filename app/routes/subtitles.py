@@ -15,7 +15,7 @@ from app.utils.subtitles import srt_to_vtt
 subtitles_bp = Blueprint('subtitles', __name__)
 
 
-@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')
+@subtitles_bp.route('/subtitles/<path:filename>/<name>')
 def subtitle(filename, name):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
     video = safe_path(filename)
