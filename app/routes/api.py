@@ -42,8 +42,8 @@ def check_which(cmd):
 
 @api_bp.route('/api/scan', methods=['GET', 'POST'])
 def api_scan():
-    """Trigger library filesystem scan and report current scanner state."""
-    started = trigger_library_scan()
+    """Trigger library filesystem scan and TMDB metadata refresh, reporting scanner state."""
+    started = trigger_library_scan(refresh_metadata=True, force_refresh=True)
     return jsonify(
         status="scanning" if started or config.SCANNER_LOCK.locked() else "idle",
         busy=config.SCANNER_LOCK.locked()
@@ -476,5 +476,71 @@ def api_devices_client_hints():
     device_id, _ = get_or_create_device_id(request)
     updated = update_device_client_hints(device_id, model=model, platform=platform, platform_version=platform_version)
     return jsonify(success=True, updated=updated, device_id=device_id)
+
+
+_ALLOWED_SUBTITLE_EXTS = {'.srt', '.vtt'}
+
+
+@api_bp.route('/api/upload-subtitle/<path:filename>', methods=['POST'])
+def api_upload_subtitle(filename):
+    """Accept a subtitle file upload, auto-detect its language, and save it next to the media.
+
+    Saved filename format: ``<short_movie_name>_<lang>_<n><ext>``
+    e.g. ``moana_en_1.srt``, ``the_odyssey_fr_2.vtt``.
+    """
+    from app.utils.subtitles import detect_subtitle_language, get_short_movie_name
+
+    # --- Validate target media exists ---
+    media_path = safe_path(filename)
+    if not media_path or not media_path.is_file():
+        return jsonify(success=False, error='Media file not found.'), 404
+
+    # --- Validate uploaded file ---
+    sub_file = request.files.get('subtitle')
+    if not sub_file or not sub_file.filename:
+        return jsonify(success=False, error='No subtitle file provided.'), 400
+
+    upload_ext = Path(sub_file.filename).suffix.lower()
+    if upload_ext not in _ALLOWED_SUBTITLE_EXTS:
+        return jsonify(
+            success=False,
+            error=f'Unsupported format "{upload_ext}". Only .srt and .vtt are accepted.'
+        ), 415
+
+    # --- Read content & detect language ---
+    try:
+        raw_bytes = sub_file.read()
+        text = raw_bytes.decode('utf-8', errors='replace')
+    except Exception as exc:
+        logger.exception('Failed to read subtitle upload: %s', exc)
+        return jsonify(success=False, error='Could not read the uploaded file.'), 500
+
+    lang = detect_subtitle_language(text)
+
+    # --- Determine save path with incremental counter ---
+    short_name = get_short_movie_name(media_path)
+    dest_dir = media_path.parent
+    counter = 1
+    while True:
+        dest_name = f'{short_name}_{lang}_{counter}{upload_ext}'
+        dest_path = dest_dir / dest_name
+        if not dest_path.exists():
+            break
+        counter += 1
+
+    try:
+        dest_path.write_bytes(raw_bytes)
+    except OSError as exc:
+        logger.exception('Failed to write subtitle file %s: %s', dest_path, exc)
+        return jsonify(success=False, error='Could not save the subtitle file on the server.'), 500
+
+    logger.info('Subtitle uploaded: %s  lang=%s', dest_path, lang)
+    return jsonify(
+        success=True,
+        filename=dest_name,
+        language=lang,
+        path=str(dest_path),
+    )
+
 
 

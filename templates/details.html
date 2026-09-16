@@ -98,6 +98,10 @@
         </button>
         {%endif%}
 
+        <button id="uploadSubBtn" type="button" class="btn-sub-action" onclick="document.getElementById('subtitleUploadModal').showModal()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg> Upload Subtitle
+        </button>
+
         <div class="ext-badges">
           {%if extended.imdb_id%}
             <a class="badge-ext badge-imdb" href="https://www.imdb.com/title/{{extended.imdb_id}}/" target="_blank" rel="noopener" title="View on IMDb">IMDb</a>
@@ -223,6 +227,27 @@
   </div>
 </div>
 {%endif%}
+
+<!-- Subtitle Upload Modal -->
+<dialog id="subtitleUploadModal" aria-labelledby="subModalTitle" aria-modal="true">
+  <div class="sub-modal-inner">
+    <div class="sub-modal-header">
+      <h2 id="subModalTitle">Upload Subtitle</h2>
+      <button type="button" class="sub-modal-close" id="subModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <p class="sub-modal-hint">Supported formats: <strong>.srt</strong>, <strong>.vtt</strong>. Language will be detected automatically.</p>
+    <label id="subDropZone" class="sub-drop-zone" for="subFileInput" tabindex="0" role="button" aria-label="Choose or drop a subtitle file">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor" opacity="0.5"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+      <span id="subDropLabel">Drop .srt / .vtt here or <u>click to browse</u></span>
+      <input type="file" id="subFileInput" accept=".srt,.vtt" style="display:none" aria-hidden="true">
+    </label>
+    <div id="subStatus" class="sub-status" hidden></div>
+    <div class="sub-modal-actions">
+      <button type="button" id="subUploadBtn" class="sub-btn-upload" disabled>Upload</button>
+      <button type="button" class="sub-btn-cancel" onclick="closeSubModal()">Cancel</button>
+    </div>
+  </div>
+</dialog>
 
 <script>
 const filename={{movie.filename|tojson}};
@@ -384,6 +409,97 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => {
   if (navigator.sendBeacon) navigator.sendBeacon('/api/devices/heartbeat');
 });
+
+// ---- Subtitle Upload Modal ----
+(function(){
+  const modal = document.getElementById('subtitleUploadModal');
+  const dropZone = document.getElementById('subDropZone');
+  const fileInput = document.getElementById('subFileInput');
+  const dropLabel = document.getElementById('subDropLabel');
+  const statusEl = document.getElementById('subStatus');
+  const uploadBtn = document.getElementById('subUploadBtn');
+  const closeBtn = document.getElementById('subModalCloseBtn');
+  let chosenFile = null;
+
+  function closeSubModal(){
+    modal.close();
+    resetSubModal();
+  }
+  window.closeSubModal = closeSubModal;
+  closeBtn.addEventListener('click', closeSubModal);
+  // Escape key handled natively by <dialog>
+
+  function resetSubModal(){
+    chosenFile = null;
+    fileInput.value = '';
+    dropLabel.textContent = 'Drop .srt / .vtt here or ';
+    const u = document.createElement('u'); u.textContent = 'click to browse';
+    dropLabel.appendChild(u);
+    dropZone.classList.remove('sub-drop-has-file','sub-drop-over');
+    statusEl.hidden = true;
+    statusEl.textContent = '';
+    statusEl.className = 'sub-status';
+    uploadBtn.disabled = true;
+  }
+
+  function setFile(f){
+    if(!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if(ext !== 'srt' && ext !== 'vtt'){
+      showStatus('Only .srt and .vtt files are accepted.', 'error');
+      return;
+    }
+    chosenFile = f;
+    dropLabel.textContent = '\uD83D\uDCC4 ' + f.name;
+    dropZone.classList.add('sub-drop-has-file');
+    uploadBtn.disabled = false;
+    statusEl.hidden = true;
+  }
+
+  function showStatus(msg, type){
+    statusEl.textContent = msg;
+    statusEl.className = 'sub-status sub-status--' + type;
+    statusEl.hidden = false;
+  }
+
+  fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('sub-drop-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('sub-drop-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('sub-drop-over');
+    setFile(e.dataTransfer.files[0]);
+  });
+  dropZone.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); } });
+
+  uploadBtn.addEventListener('click', async () => {
+    if(!chosenFile) return;
+    uploadBtn.disabled = true;
+    showStatus('Uploading\u2026', 'info');
+    const fd = new FormData();
+    fd.append('subtitle', chosenFile);
+    try {
+      const res = await fetch('/api/upload-subtitle/' + encodeURIComponent(filename), {
+        method: 'POST', body: fd
+      });
+      const data = await res.json();
+      if(data.success){
+        const langLabel = data.language === 'und' ? 'unknown' : data.language.toUpperCase();
+        showStatus('\u2705 Saved as ' + data.filename + '  (detected language: ' + langLabel + ')', 'success');
+        closeBtn.textContent = '\u2715  Close';
+        closeBtn.removeEventListener('click', closeSubModal);
+        closeBtn.addEventListener('click', () => { closeSubModal(); location.reload(); });
+      } else {
+        showStatus('\u274C ' + (data.error || 'Upload failed.'), 'error');
+        uploadBtn.disabled = false;
+      }
+    } catch(e) {
+      showStatus('\u274C Network error. Please try again.', 'error');
+      uploadBtn.disabled = false;
+    }
+  });
+})();
 </script>
 <footer class="site-footer">
   <p class="footer-copy">© 2026 Anis' Media Server. All rights reserved.</p>

@@ -187,19 +187,25 @@ def tracks(path, movie_meta=None):
 
     # 1. Directory subtitles
     if path.parent.exists():
+        from app.utils.subtitles import get_short_movie_name
+        short_name = get_short_movie_name(path)
         for sub in sorted(path.parent.iterdir()):
             if sub.is_file() and sub.suffix.lower() in config.SUBTITLE_EXTENSIONS:
+                is_short_match = bool(short_name and sub.stem.lower().startswith(f"{short_name}_"))
                 is_match = (
                     sub.stem == path.stem
                     or sub.stem.startswith(path.stem + '.')
+                    or is_short_match
                     or len(list(p for p in path.parent.iterdir() if is_video(p))) == 1
                 )
                 if is_match:
-                    code = (
-                        sub.stem[len(path.stem):].strip('.').split('.')[0].lower()
-                        if sub.stem.startswith(path.stem)
-                        else ''
-                    )
+                    code = ''
+                    if sub.stem.startswith(path.stem):
+                        code = sub.stem[len(path.stem):].strip('.').split('.')[0].lower()
+                    elif is_short_match:
+                        parts = sub.stem.lower().split('_')
+                        if len(parts) >= 3:
+                            code = parts[-2]
                     lang_names = {
                         'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French',
                         'de': 'German', 'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',

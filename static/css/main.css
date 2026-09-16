@@ -881,3 +881,50 @@ body.page-navigating .devices-main {
     flex: 0 0 115px !important;
   }
 }
+
+/* ── Subtitle Upload Modal ───────────────────────────────────────────────── */
+#subtitleUploadModal{border:none;padding:0;background:transparent;max-width:min(96vw,480px);width:100%;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.85);outline:none}
+#subtitleUploadModal::backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.sub-modal-inner{background:#12141c;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:1.6rem 1.5rem 1.4rem;display:flex;flex-direction:column;gap:1rem}
+.sub-modal-header{display:flex;align-items:center;justify-content:space-between}
+.sub-modal-header h2{margin:0;font-size:1.15rem;font-weight:700;color:#f1f5f9;letter-spacing:-.2px}
+.sub-modal-close{background:none;border:none;color:#94a3b8;font-size:1.55rem;cursor:pointer;line-height:1;padding:0 .25rem;transition:color .15s}
+.sub-modal-close:hover{color:#f1f5f9}
+.sub-modal-hint{margin:0;font-size:.84rem;color:#64748b;line-height:1.45}
+.sub-drop-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7rem;border:2px dashed rgba(255,255,255,.15);border-radius:12px;padding:2rem 1rem;cursor:pointer;text-align:center;transition:border-color .18s,background .18s;color:#8a94a6;font-size:.88rem;user-select:none}
+.sub-drop-zone:hover,.sub-drop-zone:focus{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.03);outline:none}
+.sub-drop-zone.sub-drop-over{border-color:#e50914;background:rgba(229,9,20,.07)}
+.sub-drop-zone.sub-drop-has-file{border-color:#22c55e;background:rgba(34,197,94,.06);color:#86efac}
+.sub-status{font-size:.85rem;border-radius:8px;padding:.6rem .85rem;line-height:1.4}
+.sub-status--info{background:rgba(56,189,248,.1);color:#7dd3fc;border:1px solid rgba(56,189,248,.2)}
+.sub-status--success{background:rgba(34,197,94,.1);color:#86efac;border:1px solid rgba(34,197,94,.2)}
+.sub-status--error{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.2)}
+.sub-modal-actions{display:flex;gap:.7rem}
+.sub-btn-upload{flex:1;background:linear-gradient(135deg,#e50914,#b80017);color:#fff;border:none;border-radius:8px;padding:.7rem 1rem;font-size:.88rem;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;letter-spacing:.3px}
+.sub-btn-upload:hover:not(:disabled){opacity:.88}
+.sub-btn-upload:active:not(:disabled){transform:scale(.98)}
+.sub-btn-upload:disabled{opacity:.35;cursor:not-allowed}
+.sub-btn-cancel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#94a3b8;border-radius:8px;padding:.7rem 1.1rem;font-size:.88rem;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.sub-btn-cancel:hover{background:rgba(255,255,255,.1);color:#f1f5f9}
+@media(max-width:480px){
+  .sub-modal-inner{padding:1.2rem 1rem 1rem}
+  .sub-drop-zone{padding:1.4rem .75rem}
+}
+
+/* ── Player Subtitle Settings Upload Row ──────────────────────────────────── */
+.sub-upload-row{align-items:center}
+.sub-upload-wrap{display:flex;gap:.4rem;align-items:center;max-width:180px;width:100%;justify-content:flex-end}
+.sub-drop-zone-mini{background:#262936;color:#cbd5e1;border:1px dashed #4e5668;border-radius:.45rem;padding:.3rem .55rem;font-size:.82rem;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;transition:all .15s ease;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:180px;height:32px;box-sizing:border-box;user-select:none}
+.sub-drop-zone-mini:hover,.sub-drop-zone-mini:focus-visible{border-color:rgba(255,255,255,.4);color:#fff;background:#323647;outline:none}
+.sub-drop-zone-mini.sub-drop-over{border-color:#e50914;background:rgba(229,9,20,.15);color:#fff}
+.sub-drop-zone-mini.sub-drop-has-file{border-color:#22c55e;color:#86efac;background:rgba(34,197,94,.12);max-width:110px}
+.sub-drop-zone-mini svg{flex-shrink:0}
+.sub-drop-zone-mini span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-upload-btn-mini{background:linear-gradient(135deg,#e50914,#b80017);color:#fff;border:none;border-radius:.45rem;padding:0 .75rem;font-size:.82rem;font-weight:700;cursor:pointer;height:32px;flex-shrink:0;transition:all .15s ease;display:inline-flex;align-items:center;justify-content:center}
+.sub-upload-btn-mini:hover:not(:disabled){opacity:.9;transform:scale(1.02)}
+.sub-upload-btn-mini:active:not(:disabled){transform:scale(.98)}
+.sub-upload-btn-mini:disabled{opacity:.4;cursor:not-allowed}
+.sub-status-mini{font-size:.8rem;border-radius:.4rem;padding:.4rem .65rem;line-height:1.35;animation:modalPopIn .15s ease}
+.sub-status-mini.sub-status--info{background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.25)}
+.sub-status-mini.sub-status--success{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25)}
+.sub-status-mini.sub-status--error{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}

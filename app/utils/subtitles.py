@@ -110,3 +110,19 @@ def detect_subtitle_language(source):
         return 'en'
     return 'und'
 
+
+def get_short_movie_name(path):
+    """Derive clean, normalized short movie name identifier (e.g. 'moana', 'the_odyssey')."""
+    p = Path(path)
+    stem = p.stem
+    try:
+        import scanner
+        parsed_title, _ = scanner.parse_filename(p)
+        if parsed_title:
+            stem = parsed_title
+    except Exception:
+        pass
+    clean = re.sub(r'[^a-zA-Z0-9]+', '_', stem).strip('_').lower()
+    return clean or 'video'
+
+
