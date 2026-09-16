@@ -95,6 +95,9 @@ The current project includes:
 - Production WSGI: **Waitress**, not Gunicorn.
 - Remote access: `cloudflared.exe` Windows Service.
 - Never use `os.kill(pid, 0)` to check process liveness on Windows; use `app.services.transcode_service.is_pid_alive(pid)` (exported in `app`) to avoid broadcasting `CTRL_C_EVENT` across the console group.
+- Never use `os.rename()` across disk volumes on Windows; use `shutil.move()` with target collision pre-unlinking.
+- In tests and cache audits, always call `get_cache_dir()` rather than referencing `app.config.CACHE_DIR` directly, as test harnesses patch `app.CACHE_DIR`.
+- Prioritize secondary high-capacity drives (`D:\Flicks\.archive`) for cold source retention to protect primary OS SSD headroom.
 
 ### Linux/Kali
 - Python 3.10+; current development uses Python 3.14.x.

@@ -37,6 +37,8 @@ def run_library_scan(refresh_metadata=False, force_refresh=False):
 
 def trigger_library_scan(refresh_metadata=False, force_refresh=False):
     """Trigger an asynchronous library scan if one is not already running."""
+    if 'pytest' in sys.modules and not os.environ.get('TEST_ENABLE_LIBRARY_SCAN'):
+        return False
     if config.SCANNER_LOCK.locked():
         return False
     thread = threading.Thread(

@@ -8,6 +8,7 @@ This document records the complete Windows development and production environmen
 
 - **Repository Root:** `C:\MediaServer`
 - **Media Library:** `C:\Flicks`
+- **Archive Storage Pool:** `D:\Flicks\.archive` (215+ GB free storage pool on D:)
 - **SQLite Database:** `C:\MediaServer\media.db`
 - **Environment File:** `C:\MediaServer\.env`
 - **Virtual Environment:** `C:\MediaServer\venv`
@@ -83,16 +84,19 @@ cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> media.ani
 - **Native Dark Selects:** `color-scheme: dark !important;` prevents white-on-white dropdown rendering in Windows Chromium.
 - **Hold-to-Speed Removed:** Fast-forward hold gestures removed from pointer listeners and modal cheat-sheet.
 - **Upload Lifecycle:** Abort button hidden immediately upon 100% upload completion; animated cycling card shows background ingestion status (*Probing...*, *TMDb...*, *Posters...*, *Subtitles...*).
+- **Dual-Disk Storage Governance & Cross-Drive Archiving:**
+  - `C:\Flicks`: Primary active media library for newly added files and direct streaming.
+  - `C:\MediaServer\cache\hls`: High-speed SSD HLS segment chunks and seek hover previews.
+  - `D:\Flicks\.archive`: Cold source retention repository on secondary high-capacity drive (215+ GB free pool), automatically populated when movies reach 100% verified HLS transcoding or via one-click **📦 Archive** action on `/manage`.
+  - Python `shutil.move()` ensures safe atomic cross-drive file relocation across Windows filesystem boundaries without `[WinError 17]`.
+  - Automated orphaned cache purge cleans unreferenced chunks on startup and every 2 hours via background daemon.
 
 ---
 
 ## 5. Active Next Steps & Engineering Tasks
 
-1. **In-Transcode Playback Synchronization & Timeline Offset:**
-   Investigate sliding-window timeline offset and stoppage when playing media during active transcode. Apply `#EXT-X-PLAYLIST-TYPE:EVENT` with `#EXT-X-START:TIME-OFFSET=0` or gate playback with progress status screen until a safe initial buffer is written.
-2. **Periodic (4-Hour) TMDb Metadata Refresh:**
-   Implement background scheduler in `worker_service.py` to refresh movie ratings and vote averages every 4 hours, and connect UI "↻ Scan" button to trigger metadata re-synchronization.
-3. **Server-Wide Manual Subtitle Upload:**
-   Add subtitle upload modal on `/details/<filename>`, detect language from text content, and persist files server-wide using `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`.
-4. **Post-Transcode Storage Retention & Orphaned Cache Purge:**
-   Implement source retention options for large files and audit `cache/hls/` against active database entries to safely purge orphaned transcode artifacts.
+1. **Production Concurrency Tuning & Benchmarks:**
+   Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent multi-device playback.
+2. **Cloudflare Media Delivery Review:**
+   Review Cloudflare service-specific video delivery policies before scaling remote public distribution.
+

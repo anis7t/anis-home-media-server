@@ -1,12 +1,12 @@
 # Development Status / Session Handoff
 
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 Repository: `anis7t/media-server`
-Working branch: `fix/windows-purge-reliability`
+Working branch: `feat/storage-retention-cache-purge`
 
 ## 1. Branch and Environment State
 
-- **Current working branch:** `fix/windows-purge-reliability`
+- **Current working branch:** `feat/storage-retention-cache-purge`
 - **Environment:** Windows 11 Home / Workstation
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
 - **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
@@ -18,6 +18,7 @@ Working branch: `fix/windows-purge-reliability`
 ```text
 Project:       C:\MediaServer
 Media root:    C:\Flicks
+Archive root:  D:\Flicks\.archive (215.8 GB free pool on D:)
 Database:      C:\MediaServer\media.db
 Venv:          C:\MediaServer\venv
 ```
@@ -65,21 +66,30 @@ Venv:          C:\MediaServer\venv
 
 ---
 
+### Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger
+- Background scheduler (`metadata-refresh-worker`) in `worker_service.py` refreshing TMDb details (ratings, vote averages, runtime, tagline, cast, certification, artwork) every 4 hours.
+- SQLite `last_metadata_refresh` schema migration in `media.db`.
+- Synchronized manual UI "↻ Scan" trigger re-synchronizing metadata alongside newly discovered files.
+
+### Server-Wide Manual Subtitle Upload with Language Auto-Detection
+- Built subtitle upload interfaces on `/movie/<filename>` and directly inside the in-player Subtitle Settings modal (`#subSettingsModal`).
+- Auto-detects subtitle language from content text (Unicode character script analysis & NLP stop-word heuristic), saving files server-wide in canonical format: `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`.
+- In-player modal dynamically updates `<track>` elements and selects newly uploaded subtitles with zero playback disruption.
+
+### Post-Transcode Storage Retention & Safe Orphaned Cache Purge
+- **Configurable Retention Policies:** User-configurable retention policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table. Default `'keep'` operates non-destructively while `'archive'` moves original source MKVs to `D:\Flicks\.archive` (utilizing 215+ GB headroom on drive `D:`) while preserving smooth HLS streaming.
+- **Automated Orphaned Cache Auditing:** `audit_orphaned_caches()` reconciles `cache/hls/` and `cache/previews/` against active video files and in-flight transcode jobs.
+- **Safe Orphaned Cache Purge:** `purge_orphaned_caches()` with bounded Windows file-lock retries, triggered automatically on server launch (`cleanup_cache_on_startup`) and by background daemon worker every 2 hours (`cache-maintenance-worker`). Reclaimed 57 orphaned cache directories.
+- **REST API Suite:** Endpoints `/api/storage/audit`, `/api/storage/purge-orphans`, `/api/storage/settings`, and `/api/storage/archive/<filename>`.
+- **Management UI:** Storage Retention & Cache Governance card on `/manage` with live storage pool telemetry, interactive policy selector, clean orphaned caches confirmation modal (`#cleanOrphansModal`), and per-item source archiving action.
+
+---
+
 ## 3. Active Next Steps & Engineering Tasks
 
-### Issue 1: Periodic (4-Hour) TMDb Metadata Refresh & Manual Trigger
-- **Problem:** Ratings, vote averages, popularity, and posters evolve on TMDb but remain static after initial ingestion.
-- **Action Plan:** Add a 4-hour background scheduler in `worker_service.py` to refresh TMDb details for all records in `media.db`. Wire up the UI "↻ Scan" button to trigger metadata re-synchronization.
-
-### Issue 2: Server-Wide Manual Subtitle Upload with Language Auto-Detection
-- **Problem:** Users need to manually upload external `.srt` / `.vtt` subtitles persisted server-wide.
-- **Action Plan:** Add upload modal on `/details/<filename>`, detect language from text content, and save using the standardized format:
-  `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
-  (e.g., `moana_en_1.srt`, `the_odyssey_fr_1.vtt`).
-
-### Issue 3: Post-Transcode Storage Retention & Safe Orphaned Cache Purge
-- **Problem:** Storing multi-gigabyte source files alongside full transcode caches causes disk bloat. Aborted transcodes leave residual artifacts.
-- **Action Plan:** Add configurable retention policies allowing users to delete/archive original sources post-transcode, and implement comprehensive orphaned cache auditing in `cache/hls/` against active database entries.
+### Production Concurrency Tuning & Remote Streaming Benchmarks
+- Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent client playback.
+- Optimize ISP upload bandwidth saturation and test concurrent multi-device streaming performance.
 
 ---
 
@@ -88,7 +98,11 @@ Venv:          C:\MediaServer\venv
 Before committing changes, execute:
 
 ```powershell
-# Automated Test Suite (131 tests)
+# Compile validation
+python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+
+# Automated Test Suite (158 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
+
 

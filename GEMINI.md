@@ -211,3 +211,13 @@
   - Local subtitles must always take priority over external API lookups (e.g. OpenSubtitles) when verified to match language, setting `default: True` and preventing redundant network requests.
 - **Windows Service Privileges & NSSM Management**:
   - The production `MediaServer` service runs under `NT AUTHORITY\SYSTEM`. Stopping or restarting it requires elevated privileges. Use `scripts/restart_service.bat` (which requests UAC elevation via `Start-Process ... -Verb RunAs`) or an elevated PowerShell terminal (`Restart-Service MediaServer`).
+
+## 18. Storage Retention & Cross-Drive File Operations (Strict Guardrail)
+- **Cross-Drive File Moves (`C:` to `D:`)**:
+  - Never invoke `os.rename()` for moving files across disk volumes on Windows; it fails with `[WinError 17] The system cannot move the file to a different disk drive`.
+  - Always use `shutil.move(src, dst)`. Ensure the target directory exists (`parent.mkdir(parents=True, exist_ok=True)`) and unlink any pre-existing collision targets (`target_path.unlink(missing_ok=True)`) prior to moving.
+- **Canonical Cache Directory Resolution**:
+  - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
+- **Host Storage Headroom Prioritization**:
+  - When configuring media retention, detect secondary high-capacity drives (such as `D:\`) to store archived original sources (`D:\Flicks\.archive`), preserving primary SSD (`C:\`) capacity for active OS, database, and HLS streaming caches.
+
