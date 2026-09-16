@@ -155,6 +155,8 @@ class TestDualGPUTranscodeJob(unittest.TestCase):
         self.assertTrue(self.playlist.is_file())
         text = self.playlist.read_text()
         self.assertIn("#EXTM3U", text)
+        self.assertIn("#EXT-X-PLAYLIST-TYPE:EVENT", text)
+        self.assertIn("#EXT-X-START:TIME-OFFSET=0", text)
         self.assertIn("segment_000000.ts", text)
         self.assertIn("segment_000001.ts", text)
         self.assertNotIn("#EXT-X-ENDLIST", text)
@@ -171,6 +173,44 @@ class TestDualGPUTranscodeJob(unittest.TestCase):
         self.assertIn("#EXT-X-ENDLIST", text_complete)
         prog_complete = progress_file.read_text()
         self.assertIn("progress=end", prog_complete)
+
+    def test_parse_chunk_segment_durations(self):
+        job = DualGPUTranscodeJob("test.mkv", self.media_path, self.hls_dir, self.playlist)
+        chunk_m3u8 = self.hls_dir / "chunk_0.m3u8"
+        chunk_m3u8.write_text(
+            "#EXTM3U\n"
+            "#EXT-X-VERSION:3\n"
+            "#EXT-X-TARGETDURATION:5\n"
+            "#EXTINF:3.842000,\n"
+            "segment_000000.ts\n"
+            "#EXTINF:4.120000,\n"
+            "segment_000001.ts\n"
+            "#EXT-X-ENDLIST\n"
+        )
+        durations = job._parse_chunk_segment_durations(0)
+        self.assertIn("segment_000000.ts", durations)
+        self.assertEqual(durations["segment_000000.ts"], 3.842)
+        self.assertEqual(durations["segment_000001.ts"], 4.120)
+
+    def test_job_active_pids_and_terminate(self):
+        job = DualGPUTranscodeJob("test.mkv", self.media_path, self.hls_dir, self.playlist)
+        mock_proc1 = MagicMock()
+        mock_proc1.pid = 9911
+        mock_proc1.poll.return_value = None
+        mock_proc2 = MagicMock()
+        mock_proc2.pid = 9922
+        mock_proc2.poll.return_value = 0
+
+        job._active_procs.add(mock_proc1)
+        job._active_procs.add(mock_proc2)
+
+        pids = job.get_active_pids()
+        self.assertEqual(pids, [9911])
+
+        job.terminate()
+        self.assertTrue(job._cancelled.is_set())
+        mock_proc1.terminate.assert_called_once()
+        self.assertEqual(job.poll(), -1)
 
     @patch("app.services.chunk_transcode_service.probe_media")
     def test_run_pipeline_all_cached(self, mock_probe):

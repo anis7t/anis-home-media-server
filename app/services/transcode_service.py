@@ -643,7 +643,7 @@ def _wait_for_pid_exit(pid, timeout=5.0):
 
 
 def _terminate_pid(pid):
-    if not pid or not _pid_is_running(pid):
+    if not pid or pid == os.getpid() or not _pid_is_running(pid):
         return True
     try:
         if os.name == 'nt':
@@ -672,12 +672,19 @@ def stop_transcodes_for_media(filename, path=None):
 
     proc = config.HLS_PROCESSES.pop(rel_name, None)
     if proc is not None:
-        pid = getattr(proc, 'pid', None)
-        if pid:
-            stopped_pids.append(pid)
+        if hasattr(proc, 'get_active_pids'):
+            for p_id in proc.get_active_pids():
+                if p_id and p_id not in stopped_pids:
+                    stopped_pids.append(p_id)
+        else:
+            pid = getattr(proc, 'pid', None)
+            if pid and pid not in stopped_pids:
+                stopped_pids.append(pid)
         try:
             if hasattr(proc, 'terminate'):
                 proc.terminate()
+            elif hasattr(proc, 'kill'):
+                proc.kill()
             elif pid:
                 _terminate_pid(pid)
         except Exception as e:
