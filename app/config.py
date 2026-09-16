@@ -34,7 +34,22 @@ METADATA_REFRESH_INTERVAL = int(os.environ.get("MEDIA_SERVER_METADATA_REFRESH_IN
 
 # Storage Retention Policies ('keep', 'archive', 'purge_cache')
 DEFAULT_RETENTION_POLICY = os.environ.get("MEDIA_SERVER_RETENTION_POLICY", "keep").lower()
-ARCHIVE_DIR = Path(os.environ.get("MEDIA_SERVER_ARCHIVE_DIR", MEDIA_ROOT / ".archive")).resolve()
+
+
+def _resolve_default_archive_dir():
+    env_dir = os.environ.get("MEDIA_SERVER_ARCHIVE_DIR")
+    if env_dir:
+        return Path(env_dir).resolve()
+    try:
+        d_flicks = Path("D:/Flicks/.archive")
+        if Path("D:/").exists():
+            return d_flicks.resolve()
+    except Exception:
+        pass
+    return (MEDIA_ROOT / ".archive").resolve()
+
+
+ARCHIVE_DIR = _resolve_default_archive_dir()
 ALLOWED_RETENTION_POLICIES = {"keep", "archive", "purge_cache"}
 
 # Concurrency & process registries

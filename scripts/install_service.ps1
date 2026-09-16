@@ -88,7 +88,7 @@ Write-Host "Configuring service parameters..." -ForegroundColor Yellow
 
 # Environment variables injection (ensure FFmpeg from winget links is always discoverable)
 $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\Scripts;C:\Python314;$env:PATH"
-& $NssmExe set $serviceName AppEnvironmentExtra "PATH=$ExtraPath`nMEDIA_SERVER_BASE_DIR=$BaseDir`nMEDIA_SERVER_MEDIA_ROOT=C:\Flicks`nMEDIA_SERVER_DATABASE=$BaseDir\media.db`nMEDIA_SERVER_ENABLE_AMF=1"
+& $NssmExe set $serviceName AppEnvironmentExtra "PATH=$ExtraPath`nMEDIA_SERVER_BASE_DIR=$BaseDir`nMEDIA_SERVER_MEDIA_ROOT=C:\Flicks`nMEDIA_SERVER_ARCHIVE_DIR=D:\Flicks\.archive`nMEDIA_SERVER_DATABASE=$BaseDir\media.db`nMEDIA_SERVER_ENABLE_AMF=1"
 
 # 7. Start the Service
 Write-Host "Starting $serviceName service..." -ForegroundColor Cyan

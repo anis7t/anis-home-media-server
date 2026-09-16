@@ -119,12 +119,12 @@
           <div class="sc-policy-control">
             <select id="retentionPolicySelect" class="sc-policy-select" onchange="updateRetentionPolicy(this.value)">
               <option value="keep" {%if retention_policy == 'keep'%}selected{%endif%}>Keep original MKV & HLS transcode (Default)</option>
-              <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original MKV to .archive after 100% transcode</option>
+              <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original MKV to {{archive_dir}}</option>
               <option value="purge_cache" {%if retention_policy == 'purge_cache'%}selected{%endif%}>Purge HLS cache after transcode (Direct play only)</option>
             </select>
             <div id="policyStatusToast" class="sc-policy-toast" style="display:none">Saved!</div>
           </div>
-          <p class="sc-col-hint">Applies once transcoding reaches 100% verified stream segments.</p>
+          <p class="sc-col-hint">Applies once transcoding reaches 100% verified stream segments. Target: <code>{{archive_dir}}</code></p>
         </div>
 
         <!-- Orphaned Cache Actions -->
@@ -595,7 +595,7 @@ function executeCleanOrphans() {
 }
 
 function archiveMovieSource(filename) {
-  if (!confirm('Move original source file for "' + filename + '" to .archive? The movie will continue to play smoothly via HLS.')) return;
+  if (!confirm('Move original source file for "' + filename + '" to {{archive_dir|e}}? The movie will continue to play smoothly via HLS.')) return;
   fetch('/api/storage/archive/' + encodeURIComponent(filename), { method: 'POST' })
     .then(r => {
       if (!r.ok) return r.json().then(d => { throw new Error(d.error || (d.result && d.result.message) || 'Archive failed'); });
