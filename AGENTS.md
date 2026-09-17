@@ -71,6 +71,7 @@ The current project includes:
 - **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Background scheduler (`metadata-refresh-worker`) in `worker_service.py` refreshing TMDb details (ratings, vote averages, runtime, tagline, cast, certification, artwork) every 4 hours, SQLite `last_metadata_refresh` schema migration, and synchronized manual UI "↻ Scan" trigger re-synchronizing metadata alongside newly discovered files.
 - **Server-Wide Manual Subtitle Upload with Language Auto-Detection:** Subtitle upload interface on movie details (`/movie/<filename>`) and integrated directly inside the in-player Subtitle Settings modal (`#subSettingsModal`). Auto-detects subtitle language from content text (Unicode character analysis & NLP heuristic), saving files server-wide alongside media in the canonical format `<short_movie_name>_<detected_language>_<incremental_number>.<ext>` with dynamic in-player `<track>` insertion and zero playback disruption.
 - **Post-Transcode Storage Retention & Safe Orphaned Cache Purge:** User-configurable retention policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table, automated cache reconciliation (`audit_orphaned_caches()`), safe Windows-lock-resilient orphaned purge (`purge_orphaned_caches()`), background daemon worker (`cache-maintenance-worker`), REST API suite (`/api/storage/*`), and interactive management UI with storage pool telemetry and one-click orphan cleaning.
+- **Dual-Drive Storage Tiering & Cross-Volume Cache Resilience:** Tiered architecture leveraging primary fast NVMe SSD (`C:`) for OS, SQLite, in-progress transcode scratch, and completed HLS cache (`cache/hls`), while offloading cold raw media, resumable upload staging, and source archives to secondary drive (`D:\Flicks`, `D:\Flicks\.archive`). Includes dynamic multi-root discovery (`get_media_roots()`), cross-volume relative-path cache key preservation in `hls_cache_dir()` and `preview_dir()`, and cross-volume sidecar subtitle resolution and authorization.
 
 ## 4. Known unresolved issues & active roadmap
 
@@ -97,7 +98,8 @@ The current project includes:
 - Never use `os.kill(pid, 0)` to check process liveness on Windows; use `app.services.transcode_service.is_pid_alive(pid)` (exported in `app`) to avoid broadcasting `CTRL_C_EVENT` across the console group.
 - Never use `os.rename()` across disk volumes on Windows; use `shutil.move()` with target collision pre-unlinking.
 - In tests and cache audits, always call `get_cache_dir()` rather than referencing `app.config.CACHE_DIR` directly, as test harnesses patch `app.CACHE_DIR`.
-- Prioritize secondary high-capacity drives (`D:\Flicks\.archive`) for cold source retention to protect primary OS SSD headroom.
+- Prioritize secondary high-capacity drives (`D:\Flicks`, `D:\Flicks\.archive`) for raw video files, upload staging (`D:\Flicks\.uploads`), and cold source retention, preserving primary OS SSD (`C:`) headroom for active HLS streams, preview thumbnails, and database operations.
+- All media path, cache lookup, and subtitle delivery routines must resolve across `config.get_media_roots()`.
 
 ### Linux/Kali
 - Python 3.10+; current development uses Python 3.14.x.

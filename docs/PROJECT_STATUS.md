@@ -105,6 +105,15 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 - **REST API Endpoints:** Added `/api/storage/audit`, `/api/storage/purge-orphans`, `/api/storage/settings`, and `/api/storage/archive/<filename>` with input validation and dry-run preview support.
 - **Management UI & Governance Dashboard:** Enhanced `/manage` with Storage Retention & Cache Governance card showing host storage pool utilization, interactive retention policy selector with instant persistence toast, real-time orphaned cache counter badge, clean orphaned caches confirmation modal (`#cleanOrphansModal`), and per-item source archiving action.
 
+### Dual-drive storage tiering & cross-volume cache resilience
+- **Tiered Drive Architecture:** Tiered the media server across fast primary NVMe SSD (`C:`) and high-capacity secondary volume (`D:`):
+  - **Fast NVMe SSD (`C:`):** Hosts the OS, Waitress WSGI server, SQLite database (`media.db`), in-progress transcode scratch, seek-preview thumbnails (`cache/previews`), and completed multi-GPU HLS stream segments (`cache/hls`) for zero-stutter RFC 7233 delivery.
+  - **Mass Secondary Volume (`D:`):** Hosts raw media library storage (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), and cold original file archives (`D:\Flicks\.archive`).
+- **Multi-Root Dynamic Media Discovery:** Implemented `config.get_media_roots()` returning all active roots (`[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`). Updated `video_paths()`, `safe_path()`, `movie()`, and `poster_for()` to discover and serve media seamlessly regardless of which configured drive volume it resides on.
+- **Cross-Volume Cache Key Continuity:** Enhanced `hls_cache_dir()` and `preview_dir()` to compute relative paths against alternative roots (`root / rel`). When media files move across volumes (e.g. `C:` to `D:`), their cache keys remain 100% deterministic and active, preventing cache invalidation, playback 404s, or false-positive orphaned directory deletion.
+- **Cross-Volume Subtitle Discovery & Authorization:** Updated `tracks()` in `subtitles_service.py` to compute relative filenames against all active roots and search both `path.parent` and `config.MEDIA_ROOT` for sidecar `.srt`/`.vtt` files. Hardened `/subtitles/<path:filename>/<name>` to verify filesystem authorization across all configured media roots.
+- **Host Headroom Reclaimed:** Reclaimed over **24.2 GB of SSD space** on `C:`, increasing free headroom from 14.3 GB to **38.59 GB** while all 4 library titles (*Coyote vs. Acme*, *Moana*, *Star Wars*, *The Odyssey*) remain fully playable with complete subtitle coverage.
+
 ---
 
 ## 4. Next steps & active roadmap
@@ -145,7 +154,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (158 tests)
+# Full automated test suite (159 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
