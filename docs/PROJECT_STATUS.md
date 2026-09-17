@@ -158,7 +158,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (160 tests)
+# Full automated test suite (164 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
