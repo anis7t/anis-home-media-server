@@ -727,10 +727,10 @@ class MediaServerTests(unittest.TestCase):
         # Verify increased playback screen height in non-fullscreen mobile mode
         self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(52vh,460px);min-height:330px;max-height:60vh}}', html)
 
-        # Verify mobile controls rules: volume and desktop shortcuts modal cheat-sheet are hidden, controls row is scrollable
-        self.assertIn('#volume,#shortcutsBtn{display:none!important}', html)
+        # Verify mobile controls rules: volume, shortcuts cheat-sheet, and +/-10s seek buttons are hidden on mobile
+        self.assertIn('#volume,#shortcutsBtn,#skipBackBtn,#skipForwardBtn{display:none!important}', html)
         self.assertIn('#controls #restartBtn', html)
-        self.assertIn('#controls #skipBackBtn', html)
+        self.assertIn('#controls #mute', html)
         self.assertIn('overflow-x: auto !important', html)
 
         # Verify responsive unified player-header on mobile
