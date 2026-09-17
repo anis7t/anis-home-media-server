@@ -22,6 +22,22 @@ def subtitle(filename, name):
     roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
     sub = (video.parent / name).resolve()
     if not sub.is_file():
+        from pathlib import Path
+        for r in roots:
+            try:
+                rel = video.parent.resolve().relative_to(r.resolve())
+                clean_parts = [part for part in rel.parts if part != '.archive']
+                clean_rel = Path(*clean_parts) if clean_parts else Path('.')
+                for other_root in roots:
+                    cand = (other_root / clean_rel / name).resolve()
+                    if cand.is_file():
+                        sub = cand
+                        break
+                if sub.is_file():
+                    break
+            except Exception:
+                pass
+    if not sub.is_file():
         for r in roots:
             cand = (r / name).resolve()
             if cand.is_file():

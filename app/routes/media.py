@@ -11,6 +11,7 @@ from flask import Blueprint, Response, abort, jsonify, request, send_file
 from app import config
 from app.services.media_service import probe_media
 from app.services.preview_service import ensure_preview_thumbnail, preview_meta
+from app.services.chunk_transcode_service import reconcile_hls_playlist_discontinuities
 from app.services.transcode_service import (
     compat_transcode_args,
     ensure_hls_transcode,
@@ -144,6 +145,10 @@ def hls_playlist(filename):
         time.sleep(0.05)
     if not playlist.is_file():
         return Response('#EXTM3U\n#EXT-X-VERSION:3\n', mimetype='application/vnd.apple.mpegurl')
+    try:
+        reconcile_hls_playlist_discontinuities(directory, path)
+    except Exception:
+        pass
     return send_file(playlist, mimetype='application/vnd.apple.mpegurl', max_age=0)
 
 

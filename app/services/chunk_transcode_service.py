@@ -171,7 +171,6 @@ class DualGPUTranscodeJob:
             + audio_args
             + [
                 '-output_ts_offset', f"{start_time:.3f}",
-                '-avoid_negative_ts', 'make_zero',
                 '-muxdelay', '0',
                 '-force_key_frames', 'expr:gte(t,n_forced*4)',
                 '-f', 'hls',
@@ -227,7 +226,7 @@ class DualGPUTranscodeJob:
         return durations
 
     def _update_master_playlist(self, is_complete: bool = False):
-        """Reconstruct master playlist.m3u8 from contiguous segment files on disk."""
+        """Reconstruct master playlist.m3u8 from contiguous segment files on disk with RFC 8216 discontinuities."""
         disk_segs = []
         idx = 0
         while True:
@@ -251,10 +250,31 @@ class DualGPUTranscodeJob:
         if not is_complete:
             lines.append("#EXT-X-PLAYLIST-TYPE:EVENT")
 
+        # Determine chunk boundary segments for #EXT-X-DISCONTINUITY tags
+        chunk_start_segs = set()
+        if getattr(self, 'total_duration', 0.0) > 0:
+            chunk_start_segs = {c['start_seg'] for c in plan_chunks(self.total_duration) if c['chunk_id'] > 0}
+        else:
+            for pl_file in self.hls_dir.glob("chunk_*.m3u8"):
+                m = re.match(r"chunk_(\d+)\.m3u8", pl_file.name)
+                if m and int(m.group(1)) > 0:
+                    try:
+                        text = pl_file.read_text(encoding="utf-8", errors="replace")
+                        first_seg = next((l.strip() for l in text.splitlines() if l.strip().endswith('.ts')), None)
+                        if first_seg:
+                            m_seg = re.search(r"segment_(\d+)\.ts", first_seg)
+                            if m_seg:
+                                chunk_start_segs.add(int(m_seg.group(1)))
+                    except Exception:
+                        pass
+
         durations_map = self._parse_chunk_segment_durations()
         total_sec = 0.0
         for seg in disk_segs:
             dur = durations_map.get(seg.name, SEGMENT_TARGET_DURATION)
+            seg_match = re.search(r"segment_(\d+)\.ts", seg.name)
+            if seg_match and int(seg_match.group(1)) in chunk_start_segs:
+                lines.append("#EXT-X-DISCONTINUITY")
             lines.append(f"#EXTINF:{dur:.6f},")
             lines.append(seg.name)
             total_sec += dur
@@ -395,3 +415,86 @@ def start_dual_gpu_transcode(filename: str, path: Path, hls_dir: Path, playlist:
     job = DualGPUTranscodeJob(filename, path, hls_dir, playlist)
     job.start()
     return job
+
+
+def reconcile_hls_playlist_discontinuities(hls_dir: Path, source_path: Optional[Path] = None) -> bool:
+    """Ensure multi-chunk HLS master playlist contains RFC 8216 #EXT-X-DISCONTINUITY tags across chunk boundaries.
+
+    Returns True if the playlist was repaired, False otherwise.
+    """
+    hls_dir = Path(hls_dir)
+    playlist = hls_dir / 'playlist.m3u8'
+    if not playlist.is_file():
+        return False
+
+    try:
+        text = playlist.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+
+    if '#EXT-X-DISCONTINUITY' in text:
+        return False  # Already contains discontinuity tags
+
+    # Find chunk boundary segment indices from chunk_*.m3u8 files or source duration
+    chunk_start_segs = set()
+    for pl_file in hls_dir.glob("chunk_*.m3u8"):
+        m = re.match(r"chunk_(\d+)\.m3u8", pl_file.name)
+        if m and int(m.group(1)) > 0:
+            try:
+                first_seg = next(
+                    (l.strip() for l in pl_file.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip().endswith('.ts')),
+                    None
+                )
+                if first_seg:
+                    m_seg = re.search(r"segment_(\d+)\.ts", first_seg)
+                    if m_seg:
+                        chunk_start_segs.add(int(m_seg.group(1)))
+            except Exception:
+                pass
+
+    if not chunk_start_segs and source_path:
+        try:
+            info = probe_media(Path(source_path))
+            total_dur = float(info.get('format', {}).get('duration') or 0.0)
+            if total_dur > 0:
+                chunk_start_segs = {c['start_seg'] for c in plan_chunks(total_dur) if c['chunk_id'] > 0}
+        except Exception:
+            pass
+
+    if not chunk_start_segs:
+        # Check if multiple chunk files exist on disk
+        chunk_files = list(hls_dir.glob("chunk_*.m3u8"))
+        if len(chunk_files) > 1:
+            chunk_start_segs = {i * 15 for i in range(1, len(chunk_files) + 1)}
+
+    if not chunk_start_segs:
+        return False
+
+    lines = text.splitlines()
+    repaired_lines = []
+    modified = False
+
+    for i, line in enumerate(lines):
+        if line.startswith('#EXTINF:'):
+            next_line = lines[i + 1] if i + 1 < len(lines) else ''
+            m_seg = re.search(r"segment_(\d+)\.ts", next_line)
+            if m_seg and int(m_seg.group(1)) in chunk_start_segs:
+                repaired_lines.append("#EXT-X-DISCONTINUITY")
+                modified = True
+        repaired_lines.append(line)
+
+    if modified:
+        new_text = "\n".join(repaired_lines) + "\n"
+        try:
+            playlist.write_text(new_text, encoding='utf-8')
+            try:
+                (hls_dir / "playlist.m3u8.bak").write_text(new_text, encoding='utf-8')
+            except OSError:
+                pass
+            logger.info(f"Reconciled #EXT-X-DISCONTINUITY tags for {hls_dir.name} ({len(chunk_start_segs)} boundaries)")
+            return True
+        except OSError as e:
+            logger.warning(f"Failed to write reconciled playlist in {hls_dir}: {e}")
+
+    return False
+

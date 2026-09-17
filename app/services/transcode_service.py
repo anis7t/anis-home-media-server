@@ -278,13 +278,6 @@ def audit_orphaned_caches():
                 active_hls_map[hd.name] = p_obj
                 pd = preview_dir(p_obj)
                 active_preview_map[pd.name] = p_obj
-
-                for cand in get_hls_candidates(p_obj):
-                    active_hls_map[cand] = p_obj
-
-                from app.services.preview_service import get_preview_candidates
-                for cand in get_preview_candidates(p_obj):
-                    active_preview_map[cand] = p_obj
         except Exception:
             continue
 
@@ -485,6 +478,23 @@ def apply_post_transcode_policy(path, policy=None):
             }
         except Exception as e:
             logger.error("Failed to archive source %s: %s", path, e)
+            return {'status': 'error', 'message': str(e)}
+
+    elif policy in ('delete_source', 'delete_raw', 'delete_original'):
+        try:
+            # Truncate source file to 0 bytes so 100% disk space is reclaimed,
+            # while keeping the file record intact in the library so scanners,
+            # routes, and active HLS cache map continue functioning with zero errors.
+            with open(path, 'wb') as f:
+                pass
+            logger.info("Post-transcode policy 'delete_source': Truncated original file %s to 0 bytes (reclaimed disk space, preserved HLS)", path)
+            return {
+                'status': 'source_deleted',
+                'policy': 'delete_source',
+                'source': str(path),
+            }
+        except Exception as e:
+            logger.error("Failed to delete/truncate source %s: %s", path, e)
             return {'status': 'error', 'message': str(e)}
 
     elif policy == 'purge_cache':

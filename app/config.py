@@ -50,7 +50,7 @@ def _resolve_default_archive_dir():
 
 
 ARCHIVE_DIR = _resolve_default_archive_dir()
-ALLOWED_RETENTION_POLICIES = {"keep", "archive", "purge_cache"}
+ALLOWED_RETENTION_POLICIES = {"keep", "archive", "purge_cache", "delete_source", "delete_raw", "delete_original"}
 
 
 def _resolve_upload_dirs():

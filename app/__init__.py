@@ -148,6 +148,7 @@ def create_app(test_config=None):
         template_folder=str(base_path / 'templates'),
         static_folder=str(base_path / 'static'),
     )
+    app_instance.config['TEMPLATES_AUTO_RELOAD'] = True
 
     logging.basicConfig(level=config.LOG_LEVEL)
 

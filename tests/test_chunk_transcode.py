@@ -14,6 +14,7 @@ from app.services.gpu_service import (
 from app.services.chunk_transcode_service import (
     DualGPUTranscodeJob,
     plan_chunks,
+    reconcile_hls_playlist_discontinuities,
     start_dual_gpu_transcode,
 )
 
@@ -235,6 +236,51 @@ class TestDualGPUTranscodeJob(unittest.TestCase):
         chunk = {'chunk_id': 0, 'start_time': 0.0, 'duration': 60.0, 'start_seg': 0, 'expected_segs': 15}
         success = job._execute_chunk(chunk, worker)
         self.assertFalse(success)
+
+    def test_update_master_playlist_discontinuity(self):
+        job = DualGPUTranscodeJob("test.mkv", self.media_path, self.hls_dir, self.playlist)
+        job.total_duration = 120.0  # 2 chunks: chunk 0 (seg 0..14), chunk 1 (seg 15..29)
+
+        # Create segments across the boundary
+        for i in range(17):
+            (self.hls_dir / f"segment_{i:06d}.ts").write_bytes(b"TS_DATA")
+
+        job._update_master_playlist(is_complete=False)
+        text = self.playlist.read_text(encoding="utf-8")
+        self.assertIn("#EXT-X-DISCONTINUITY", text)
+        lines = text.splitlines()
+        disc_idx = lines.index("#EXT-X-DISCONTINUITY")
+        # Ensure #EXT-X-DISCONTINUITY comes right before #EXTINF for segment_000015.ts
+        self.assertTrue(lines[disc_idx + 1].startswith("#EXTINF:"))
+        self.assertEqual(lines[disc_idx + 2], "segment_000015.ts")
+
+    def test_reconcile_hls_playlist_discontinuities(self):
+        # Create a playlist without discontinuities
+        text_without = (
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n"
+            "#EXTINF:4.000000,\nsegment_000014.ts\n"
+            "#EXTINF:4.000000,\nsegment_000015.ts\n"
+            "#EXT-X-ENDLIST\n"
+        )
+        self.playlist.write_text(text_without, encoding="utf-8")
+
+        # Create chunk_1.m3u8 indicating chunk 1 begins at segment_000015.ts
+        chunk1 = self.hls_dir / "chunk_1.m3u8"
+        chunk1.write_text("#EXTM3U\n#EXTINF:4.0,\nsegment_000015.ts\n", encoding="utf-8")
+
+        # Run reconciliation
+        repaired = reconcile_hls_playlist_discontinuities(self.hls_dir)
+        self.assertTrue(repaired)
+
+        repaired_text = self.playlist.read_text(encoding="utf-8")
+        self.assertIn("#EXT-X-DISCONTINUITY", repaired_text)
+        lines = repaired_text.splitlines()
+        disc_idx = lines.index("#EXT-X-DISCONTINUITY")
+        self.assertTrue(lines[disc_idx + 1].startswith("#EXTINF:"))
+        self.assertEqual(lines[disc_idx + 2], "segment_000015.ts")
+
+        # Second run should be a no-op
+        self.assertFalse(reconcile_hls_playlist_discontinuities(self.hls_dir))
 
 
 if __name__ == '__main__':

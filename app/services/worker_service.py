@@ -43,9 +43,9 @@ def auto_transcoder_loop():
                     try:
                         from app.db import get_setting
                         policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
-                        if policy == 'archive':
+                        if policy in ('archive', 'delete_source', 'delete_raw', 'delete_original'):
                             from app.services.transcode_service import apply_post_transcode_policy
-                            apply_post_transcode_policy(p, policy='archive')
+                            apply_post_transcode_policy(p, policy=policy)
                     except Exception as e:
                         logger.warning(f"Failed to apply post-transcode policy for {p}: {e}")
         except Exception as e:

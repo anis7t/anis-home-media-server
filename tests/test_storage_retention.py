@@ -179,6 +179,30 @@ class StorageRetentionTests(unittest.TestCase):
         test_file.unlink(missing_ok=True)
         shutil.rmtree(hls_dir, ignore_errors=True)
 
+    def test_apply_post_transcode_policy_delete_source(self):
+        """Policy 'delete_source' truncates original source to 0 bytes while keeping HLS cache intact."""
+        test_file = app.config.MEDIA_ROOT / "PolicyDeleteSourceTest.2026.mkv"
+        test_file.write_bytes(b"large raw multi-gigabyte source data")
+        self.assertGreater(test_file.stat().st_size, 0)
+
+        hls_dir = hls_cache_dir(test_file)
+        hls_dir.mkdir(parents=True, exist_ok=True)
+        pl = hls_dir / "playlist.m3u8"
+        pl.write_text("#EXTM3U\n#EXT-X-ENDLIST\n")
+        (hls_dir / "segment_000000.ts").write_bytes(b"hls_video_segment")
+
+        with patch("app.services.transcode_service._is_hls_truly_complete", return_value=True):
+            res = apply_post_transcode_policy(test_file, policy="delete_source")
+            self.assertEqual(res["status"], "source_deleted")
+            self.assertEqual(res["policy"], "delete_source")
+            self.assertTrue(test_file.exists())
+            self.assertEqual(test_file.stat().st_size, 0)
+            self.assertTrue(hls_dir.exists())
+            self.assertTrue((hls_dir / "playlist.m3u8").exists())
+
+        test_file.unlink(missing_ok=True)
+        shutil.rmtree(hls_dir, ignore_errors=True)
+
     def test_api_storage_endpoints(self):
         """Test /api/storage/audit, /api/storage/settings, and /api/storage/purge-orphans."""
         # 1. GET /api/storage/audit

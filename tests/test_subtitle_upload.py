@@ -3,6 +3,7 @@ import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # ── Env setup MUST happen before importing app ────────────────────────────────
@@ -117,6 +118,40 @@ class SubtitleUploadRouteTests(unittest.TestCase):
         body = resp.get_json()
         self.assertFalse(body["success"])
         self.assertIn(".ass", body["error"])
+
+    # ── Cross-root mirror subtitle discovery & delivery ──────────────────────
+    def test_cross_root_mirror_subtitle_discovery_and_delivery(self):
+        """Test that archived media in subdirectories discovers sidecar subtitles in mirror directories."""
+        from app.services.subtitles_service import tracks
+        import shutil
+
+        sub_dir_name = "www.TestFolder.org - Test.Movie.2026"
+        mirror_folder = self.root / sub_dir_name
+        mirror_folder.mkdir(parents=True, exist_ok=True)
+        sidecar_sub = mirror_folder / "Test.Movie.2026.srt"
+        sidecar_sub.write_text("1\n00:00:01,000 --> 00:00:04,000\nHello from original folder\n", encoding="utf-8")
+
+        archive_folder = self.root / ".archive" / sub_dir_name
+        archive_folder.mkdir(parents=True, exist_ok=True)
+        video = archive_folder / "Test.Movie.2026.mp4"
+        video.write_bytes(b"0" * 20)
+
+        try:
+            with mock.patch.object(config, "get_media_roots", return_value=[self.root, self.root / ".archive"]):
+                trk_list = tracks(video)
+                sidecar_matches = [t for t in trk_list if t.get("name") == "Test.Movie.2026.srt"]
+                self.assertEqual(len(sidecar_matches), 1)
+                self.assertEqual(sidecar_matches[0]["lang"], "en")
+
+                # Test delivery route
+                resp = self.client.get(sidecar_matches[0]["src"])
+                self.assertEqual(resp.status_code, 200)
+                self.assertIn(b"WEBVTT", resp.data)
+                self.assertIn(b"Hello from original folder", resp.data)
+        finally:
+            shutil.rmtree(mirror_folder, ignore_errors=True)
+            shutil.rmtree(archive_folder, ignore_errors=True)
+
 
 
 if __name__ == "__main__":

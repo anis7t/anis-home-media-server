@@ -52,7 +52,7 @@ def get_rel_path(path):
     for r in sorted_roots:
         try:
             rel = p.relative_to(r).as_posix()
-            if rel.startswith('.archive/'):
+            while rel.startswith('.archive/'):
                 rel = rel[len('.archive/'):]
             return rel
         except ValueError:

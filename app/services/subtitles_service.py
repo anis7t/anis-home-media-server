@@ -173,15 +173,8 @@ def tracks(path, movie_meta=None):
     result = []
     found_english = False
     roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
-    rel_filename = None
-    for r in roots:
-        try:
-            rel_filename = path.relative_to(r).as_posix()
-            break
-        except ValueError:
-            pass
-    if not rel_filename:
-        rel_filename = path.name
+    from app.utils.filesystem import get_rel_path
+    rel_filename = get_rel_path(path)
 
     if movie_meta is None:
         try:
@@ -198,6 +191,19 @@ def tracks(path, movie_meta=None):
     for r in roots:
         if r.exists() and r not in search_dirs:
             search_dirs.append(r)
+
+    # Mirror directories in other roots (handles archived media with sidecars in original root)
+    for r in roots:
+        try:
+            rel = path.parent.resolve().relative_to(r.resolve())
+            clean_parts = [part for part in rel.parts if part != '.archive']
+            clean_rel = Path(*clean_parts) if clean_parts else Path('.')
+            for other_root in roots:
+                mirror = (other_root / clean_rel).resolve()
+                if mirror.exists() and mirror not in search_dirs:
+                    search_dirs.append(mirror)
+        except Exception:
+            pass
 
     seen_sub_names = set()
     for sdir in search_dirs:
