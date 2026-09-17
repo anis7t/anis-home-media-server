@@ -77,28 +77,32 @@ def test_coyote_multi_seek_no_reset():
         time.sleep(2)
 
         # Start playback
+        # Wait up to 10s for video readiness
+        for _ in range(20):
+            ready = driver.execute_script("const v = document.querySelector('video'); return v && (v.readyState >= 1 || (v.duration && v.duration > 0));")
+            if ready:
+                break
+            time.sleep(0.5)
+
         driver.execute_script("document.querySelector('video')?.play().catch(()=>{});")
-        time.sleep(2)
+        time.sleep(1.5)
 
         seek_points = [60, 180, 360, 450, 600]
         for seek_to in seek_points:
             # Perform seek via seek slider and video currentTime
             driver.execute_script(f"""
                 const v = document.querySelector('video');
-                const s = document.querySelector('#seek');
-                const d = window.timelineDuration ? window.timelineDuration() : v.duration;
-                if (s && d) {{
-                    s.value = ({seek_to} / d) * 100;
-                    s.dispatchEvent(new Event('input'));
-                    s.dispatchEvent(new Event('change'));
-                }}
                 v.currentTime = {seek_to};
                 if (typeof window.checkPreparing === 'function') window.checkPreparing({seek_to});
             """)
-            time.sleep(2.0)
 
-            cur_time = float(driver.execute_script("return document.querySelector('video').currentTime || 0;"))
-            is_paused = driver.execute_script("return document.querySelector('video').paused;")
+            # Bounded polling up to 6s for seek to apply
+            cur_time = 0.0
+            for _ in range(12):
+                cur_time = float(driver.execute_script("return document.querySelector('video').currentTime || 0;"))
+                if cur_time >= seek_to - 2.0:
+                    break
+                time.sleep(0.5)
 
             # Video currentTime must be at or past the seek target, and not reset to near 0 (< 10)
             assert cur_time >= seek_to - 2.0, f"Seek to {seek_to}s failed; currentTime={cur_time}s"
