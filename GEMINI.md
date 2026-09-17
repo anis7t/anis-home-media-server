@@ -231,4 +231,24 @@
   - Subtitle delivery routes (`/subtitles/<path:filename>/<name>`) must authorize parent directory containment across all roots returned by `get_media_roots()`.
   - `safe_path(name)` must provide fallback resolution to discovered `video_paths()` filenames to cleanly resolve videos in subdirectories across any active drive root.
 
+## 19. Player Mobile Controls & Seekbar HUD Invariants
+- **Selective Mobile Controls Display**:
+  - In mobile views (`@media (max-width: 768px), (max-height: 500px)`), do NOT hide all controls arbitrarily.
+  - `#restartBtn`, `#mute`, `#pipBtn`, `#nerdStatsBtn`, `#rotateBtn`, and `#aspectBtn` MUST remain visible and accessible (`display: inline-flex !important;`).
+  - `#volume` slider is hidden on mobile (handled by touch gestures/hardware volume buttons).
+  - `#shortcutsBtn` cheat-sheet is hidden on mobile (desktop physical keyboard-specific).
+  - Seek increment buttons (`#skipBackBtn` -10s and `#skipForwardBtn` +10s) MUST be explicitly hidden on mobile (`display: none !important;`) as seeking is handled via the seekbar and native double-tap left/right ripple gestures.
+  - The `.controls-row` container on mobile must use `gap: 0.42rem !important; justify-content: flex-start !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; scrollbar-width: none !important;` to ensure smooth horizontal swipeability without clipping or page blowout.
+- **Seek Time Elapsed & Remaining Vertical Snugness**:
+  - The `.seek-time-row` timestamp HUD must sit directly above the YouTube-style seekbar track without excessive dead space.
+  - Because `#seekTrack` has transparent touch padding above its centered rail (`.seek-rail`), apply `margin-bottom: -9px !important; position: relative !important; z-index: 60 !important;` to `.seek-time-row` across both desktop and mobile to ensure timestamps hover snugly above the red/gray track.
+
+## 20. Library Navigation & Home Page Hierarchy Invariants
+- **Sort Dropdown Removal**:
+  - The redundant A-Z title sort dropdown has been removed across both desktop and mobile views in favor of natural library browsing and direct search bar filtering.
+- **Home Page Content Hierarchy (Telemetry at End)**:
+  - The System Telemetry HUD (`#systemTelemetryCard`) must appear at the BOTTOM of the home page (`templates/index.html`), positioned strictly after the `#allMoviesSection` ("All Movies" grid), rather than between "Continue watching" and "All Movies".
+  - This ensures users immediately see their media library content and continue watching rails upon loading the home page, with technical hardware telemetry placed unobtrusively at the footer.
+
+
 

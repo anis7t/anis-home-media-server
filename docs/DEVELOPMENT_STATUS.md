@@ -61,8 +61,10 @@ Venv:          C:\MediaServer\venv
 ### Unified Frosted Obsidian Navigation Header & Brand Identity
 - **Consistent Top Navigation:** Redesigned frosted obsidian glass header across all 5 pages (`/`, `/movie/<filename>`, `/player/<filename>`, `/manage`, `/devices`).
 - **3D Glossy Play Brand Icon:** Vector SVG with radial crimson gradients, specular highlights, and ambient drop shadows, paired with two-tone typography (**Anis'** + **Media Library**) and tagline (**PLAY • ORGANIZE • ENJOY**).
-- **Responsive Mobile Action Rail:** Replaced non-functional hamburger menus on mobile devices (\(\le 768\text{px}\)) with touch-friendly, horizontal swipeable action rails (`overscroll-behavior-x: contain; touch-action: pan-x;`).
-- **Desktop Search Density Polish:** Removed the redundant A-Z sort dropdown from the desktop header, allowing the search bar and action buttons to flow cleanly without top-bar clutter.
+- **Desktop & Mobile Search Density Polish:** Completely removed the redundant A-Z sort dropdown across both desktop and mobile views, prioritizing natural library browsing and direct search input filtering.
+- **Home Page Content Hierarchy (Telemetry at Footer):** Repositioned the System Telemetry HUD (`#systemTelemetryCard`) to the bottom of the home page (strictly after "All Movies"), prioritizing user media rails while keeping technical stats accessible at the footer.
+- **Mobile Player Controls Expansion & Dedicated Seekbar Spacing:** Restored primary controls (`↺` Restart, `▶`/`⏸` Play, `🔊` Mute, `1×` Speed, `CC ⚙` Subtitles/Settings, Aspect Ratio, Rotate Screen, PiP, Nerd Stats) on mobile inside a swipeable non-overflowing rail (`overflow-x: auto`), cleanly hid desktop-only controls (`#volume` and `#shortcutsBtn`), explicitly hid redundant `-10s`/`+10s` buttons on mobile in favor of seekbar/double-tap gestures, and eliminated the dead space between `.seek-time-row` and seekbar (`margin-bottom: -9px !important`).
+
 
 ### Universal Customizable `<select>` Popovers
 - Implemented modern Customizable Select API using `appearance: base-select` and `select::picker(select)`.
