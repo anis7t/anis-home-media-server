@@ -1,12 +1,15 @@
 # Development Status / Session Handoff
 
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 Repository: `anis7t/media-server`
-Working branch: `feat/storage-retention-cache-purge`
+Active Working branch: `feat/unified-header-navigation`
+Clean Base branch: `feat/storage-retention-cache-purge`
 
-## 1. Branch and Environment State
+## 1. Branch Architecture & Environment State
 
-- **Current working branch:** `feat/storage-retention-cache-purge`
+- **Branch Structure:**
+  - `feat/storage-retention-cache-purge` (at `9cf8d21`): Pure backend engine branch containing storage retention policies, dual-drive tiering (`C:` fast NVMe SSD vs `D:\Flicks` mass storage), cross-drive cache/subtitle resilience, and multi-chunk HLS discontinuity alignment.
+  - `feat/unified-header-navigation` (at `6c6e6c6`): Pure frontend & UX branch containing the frosted obsidian navigation redesign, 3D play brand identity, responsive swipeable mobile action rails, desktop search bar density polish, universal customizable select styling (`appearance: base-select`), and Chromium Hls.js precedence.
 - **Environment:** Windows 11 Home / Workstation
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
 - **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
@@ -18,80 +21,72 @@ Working branch: `feat/storage-retention-cache-purge`
 ```text
 Project:       C:\MediaServer
 Media root:    C:\Flicks
-Upload root:   D:\Flicks\.uploads -> D:\Flicks (215.8 GB pool on D:)
-Archive root:  D:\Flicks\.archive (215.8 GB free pool on D:)
-Transcode:     C:\MediaServer\cache\hls (fast SSD generation & delivery)
+Upload root:   D:\Flicks\.uploads -> D:\Flicks (215+ GB storage pool on D:)
+Archive root:  D:\Flicks\.archive (215+ GB free storage pool on D:)
+Transcode:     C:\MediaServer\cache\hls (fast NVMe SSD generation & delivery)
+Previews:      C:\MediaServer\cache\previews (seek thumbnail frame cache)
 Database:      C:\MediaServer\media.db
 Venv:          C:\MediaServer\venv
 ```
 
 ---
 
-## 2. Completed Architecture & Features
+## 2. Completed Architecture & Capabilities
 
 ### Dynamic Multi-GPU Transcoding Engine
 - Implemented `app/services/gpu_service.py` and `app/services/chunk_transcode_service.py`.
 - Both GPUs (Radeon RX 560X and Vega 8) transcode independent, keyframe-aligned segments of the same source file concurrently.
 - Hardware engine utilization for all engaged GPUs is dynamically polled via Windows Performance Counters and PyNVML, displayed in the System Telemetry HUD and `/api/system/stats`.
-- Transcode polling cadence optimized to 1 second for live progress, speed, and ETA calculation.
+- Transcode polling cadence optimized to 1 second for smooth progress bars, speed, and smoothed ETA calculations.
+
+### Multi-Chunk HLS Discontinuity Alignment & Seeking Stabilization
+- **Monotonic Presentation Timestamps:** Removed `-avoid_negative_ts make_zero` in chunk encoders, enforcing `-output_ts_offset <start_time>` corresponding to timeline positions to prevent PTS resets.
+- **RFC 8216 `#EXT-X-DISCONTINUITY` Boundaries:** Scheduler automatically injects discontinuity tags at chunk transition points in `_update_master_playlist()` and runs `reconcile_hls_playlist_discontinuities()` on disk caches.
+- **Non-Destructive Seek Recovery:** Preserves target seek timestamps during buffer gap recovery, eliminating `0:00` player timeline resets.
+- **Chromium Hls.js Precedence:** Prioritizes `window.Hls && Hls.isSupported()` over native `canPlayType` before falling back, preventing Windows Chromium browsers from attempting native Safari-style playback which cannot demux multi-chunk offsets.
+
+### Dual-Drive Storage Tiering & Headroom Prioritization
+- **Headroom Optimization:** Preserves primary fast NVMe SSD (`C:`) for OS, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache/previews`), and completed multi-GPU HLS caches (`cache/hls`).
+- **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), and cold source archives (`D:\Flicks\.archive`).
+- **Dynamic Multi-Root Discovery:** `config.get_media_roots()` returns all active storage roots. All routing, authorization, and media scanning procedures validate against all configured roots.
+- **Deterministic Cache Continuity:** `hls_cache_dir()` and `preview_dir()` compute relative paths across all active roots, ensuring media files moved or archived between drives retain their deterministic cache keys and active streams.
+- **Cross-Root Subtitle Mirror Discovery:** Resolves sidecar `.srt`/`.vtt` files across mirror subdirectories in any active drive root (stripping `.archive` subpaths).
+
+### Post-Transcode Storage Retention & Safe Orphaned Cache Purge
+- **Configurable Retention Policies:** User-configurable retention actions (`keep`, `archive`, `purge_cache`) persisted in SQLite settings.
+- **Automated Orphaned Cache Auditing:** `audit_orphaned_caches()` reconciles `cache/hls/` and `cache/previews/` against active video files and in-flight transcode jobs.
+- **Safe Orphaned Cache Purge:** `purge_orphaned_caches()` with bounded Windows file-lock retries, triggered automatically on server launch and via background worker every 2 hours. Reclaimed 57 orphaned cache directories.
+- **Management UI:** Storage Retention & Cache Governance card on `/manage` with live storage pool telemetry, interactive policy selector, and clean orphaned caches modal (`#cleanOrphansModal`).
+
+### Unified Frosted Obsidian Navigation Header & Brand Identity
+- **Consistent Top Navigation:** Redesigned frosted obsidian glass header across all 5 pages (`/`, `/movie/<filename>`, `/player/<filename>`, `/manage`, `/devices`).
+- **3D Glossy Play Brand Icon:** Vector SVG with radial crimson gradients, specular highlights, and ambient drop shadows, paired with two-tone typography (**Anis'** + **Media Library**) and tagline (**PLAY • ORGANIZE • ENJOY**).
+- **Responsive Mobile Action Rail:** Replaced non-functional hamburger menus on mobile devices (\(\le 768\text{px}\)) with touch-friendly, horizontal swipeable action rails (`overscroll-behavior-x: contain; touch-action: pan-x;`).
+- **Desktop Search Density Polish:** Removed the redundant A-Z sort dropdown from the desktop header, allowing the search bar and action buttons to flow cleanly without top-bar clutter.
+
+### Universal Customizable `<select>` Popovers
+- Implemented modern Customizable Select API using `appearance: base-select` and `select::picker(select)`.
+- Replaced sharp, bright blue Windows system select menus with top-layer frosted obsidian glass popups (`rgba(18, 22, 32, 0.96)`, `backdrop-filter: blur(24px)`), rounded corners, brand red active highlights (`#e50914`), white checkmarks (`select option::checkmark`), and rotating chevrons (`select:open::picker-icon`).
+- Applied universally across `/manage` storage retention policy, playback speed (`#speed`), and in-player subtitle settings modal dropdowns.
 
 ### Live Seek Hover Preview Thumbnails
 - Implemented `app/services/preview_service.py` with fast keyframe extraction (`-ss` before `-i`) and server-side disk caching under `cache/previews/`.
-- Integrated seamlessly into the YouTube-style seekbar (`seekbar-youtube.js` & `seekbar-youtube.css`) with responsive viewport boundary clamping.
+- Integrated into YouTube-style seekbar with responsive viewport boundary clamping.
 
 ### Persistent Windows Services
-- Registered `MediaServer` (Waitress WSGI on `127.0.0.1:8000`) as an automatic Windows Service using NSSM.
-- Configured automatic boot startup without requiring active user login, crash auto-recovery, 10 MB log rotation (`logs/waitress.log`), and injected FFmpeg environment paths.
-- Registered `Cloudflared` as an automatic Windows Service with dynamic DNS route overwrite capability (`media.anisparvez.in`).
-
-### Upload Lifecycle UX Hardening
-- Implemented immediate Cancel/Abort button concealment upon 100% byte completion in `static/js/nav.js`.
-- Restored animated dynamic processing card showing cycling background indexing stages (*Probing video stream...*, *Querying TMDb...*, *Caching posters...*, *Synchronizing subtitles...*).
-
-### Player Controls & Visual Polish
-- Removed hold-to-speed-up (2×) pointer gestures and removed hold shortcuts from the help modal (`#shortcutsModal`).
-- Applied `color-scheme: dark !important;` and dark styling for speed and subtitle dropdown options.
-- Added 4px vertical padding to `.controls-row` to eliminate hover lift and focus outline clipping.
-- Enforced uniform 36px circular button geometries and enlarged SVG icons from 18px to 21px.
-- Compacted "Continue watching" rail cards to 140px on desktop (115px on mobile).
-
-### In-Progress Transcode HLS Synchronization & Purge Safety
-- Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding until full completion (`#EXT-X-ENDLIST`).
-- Configured monotonic `-output_ts_offset` to prevent PTS resets across chunk boundaries.
-- Dynamically parsed real `#EXTINF` segment durations from chunk playlists to eliminate timeline drift.
-- Added thread-safe worker PID tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards for safe cache purging.
-
-### Subdirectory Subtitles & Language Auto-Detection
-- Resolved Werkzeug `<path:filename>/<name>` route collision for media stored in subfolders.
-- Implemented `detect_subtitle_language()` heuristic analyzing Unicode character scripts and stop-word frequency to auto-detect language (`en`, `es`, `fr`, `de`, `it`, `pt`, `ru`, `zh`, `ja`, `ko`, `ar`, `bn`).
-- Prioritized local subtitles as default (`default: True`) over external OpenSubtitles downloads when language matches.
+- Registered `MediaServer` (Waitress WSGI on `127.0.0.1:8000`) as an automatic Windows Service using NSSM with crash auto-recovery and 10 MB log rotation.
+- Registered `Cloudflared` as an automatic Windows Service for named tunnel routing (`media.anisparvez.in`).
 
 ---
 
-### Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger
-- Background scheduler (`metadata-refresh-worker`) in `worker_service.py` refreshing TMDb details (ratings, vote averages, runtime, tagline, cast, certification, artwork) every 4 hours.
-- SQLite `last_metadata_refresh` schema migration in `media.db`.
-- Synchronized manual UI "↻ Scan" trigger re-synchronizing metadata alongside newly discovered files.
+## 3. Active Next Steps & Immediate Queue
 
-### Server-Wide Manual Subtitle Upload with Language Auto-Detection
-- Built subtitle upload interfaces on `/movie/<filename>` and directly inside the in-player Subtitle Settings modal (`#subSettingsModal`).
-- Auto-detects subtitle language from content text (Unicode character script analysis & NLP stop-word heuristic), saving files server-wide in canonical format: `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`.
-- In-player modal dynamically updates `<track>` elements and selects newly uploaded subtitles with zero playback disruption.
+1. **Production Concurrency Tuning & Benchmarking:**
+   - Benchmark Waitress worker and thread pools against remote stream latency and Cloudflare tunnel limits.
+   - Remote streaming capacity is primarily bounded by ISP upload bandwidth and network tunnel latency.
 
-### Post-Transcode Storage Retention & Safe Orphaned Cache Purge
-- **Configurable Retention Policies:** User-configurable retention policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table. Default `'keep'` operates non-destructively while `'archive'` moves original source MKVs to `D:\Flicks\.archive` (utilizing 215+ GB headroom on drive `D:`) while preserving smooth HLS streaming.
-- **Automated Orphaned Cache Auditing:** `audit_orphaned_caches()` reconciles `cache/hls/` and `cache/previews/` against active video files and in-flight transcode jobs.
-- **Safe Orphaned Cache Purge:** `purge_orphaned_caches()` with bounded Windows file-lock retries, triggered automatically on server launch (`cleanup_cache_on_startup`) and by background daemon worker every 2 hours (`cache-maintenance-worker`). Reclaimed 57 orphaned cache directories.
-- **REST API Suite:** Endpoints `/api/storage/audit`, `/api/storage/purge-orphans`, `/api/storage/settings`, and `/api/storage/archive/<filename>`.
-- **Management UI:** Storage Retention & Cache Governance card on `/manage` with live storage pool telemetry, interactive policy selector, clean orphaned caches confirmation modal (`#cleanOrphansModal`), and per-item source archiving action.
-
----
-
-## 3. Active Next Steps & Engineering Tasks
-
-### Production Concurrency Tuning & Remote Streaming Benchmarks
-- Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent client playback.
-- Optimize ISP upload bandwidth saturation and test concurrent multi-device streaming performance.
+2. **Access Control & Authentication:**
+   - Prepare lightweight authentication before wider public sharing beyond personal devices.
 
 ---
 
@@ -103,8 +98,16 @@ Before committing changes, execute:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Automated Test Suite (159 tests)
+# Automated Test Suite (164 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
-
+Manual verification checklist:
+1. Direct MP4/AAC playback (*Oculus*, *Spider-Man*).
+2. MKV/HEVC HLS playback (*The Odyssey*, *Moana*, *Coyote vs. Acme*).
+3. Seek to `0:00` and arbitrary forward/backward timestamps without timeline freezing.
+4. Hover seekbar displays frame preview thumbnails.
+5. System Telemetry HUD reports active GPU engine utilization.
+6. Storage Retention & Cache Governance card on `/manage` reports accurate cache and storage telemetry.
+7. Expanded dropdown options display obsidian frosted glass popups with brand red highlights.
+8. No horizontal or vertical layout overflow on desktop or mobile viewports.
