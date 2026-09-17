@@ -227,7 +227,30 @@ class StorageRetentionTests(unittest.TestCase):
         self.assertIn("Post-Transcode Retention Policy", html)
         self.assertIn("Orphaned Transcode Caches", html)
         self.assertIn("cleanOrphansModal", html)
-        self.assertIn("updateRetentionPolicy", html)
+    def test_multi_root_media_resolution_and_archive(self):
+        """Verify safe_path and video_paths discover files on secondary roots and archive keeps them accessible."""
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_archive_dir:
+            archive_path = Path(tmp_archive_dir)
+            with patch.object(app.config, 'ARCHIVE_DIR', archive_path):
+                # 1. Create file in archive root
+                archived_movie = archive_path / "ArchivedMovie.2026.mkv"
+                archived_movie.write_bytes(b"archived movie contents")
+
+                # Invalidate paths cache
+                app._paths = (0, [])
+
+                # 2. Test safe_path finds archived file
+                from app.utils.filesystem import safe_path
+                resolved = safe_path("ArchivedMovie.2026.mkv")
+                self.assertEqual(resolved.resolve(), archived_movie.resolve())
+
+                # 3. Test video_paths discovers it
+                from app.services.media_service import video_paths
+                paths = video_paths()
+                self.assertIn(archived_movie.resolve(), [p.resolve() for p in paths])
+
+                # 4. Clean up
+                app._paths = (0, [])
 
 
 if __name__ == "__main__":

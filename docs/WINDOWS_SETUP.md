@@ -84,10 +84,11 @@ cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> media.ani
 - **Native Dark Selects:** `color-scheme: dark !important;` prevents white-on-white dropdown rendering in Windows Chromium.
 - **Hold-to-Speed Removed:** Fast-forward hold gestures removed from pointer listeners and modal cheat-sheet.
 - **Upload Lifecycle:** Abort button hidden immediately upon 100% upload completion; animated cycling card shows background ingestion status (*Probing...*, *TMDb...*, *Posters...*, *Subtitles...*).
-- **Dual-Disk Storage Governance & Cross-Drive Archiving:**
-  - `C:\Flicks`: Primary active media library for newly added files and direct streaming.
-  - `C:\MediaServer\cache\hls`: High-speed SSD HLS segment chunks and seek hover previews.
-  - `D:\Flicks\.archive`: Cold source retention repository on secondary high-capacity drive (215+ GB free pool), automatically populated when movies reach 100% verified HLS transcoding or via one-click **📦 Archive** action on `/manage`.
+- **Dual-Disk Tiered Storage Architecture:**
+  - `D:\Flicks\.uploads`: Staging area for resumable chunked uploads on secondary high-capacity drive, protecting primary `C:` SSD from 10–20 GB upload exhaustion.
+  - `D:\Flicks`: Main raw video storage repository for completed uploads.
+  - `D:\Flicks\.archive`: Cold source retention repository on secondary drive (215+ GB free pool), automatically populated when movies reach 100% verified HLS transcoding or via one-click **📦 Archive** action on `/manage`.
+  - `C:\MediaServer\cache\hls`: Scratch shelter for in-progress transcode chunk generation and high-speed SSD playback of 100% verified HLS segments.
   - Python `shutil.move()` ensures safe atomic cross-drive file relocation across Windows filesystem boundaries without `[WinError 17]`.
   - Automated orphaned cache purge cleans unreferenced chunks on startup and every 2 hours via background daemon.
 

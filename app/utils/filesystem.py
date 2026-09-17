@@ -7,12 +7,28 @@ from app import config
 
 
 def safe_path(name):
-    """Sanitize and resolve a relative media path within MEDIA_ROOT."""
+    """Sanitize and resolve a relative media path across configured media roots."""
     if not name or "\0" in name:
         abort(404)
     name = urllib.parse.unquote(name)
+
+    roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+
+    # 1. Try finding existing file across active media roots
+    for root in roots:
+        try:
+            p = (root / name).resolve()
+            if (p == root or root in p.parents) and p.exists():
+                return p
+        except Exception:
+            continue
+
+    # 2. If not found as existing file, resolve within primary MEDIA_ROOT for write/fallback
     p = (config.MEDIA_ROOT / name).resolve()
-    if p != config.MEDIA_ROOT and config.MEDIA_ROOT not in p.parents:
+    is_safe = (p == config.MEDIA_ROOT or config.MEDIA_ROOT in p.parents)
+    if not is_safe:
+        is_safe = any((p == r or r in p.parents) for r in roots)
+    if not is_safe:
         abort(403)
     return p
 

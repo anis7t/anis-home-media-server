@@ -39,18 +39,29 @@ def probe_media(path):
 
 
 def video_paths():
-    """Discover all video files in MEDIA_ROOT with a 30-second in-memory cache and immediate change detection."""
+    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
     global _paths
     if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
         app_paths = sys.modules['app']._paths
         if app_paths != _paths:
             _paths = app_paths
 
-    current = (
-        sorted((p for p in config.MEDIA_ROOT.rglob('*') if is_video(p)), key=lambda p: str(getattr(p, 'name', p)).lower())
-        if config.MEDIA_ROOT.exists()
-        else []
-    )
+    roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+    discovered = []
+    seen = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for p in root.rglob('*'):
+            if any(part.startswith('.uploads') for part in p.parts):
+                continue
+            if is_video(p):
+                rel_key = p.name.lower()
+                if rel_key not in seen:
+                    seen.add(rel_key)
+                    discovered.append(p)
+
+    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
     if (
         time.monotonic() - _paths[0] > 30
         or len(current) != len(_paths[1])
@@ -71,20 +82,48 @@ def poster_for(path, row):
     if db_poster and not str(db_poster).startswith('tmdb:'):
         p = Path(db_poster)
         if p.exists():
-            return f"local:{p.relative_to(config.MEDIA_ROOT).as_posix()}"
+            try:
+                rel = p.relative_to(config.MEDIA_ROOT).as_posix()
+            except ValueError:
+                rel = p.name
+            return f"local:{rel}"
         return None
     for ext in config.POSTER_EXTENSIONS:
         p = path.with_suffix(ext)
         if p.is_file():
-            return f"local:{p.relative_to(config.MEDIA_ROOT).as_posix()}"
+            try:
+                rel = p.relative_to(config.MEDIA_ROOT).as_posix()
+            except ValueError:
+                rel = p.name
+            return f"local:{rel}"
     return None
 
 
 def movie(path, db):
     """Build movie metadata dictionary for a video path combining database and filesystem data."""
-    name = path.relative_to(config.MEDIA_ROOT).as_posix()
+    try:
+        name = path.relative_to(config.MEDIA_ROOT).as_posix()
+    except ValueError:
+        matched = False
+        roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+        for r in roots:
+            try:
+                name = path.relative_to(r).as_posix()
+                matched = True
+                break
+            except ValueError:
+                pass
+        if not matched:
+            name = path.name
+
     meta = db.execute("SELECT * FROM movies WHERE filename=?", (name,)).fetchone()
+    if not meta and path.name != name:
+        meta = db.execute("SELECT * FROM movies WHERE filename=?", (path.name,)).fetchone()
+
     progress = db.execute("SELECT * FROM progress WHERE filename=?", (name,)).fetchone()
+    if not progress and path.name != name:
+        progress = db.execute("SELECT * FROM progress WHERE filename=?", (path.name,)).fetchone()
+
     pos = value(progress, 'position', 0)
     dur = value(progress, 'duration', 0)
     p = poster_for(path, meta) or (

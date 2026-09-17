@@ -359,8 +359,16 @@ def apply_post_transcode_policy(path, policy=None):
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            shutil.move(str(path), str(target_path))
-            logger.info("Post-transcode policy 'archive': Moved %s -> %s", path, target_path)
+            if path.resolve() != target_path.resolve():
+                target_path.unlink(missing_ok=True)
+                shutil.move(str(path), str(target_path))
+                logger.info("Post-transcode policy 'archive': Moved %s -> %s", path, target_path)
+
+            import app.services.media_service as media_service
+            media_service._paths = (0, [])
+            if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
+                sys.modules['app']._paths = (0, [])
+
             return {
                 'status': 'archived',
                 'policy': 'archive',

@@ -18,7 +18,9 @@ Working branch: `feat/storage-retention-cache-purge`
 ```text
 Project:       C:\MediaServer
 Media root:    C:\Flicks
+Upload root:   D:\Flicks\.uploads -> D:\Flicks (215.8 GB pool on D:)
 Archive root:  D:\Flicks\.archive (215.8 GB free pool on D:)
+Transcode:     C:\MediaServer\cache\hls (fast SSD generation & delivery)
 Database:      C:\MediaServer\media.db
 Venv:          C:\MediaServer\venv
 ```
@@ -101,7 +103,7 @@ Before committing changes, execute:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Automated Test Suite (158 tests)
+# Automated Test Suite (159 tests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 

@@ -119,12 +119,12 @@
           <div class="sc-policy-control">
             <select id="retentionPolicySelect" class="sc-policy-select" onchange="updateRetentionPolicy(this.value)">
               <option value="keep" {%if retention_policy == 'keep'%}selected{%endif%}>Keep original MKV & HLS transcode (Default)</option>
-              <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original MKV to {{archive_dir}}</option>
-              <option value="purge_cache" {%if retention_policy == 'purge_cache'%}selected{%endif%}>Purge HLS cache after transcode (Direct play only)</option>
+              <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original raw file to D: (Keep HLS on C: SSD)</option>
+              <option value="purge_cache" {%if retention_policy == 'purge_cache'%}selected{%endif%}>Purge HLS cache after transcode (Re-transcode on demand)</option>
             </select>
             <div id="policyStatusToast" class="sc-policy-toast" style="display:none">Saved!</div>
           </div>
-          <p class="sc-col-hint">Applies once transcoding reaches 100% verified stream segments. Target: <code>{{archive_dir}}</code></p>
+          <p class="sc-col-hint">Applies once transcoding reaches 100% verified stream segments. Target archive: <code>{{archive_dir}}</code></p>
         </div>
 
         <!-- Orphaned Cache Actions -->
