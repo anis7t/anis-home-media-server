@@ -20,7 +20,11 @@ def subtitle(filename, name):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
     video = safe_path(filename)
     sub = (video.parent / name).resolve()
-    if not is_video(video) or sub.parent != video.parent or not sub.is_file() or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
+    if not sub.is_file() and (config.MEDIA_ROOT / name).is_file():
+        sub = (config.MEDIA_ROOT / name).resolve()
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    is_authorized = any(sub == r or r in sub.parents for r in roots)
+    if not is_video(video) or not sub.is_file() or not is_authorized or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
         abort(404)
     text = sub.read_text(encoding='utf-8-sig', errors='replace')
     return Response(srt_to_vtt(text), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})

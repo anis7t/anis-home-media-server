@@ -84,10 +84,45 @@ def transcode_progress_path(path, mode='direct'):
 
 
 def hls_cache_dir(path):
-    """Generate deterministic directory path for HLS chunks and playlist."""
+    """Generate deterministic directory path for HLS chunks and playlist across drive roots."""
     path = Path(path)
-    key = hashlib.sha256(f'hls:{path}:{path.stat().st_size}:{path.stat().st_mtime_ns}'.encode()).hexdigest()
-    return get_cache_dir() / 'hls' / key
+    cache_base = get_cache_dir() / 'hls'
+
+    # 1. Direct path check
+    try:
+        st = path.stat()
+        primary_key = hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
+        primary_dir = cache_base / primary_key
+        if primary_dir.is_dir():
+            return primary_dir
+    except OSError:
+        st = None
+
+    # 2. Check alternative roots for relocated media (e.g. moved from C: to D:)
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    if st is not None:
+        rel = None
+        for r in roots:
+            try:
+                rel = path.relative_to(r)
+                break
+            except ValueError:
+                pass
+        for root in roots:
+            alt_path = (root / rel) if rel else (root / path.name)
+            alt_key = hashlib.sha256(f'hls:{alt_path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
+            alt_dir = cache_base / alt_key
+            if alt_dir.is_dir():
+                return alt_dir
+
+    # 3. Path-independent canonical key
+    size = st.st_size if st else 0
+    canonical_key = hashlib.sha256(f'hls:{path.name}:{size}'.encode()).hexdigest()
+    canonical_dir = cache_base / canonical_key
+    if canonical_dir.is_dir():
+        return canonical_dir
+
+    return primary_dir if st else canonical_dir
 
 
 def needs_transcode(path):

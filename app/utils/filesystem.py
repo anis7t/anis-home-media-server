@@ -23,7 +23,18 @@ def safe_path(name):
         except Exception:
             continue
 
-    # 2. If not found as existing file, resolve within primary MEDIA_ROOT for write/fallback
+    # 2. Try finding existing video matching filename across library
+    if Path(name).suffix.lower() in config.VIDEO_EXTENSIONS:
+        try:
+            from app.services.media_service import video_paths
+            target_name = Path(name).name
+            for v in video_paths():
+                if v.name == target_name:
+                    return v
+        except Exception:
+            pass
+
+    # 3. If not found as existing file, resolve within primary MEDIA_ROOT for write/fallback
     p = (config.MEDIA_ROOT / name).resolve()
     is_safe = (p == config.MEDIA_ROOT or config.MEDIA_ROOT in p.parents)
     if not is_safe:

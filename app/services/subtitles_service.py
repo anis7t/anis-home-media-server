@@ -172,9 +172,15 @@ def tracks(path, movie_meta=None):
     """Catalog local directory subtitles, embedded tracks, and online fallbacks for a media file."""
     result = []
     found_english = False
-    try:
-        rel_filename = path.relative_to(config.MEDIA_ROOT).as_posix()
-    except Exception:
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    rel_filename = None
+    for r in roots:
+        try:
+            rel_filename = path.relative_to(r).as_posix()
+            break
+        except ValueError:
+            pass
+    if not rel_filename:
         rel_filename = path.name
 
     if movie_meta is None:
@@ -186,17 +192,25 @@ def tracks(path, movie_meta=None):
             pass
 
     # 1. Directory subtitles
-    if path.parent.exists():
-        from app.utils.subtitles import get_short_movie_name
-        short_name = get_short_movie_name(path)
-        for sub in sorted(path.parent.iterdir()):
-            if sub.is_file() and sub.suffix.lower() in config.SUBTITLE_EXTENSIONS:
+    from app.utils.subtitles import get_short_movie_name
+    short_name = get_short_movie_name(path)
+    search_dirs = [path.parent]
+    if config.MEDIA_ROOT != path.parent and config.MEDIA_ROOT.exists():
+        search_dirs.append(config.MEDIA_ROOT)
+
+    seen_sub_names = set()
+    for sdir in search_dirs:
+        if not sdir.exists():
+            continue
+        for sub in sorted(sdir.iterdir()):
+            if sub.is_file() and sub.suffix.lower() in config.SUBTITLE_EXTENSIONS and sub.name not in seen_sub_names:
+                seen_sub_names.add(sub.name)
                 is_short_match = bool(short_name and sub.stem.lower().startswith(f"{short_name}_"))
                 is_match = (
                     sub.stem == path.stem
                     or sub.stem.startswith(path.stem + '.')
                     or is_short_match
-                    or len(list(p for p in path.parent.iterdir() if is_video(p))) == 1
+                    or (sdir == path.parent and len(list(p for p in path.parent.iterdir() if is_video(p))) == 1)
                 )
                 if is_match:
                     code = ''

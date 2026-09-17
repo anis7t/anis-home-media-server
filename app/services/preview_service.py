@@ -10,15 +10,36 @@ from app.services.transcode_service import get_cache_dir
 
 
 def preview_dir(path):
-    """Return deterministic preview cache directory for a given media file."""
+    """Return deterministic preview cache directory for a given media file across drive roots."""
     path = Path(path)
+    cache_base = get_cache_dir() / "previews"
     try:
         st = path.stat()
         file_sig = f"{st.st_size}:{st.st_mtime_ns}"
     except OSError:
         file_sig = "0:0"
-    key = hashlib.sha256(f"preview:{path.resolve()}:{file_sig}".encode()).hexdigest()
-    return get_cache_dir() / "previews" / key
+
+    primary_key = hashlib.sha256(f"preview:{path.resolve()}:{file_sig}".encode()).hexdigest()
+    primary_dir = cache_base / primary_key
+    if primary_dir.is_dir():
+        return primary_dir
+
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    rel = None
+    for r in roots:
+        try:
+            rel = path.relative_to(r)
+            break
+        except ValueError:
+            pass
+    for root in roots:
+        alt_path = ((root / rel) if rel else (root / path.name)).resolve()
+        alt_key = hashlib.sha256(f"preview:{alt_path}:{file_sig}".encode()).hexdigest()
+        alt_dir = cache_base / alt_key
+        if alt_dir.is_dir():
+            return alt_dir
+
+    return primary_dir
 
 
 def preview_meta(path):
