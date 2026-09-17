@@ -9,8 +9,47 @@ from app.services.media_service import probe_media
 from app.services.transcode_service import get_cache_dir
 
 
+def get_preview_candidates(path):
+    """Return all valid candidate preview directory names for a given video path across roots."""
+    path = Path(path)
+    candidates = set()
+    try:
+        st = path.stat()
+        file_sig = f"{st.st_size}:{st.st_mtime_ns}"
+    except OSError:
+        file_sig = "0:0"
+
+    candidates.add(hashlib.sha256(f"preview:{path.resolve()}:{file_sig}".encode()).hexdigest())
+
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    sorted_roots = sorted(roots, key=lambda r: len(str(r)), reverse=True)
+    rel = None
+    for r in sorted_roots:
+        try:
+            rel = path.relative_to(r)
+            break
+        except ValueError:
+            pass
+
+    rel_clean = None
+    if rel:
+        clean_parts = [p for p in rel.parts if p != '.archive']
+        if clean_parts:
+            rel_clean = Path(*clean_parts)
+
+    for root in roots:
+        candidates.add(hashlib.sha256(f"preview:{(root / path.name).resolve()}:{file_sig}".encode()).hexdigest())
+        if rel:
+            candidates.add(hashlib.sha256(f"preview:{(root / rel).resolve()}:{file_sig}".encode()).hexdigest())
+        if rel_clean:
+            candidates.add(hashlib.sha256(f"preview:{(root / rel_clean).resolve()}:{file_sig}".encode()).hexdigest())
+            candidates.add(hashlib.sha256(f"preview:{(root / '.archive' / rel_clean).resolve()}:{file_sig}".encode()).hexdigest())
+
+    return candidates
+
+
 def preview_dir(path):
-    """Return deterministic preview cache directory for a given media file across drive roots."""
+    """Deterministic directory path for seek preview thumbnails across drive roots."""
     path = Path(path)
     cache_base = get_cache_dir() / "previews"
     try:
@@ -21,25 +60,22 @@ def preview_dir(path):
 
     primary_key = hashlib.sha256(f"preview:{path.resolve()}:{file_sig}".encode()).hexdigest()
     primary_dir = cache_base / primary_key
-    if primary_dir.is_dir():
+
+    candidates = get_preview_candidates(path)
+    existing_dirs = [cache_base / c for c in candidates if (cache_base / c).is_dir()]
+    if not existing_dirs:
         return primary_dir
 
-    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
-    rel = None
-    for r in roots:
-        try:
-            rel = path.relative_to(r)
-            break
-        except ValueError:
-            pass
-    for root in roots:
-        alt_path = ((root / rel) if rel else (root / path.name)).resolve()
-        alt_key = hashlib.sha256(f"preview:{alt_path}:{file_sig}".encode()).hexdigest()
-        alt_dir = cache_base / alt_key
-        if alt_dir.is_dir():
-            return alt_dir
+    # Prefer existing directory with the most thumbnails
+    best_dir = None
+    max_thumbs = -1
+    for d in existing_dirs:
+        count = len(list(d.glob('*.jpg')))
+        if count > max_thumbs:
+            max_thumbs = count
+            best_dir = d
 
-    return primary_dir
+    return best_dir or (primary_dir if primary_dir in existing_dirs else existing_dirs[0])
 
 
 def preview_meta(path):

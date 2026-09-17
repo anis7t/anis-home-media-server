@@ -16,7 +16,7 @@ from flask import current_app, url_for
 from app import config
 from app.db import get_db
 from app.services.media_service import probe_media, video_paths
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -83,46 +83,99 @@ def transcode_progress_path(path, mode='direct'):
     return transcode_cache_path(path, mode).with_suffix('.progress')
 
 
-def hls_cache_dir(path):
-    """Generate deterministic directory path for HLS chunks and playlist across drive roots."""
+def get_hls_candidates(path):
+    """Return all valid candidate HLS cache directory names for a given video path across drive roots."""
     path = Path(path)
-    cache_base = get_cache_dir() / 'hls'
-
-    # 1. Direct path check
+    candidates = set()
     try:
         st = path.stat()
-        primary_key = hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
-        primary_dir = cache_base / primary_key
-        if primary_dir.is_dir():
-            return primary_dir
+        candidates.add(hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
     except OSError:
         st = None
 
-    # 2. Check alternative roots for relocated media (e.g. moved from C: to D:)
     roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    sorted_roots = sorted(roots, key=lambda r: len(str(r)), reverse=True)
+    rel = None
+    for r in sorted_roots:
+        try:
+            rel = path.relative_to(r)
+            break
+        except ValueError:
+            pass
+
+    rel_clean = None
+    if rel:
+        clean_parts = [p for p in rel.parts if p != '.archive']
+        if clean_parts:
+            rel_clean = Path(*clean_parts)
+
     if st is not None:
-        rel = None
-        for r in roots:
-            try:
-                rel = path.relative_to(r)
-                break
-            except ValueError:
-                pass
         for root in roots:
-            alt_path = (root / rel) if rel else (root / path.name)
-            alt_key = hashlib.sha256(f'hls:{alt_path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
-            alt_dir = cache_base / alt_key
-            if alt_dir.is_dir():
-                return alt_dir
+            candidates.add(hashlib.sha256(f'hls:{root / path.name}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+            if rel:
+                candidates.add(hashlib.sha256(f'hls:{root / rel}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+            if rel_clean:
+                candidates.add(hashlib.sha256(f'hls:{root / rel_clean}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+                candidates.add(hashlib.sha256(f'hls:{root / ".archive" / rel_clean}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
 
-    # 3. Path-independent canonical key
     size = st.st_size if st else 0
-    canonical_key = hashlib.sha256(f'hls:{path.name}:{size}'.encode()).hexdigest()
-    canonical_dir = cache_base / canonical_key
-    if canonical_dir.is_dir():
-        return canonical_dir
+    candidates.add(hashlib.sha256(f'hls:{path.name}:{size}'.encode()).hexdigest())
+    return candidates
 
-    return primary_dir if st else canonical_dir
+
+def hls_cache_dir(path):
+    """Generate deterministic directory path for HLS chunks and playlist across drive roots.
+
+    If multiple candidate directories exist, prioritizes:
+    1. Fully completed playlist containing #EXT-X-ENDLIST.
+    2. In-progress directory with the highest segment/chunk progress to resume.
+    3. Primary directory for the direct file path.
+    """
+    path = Path(path)
+    cache_base = get_cache_dir() / 'hls'
+
+    try:
+        st = path.stat()
+        primary_key = hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
+    except OSError:
+        st = None
+        primary_key = hashlib.sha256(f'hls:{path.name}:0'.encode()).hexdigest()
+    primary_dir = cache_base / primary_key
+
+    candidates = get_hls_candidates(path)
+    existing_dirs = [cache_base / cand for cand in candidates if (cache_base / cand).is_dir()]
+
+    if not existing_dirs:
+        return primary_dir
+
+    # 1. Prefer fully completed playlist
+    for d in existing_dirs:
+        pl = d / 'playlist.m3u8'
+        if pl.is_file():
+            try:
+                txt = pl.read_text(errors='replace')
+                if '#EXT-X-ENDLIST' in txt:
+                    return d
+            except OSError:
+                pass
+
+    # 2. Prefer directory with most progress (segments / chunks)
+    best_dir = None
+    max_progress = -1
+    for d in existing_dirs:
+        seg_count = len(list(d.glob('*.ts')))
+        chunk_count = len(list(d.glob('chunk_*.m3u8')))
+        prog = seg_count + (chunk_count * 15)
+        if prog > max_progress:
+            max_progress = prog
+            best_dir = d
+
+    if best_dir and max_progress > 0:
+        return best_dir
+
+    if primary_dir in existing_dirs:
+        return primary_dir
+    return existing_dirs[0]
 
 
 def needs_transcode(path):
@@ -225,6 +278,13 @@ def audit_orphaned_caches():
                 active_hls_map[hd.name] = p_obj
                 pd = preview_dir(p_obj)
                 active_preview_map[pd.name] = p_obj
+
+                for cand in get_hls_candidates(p_obj):
+                    active_hls_map[cand] = p_obj
+
+                from app.services.preview_service import get_preview_candidates
+                for cand in get_preview_candidates(p_obj):
+                    active_preview_map[cand] = p_obj
         except Exception:
             continue
 
@@ -386,10 +446,23 @@ def apply_post_transcode_policy(path, policy=None):
     if policy == 'archive':
         archive_base = config.ARCHIVE_DIR
         archive_base.mkdir(parents=True, exist_ok=True)
+
+        # Do not re-archive files already residing within the archive tree
         try:
-            rel = path.relative_to(config.MEDIA_ROOT)
-        except ValueError:
-            rel = Path(path.name)
+            if archive_base.resolve() in path.resolve().parents or path.resolve() == archive_base.resolve():
+                logger.info("File %s is already in archive directory; skipping redundant archive move", path)
+                return {
+                    'status': 'archived',
+                    'policy': 'archive',
+                    'source': str(path),
+                    'archived_to': str(path),
+                }
+        except Exception:
+            pass
+
+        rel = Path(get_rel_path(path))
+        clean_parts = [p for p in rel.parts if p != '.archive']
+        rel = Path(*clean_parts) if clean_parts else Path(path.name)
         target_path = archive_base / rel
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -592,9 +665,6 @@ def ensure_hls_transcode(filename):
             directory.mkdir(parents=True, exist_ok=True)
             resume_time, start_seg = _hls_resume_point(directory, playlist)
             resuming = resume_time > 0.0 and start_seg > 0
-            if not resuming and directory.is_dir():
-                for f in directory.glob('*'):
-                    f.unlink(missing_ok=True)
             if resuming and playlist.is_file():
                 pl_text = playlist.read_text(errors='replace')
                 pl_text = pl_text.replace('#EXT-X-ENDLIST', '').rstrip() + '\n'
@@ -809,10 +879,7 @@ def get_active_transcodes():
     for p in video_paths():
         if not is_video(p) or not needs_transcode(p):
             continue
-        try:
-            rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-        except ValueError:
-            continue
+        rel = get_rel_path(p)
         if rel not in config.HLS_PROCESSES or config.HLS_PROCESSES[rel].poll() is not None:
             pid, hls_dir = find_ffmpeg_info_for_path(p)
             if pid:

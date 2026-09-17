@@ -26,7 +26,7 @@ from app.services.transcode_service import (
     transcode_progress_path,
 )
 from app.services.system_service import get_system_telemetry
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 api_bp = Blueprint('api', __name__)
 
@@ -349,7 +349,7 @@ def upload():
         logger.warning(f"Scan single file during upload error: {e}")
         scanned_details = None
 
-    rel_filename = target_path.relative_to(config.MEDIA_ROOT).as_posix()
+    rel_filename = get_rel_path(target_path)
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
     # 3. Fallback database registration in SQLite if TMDB had no match or was offline

@@ -44,7 +44,7 @@ from app.config import (
 from app.db import get_db, get_setting, init_db, set_setting, value
 
 # Utility re-exports
-from app.utils.filesystem import is_video, mimetype, parse_range, safe_path
+from app.utils.filesystem import get_rel_path, is_video, mimetype, parse_range, safe_path
 from app.utils.formatting import clean_title, format_bytes_display, format_eta, format_runtime_display
 from app.utils.subtitles import compute_opensubtitles_hash, srt_to_vtt
 

@@ -195,8 +195,9 @@ def tracks(path, movie_meta=None):
     from app.utils.subtitles import get_short_movie_name
     short_name = get_short_movie_name(path)
     search_dirs = [path.parent]
-    if config.MEDIA_ROOT != path.parent and config.MEDIA_ROOT.exists():
-        search_dirs.append(config.MEDIA_ROOT)
+    for r in roots:
+        if r.exists() and r not in search_dirs:
+            search_dirs.append(r)
 
     seen_sub_names = set()
     for sdir in search_dirs:

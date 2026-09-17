@@ -15,6 +15,7 @@ from app import config
 from app.db import get_db
 from app.routes.api import api_bp
 from app.services.scanner_service import trigger_library_scan
+from app.utils.filesystem import get_rel_path
 
 logger = logging.getLogger(__name__)
 
@@ -101,13 +102,7 @@ def _prepare_media(target_path):
     except Exception as exc:
         logger.warning("Scan single file during upload error: %s", exc)
 
-    try:
-        rel_filename = target_path.relative_to(config.MEDIA_ROOT).as_posix()
-    except ValueError:
-        try:
-            rel_filename = target_path.relative_to(get_upload_target_dir()).as_posix()
-        except ValueError:
-            rel_filename = target_path.name
+    rel_filename = get_rel_path(target_path)
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
     if not scanned_details:

@@ -13,7 +13,7 @@ from app.services.transcode_service import (
     hls_cache_dir,
     needs_transcode,
 )
-from app.utils.filesystem import is_video
+from app.utils.filesystem import get_rel_path, is_video
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,7 @@ def auto_transcoder_loop():
                     break
                 if not is_video(p) or not needs_transcode(p):
                     continue
-                try:
-                    rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-                except ValueError:
-                    continue
+                rel = get_rel_path(p)
                 hls_dir = hls_cache_dir(p)
                 pl_file = hls_dir / 'playlist.m3u8'
                 if not _is_hls_truly_complete(pl_file, p):

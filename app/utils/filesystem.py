@@ -44,6 +44,22 @@ def safe_path(name):
     return p
 
 
+def get_rel_path(path):
+    """Compute relative POSIX path for media across all configured media roots, falling back to name."""
+    p = Path(path)
+    roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+    sorted_roots = sorted(roots, key=lambda r: len(str(r)), reverse=True)
+    for r in sorted_roots:
+        try:
+            rel = p.relative_to(r).as_posix()
+            if rel.startswith('.archive/'):
+                rel = rel[len('.archive/'):]
+            return rel
+        except ValueError:
+            continue
+    return p.name
+
+
 def is_video(path):
     """Check if the given path is an existing file with a recognized video extension."""
     p = Path(path)

@@ -8,7 +8,7 @@ from shutil import which
 
 from app import config
 from app.db import get_db, value
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 from app.utils.formatting import clean_title, format_bytes_display
 
 # Cached video paths (timestamp, list_of_paths)
@@ -82,39 +82,18 @@ def poster_for(path, row):
     if db_poster and not str(db_poster).startswith('tmdb:'):
         p = Path(db_poster)
         if p.exists():
-            try:
-                rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-            except ValueError:
-                rel = p.name
-            return f"local:{rel}"
+            return f"local:{get_rel_path(p)}"
         return None
     for ext in config.POSTER_EXTENSIONS:
         p = path.with_suffix(ext)
         if p.is_file():
-            try:
-                rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-            except ValueError:
-                rel = p.name
-            return f"local:{rel}"
+            return f"local:{get_rel_path(p)}"
     return None
 
 
 def movie(path, db):
     """Build movie metadata dictionary for a video path combining database and filesystem data."""
-    try:
-        name = path.relative_to(config.MEDIA_ROOT).as_posix()
-    except ValueError:
-        matched = False
-        roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
-        for r in roots:
-            try:
-                name = path.relative_to(r).as_posix()
-                matched = True
-                break
-            except ValueError:
-                pass
-        if not matched:
-            name = path.name
+    name = get_rel_path(path)
 
     meta = db.execute("SELECT * FROM movies WHERE filename=?", (name,)).fetchone()
     if not meta and path.name != name:
@@ -269,10 +248,7 @@ def purge_media(filename):
     except Exception:
         path = config.MEDIA_ROOT / filename
 
-    try:
-        rel_filename = path.relative_to(config.MEDIA_ROOT).as_posix()
-    except ValueError:
-        rel_filename = str(filename)
+    rel_filename = get_rel_path(path)
 
     db = get_db()
     movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()

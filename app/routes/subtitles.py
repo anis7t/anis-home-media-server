@@ -19,10 +19,14 @@ subtitles_bp = Blueprint('subtitles', __name__)
 def subtitle(filename, name):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
     video = safe_path(filename)
-    sub = (video.parent / name).resolve()
-    if not sub.is_file() and (config.MEDIA_ROOT / name).is_file():
-        sub = (config.MEDIA_ROOT / name).resolve()
     roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    sub = (video.parent / name).resolve()
+    if not sub.is_file():
+        for r in roots:
+            cand = (r / name).resolve()
+            if cand.is_file():
+                sub = cand
+                break
     is_authorized = any(sub == r or r in sub.parents for r in roots)
     if not is_video(video) or not sub.is_file() or not is_authorized or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
         abort(404)
