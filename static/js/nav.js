@@ -5,6 +5,31 @@
 (function () {
   'use strict';
 
+  function initHeaderControls() {
+    const headers = document.querySelectorAll('header, .player-header, .manage-header');
+    if (!headers.length) return;
+
+    // Scroll-aware elevation
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const isScrolled = window.scrollY > 12;
+          headers.forEach(h => h.classList.toggle('scrolled', isScrolled));
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHeaderControls);
+  } else {
+    initHeaderControls();
+  }
+
   let progressBar = null;
   let progressFill = null;
   let progressTimer = null;

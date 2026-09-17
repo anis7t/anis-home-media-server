@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-09-17
 Repository: `anis7t/media-server`
-Working branch: `feat/storage-retention-cache-purge`
+Working branch: `feat/unified-header-navigation`
 
 ## 1. Executive summary
 

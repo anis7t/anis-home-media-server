@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+_orig_media_root_env = os.environ.get("MEDIA_SERVER_MEDIA_ROOT")
+_orig_database_env = os.environ.get("MEDIA_SERVER_DATABASE")
 TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
 os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
@@ -17,6 +19,23 @@ class MediaServerTests(unittest.TestCase):
         cls.video.write_bytes(b"0123456789")
         (Path(TMP.name) / "Example.2026.en.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
         app.init_db(); cls.client = app.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        if _orig_media_root_env is not None:
+            os.environ["MEDIA_SERVER_MEDIA_ROOT"] = _orig_media_root_env
+        else:
+            os.environ.pop("MEDIA_SERVER_MEDIA_ROOT", None)
+        if _orig_database_env is not None:
+            os.environ["MEDIA_SERVER_DATABASE"] = _orig_database_env
+        else:
+            os.environ.pop("MEDIA_SERVER_DATABASE", None)
+        import importlib
+        import app.config
+        importlib.reload(app.config)
+        app.config.MEDIA_ROOT = app.config.MEDIA_ROOT
+        app.config.DATABASE = app.config.DATABASE
+        app.init_db()
     def test_library_and_pwa(self):
         self.assertEqual(self.client.get('/').status_code, 200)
         self.assertEqual(self.client.get('/manifest.webmanifest').status_code, 200)
@@ -92,11 +111,16 @@ class MediaServerTests(unittest.TestCase):
         stale_part.touch()
         old_time = time.time() - 7200
         os.utime(stale_part, (old_time, old_time))
-        app.CACHE_DIR = Path(TMP.name) / 'cache'
-        app.cleanup_cache()
-        self.assertTrue(final.exists())
-        self.assertTrue(valid_part.exists())
-        self.assertFalse(stale_part.exists())
+        orig_cache_dir = getattr(app, 'CACHE_DIR', None)
+        try:
+            app.CACHE_DIR = Path(TMP.name) / 'cache'
+            app.cleanup_cache()
+            self.assertTrue(final.exists())
+            self.assertTrue(valid_part.exists())
+            self.assertFalse(stale_part.exists())
+        finally:
+            if orig_cache_dir is not None:
+                app.CACHE_DIR = orig_cache_dir
     def test_transcode_uses_separate_locks_for_direct_and_compat_modes(self):
         app.TRANSCODE_LOCKS.clear()
         self.assertIsNot(app.TRANSCODE_LOCKS.setdefault('Example.2026.mp4:direct', __import__('threading').Lock()),
@@ -608,11 +632,11 @@ class MediaServerTests(unittest.TestCase):
         html = res.data.decode('utf-8')
         self.assertIn('class="player-header"', html)
         self.assertIn("Anis'", html)
-        self.assertIn('Media Server', html)
+        self.assertIn('Media Library', html)
         self.assertIn('class="player-header-actions"', html)
-        self.assertIn('← Home', html)
-        self.assertIn('ℹ Details', html)
-        self.assertIn('📁 My Library', html)
+        self.assertIn('Home', html)
+        self.assertIn('Details', html)
+        self.assertIn('My Library', html)
 
     def test_player_and_details_pages_render_transcode_progress_elements(self):
         # When no transcode is active, elements exist but are hidden (display:none)
@@ -709,8 +733,8 @@ class MediaServerTests(unittest.TestCase):
         # Verify clutter-free space-between controls-row on mobile
         self.assertIn('overflow-x:visible;justify-content:space-between;width:100%', html)
 
-        # Verify streamlined single-row player-header on mobile
-        self.assertIn('.player-header{flex-direction:row;justify-content:space-between;align-items:center;gap:.5rem;padding:.45rem .85rem;min-height:44px}', html)
+        # Verify responsive unified player-header on mobile
+        self.assertIn('.player-header{flex-direction:column;align-items:stretch;gap:.6rem', html)
 
         # Verify elevated mobile subtitle cues
         self.assertIn('isMob?(isHuge?-5.8:-5.0):(isHuge?-4.8:-4)', html)

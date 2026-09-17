@@ -11,30 +11,84 @@
 </head>
 <body class="manage-page">
 <header class="manage-header">
-  <a href="/" class="brand-link" title="Anis' Media Server">
-    <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="brandGradM" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#ff334b"/>
-          <stop offset="100%" stop-color="#b80017"/>
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#brandGradM)"/>
-      <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" stroke="rgba(255,255,255,0.2)"/>
-      <path d="M12.5 9.5L23 16L12.5 22.5V9.5Z" fill="#ffffff"/>
-      <circle cx="21" cy="10.5" r="1.75" fill="#ffffff" fill-opacity="0.85"/>
-    </svg>
-    <div class="brand-text">
-      <span class="brand-owner">Anis'</span>
-      <span class="brand-title">Media Server</span>
-    </div>
-  </a>
+  <div class="header-brand-row">
+    <a href="/" class="brand-link" title="Anis' Media Library">
+      <svg class="brand-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandPlayGradM" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff334b"/>
+            <stop offset="45%" stop-color="#e50914"/>
+            <stop offset="100%" stop-color="#990014"/>
+          </linearGradient>
+          <linearGradient id="brandPlayHighlightM" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+          </linearGradient>
+          <filter id="brandPlayShadowM" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#e50914" flood-opacity="0.4"/>
+          </filter>
+        </defs>
+        <rect width="36" height="36" rx="9" fill="#141822"/>
+        <rect x="0.5" y="0.5" width="35" height="35" rx="8.5" stroke="rgba(255,255,255,0.08)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" fill="url(#brandPlayGradM)" filter="url(#brandPlayShadowM)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v8.5l14.2-1.4L12 9.2z" fill="url(#brandPlayHighlightM)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title-wrap">
+          <span class="brand-owner">Anis'</span>
+          <span class="brand-title">Media Library</span>
+        </div>
+        <span class="brand-subtitle">PLAY • ORGANIZE • ENJOY</span>
+      </div>
+    </a>
+  </div>
 
   <div class="manage-header-actions">
-    <a href="/" class="header-nav-btn" title="Back to Home Stream">← Home Stream</a>
-    <a href="/devices" class="header-nav-btn" title="Connected Client Devices">📱 Devices</a>
-    <button id="scanBtn" type="button" class="header-action-btn" onclick="triggerScan(this)" title="Scan library for newly added media">↻ Scan</button>
-    <button id="uploadBtn" type="button" class="upload-btn" onclick="openUploadModal()" title="Upload media to library">↑ Upload Media</button>
+    <a href="/" class="header-action-btn header-nav-btn" title="Back to Home Stream">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+      <span>Home Stream</span>
+    </a>
+    <a href="/manage" class="header-action-btn header-nav-btn active-page" title="Manage Media Files">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        <line x1="9" y1="6" x2="15" y2="6"/>
+        <line x1="9" y1="10" x2="13" y2="10"/>
+      </svg>
+      <span>My Library</span>
+    </a>
+    <a href="/devices" class="header-action-btn header-nav-btn" title="Connected Client Devices">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2" y="3" width="14" height="11" rx="2"/>
+        <path d="M6 18h6"/>
+        <path d="M9 14v4"/>
+        <rect x="15" y="8" width="7" height="13" rx="1.5"/>
+        <path d="M18.5 18h.01"/>
+      </svg>
+      <span>Devices</span>
+    </a>
+    <button id="scanBtn" type="button" class="header-action-btn" onclick="triggerScan(this)" title="Scan library for newly added media">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+        <path d="M3 5v14c0 1.66 4 3 9 3 2.1 0 4-.24 5.5-.66"/>
+        <path d="M18.5 15l2.5 2.5-2.5 2.5"/>
+        <path d="M21 17.5H16"/>
+      </svg>
+      <span>Scan</span>
+    </button>
+    <button id="uploadBtn" type="button" class="header-action-btn upload-btn" onclick="openUploadModal()" title="Upload media to library">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <span>Upload</span>
+    </button>
   </div>
 </header>
 
@@ -118,9 +172,10 @@
           <div class="sc-col-label">Post-Transcode Retention Policy</div>
           <div class="sc-policy-control">
             <select id="retentionPolicySelect" class="sc-policy-select" onchange="updateRetentionPolicy(this.value)">
-              <option value="keep" {%if retention_policy == 'keep'%}selected{%endif%}>Keep original MKV & HLS transcode (Default)</option>
+              <option value="keep" {%if retention_policy == 'keep'%}selected{%endif%}>Keep original file & HLS transcode (Default)</option>
               <option value="archive" {%if retention_policy == 'archive'%}selected{%endif%}>Archive original raw file to D: (Keep HLS on C: SSD)</option>
-              <option value="purge_cache" {%if retention_policy == 'purge_cache'%}selected{%endif%}>Purge HLS cache after transcode (Re-transcode on demand)</option>
+              <option value="delete_source" {%if retention_policy in ('delete_source', 'delete_raw', 'delete_original')%}selected{%endif%}>Delete original raw file (Keep HLS on C: SSD)</option>
+              {%if retention_policy == 'purge_cache'%}<option value="purge_cache" selected>Purge HLS cache (Legacy)</option>{%endif%}
             </select>
             <div id="policyStatusToast" class="sc-policy-toast" style="display:none">Saved!</div>
           </div>
@@ -934,6 +989,6 @@ function startUpload() {
   <p>This policy was last updated in 2026.</p>
   <button class="modal-close-btn" onclick="document.getElementById('privacyModal').close()">Close</button>
 </dialog>
-<script src="/static/js/nav.js" defer></script>
+<script src="/static/js/nav.js?v=5" defer></script>
 </body>
 </html>
