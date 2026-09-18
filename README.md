@@ -1,4 +1,4 @@
-# My Movies — Personal Media Server
+# Anis' Home Media Server — Personal Media Server
 
 A modern, modular, self-hosted **personal media server** built with Python and Flask for streaming a private movie library over a local network, with optional remote access through Cloudflare Tunnel.
 
