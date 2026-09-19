@@ -40,7 +40,7 @@ The platform includes dedicated routes, services, utilities, background workers,
 ## User Manual & "How to Use"
 
 Complete user and operator documentation is available:
-- **In-App Interactive Manual:** Accessible at [`/manual`](https://media.anisparvez.in/manual) directly from the footer on any page ("How to use").
+- **In-App Interactive Manual:** Accessible at [`/manual`](https://your-media-hostname.example.com/manual) directly from the footer on any page ("How to use").
 - **Repository Documentation:** A complete, detailed Markdown user manual with touch gestures, player keybindings, and operational procedures is in [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ---
@@ -168,7 +168,7 @@ Technical HUD (`n` / `N` key) reporting:
 Browser / Client (Desktop, Tablet, Mobile)
                    │
                    ▼
-       Cloudflare Named Tunnel (media.anisparvez.in)
+       Cloudflare Named Tunnel (your-media-hostname.example.com)
                    │
                    ▼
        Waitress WSGI (127.0.0.1:8000) [NSSM Service]
@@ -190,7 +190,7 @@ Browser / Client (Desktop, Tablet, Mobile)
     ┌──────────────┼──────────────────────────┐
     ▼              ▼                          ▼
  SQLite DB      Dual-GPU FFmpeg Workers    Local Media Root
- (media.db)     ├─ GPU 0: AMD RX 560X      (C:\Flicks)
+ (media.db)     ├─ GPU 0: AMD RX 560X      (C:\Media)
                 └─ GPU 1: AMD Vega 8
 ```
 
@@ -249,7 +249,7 @@ Store environment variables in `C:\MediaServer\.env` (never commit this file):
 
 ```ini
 TMDB_API_TOKEN=<your_tmdb_bearer_token>
-MEDIA_SERVER_MEDIA_ROOT=C:\Flicks
+MEDIA_SERVER_MEDIA_ROOT=C:\Media
 MEDIA_SERVER_DATABASE=C:\MediaServer\media.db
 MEDIA_SERVER_BASE_DIR=C:\MediaServer
 MEDIA_SERVER_LOG_LEVEL=INFO
@@ -264,14 +264,14 @@ MEDIA_SERVER_ENABLE_AMF=1
 
 Remote access is powered by a named Cloudflare Tunnel:
 ```text
-Hostname: media.anisparvez.in
+Hostname: your-media-hostname.example.com
 Origin:   http://127.0.0.1:8000
 Service:  Cloudflared (Automatic Windows Service)
 ```
 
 To resolve stale CNAME records dynamically without web dashboard intervention:
 ```powershell
-cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> media.anisparvez.in
+cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> your-media-hostname.example.com
 ```
 
 ---
