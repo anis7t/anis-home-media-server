@@ -9,9 +9,9 @@ This document records the current Windows development environment for the Media 
 - SQLite database: `C:\MediaServer\media.db`
 - Environment file: `C:\MediaServer\.env`
 - Virtual environment: `C:\MediaServer\venv`
-- Python: 3.14.3
-- FFmpeg: 9.0.1 essentials build from gyan.dev, with AMD AMF enabled
-- cloudflared: `C:\Cloudflared\cloudflared.exe`, version 2026.9.1
+- Python: 3.14.x
+- FFmpeg: a supported FFmpeg build, with AMD AMF enabled
+- cloudflared: `C:\Cloudflared\cloudflared.exe`, a supported version
 
 ## Python environment
 
@@ -122,14 +122,14 @@ The Windows cloudflared executable is:
 C:\Cloudflared\cloudflared.exe
 ```
 
-The named tunnel is `media-server` with ID `cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f` and the public hostname is `media.anisparvez.in`.
+The named tunnel is `media-server` with ID `cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f` and the public hostname is `<media-hostname>`.
 
 The Windows config is:
 
 ```yaml
 tunnel: cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
 ingress:
-  - hostname: media.anisparvez.in
+  - hostname: <media-hostname>
     service: http://127.0.0.1:8000
   - service: http_status:404
 ```
