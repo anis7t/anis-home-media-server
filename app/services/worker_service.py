@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 def trigger_missing_transcodes():
-    """Start HLS transcoding for every eligible media item missing a complete cache."""
+    """Start HLS transcoding for every library item missing a complete HLS cache.
+
+    Manual scans deliberately use the same eligibility rule as the automatic
+    worker: a file needs work when it is eligible for HLS *and* its cache is
+    missing/incomplete. Path handling uses get_rel_path() so media discovered
+    on secondary configured roots is not silently skipped.
+    """
     started = 0
     skipped = 0
     errors = 0
@@ -33,13 +39,7 @@ def trigger_missing_transcodes():
     for p in paths:
         if config.SHUTDOWN_EVENT.is_set():
             break
-        if not is_video(p) or not needs_transcode(p):
-            skipped += 1
-            continue
-
-        try:
-            rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-        except ValueError:
+        if not is_video(p):
             skipped += 1
             continue
 
@@ -47,17 +47,27 @@ def trigger_missing_transcodes():
             hls_dir = hls_cache_dir(p)
             playlist = hls_dir / "playlist.m3u8"
             already_complete = _is_hls_truly_complete(playlist, p)
-            proc = ensure_hls_transcode(rel)
 
+            # Files that are already fully cached need no work. Otherwise,
+            # preserve the existing needs_transcode policy for direct-play
+            # containers while allowing HLS-required containers to proceed.
             if already_complete:
                 skipped += 1
-            elif proc is not None:
+                continue
+
+            if not needs_transcode(p):
+                skipped += 1
+                continue
+
+            rel = get_rel_path(p)
+            proc = ensure_hls_transcode(rel)
+            if proc is not None:
                 started += 1
             else:
                 skipped += 1
         except Exception as exc:
             errors += 1
-            logger.warning("Manual transcode trigger failed for %s: %s", rel, exc)
+            logger.warning("Manual transcode trigger failed for %s: %s", get_rel_path(p), exc)
 
     return {"started": started, "skipped": skipped, "errors": errors}
 
