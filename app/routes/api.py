@@ -47,9 +47,10 @@ def api_scan():
     started = trigger_library_scan()
     transcode_result = trigger_missing_transcodes()
     return jsonify(
-        status="scanning" if started or config.SCANNER_LOCK.locked() else "idle",
+        status="scanning" if started or config.SCANNER_LOCK.locked() or transcode_result.get("queued", 0) else "idle",
         busy=config.SCANNER_LOCK.locked(),
         transcodes_started=transcode_result.get("started", 0),
+        transcodes_queued=transcode_result.get("queued", 0),
         transcodes_skipped=transcode_result.get("skipped", 0),
         transcodes_errors=transcode_result.get("errors", 0)
     )
