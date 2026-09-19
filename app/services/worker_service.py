@@ -104,7 +104,7 @@ def trigger_missing_transcodes():
         logger.warning("Unable to enumerate media for manual transcode pass: %s", exc)
         return {"started": 0, "queued": 0, "skipped": 0, "errors": 1}
 
-    _ensure_manual_transcode_worker()
+    start_manual_transcode_worker()
 
     for p in paths:
         if config.SHUTDOWN_EVENT.is_set():
