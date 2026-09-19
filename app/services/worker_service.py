@@ -18,29 +18,61 @@ from app.utils.filesystem import is_video
 logger = logging.getLogger(__name__)
 
 
+def trigger_missing_transcodes():
+    """Start HLS transcoding for every eligible media item missing a complete cache."""
+    started = 0
+    skipped = 0
+    errors = 0
+
+    try:
+        paths = list(video_paths())
+    except Exception as exc:
+        logger.warning("Unable to enumerate media for manual transcode pass: %s", exc)
+        return {"started": 0, "skipped": 0, "errors": 1}
+
+    for p in paths:
+        if config.SHUTDOWN_EVENT.is_set():
+            break
+        if not is_video(p) or not needs_transcode(p):
+            skipped += 1
+            continue
+
+        try:
+            rel = p.relative_to(config.MEDIA_ROOT).as_posix()
+        except ValueError:
+            skipped += 1
+            continue
+
+        try:
+            hls_dir = hls_cache_dir(p)
+            playlist = hls_dir / "playlist.m3u8"
+            already_complete = _is_hls_truly_complete(playlist, p)
+            proc = ensure_hls_transcode(rel)
+
+            if already_complete:
+                skipped += 1
+            elif proc is not None:
+                started += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            errors += 1
+            logger.warning("Manual transcode trigger failed for %s: %s", rel, exc)
+
+    return {"started": started, "skipped": skipped, "errors": errors}
+
+
 def auto_transcoder_loop():
     """Continuously transcode any non-web movie missing a completed HLS stream."""
     time.sleep(5)
     while not config.SHUTDOWN_EVENT.is_set():
         try:
-            for p in video_paths():
-                if config.SHUTDOWN_EVENT.is_set():
-                    break
-                if not is_video(p) or not needs_transcode(p):
-                    continue
-                try:
-                    rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-                except ValueError:
-                    continue
-                hls_dir = hls_cache_dir(p)
-                pl_file = hls_dir / 'playlist.m3u8'
-                if not _is_hls_truly_complete(pl_file, p):
-                    proc = ensure_hls_transcode(rel)
-                    if proc is not None:
-                        while not config.SHUTDOWN_EVENT.is_set():
-                            if proc.poll() is not None:
-                                break
-                            time.sleep(2)
+            result = trigger_missing_transcodes()
+            if result.get("started"):
+                logger.info(
+                    "Auto-transcoder pass started %d missing HLS transcodes",
+                    result["started"]
+                )
         except Exception as e:
             logger.warning(f"Auto-transcoder loop error: {e}")
         time.sleep(config.PRECACHE_INTERVAL)
