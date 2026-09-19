@@ -14,7 +14,7 @@ from app.services.transcode_service import (
     hls_cache_dir,
     needs_transcode,
 )
-from app.utils.filesystem import get_rel_path, is_video
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def _manual_transcode_worker():
             continue
 
         try:
-            path = config.MEDIA_ROOT / rel
+            path = safe_path(rel)
             if not is_video(path):
                 continue
 
