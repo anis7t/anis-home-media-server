@@ -146,7 +146,7 @@ cloudflared tunnel ingress validate
 Output:
 
 ```text
-Validating rules from /home/iamroot/.cloudflared/config.yml
+Validating rules from ~/.cloudflared/config.yml
 OK
 ```
 
