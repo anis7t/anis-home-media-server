@@ -248,7 +248,7 @@ gunicorn -c gunicorn.conf.py "app:create_app()"
 Store environment variables in `C:\MediaServer\.env` (never commit this file):
 
 ```ini
-TMDB_API_TOKEN=<your_tmdb_bearer_token>
+TMDB_API_TOKEN=<your_tmdb_bearer_token>  # set locally; do not commit the token
 MEDIA_SERVER_MEDIA_ROOT=C:\Media
 MEDIA_SERVER_DATABASE=C:\MediaServer\media.db
 MEDIA_SERVER_BASE_DIR=C:\MediaServer
