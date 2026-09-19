@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-TMP = tempfile.TemporaryDirectory()
+_orig_media_root_env = os.environ.get("MEDIA_SERVER_MEDIA_ROOT")
+_orig_database_env = os.environ.get("MEDIA_SERVER_DATABASE")
+TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
 os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
 import app
@@ -17,6 +19,23 @@ class MediaServerTests(unittest.TestCase):
         cls.video.write_bytes(b"0123456789")
         (Path(TMP.name) / "Example.2026.en.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
         app.init_db(); cls.client = app.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        if _orig_media_root_env is not None:
+            os.environ["MEDIA_SERVER_MEDIA_ROOT"] = _orig_media_root_env
+        else:
+            os.environ.pop("MEDIA_SERVER_MEDIA_ROOT", None)
+        if _orig_database_env is not None:
+            os.environ["MEDIA_SERVER_DATABASE"] = _orig_database_env
+        else:
+            os.environ.pop("MEDIA_SERVER_DATABASE", None)
+        import importlib
+        import app.config
+        importlib.reload(app.config)
+        app.config.MEDIA_ROOT = app.config.MEDIA_ROOT
+        app.config.DATABASE = app.config.DATABASE
+        app.init_db()
     def test_library_and_pwa(self):
         self.assertEqual(self.client.get('/').status_code, 200)
         self.assertEqual(self.client.get('/manifest.webmanifest').status_code, 200)
@@ -30,6 +49,29 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn(b'WEBVTT',self.client.get('/subtitles/Example.2026.mp4/Example.2026.en.srt').data)
         self.assertEqual(self.client.post('/api/progress',json={'filename':'Example.2026.mp4','position':15,'duration':10}).status_code,200)
         self.assertEqual(self.client.get('/api/progress?filename=Example.2026.mp4').json['position'],10)
+
+    def test_subdirectory_subtitles_delivery_and_language_detection(self):
+        sub_dir = Path(TMP.name) / "SubDir Movie.2026"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        movie_file = sub_dir / "Movie.2026.mkv"
+        movie_file.write_bytes(b"dummy mkv video content")
+        sub_file = sub_dir / "Movie.2026.srt"
+        sub_file.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello and welcome to the show.\n", encoding="utf-8")
+
+        # Verify delivery via route /subtitles/<path:filename>/<name>
+        rel_movie = "SubDir Movie.2026/Movie.2026.mkv"
+        res = self.client.get(f"/subtitles/{rel_movie}/Movie.2026.srt")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"WEBVTT", res.data)
+        self.assertIn(b"Hello and welcome to the show.", res.data)
+
+        # Verify tracks() detects language from text as 'en' and marks it default
+        from app.services.subtitles_service import tracks
+        trks = tracks(movie_file)
+        self.assertTrue(len(trks) >= 1)
+        self.assertEqual(trks[0]['lang'], 'en')
+        self.assertEqual(trks[0]['label'], 'English (Local)')
+        self.assertTrue(trks[0]['default'])
     def test_new_media_files_are_discovered_immediately(self):
         app._paths = (time.monotonic(), [Path(TMP.name) / 'Example.2026.mp4'])
         new_file = Path(TMP.name) / 'Late.2026.mp4'
@@ -69,11 +111,16 @@ class MediaServerTests(unittest.TestCase):
         stale_part.touch()
         old_time = time.time() - 7200
         os.utime(stale_part, (old_time, old_time))
-        app.CACHE_DIR = Path(TMP.name) / 'cache'
-        app.cleanup_cache()
-        self.assertTrue(final.exists())
-        self.assertTrue(valid_part.exists())
-        self.assertFalse(stale_part.exists())
+        orig_cache_dir = getattr(app, 'CACHE_DIR', None)
+        try:
+            app.CACHE_DIR = Path(TMP.name) / 'cache'
+            app.cleanup_cache()
+            self.assertTrue(final.exists())
+            self.assertTrue(valid_part.exists())
+            self.assertFalse(stale_part.exists())
+        finally:
+            if orig_cache_dir is not None:
+                app.CACHE_DIR = orig_cache_dir
     def test_transcode_uses_separate_locks_for_direct_and_compat_modes(self):
         app.TRANSCODE_LOCKS.clear()
         self.assertIsNot(app.TRANSCODE_LOCKS.setdefault('Example.2026.mp4:direct', __import__('threading').Lock()),
@@ -96,7 +143,8 @@ class MediaServerTests(unittest.TestCase):
             response = self.client.get('/transcode/Example.2026.mp4')
         self.assertEqual(response.status_code, 503)
     def test_vaapi_is_disabled_by_default_for_stability(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}):
+            os.environ.pop('MEDIA_SERVER_ENABLE_VAAPI', None)
             self.assertFalse(app.is_vaapi_enabled())
     def test_transcode_status_hls_mode_reports_progress_and_eta(self):
         movie = Path(TMP.name) / 'StatusHls.2026.mkv'
@@ -584,11 +632,11 @@ class MediaServerTests(unittest.TestCase):
         html = res.data.decode('utf-8')
         self.assertIn('class="player-header"', html)
         self.assertIn("Anis'", html)
-        self.assertIn('Media Server', html)
+        self.assertIn('Home Media Server', html)
         self.assertIn('class="player-header-actions"', html)
-        self.assertIn('← Home', html)
-        self.assertIn('ℹ Details', html)
-        self.assertIn('📁 My Library', html)
+        self.assertIn('Home', html)
+        self.assertIn('Details', html)
+        self.assertIn('My Library', html)
 
     def test_player_and_details_pages_render_transcode_progress_elements(self):
         # When no transcode is active, elements exist but are hidden (display:none)
@@ -679,14 +727,14 @@ class MediaServerTests(unittest.TestCase):
         # Verify increased playback screen height in non-fullscreen mobile mode
         self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(52vh,460px);min-height:330px;max-height:60vh}}', html)
 
-        # Verify removal of redundant skip +/-10s, shortcuts, mute, and restart buttons on mobile
-        self.assertIn('#volume,#skipBackBtn,#skipForwardBtn,#shortcutsBtn,#mute,#restartBtn{display:none!important}', html)
+        # Verify mobile controls rules: volume, shortcuts cheat-sheet, and +/-10s seek buttons are hidden on mobile
+        self.assertIn('#volume,#shortcutsBtn,#skipBackBtn,#skipForwardBtn{display:none!important}', html)
+        self.assertIn('#controls #restartBtn', html)
+        self.assertIn('#controls #mute', html)
+        self.assertIn('overflow-x: auto !important', html)
 
-        # Verify clutter-free space-between controls-row on mobile
-        self.assertIn('overflow-x:visible;justify-content:space-between;width:100%', html)
-
-        # Verify streamlined single-row player-header on mobile
-        self.assertIn('.player-header{flex-direction:row;justify-content:space-between;align-items:center;gap:.5rem;padding:.45rem .85rem;min-height:44px}', html)
+        # Verify responsive unified player-header on mobile
+        self.assertIn('.player-header{flex-direction:column;align-items:stretch;gap:.6rem', html)
 
         # Verify elevated mobile subtitle cues
         self.assertIn('isMob?(isHuge?-5.8:-5.0):(isHuge?-4.8:-4)', html)
@@ -694,6 +742,31 @@ class MediaServerTests(unittest.TestCase):
         # Verify polished seek-ripple pill styling
         self.assertIn('.seek-ripple{display:none;position:absolute;top:50%;transform:translateY(-50%)', html)
         self.assertIn('background:rgba(18,22,32,.82)', html)
+
+    def test_manual_page_renders_guide_and_footer(self):
+        # Test /manual route
+        res = self.client.get('/manual')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+        self.assertIn("Anis'", html)
+        self.assertIn('Home Media Server', html)
+        self.assertIn('User Manual & Guide', html)
+        self.assertIn('How to use', html)
+        self.assertIn('Dual-GPU Transcoding', html)
+        self.assertIn('Keyboard Shortcuts', html)
+
+        # Test aliases /help and /how-to-use
+        self.assertEqual(self.client.get('/help').status_code, 200)
+        self.assertEqual(self.client.get('/how-to-use').status_code, 200)
+
+        # Verify footer links on main pages
+        for path in ['/', '/movie/Example.2026.mp4', '/manage', '/devices']:
+            page_res = self.client.get(path)
+            self.assertEqual(page_res.status_code, 200)
+            page_html = page_res.data.decode('utf-8')
+            self.assertIn('href="/manual"', page_html)
+            self.assertIn('How to use', page_html)
+            self.assertIn('Home Media Server', page_html)
 
 
 

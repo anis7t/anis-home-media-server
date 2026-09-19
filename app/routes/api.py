@@ -27,7 +27,7 @@ from app.services.transcode_service import (
     transcode_progress_path,
 )
 from app.services.system_service import get_system_telemetry
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 api_bp = Blueprint('api', __name__)
 
@@ -354,7 +354,7 @@ def upload():
         logger.warning(f"Scan single file during upload error: {e}")
         scanned_details = None
 
-    rel_filename = target_path.relative_to(config.MEDIA_ROOT).as_posix()
+    rel_filename = get_rel_path(target_path)
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
     # 3. Fallback database registration in SQLite if TMDB had no match or was offline
@@ -481,5 +481,152 @@ def api_devices_client_hints():
     device_id, _ = get_or_create_device_id(request)
     updated = update_device_client_hints(device_id, model=model, platform=platform, platform_version=platform_version)
     return jsonify(success=True, updated=updated, device_id=device_id)
+
+
+_ALLOWED_SUBTITLE_EXTS = {'.srt', '.vtt'}
+
+
+@api_bp.route('/api/upload-subtitle/<path:filename>', methods=['POST'])
+def api_upload_subtitle(filename):
+    """Accept a subtitle file upload, auto-detect its language, and save it next to the media.
+
+    Saved filename format: ``<short_movie_name>_<lang>_<n><ext>``
+    e.g. ``moana_en_1.srt``, ``the_odyssey_fr_2.vtt``.
+    """
+    from app.utils.subtitles import detect_subtitle_language, get_short_movie_name
+
+    # --- Validate target media exists ---
+    media_path = safe_path(filename)
+    if not media_path or not media_path.is_file():
+        return jsonify(success=False, error='Media file not found.'), 404
+
+    # --- Validate uploaded file ---
+    sub_file = request.files.get('subtitle')
+    if not sub_file or not sub_file.filename:
+        return jsonify(success=False, error='No subtitle file provided.'), 400
+
+    upload_ext = Path(sub_file.filename).suffix.lower()
+    if upload_ext not in _ALLOWED_SUBTITLE_EXTS:
+        return jsonify(
+            success=False,
+            error=f'Unsupported format "{upload_ext}". Only .srt and .vtt are accepted.'
+        ), 415
+
+    # --- Read content & detect language ---
+    try:
+        raw_bytes = sub_file.read()
+        text = raw_bytes.decode('utf-8', errors='replace')
+    except Exception as exc:
+        logger.exception('Failed to read subtitle upload: %s', exc)
+        return jsonify(success=False, error='Could not read the uploaded file.'), 500
+
+    lang = detect_subtitle_language(text)
+
+    # --- Determine save path with incremental counter ---
+    short_name = get_short_movie_name(media_path)
+    dest_dir = media_path.parent
+    counter = 1
+    while True:
+        dest_name = f'{short_name}_{lang}_{counter}{upload_ext}'
+        dest_path = dest_dir / dest_name
+        if not dest_path.exists():
+            break
+        counter += 1
+
+    try:
+        dest_path.write_bytes(raw_bytes)
+    except OSError as exc:
+        logger.exception('Failed to write subtitle file %s: %s', dest_path, exc)
+        return jsonify(success=False, error='Could not save the subtitle file on the server.'), 500
+
+    logger.info('Subtitle uploaded: %s  lang=%s', dest_path, lang)
+    return jsonify(
+        success=True,
+        filename=dest_name,
+        language=lang,
+        path=str(dest_path),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Storage Retention & Cache Purge Endpoints
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/api/storage/audit', methods=['GET'])
+def storage_audit():
+    """Audit HLS and preview cache directories for active vs orphaned status."""
+    from app.services.transcode_service import audit_orphaned_caches
+    from app.services.system_service import get_system_telemetry
+
+    audit_data = audit_orphaned_caches()
+    telemetry = get_system_telemetry()
+    storage = telemetry.get('storage', {})
+
+    return jsonify({
+        'storage': storage,
+        'audit': audit_data,
+    })
+
+
+@api_bp.route('/api/storage/purge-orphans', methods=['POST'])
+def storage_purge_orphans():
+    """Purge all safely verified orphaned transcode caches."""
+    from app.services.transcode_service import purge_orphaned_caches
+
+    dry_run = (
+        request.args.get('dry_run') in ('1', 'true', 'yes')
+        or (request.is_json and request.get_json(silent=True) and request.get_json().get('dry_run') is True)
+    )
+    res = purge_orphaned_caches(dry_run=dry_run)
+    return jsonify({
+        'success': True,
+        'result': res,
+    })
+
+
+@api_bp.route('/api/storage/settings', methods=['GET', 'POST'])
+def storage_settings():
+    """Get or update post-transcode storage retention settings."""
+    from app.db import get_setting, set_setting
+
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form or {}
+        policy = data.get('retention_policy')
+        if not policy or policy not in config.ALLOWED_RETENTION_POLICIES:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid retention policy. Allowed: {sorted(list(config.ALLOWED_RETENTION_POLICIES))}',
+            }), 400
+
+        set_setting('retention_policy', policy)
+        return jsonify({
+            'success': True,
+            'retention_policy': policy,
+        })
+
+    current_policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+    return jsonify({
+        'retention_policy': current_policy,
+        'allowed_policies': sorted(list(config.ALLOWED_RETENTION_POLICIES)),
+        'archive_dir': str(config.ARCHIVE_DIR),
+    })
+
+
+@api_bp.route('/api/storage/archive/<path:filename>', methods=['POST'])
+def storage_archive_media(filename):
+    """Manually move an original media source to ARCHIVE_DIR if its HLS transcode is complete."""
+    from app.services.transcode_service import apply_post_transcode_policy
+
+    media_path = safe_path(filename)
+    if not media_path or not media_path.is_file():
+        return jsonify({'success': False, 'error': 'Media file not found.'}), 404
+
+    res = apply_post_transcode_policy(media_path, policy='archive')
+    if res.get('status') == 'archived':
+        return jsonify({'success': True, 'result': res})
+    else:
+        return jsonify({'success': False, 'result': res}), 400
+
+
 
 

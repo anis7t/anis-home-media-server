@@ -5,18 +5,19 @@
 - **Selenium Cleanup**: All browser automation scripts must wrap driver lifecycles in `try ... finally: if driver: driver.quit()`.
 - **Bounded Wait Times**: Scripts must use bounded polling (max 15–20s) and explicitly exit. Never run blocking polling loops that hang conversational turns or force IDE restarts.
 
-## 2. Live Browser Testing Protocol
-- **Live Context Required**: When the user requests browser verification, run tests in the live desktop session using `DISPLAY=:0.0` so execution is visible.
-- **Driver Initialization**: In this Linux environment, Selenium Manager cannot auto-download binaries. Always explicitly configure:
-  ```python
-  service = Service('/usr/bin/geckodriver')
-  options.binary_location = '/usr/bin/firefox'
-  ```
+## 2. Browser Testing & Automation Protocol
+- **Autonomous Browser Automation Permitted**: The agent may use Selenium / WebDriver automation to inspect DOM state, test interactions, and capture screenshots for its own analysis and verification.
+- **No Interactive User Expectation**: Do not wait for the user to interact with the automated test browser, and do not expect browser windows to appear in the user's desktop session. Automated browser scripts must execute entirely autonomously and terminate promptly.
+- **Strict Process Safety & Teardown**: Always wrap driver instances in `try ... finally: if driver: driver.quit()` to ensure zero orphaned WebDriver or browser background processes.
 
 ## 3. Media Playback & Transcoding Invariants
 - **Multi-Format Regression Checks**: When updating HLS segmentation for MKV/HEVC or seek handling, verify that:
   - Both MKV (HLS) and direct MP4/AAC streams (*Oculus*, *Spider-Man*, *GTA VI*, *Ghost in the Cell*) remain playable.
   - Seeking to time `0:00` functions smoothly without freezing or indefinite "Preparing media" states.
+- **In-Progress Transcode HLS Timeline Synchronization**:
+  - Dynamic chunk-based HLS playlists must specify `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` while transcoding is active. This prevents HLS.js and native video elements from treating the stream as a live sliding window and skipping forward to the live edge.
+  - Chunk worker encoders must apply `-output_ts_offset <start_time>` corresponding to each chunk's timeline offset to maintain monotonic presentation timestamps (PTS) across chunk transitions.
+  - Master playlist assembly must parse actual `#EXTINF:<duration>,` segment durations from individual chunk playlists (`chunk_{id}.m3u8`) rather than assuming constant segment lengths, preventing cumulative timeline drift.
 
 ## 4. Video Player & Subtitle Viewport Invariants
 - **Viewport Clamping**: In CSS, never allow `<video>` to expand container height via intrinsic aspect ratio or unconstrained CSS Grid rows. Use:
@@ -187,4 +188,67 @@
 - **Zero-Copy RFC 7233 Range Streaming**:
   - In raw media streaming routes (`/media/<path:filename>`), use Flask/Werkzeug `send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)` rather than custom file chunk generators.
   - This guarantees OS zero-copy streaming (`sendfile(2)`), RFC 7233 byte-range parsing, `If-Range` support, and clean socket closure upon client disconnect without blocking worker threads.
+
+## 16. Windows Process Probing & Test Harness Safety (Strict Guardrail)
+- **Zero Console Signal Broadcasting via `os.kill(pid, 0)`**:
+  - In Python on Windows, `signal.CTRL_C_EVENT == 0`.
+  - Calling `os.kill(pid, 0)` on Windows invokes `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`, broadcasting a `CTRL_C_EVENT` interrupt across the shared console process group.
+  - In IDE/agent execution sessions, this Ctrl+C interrupt terminates the IDE language server / Antigravity agent process (`agy.exe`), triggering sudden `"Action cancelled by user"` and `"Lost connection to the language server. Agent features may not work."`.
+  - **Strict Invariant**: NEVER call `os.kill(pid, 0)` to check process liveness on Windows. Always use `is_pid_alive(pid)` from `app.services.transcode_service` (exported in `app`), which safely queries process status using the Win32 API (`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)` + `GetExitCodeProcess`).
+- **TemporaryDirectory File Locks in Windows Pytest**:
+  - SQLite databases or temporary fixtures created during tests may trigger `[WinError 32] The process cannot access the file because it is being used by another process` on teardown due to Windows file-locking semantics.
+  - When creating `tempfile.TemporaryDirectory()`, always pass `ignore_cleanup_errors=True` on Python 3.10+.
+- **Terminal Environment Relaunch Settings**:
+  - Keep `"terminal.integrated.environmentChangesRelaunch": true` and `"python.terminal.shellIntegration.enabled": false` in `.vscode/settings.json` to prevent VS Code extension environment contributions (e.g. `ms-python.debugpy`, `copilot-chat`) from stalling terminals or showing blocking relaunch prompt banners.
+
+## 17. Subdirectory Routing & Subtitle Language Auto-Detection Invariants
+- **Werkzeug Multi-Path Greedy Collision**:
+  - Never configure consecutive `<path:...>` parameters separated by slashes (e.g. `@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')`). Werkzeug's first path parameter captures non-greedily up to the first slash, which breaks whenever files reside in subdirectories (such as `Folder/Video.mkv`), matching only the directory and returning a 404.
+  - Always terminate multi-segment paths with a single component: `@subtitles_bp.route('/subtitles/<path:filename>/<name>')`.
+- **Subtitle Language Auto-Detection & Priority**:
+  - Subtitle files without language suffixes (e.g., `movie.srt`) must not be left unclassified (`und`).
+  - Use `detect_subtitle_language()` to analyze script unicode characters (Devanagari, Cyrillic, Hanzi, Hiragana, Hangul, Arabic, Bengali) and vocabulary stop-word frequency before defaulting to unknown.
+  - Local subtitles must always take priority over external API lookups (e.g. OpenSubtitles) when verified to match language, setting `default: True` and preventing redundant network requests.
+- **Windows Service Privileges & NSSM Management**:
+  - The production `MediaServer` service runs under `NT AUTHORITY\SYSTEM`. Stopping or restarting it requires elevated privileges. Use `scripts/restart_service.bat` (which requests UAC elevation via `Start-Process ... -Verb RunAs`) or an elevated PowerShell terminal (`Restart-Service MediaServer`).
+
+## 18. Storage Retention & Cross-Drive File Operations (Strict Guardrail)
+- **Cross-Drive File Moves (`C:` to `D:`)**:
+  - Never invoke `os.rename()` for moving files across disk volumes on Windows; it fails with `[WinError 17] The system cannot move the file to a different disk drive`.
+  - Always use `shutil.move(src, dst)`. Ensure the target directory exists (`parent.mkdir(parents=True, exist_ok=True)`) and unlink any pre-existing collision targets (`target_path.unlink(missing_ok=True)`) prior to moving.
+- **Canonical Cache Directory Resolution**:
+  - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
+- **Dual-Drive Storage Tiering & Headroom Prioritization**:
+  - **Drive `C:` (NVMe SSD):** Must be reserved for OS, database (`media.db`), in-progress transcode scratch, seek thumbnails (`cache/previews`), and completed multi-GPU HLS streams (`cache/hls`) for zero-stutter playback. Raw multi-gigabyte video files should not remain on `C:`.
+  - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), and cold archives (`D:\Flicks\.archive`).
+  - `config.get_media_roots()` returns `[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`. All media discovery, route authorization, and path validation must check all roots returned by `get_media_roots()`.
+- **Cross-Volume Deterministic Cache Key Continuity**:
+  - Both `hls_cache_dir(path)` and `preview_dir(path)` must compute relative paths across all roots in `config.get_media_roots()` (`alt_path = root / rel`).
+  - When media files are moved or archived from `C:` to `D:`, their deterministic cache directories must remain identical and active, preventing stream 404s and false-positive cache orphan classification.
+- **Cross-Volume Subtitle Discovery & Route Authorization**:
+  - `tracks(path)` in `subtitles_service.py` must compute `rel_filename` dynamically by matching against `get_media_roots()` rather than assuming `MEDIA_ROOT`.
+  - Subtitle search must inspect both `path.parent` and `config.MEDIA_ROOT`.
+  - Subtitle delivery routes (`/subtitles/<path:filename>/<name>`) must authorize parent directory containment across all roots returned by `get_media_roots()`.
+  - `safe_path(name)` must provide fallback resolution to discovered `video_paths()` filenames to cleanly resolve videos in subdirectories across any active drive root.
+
+## 19. Player Mobile Controls & Seekbar HUD Invariants
+- **Selective Mobile Controls Display**:
+  - In mobile views (`@media (max-width: 768px), (max-height: 500px)`), do NOT hide all controls arbitrarily.
+  - `#restartBtn`, `#mute`, `#pipBtn`, `#nerdStatsBtn`, `#rotateBtn`, and `#aspectBtn` MUST remain visible and accessible (`display: inline-flex !important;`).
+  - `#volume` slider is hidden on mobile (handled by touch gestures/hardware volume buttons).
+  - `#shortcutsBtn` cheat-sheet is hidden on mobile (desktop physical keyboard-specific).
+  - Seek increment buttons (`#skipBackBtn` -10s and `#skipForwardBtn` +10s) MUST be explicitly hidden on mobile (`display: none !important;`) as seeking is handled via the seekbar and native double-tap left/right ripple gestures.
+  - The `.controls-row` container on mobile must use `gap: 0.42rem !important; justify-content: flex-start !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; scrollbar-width: none !important;` to ensure smooth horizontal swipeability without clipping or page blowout.
+- **Seek Time Elapsed & Remaining Vertical Snugness**:
+  - The `.seek-time-row` timestamp HUD must sit directly above the YouTube-style seekbar track without excessive dead space.
+  - Because `#seekTrack` has transparent touch padding above its centered rail (`.seek-rail`), apply `margin-bottom: -9px !important; position: relative !important; z-index: 60 !important;` to `.seek-time-row` across both desktop and mobile to ensure timestamps hover snugly above the red/gray track.
+
+## 20. Library Navigation & Home Page Hierarchy Invariants
+- **Sort Dropdown Removal**:
+  - The redundant A-Z title sort dropdown has been removed across both desktop and mobile views in favor of natural library browsing and direct search bar filtering.
+- **Home Page Content Hierarchy (Telemetry at End)**:
+  - The System Telemetry HUD (`#systemTelemetryCard`) must appear at the BOTTOM of the home page (`templates/index.html`), positioned strictly after the `#allMoviesSection` ("All Movies" grid), rather than between "Continue watching" and "All Movies".
+  - This ensures users immediately see their media library content and continue watching rails upon loading the home page, with technical hardware telemetry placed unobtrusively at the footer.
+
+
 

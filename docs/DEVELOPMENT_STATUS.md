@@ -1,165 +1,116 @@
 # Development Status / Session Handoff
 
-Last updated: 2026-09-15
+Last updated: 2026-09-18
+Repository: `anis7t/media-server`
+Active Working branch: `feat/unified-header-navigation`
+Clean Base branch: `feat/storage-retention-cache-purge`
 
-## Branch state
+## 1. Branch Architecture & Environment State
 
-- Known-good baseline: `4ce82dad2775d816b84dd6767b8b252e6fcf639c` (`4ce82da`)
-- `testing`: intentionally remains at the known-good baseline.
-- Current work branch: `gpu-amf-transcoding`
-- AMF commit: `8b21b2b` — `Add AMD AMF transcoding support`
-- The AMF branch was created directly from the baseline and was verified against `testing` as one commit ahead before the latest documentation commit.
-- Do not merge until the GPU-selection and player-status checks below are complete.
-
-## Working Windows environment
+- **Branch Structure:**
+  - `feat/storage-retention-cache-purge` (at `9cf8d21`): Pure backend engine branch containing storage retention policies, dual-drive tiering (`C:` fast NVMe SSD vs `D:\Flicks` mass storage), cross-drive cache/subtitle resilience, and multi-chunk HLS discontinuity alignment.
+  - `feat/unified-header-navigation` (at `6c6e6c6`): Pure frontend & UX branch containing the frosted obsidian navigation redesign, 3D play brand identity, responsive swipeable mobile action rails, desktop search bar density polish, universal customizable select styling (`appearance: base-select`), and Chromium Hls.js precedence.
+- **Environment:** Windows 11 Home / Workstation
+- **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
+- **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
+- **Integrated GPU:** AMD Radeon Vega 8 Graphics — Task Manager GPU 1 / FFmpeg `dx11:0`
+- **Python:** 3.14.3 (`C:\MediaServer\venv`)
+- **FFmpeg:** 9.0.1 essentials build with AMF & D3D11va
+- **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
 
 ```text
 Project:       C:\MediaServer
 Media root:    C:\Flicks
+Upload root:   D:\Flicks\.uploads -> D:\Flicks (215+ GB storage pool on D:)
+Archive root:  D:\Flicks\.archive (215+ GB free storage pool on D:)
+Transcode:     C:\MediaServer\cache\hls (fast NVMe SSD generation & delivery)
+Previews:      C:\MediaServer\cache\previews (seek thumbnail frame cache)
 Database:      C:\MediaServer\media.db
 Venv:          C:\MediaServer\venv
-Python:        3.14.3
-FFmpeg:        9.0.1 essentials build with AMF
-cloudflared:   C:\Cloudflared\cloudflared.exe (2026.9.1)
 ```
 
-Current `.env` settings include:
+---
 
-```text
-MEDIA_SERVER_MEDIA_ROOT=C:\Flicks
-MEDIA_SERVER_DATABASE=C:\MediaServer\media.db
-MEDIA_SERVER_BASE_DIR=C:\MediaServer
-MEDIA_SERVER_ENABLE_AMF=1
+## 2. Completed Architecture & Capabilities
+
+### Dynamic Multi-GPU Transcoding Engine
+- Implemented `app/services/gpu_service.py` and `app/services/chunk_transcode_service.py`.
+- Both GPUs (Radeon RX 560X and Vega 8) transcode independent, keyframe-aligned segments of the same source file concurrently.
+- Hardware engine utilization for all engaged GPUs is dynamically polled via Windows Performance Counters and PyNVML, displayed in the System Telemetry HUD and `/api/system/stats`.
+- Transcode polling cadence optimized to 1 second for smooth progress bars, speed, and smoothed ETA calculations.
+
+### Multi-Chunk HLS Discontinuity Alignment & Seeking Stabilization
+- **Monotonic Presentation Timestamps:** Removed `-avoid_negative_ts make_zero` in chunk encoders, enforcing `-output_ts_offset <start_time>` corresponding to timeline positions to prevent PTS resets.
+- **RFC 8216 `#EXT-X-DISCONTINUITY` Boundaries:** Scheduler automatically injects discontinuity tags at chunk transition points in `_update_master_playlist()` and runs `reconcile_hls_playlist_discontinuities()` on disk caches.
+- **Non-Destructive Seek Recovery:** Preserves target seek timestamps during buffer gap recovery, eliminating `0:00` player timeline resets.
+- **Chromium Hls.js Precedence:** Prioritizes `window.Hls && Hls.isSupported()` over native `canPlayType` before falling back, preventing Windows Chromium browsers from attempting native Safari-style playback which cannot demux multi-chunk offsets.
+
+### Dual-Drive Storage Tiering & Headroom Prioritization
+- **Headroom Optimization:** Preserves primary fast NVMe SSD (`C:`) for OS, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache/previews`), and completed multi-GPU HLS caches (`cache/hls`).
+- **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), and cold source archives (`D:\Flicks\.archive`).
+- **Dynamic Multi-Root Discovery:** `config.get_media_roots()` returns all active storage roots. All routing, authorization, and media scanning procedures validate against all configured roots.
+- **Deterministic Cache Continuity:** `hls_cache_dir()` and `preview_dir()` compute relative paths across all active roots, ensuring media files moved or archived between drives retain their deterministic cache keys and active streams.
+- **Cross-Root Subtitle Mirror Discovery:** Resolves sidecar `.srt`/`.vtt` files across mirror subdirectories in any active drive root (stripping `.archive` subpaths).
+
+### Post-Transcode Storage Retention & Safe Orphaned Cache Purge
+- **Configurable Retention Policies:** User-configurable retention actions (`keep`, `archive`, `purge_cache`) persisted in SQLite settings.
+- **Automated Orphaned Cache Auditing:** `audit_orphaned_caches()` reconciles `cache/hls/` and `cache/previews/` against active video files and in-flight transcode jobs.
+- **Safe Orphaned Cache Purge:** `purge_orphaned_caches()` with bounded Windows file-lock retries, triggered automatically on server launch and via background worker every 2 hours. Reclaimed 57 orphaned cache directories.
+- **Management UI:** Storage Retention & Cache Governance card on `/manage` with live storage pool telemetry, interactive policy selector, and clean orphaned caches modal (`#cleanOrphansModal`).
+
+### Unified Frosted Obsidian Navigation Header & Brand Identity
+- **Consistent Top Navigation:** Redesigned frosted obsidian glass header across all 5 pages (`/`, `/movie/<filename>`, `/player/<filename>`, `/manage`, `/devices`).
+- **3D Glossy Play Brand Icon:** Vector SVG with radial crimson gradients, specular highlights, and ambient drop shadows, paired with two-tone typography (**Anis'** + **Home Media Server**) and tagline (**PLAY • ORGANIZE • ENJOY**).
+- **Desktop & Mobile Search Density Polish:** Completely removed the redundant A-Z sort dropdown across both desktop and mobile views, prioritizing natural library browsing and direct search input filtering.
+- **Home Page Content Hierarchy (Telemetry at Footer):** Repositioned the System Telemetry HUD (`#systemTelemetryCard`) to the bottom of the home page (strictly after "All Movies"), prioritizing user media rails while keeping technical stats accessible at the footer.
+- **Mobile Player Controls Expansion & Dedicated Seekbar Spacing:** Restored primary controls (`↺` Restart, `▶`/`⏸` Play, `🔊` Mute, `1×` Speed, `CC ⚙` Subtitles/Settings, Aspect Ratio, Rotate Screen, PiP, Nerd Stats) on mobile inside a swipeable non-overflowing rail (`overflow-x: auto`), cleanly hid desktop-only controls (`#volume` and `#shortcutsBtn`), explicitly hid redundant `-10s`/`+10s` buttons on mobile in favor of seekbar/double-tap gestures, and eliminated the dead space between `.seek-time-row` and seekbar (`margin-bottom: -9px !important`).
+- **Interactive User Manual & Footer "How to use":** Added `/manual` route with obsidian glass feature guide, category navigation pills, shortcut tables, and unified footer link across all pages. Created `docs/MANUAL.md`.
+
+
+### Universal Customizable `<select>` Popovers
+- Implemented modern Customizable Select API using `appearance: base-select` and `select::picker(select)`.
+- Replaced sharp, bright blue Windows system select menus with top-layer frosted obsidian glass popups (`rgba(18, 22, 32, 0.96)`, `backdrop-filter: blur(24px)`), rounded corners, brand red active highlights (`#e50914`), white checkmarks (`select option::checkmark`), and rotating chevrons (`select:open::picker-icon`).
+- Applied universally across `/manage` storage retention policy, playback speed (`#speed`), and in-player subtitle settings modal dropdowns.
+
+### Live Seek Hover Preview Thumbnails
+- Implemented `app/services/preview_service.py` with fast keyframe extraction (`-ss` before `-i`) and server-side disk caching under `cache/previews/`.
+- Integrated into YouTube-style seekbar with responsive viewport boundary clamping.
+
+### Persistent Windows Services
+- Registered `MediaServer` (Waitress WSGI on `127.0.0.1:8000`) as an automatic Windows Service using NSSM with crash auto-recovery and 10 MB log rotation.
+- Registered `Cloudflared` as an automatic Windows Service for named tunnel routing (`media.anisparvez.in`).
+
+---
+
+## 3. Active Next Steps & Immediate Queue
+
+1. **Production Concurrency Tuning & Benchmarking:**
+   - Benchmark Waitress worker and thread pools against remote stream latency and Cloudflare tunnel limits.
+   - Remote streaming capacity is primarily bounded by ISP upload bandwidth and network tunnel latency.
+
+2. **Access Control & Authentication:**
+   - Prepare lightweight authentication before wider public sharing beyond personal devices.
+
+---
+
+## 4. Verification & Testing
+
+Before committing changes, execute:
+
+```powershell
+# Compile validation
+python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+
+# Automated Test Suite (164 tests)
+.\venv\Scripts\python.exe -m pytest tests/
 ```
 
-`TMDB_API_TOKEN` exists locally but is intentionally omitted from all repository documentation.
-
-## Dependency state
-
-`requirements.txt` now needs to represent the actual Python runtime dependencies, including `python-dotenv` (imported by `app/config.py`) and `waitress` (used by `run_production.py`). Gunicorn remains present for Linux compatibility/deployment history.
-
-## TMDb / library
-
-TMDb authentication has been validated previously. The scanner successfully found and indexed **The Odyssey (2026)** with TMDb ID `1368337`.
-
-The current Windows media root contains a HEVC release of The Odyssey, which requires video transcoding for HLS rather than H.264 video copy.
-
-## AMD AMF work
-
-The Windows FFmpeg build exposes:
-
-- `h264_amf`
-- `hevc_amf`
-- `av1_amf`
-- AMF filters including `vpp_amf`, `sr_amf`, `frc_amf`, `vsrc_amf`
-- `d3d11va` hardware acceleration support
-
-Independent AMF encoding was successful.
-
-The Media Server was then verified to launch an HLS FFmpeg process whose video encoder was `h264_amf`. Therefore the application is genuinely using AMF, not merely advertising support.
-
-### Critical GPU discovery
-
-The machine has two AMD GPUs:
-
-- Windows Task Manager GPU 0: Radeon RX 560X Series (discrete)
-- Windows Task Manager GPU 1: AMD Radeon(TM) Vega 8 Graphics (integrated)
-
-The standalone FFmpeg D3D11 test established that **FFmpeg D3D11 adapter index `1` selects the RX 560X**. This was confirmed by watching Task Manager: the RX 560X utilization jumped when the command used `d3d11va=dx11:1`.
-
-Therefore the next code change should bind AMF to D3D11 adapter 1:
-
-```text
--init_hw_device d3d11va=dx11:1
--init_hw_device amf=amf@dx11
--filter_hw_device amf
-```
-
-The existing HLS logic already gives AMF priority over VAAPI when `MEDIA_SERVER_ENABLE_AMF=1`. The missing part is explicit adapter binding.
-
-## Current player issue
-
-The playback page contains a transcoding pill:
-
-```text
-#shellTranscodePill
-#stpDot
-#stpText
-```
-
-The pill currently blinks repeatedly during playback. The working hypothesis is one of:
-
-1. status polling alternates between present/absent and repeatedly changes `display`;
-2. the polling code replaces the DOM element repeatedly;
-3. a CSS pulse animation is restarted on every status update.
-
-Do not guess. Diagnose in DevTools first. Suggested console probe:
-
-```javascript
-setInterval(() => {
-    const el = document.querySelector('#shellTranscodePill');
-    console.log(
-        new Date().toLocaleTimeString(),
-        'display=', el?.style.display,
-        'hidden=', el?.hidden,
-        'text=', el?.innerText
-    );
-}, 1000);
-```
-
-Then inspect Network → Fetch/XHR for recurring transcode/progress/status requests.
-
-## Previously completed fixes
-
-### Local subtitles
-
-Local `.srt` subtitle playback works. The subtitle route uses `/subtitles/<path:filename>` and a `name` query parameter to disambiguate local subtitle filenames. The HTTP endpoint was verified to return `200 text/vtt`.
-
-Incorrect automatic OpenSubtitles behavior is parked for later.
-
-### Seek-bar elapsed-time behavior
-
-A previous playback bug involved the elapsed time appearing to pause above the seek bar while the movie continued playing. Treat that as a previously investigated player issue and avoid unrelated player rewrites while debugging the current status pill.
-
-### Hold-to-speed-up
-
-The request to remove hold-click speed acceleration while retaining the normal speed dropdown is parked. Do not touch `templates/player.html` for that request unless explicitly resumed. A previous formatted player edit caused a Jinja/player regression and was reverted.
-
-## Production / remote access
-
-`run_production.py` uses Waitress with a default of 8 threads and port 8000.
-
-The current Windows deployment is not yet fully automatic. The remaining deployment task is to arrange reliable Windows startup for Waitress plus cloudflared, while keeping port 8000 bound to localhost where appropriate.
-
-Cloudflare named tunnel:
-
-```text
-Name:       media-server
-ID:         cfd34bc3-8aee-4afa-9c7a-42bbdc10b57f
-Hostname:   media.anisparvez.in
-Origin:     http://127.0.0.1:8000
-```
-
-Never store the tunnel token/credential in the repository.
-
-## Immediate next session plan
-
-1. On `gpu-amf-transcoding`, implement explicit D3D11 adapter 1 → AMF binding in the HLS FFmpeg command construction.
-2. Run `python -m py_compile app/config.py app/services/transcode_service.py`.
-3. Restart the Media Server.
-4. Start the HEVC movie from `C:\Flicks`.
-5. Confirm `h264_amf` remains the encoder and the RX 560X, not Vega 8, receives the heavy workload.
-6. Check `git diff` and commit only the intended GPU-selection change.
-7. Diagnose the blinking `#shellTranscodePill` using DevTools before changing player JavaScript/CSS.
-8. Run the relevant test suite.
-9. Review the complete branch diff against `testing`.
-10. Merge only after the above checks pass.
-
-## Safety rules for agents
-
-- Preserve `testing` as the known-good baseline until explicitly approved for merge.
-- Do not force-push.
-- Do not rewrite unrelated player code.
-- Do not add the local untracked `start_media_server.ps1` unless explicitly requested.
-- Never expose TMDb tokens, Cloudflare tunnel tokens/credentials, passwords, or other secrets.
-- Prefer small, isolated commits for each logical change.
+Manual verification checklist:
+1. Direct MP4/AAC playback (*Oculus*, *Spider-Man*).
+2. MKV/HEVC HLS playback (*The Odyssey*, *Moana*, *Coyote vs. Acme*).
+3. Seek to `0:00` and arbitrary forward/backward timestamps without timeline freezing.
+4. Hover seekbar displays frame preview thumbnails.
+5. System Telemetry HUD reports active GPU engine utilization.
+6. Storage Retention & Cache Governance card on `/manage` reports accurate cache and storage telemetry.
+7. Expanded dropdown options display obsidian frosted glass popups with brand red highlights.
+8. No horizontal or vertical layout overflow on desktop or mobile viewports.

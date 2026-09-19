@@ -15,23 +15,32 @@ from app import config
 from app.db import get_db
 from app.routes.api import api_bp
 from app.services.scanner_service import trigger_library_scan
+from app.utils.filesystem import get_rel_path
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024 * 1024
-UPLOAD_TMP = config.MEDIA_ROOT / ".uploads"
+def get_upload_tmp():
+    return getattr(config, 'UPLOAD_TMP', config.MEDIA_ROOT / ".uploads")
+
+
+def get_upload_target_dir():
+    return getattr(config, 'UPLOAD_TARGET_DIR', config.MEDIA_ROOT)
+
+
 UPLOAD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
 
 def _ensure_upload_dir():
-    UPLOAD_TMP.mkdir(parents=True, exist_ok=True)
+    get_upload_tmp().mkdir(parents=True, exist_ok=True)
 
 
 def _paths(upload_id):
     if not UPLOAD_ID_RE.fullmatch(upload_id):
         return None, None
-    return UPLOAD_TMP / f"{upload_id}.part", UPLOAD_TMP / f"{upload_id}.json"
+    tmp = get_upload_tmp()
+    return tmp / f"{upload_id}.part", tmp / f"{upload_id}.json"
 
 
 def _safe_filename(filename):
@@ -47,10 +56,11 @@ def _safe_filename(filename):
 
 
 def _safe_target_name(clean_name):
-    config.MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-    target_path = (config.MEDIA_ROOT / clean_name).resolve()
-    media_root = config.MEDIA_ROOT.resolve()
-    if not str(target_path).startswith(str(media_root) + os.sep):
+    target_dir = get_upload_target_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = (target_dir / clean_name).resolve()
+    resolved_root = target_dir.resolve()
+    if not str(target_path).startswith(str(resolved_root) + os.sep):
         raise ValueError("Illegal destination path.")
     if not target_path.exists():
         return target_path
@@ -59,7 +69,7 @@ def _safe_target_name(clean_name):
     suffix = Path(clean_name).suffix
     counter = 1
     while True:
-        candidate = (config.MEDIA_ROOT / f"{stem} ({counter}){suffix}").resolve()
+        candidate = (target_dir / f"{stem} ({counter}){suffix}").resolve()
         if not candidate.exists():
             return candidate
         counter += 1
@@ -92,7 +102,7 @@ def _prepare_media(target_path):
     except Exception as exc:
         logger.warning("Scan single file during upload error: %s", exc)
 
-    rel_filename = target_path.relative_to(config.MEDIA_ROOT).as_posix()
+    rel_filename = get_rel_path(target_path)
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
     if not scanned_details:
@@ -281,7 +291,11 @@ def chunk_upload_complete(upload_id):
 
     try:
         target_path = _safe_target_name(manifest["filename"])
-        part_path.replace(target_path)
+        try:
+            part_path.replace(target_path)
+        except OSError:
+            import shutil
+            shutil.move(str(part_path), str(target_path))
         result = _prepare_media(target_path)
     except Exception as exc:
         logger.exception("Failed to finalize chunked upload %s", upload_id)

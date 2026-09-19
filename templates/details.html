@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>{{movie.title}} — Anis' Media Server</title>
+<title>{{movie.title}} — Anis' Home Media Server</title>
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>{{css}}</style>
 </head>
@@ -12,27 +12,80 @@
 <div class="details-backdrop" style="background-image:linear-gradient(90deg,#090b10 8%,transparent 80%),linear-gradient(0deg,#090b10 0%,transparent 65%),url('{{url_for('tmdb_backdrop',tmdb_id=backdrop)}}')"></div>
 {%endif%}
 
-<main class="details-hero">
-  <div class="details-nav">
-    <div style="display:flex;align-items:center;gap:.5rem">
-      <a class="back-btn" href="/">← Home</a>
-      <a class="back-btn" href="/manage" title="Manage Media Library">📁 My Library</a>
-      <a class="back-btn" href="/devices" title="Connected Client Devices">📱 Devices</a>
-    </div>
-    <a href="/" class="details-brand" title="Anis' Media Server">
-      <svg class="brand-icon-sm" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="32" height="32" rx="8" fill="url(#brandGradSm)"/>
+<header>
+  <div class="header-brand-row">
+    <a href="/" class="brand-link" title="Anis' Home Media Server">
+      <svg class="brand-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
-          <linearGradient id="brandGradSm" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="brandPlayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stop-color="#ff334b"/>
-            <stop offset="100%" stop-color="#b80017"/>
+            <stop offset="45%" stop-color="#e50914"/>
+            <stop offset="100%" stop-color="#990014"/>
           </linearGradient>
+          <linearGradient id="brandPlayHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+          </linearGradient>
+          <filter id="brandPlayShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#e50914" flood-opacity="0.4"/>
+          </filter>
         </defs>
-        <path d="M12.5 9.5L23 16L12.5 22.5V9.5Z" fill="#ffffff"/>
+        <rect width="36" height="36" rx="9" fill="#141822"/>
+        <rect x="0.5" y="0.5" width="35" height="35" rx="8.5" stroke="rgba(255,255,255,0.08)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" fill="url(#brandPlayGrad)" filter="url(#brandPlayShadow)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v8.5l14.2-1.4L12 9.2z" fill="url(#brandPlayHighlight)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
       </svg>
-      <span class="details-brand-text">Anis' <span>Media Server</span></span>
+      <div class="brand-text">
+        <div class="brand-title-wrap">
+          <span class="brand-owner">Anis'</span>
+          <span class="brand-title">Home Media Server</span>
+        </div>
+        <span class="brand-subtitle">PLAY • ORGANIZE • ENJOY</span>
+      </div>
     </a>
   </div>
+
+  <form id="headerForm" action="/" method="GET">
+    <div class="search-input-wrap">
+      <svg class="search-input-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8.5" cy="8.5" r="5.5"/>
+        <line x1="12.5" y1="12.5" x2="17" y2="17"/>
+      </svg>
+      <input name="q" placeholder="Search your library..." autocomplete="off">
+    </div>
+    <div class="header-actions-rail">
+      <a href="/" class="header-action-btn header-nav-btn" title="Back to Home Stream">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+        <span>Home Stream</span>
+      </a>
+      <a href="/manage" id="manageBtn" class="header-action-btn header-nav-btn" title="Manage Media Files">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          <line x1="9" y1="6" x2="15" y2="6"/>
+          <line x1="9" y1="10" x2="13" y2="10"/>
+        </svg>
+        <span>My Library</span>
+      </a>
+      <a href="/devices" id="devicesBtn" class="header-action-btn header-nav-btn" title="Connected Client Devices">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="3" width="14" height="11" rx="2"/>
+          <path d="M6 18h6"/>
+          <path d="M9 14v4"/>
+          <rect x="15" y="8" width="7" height="13" rx="1.5"/>
+          <path d="M18.5 18h.01"/>
+        </svg>
+        <span>Devices</span>
+      </a>
+    </div>
+  </form>
+</header>
+
+<main class="details-hero">
 
   <div class="hero-layout">
     <div class="poster-col">
@@ -93,10 +146,14 @@
         </button>
 
         {%if extended.trailer_key%}
-        <button id="trailerBtn" type="button" class="btn-sub-action" onclick="openTrailer('{{extended.trailer_key}}')">
+        <button id="trailerBtn" type="button" class="btn-sub-action" data-trailer-key="{{extended.trailer_key|e}}" onclick="openTrailer(this.dataset.trailerKey)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M10 8.64L15.27 12 10 15.36V8.64M8 5v14l11-7L8 5z"/></svg> Trailer
         </button>
         {%endif%}
+
+        <button id="uploadSubBtn" type="button" class="btn-sub-action" onclick="document.getElementById('subtitleUploadModal').showModal()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg> Upload Subtitle
+        </button>
 
         <div class="ext-badges">
           {%if extended.imdb_id%}
@@ -223,6 +280,27 @@
   </div>
 </div>
 {%endif%}
+
+<!-- Subtitle Upload Modal -->
+<dialog id="subtitleUploadModal" aria-labelledby="subModalTitle" aria-modal="true">
+  <div class="sub-modal-inner">
+    <div class="sub-modal-header">
+      <h2 id="subModalTitle">Upload Subtitle</h2>
+      <button type="button" class="sub-modal-close" id="subModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <p class="sub-modal-hint">Supported formats: <strong>.srt</strong>, <strong>.vtt</strong>. Language will be detected automatically.</p>
+    <label id="subDropZone" class="sub-drop-zone" for="subFileInput" tabindex="0" role="button" aria-label="Choose or drop a subtitle file">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor" opacity="0.5"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+      <span id="subDropLabel">Drop .srt / .vtt here or <u>click to browse</u></span>
+      <input type="file" id="subFileInput" accept=".srt,.vtt" style="display:none" aria-hidden="true">
+    </label>
+    <div id="subStatus" class="sub-status" hidden></div>
+    <div class="sub-modal-actions">
+      <button type="button" id="subUploadBtn" class="sub-btn-upload" disabled>Upload</button>
+      <button type="button" class="sub-btn-cancel" onclick="closeSubModal()">Cancel</button>
+    </div>
+  </div>
+</dialog>
 
 <script>
 const filename={{movie.filename|tojson}};
@@ -384,22 +462,114 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => {
   if (navigator.sendBeacon) navigator.sendBeacon('/api/devices/heartbeat');
 });
+
+// ---- Subtitle Upload Modal ----
+(function(){
+  const modal = document.getElementById('subtitleUploadModal');
+  const dropZone = document.getElementById('subDropZone');
+  const fileInput = document.getElementById('subFileInput');
+  const dropLabel = document.getElementById('subDropLabel');
+  const statusEl = document.getElementById('subStatus');
+  const uploadBtn = document.getElementById('subUploadBtn');
+  const closeBtn = document.getElementById('subModalCloseBtn');
+  let chosenFile = null;
+
+  function closeSubModal(){
+    modal.close();
+    resetSubModal();
+  }
+  window.closeSubModal = closeSubModal;
+  closeBtn.addEventListener('click', closeSubModal);
+  // Escape key handled natively by <dialog>
+
+  function resetSubModal(){
+    chosenFile = null;
+    fileInput.value = '';
+    dropLabel.textContent = 'Drop .srt / .vtt here or ';
+    const u = document.createElement('u'); u.textContent = 'click to browse';
+    dropLabel.appendChild(u);
+    dropZone.classList.remove('sub-drop-has-file','sub-drop-over');
+    statusEl.hidden = true;
+    statusEl.textContent = '';
+    statusEl.className = 'sub-status';
+    uploadBtn.disabled = true;
+  }
+
+  function setFile(f){
+    if(!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if(ext !== 'srt' && ext !== 'vtt'){
+      showStatus('Only .srt and .vtt files are accepted.', 'error');
+      return;
+    }
+    chosenFile = f;
+    dropLabel.textContent = '\uD83D\uDCC4 ' + f.name;
+    dropZone.classList.add('sub-drop-has-file');
+    uploadBtn.disabled = false;
+    statusEl.hidden = true;
+  }
+
+  function showStatus(msg, type){
+    statusEl.textContent = msg;
+    statusEl.className = 'sub-status sub-status--' + type;
+    statusEl.hidden = false;
+  }
+
+  fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('sub-drop-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('sub-drop-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('sub-drop-over');
+    setFile(e.dataTransfer.files[0]);
+  });
+  dropZone.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); } });
+
+  uploadBtn.addEventListener('click', async () => {
+    if(!chosenFile) return;
+    uploadBtn.disabled = true;
+    showStatus('Uploading\u2026', 'info');
+    const fd = new FormData();
+    fd.append('subtitle', chosenFile);
+    try {
+      const res = await fetch('/api/upload-subtitle/' + encodeURIComponent(filename), {
+        method: 'POST', body: fd
+      });
+      const data = await res.json();
+      if(data.success){
+        const langLabel = data.language === 'und' ? 'unknown' : data.language.toUpperCase();
+        showStatus('\u2705 Saved as ' + data.filename + '  (detected language: ' + langLabel + ')', 'success');
+        closeBtn.textContent = '\u2715  Close';
+        closeBtn.removeEventListener('click', closeSubModal);
+        closeBtn.addEventListener('click', () => { closeSubModal(); location.reload(); });
+      } else {
+        showStatus('\u274C ' + (data.error || 'Upload failed.'), 'error');
+        uploadBtn.disabled = false;
+      }
+    } catch(e) {
+      showStatus('\u274C Network error. Please try again.', 'error');
+      uploadBtn.disabled = false;
+    }
+  });
+})();
 </script>
 <footer class="site-footer">
-  <p class="footer-copy">© 2026 Anis' Media Server. All rights reserved.</p>
+  <p class="footer-copy">© 2026 Anis' Home Media Server. All rights reserved.</p>
   <ul class="footer-links">
+    <li><a href="/manual">How to use</a></li>
     <li><button onclick="document.getElementById('privacyModal').showModal()">Privacy Policy</button></li>
     <li><span>No registered trademarks</span></li>
   </ul>
 </footer>
 <dialog id="privacyModal" aria-labelledby="privacyModalTitle">
   <h2 id="privacyModalTitle">Privacy Policy</h2>
-  <p>Anis' Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
+  <p>Anis' Home Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
   <p>Playback progress and connected device information are stored locally in a SQLite database on the server and are never uploaded externally.</p>
   <p>Remote access is provided via a Cloudflare Quick Tunnel solely for convenience. No analytics or tracking scripts are embedded in this application.</p>
   <p>This policy was last updated in 2026.</p>
   <button class="modal-close-btn" onclick="document.getElementById('privacyModal').close()">Close</button>
 </dialog>
-<script src="/static/js/nav.js" defer></script>
+<script src="/static/js/nav.js?v=5" defer></script>
 </body>
 </html>

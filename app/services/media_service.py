@@ -8,7 +8,7 @@ from shutil import which
 
 from app import config
 from app.db import get_db, value
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 from app.utils.formatting import clean_title, format_bytes_display
 
 # Cached video paths (timestamp, list_of_paths)
@@ -39,18 +39,29 @@ def probe_media(path):
 
 
 def video_paths():
-    """Discover all video files in MEDIA_ROOT with a 30-second in-memory cache and immediate change detection."""
+    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
     global _paths
     if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
         app_paths = sys.modules['app']._paths
         if app_paths != _paths:
             _paths = app_paths
 
-    current = (
-        sorted((p for p in config.MEDIA_ROOT.rglob('*') if is_video(p)), key=lambda p: str(getattr(p, 'name', p)).lower())
-        if config.MEDIA_ROOT.exists()
-        else []
-    )
+    roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+    discovered = []
+    seen = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for p in root.rglob('*'):
+            if any(part.startswith('.uploads') for part in p.parts):
+                continue
+            if is_video(p):
+                rel_key = p.name.lower()
+                if rel_key not in seen:
+                    seen.add(rel_key)
+                    discovered.append(p)
+
+    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
     if (
         time.monotonic() - _paths[0] > 30
         or len(current) != len(_paths[1])
@@ -71,20 +82,27 @@ def poster_for(path, row):
     if db_poster and not str(db_poster).startswith('tmdb:'):
         p = Path(db_poster)
         if p.exists():
-            return f"local:{p.relative_to(config.MEDIA_ROOT).as_posix()}"
+            return f"local:{get_rel_path(p)}"
         return None
     for ext in config.POSTER_EXTENSIONS:
         p = path.with_suffix(ext)
         if p.is_file():
-            return f"local:{p.relative_to(config.MEDIA_ROOT).as_posix()}"
+            return f"local:{get_rel_path(p)}"
     return None
 
 
 def movie(path, db):
     """Build movie metadata dictionary for a video path combining database and filesystem data."""
-    name = path.relative_to(config.MEDIA_ROOT).as_posix()
+    name = get_rel_path(path)
+
     meta = db.execute("SELECT * FROM movies WHERE filename=?", (name,)).fetchone()
+    if not meta and path.name != name:
+        meta = db.execute("SELECT * FROM movies WHERE filename=?", (path.name,)).fetchone()
+
     progress = db.execute("SELECT * FROM progress WHERE filename=?", (name,)).fetchone()
+    if not progress and path.name != name:
+        progress = db.execute("SELECT * FROM progress WHERE filename=?", (path.name,)).fetchone()
+
     pos = value(progress, 'position', 0)
     dur = value(progress, 'duration', 0)
     p = poster_for(path, meta) or (
@@ -109,7 +127,8 @@ def movie(path, db):
         percent=min(100, pos / dur * 100) if dur else 0,
         updated_at=value(progress, 'updated_at', ''),
         backdrop_path=value(meta, 'backdrop_path', ''),
-        details_json=value(meta, 'details_json', '')
+        details_json=value(meta, 'details_json', ''),
+        last_metadata_refresh=value(meta, 'last_metadata_refresh')
     )
 
 
@@ -229,10 +248,7 @@ def purge_media(filename):
     except Exception:
         path = config.MEDIA_ROOT / filename
 
-    try:
-        rel_filename = path.relative_to(config.MEDIA_ROOT).as_posix()
-    except ValueError:
-        rel_filename = str(filename)
+    rel_filename = get_rel_path(path)
 
     db = get_db()
     movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
@@ -269,6 +285,16 @@ def purge_media(filename):
     # 3. Purge subtitle caches
     from app.services.subtitles_service import purge_subtitles_for_media
     purged_subs = purge_subtitles_for_media(path)
+
+    # 3b. Purge seek preview thumbnail cache
+    try:
+        from app.services.preview_service import preview_dir
+        import shutil
+        p_dir = preview_dir(path)
+        if p_dir.exists():
+            shutil.rmtree(p_dir, ignore_errors=True)
+    except Exception:
+        pass
 
     # 4. Purge TMDb posters and backdrops if not referenced by other items
     purged_posters = []
@@ -427,6 +453,7 @@ def get_managed_media_items():
             'size_str': size_str,
             'container': suffix,
             'is_mkv': is_mkv,
+            'hls_cached': hls_cached,
             'stream_status': stream_status,
             'progress_percent': m.get('percent', 0),
             'mtime': st.st_mtime if st else 0

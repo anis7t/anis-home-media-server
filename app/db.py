@@ -37,7 +37,12 @@ def init_db():
         "updated_at INTEGER)"
     )
     columns = {r['name'] for r in db.execute("PRAGMA table_info(movies)")}
-    for name, spec in (("release_date", "TEXT"), ("added_at", "INTEGER"), ("details_json", "TEXT")):
+    for name, spec in (
+        ("release_date", "TEXT"),
+        ("added_at", "INTEGER"),
+        ("details_json", "TEXT"),
+        ("last_metadata_refresh", "INTEGER"),
+    ):
         if name not in columns:
             db.execute(f"ALTER TABLE movies ADD COLUMN {name} {spec}")
     db.execute(
@@ -85,6 +90,12 @@ def init_db():
         "country TEXT,"
         "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
     )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS settings("
+        "key TEXT PRIMARY KEY,"
+        "value TEXT NOT NULL,"
+        "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_dwh_device ON device_watch_history(device_id, last_watched DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON progress(updated_at DESC)")
@@ -102,4 +113,28 @@ def value(row, key, default=None):
     if isinstance(row, dict):
         return row.get(key, default)
     return default
+
+
+def get_setting(key, default=None):
+    """Retrieve an application setting value from the SQLite settings table."""
+    db = get_db()
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return value(row, 'value', default)
+    finally:
+        db.close()
+
+
+def set_setting(key, val):
+    """Insert or update an application setting value in the SQLite settings table."""
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP",
+            (key, str(val))
+        )
+        db.commit()
+    finally:
+        db.close()
 

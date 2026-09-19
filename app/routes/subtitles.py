@@ -15,12 +15,36 @@ from app.utils.subtitles import srt_to_vtt
 subtitles_bp = Blueprint('subtitles', __name__)
 
 
-@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')
+@subtitles_bp.route('/subtitles/<path:filename>/<name>')
 def subtitle(filename, name):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
     video = safe_path(filename)
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
     sub = (video.parent / name).resolve()
-    if not is_video(video) or sub.parent != video.parent or not sub.is_file() or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
+    if not sub.is_file():
+        from pathlib import Path
+        for r in roots:
+            try:
+                rel = video.parent.resolve().relative_to(r.resolve())
+                clean_parts = [part for part in rel.parts if part != '.archive']
+                clean_rel = Path(*clean_parts) if clean_parts else Path('.')
+                for other_root in roots:
+                    cand = (other_root / clean_rel / name).resolve()
+                    if cand.is_file():
+                        sub = cand
+                        break
+                if sub.is_file():
+                    break
+            except Exception:
+                pass
+    if not sub.is_file():
+        for r in roots:
+            cand = (r / name).resolve()
+            if cand.is_file():
+                sub = cand
+                break
+    is_authorized = any(sub == r or r in sub.parents for r in roots)
+    if not is_video(video) or not sub.is_file() or not is_authorized or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
         abort(404)
     text = sub.read_text(encoding='utf-8-sig', errors='replace')
     return Response(srt_to_vtt(text), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})

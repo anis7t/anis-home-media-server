@@ -1,23 +1,22 @@
-# Dynamic Multi-GPU Chunked Transcoding Proposal
+# Dynamic Multi-GPU Chunked Transcoding Architecture
 
-Status: **Architecture proposal / investigation only — not implemented**
+Status: **Implemented & Operational** (via `app/services/chunk_transcode_service.py` and `app/services/gpu_service.py`)
 
-Related: GitHub Issue #8 — **Investigate simultaneous use of RTX 560X and AMD Radeon Vega 8 for transcoding**
+Related: GitHub Issue #8 — **Simultaneous use of AMD Radeon RX 560X and AMD Radeon Vega 8 for transcoding**
 
 ## 1. Purpose
 
 The current Windows test host has two graphics adapters:
 
-- NVIDIA/AMD discrete adapter reported by the project as the **RTX 560X** / Radeon RX 560X discrete GPU path, depending on the host naming and telemetry source.
-- **AMD Radeon Vega 8** integrated graphics.
+- **AMD Radeon RX 560X** discrete GPU (Task Manager GPU 0 / FFmpeg `dx11:1`).
+- **AMD Radeon Vega 8** integrated GPU (Task Manager GPU 1 / FFmpeg `dx11:0`).
 
-During heavy transcoding, the discrete GPU can approach ~97% utilization while the Vega 8 remains nearly idle.
+During heavy transcoding, distributing the workload across both GPUs provides higher aggregate transcoding throughput and reduces CPU utilization.
 
-This proposal investigates a design in which the server does **not** try to make two GPUs encode the same frame. Instead, the server treats each capable GPU as an independent transcoding worker and dynamically distributes **larger sequential chunks of the same movie** between them.
+The server does **not** try to make two GPUs encode the same frame. Instead, the server treats each capable GPU as an independent transcoding worker and dynamically distributes **larger sequential chunks of the same movie** between them.
 
-The goal is to increase aggregate transcoding throughput while preserving correct HLS playback, timestamps, audio synchronization, resume behavior, and platform compatibility.
+The dynamic chunk scheduler preserves correct HLS playback, timestamps, audio synchronization, resume behavior, and platform compatibility.
 
-> This document is intentionally a design proposal. Future coding agents MUST NOT implement it merely because it is documented here. Device capability detection and benchmarks must establish that the design is actually beneficial on the target hardware/OS first.
 
 ---
 

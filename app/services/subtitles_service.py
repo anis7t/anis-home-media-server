@@ -16,7 +16,7 @@ from app import config
 from app.db import get_db
 from app.services.media_service import movie, probe_media
 from app.utils.filesystem import is_video
-from app.utils.subtitles import compute_opensubtitles_hash, srt_to_vtt
+from app.utils.subtitles import compute_opensubtitles_hash, detect_subtitle_language, srt_to_vtt
 
 
 def extract_embedded_subtitle(path, stream_idx):
@@ -172,10 +172,9 @@ def tracks(path, movie_meta=None):
     """Catalog local directory subtitles, embedded tracks, and online fallbacks for a media file."""
     result = []
     found_english = False
-    try:
-        rel_filename = path.relative_to(config.MEDIA_ROOT).as_posix()
-    except Exception:
-        rel_filename = path.name
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    from app.utils.filesystem import get_rel_path
+    rel_filename = get_rel_path(path)
 
     if movie_meta is None:
         try:
@@ -186,24 +185,59 @@ def tracks(path, movie_meta=None):
             pass
 
     # 1. Directory subtitles
-    if path.parent.exists():
-        for sub in sorted(path.parent.iterdir()):
-            if sub.is_file() and sub.suffix.lower() in config.SUBTITLE_EXTENSIONS:
+    from app.utils.subtitles import get_short_movie_name
+    short_name = get_short_movie_name(path)
+    search_dirs = [path.parent]
+    for r in roots:
+        if r.exists() and r not in search_dirs:
+            search_dirs.append(r)
+
+    # Mirror directories in other roots (handles archived media with sidecars in original root)
+    for r in roots:
+        try:
+            rel = path.parent.resolve().relative_to(r.resolve())
+            clean_parts = [part for part in rel.parts if part != '.archive']
+            clean_rel = Path(*clean_parts) if clean_parts else Path('.')
+            for other_root in roots:
+                mirror = (other_root / clean_rel).resolve()
+                if mirror.exists() and mirror not in search_dirs:
+                    search_dirs.append(mirror)
+        except Exception:
+            pass
+
+    seen_sub_names = set()
+    for sdir in search_dirs:
+        if not sdir.exists():
+            continue
+        for sub in sorted(sdir.iterdir()):
+            if sub.is_file() and sub.suffix.lower() in config.SUBTITLE_EXTENSIONS and sub.name not in seen_sub_names:
+                seen_sub_names.add(sub.name)
+                is_short_match = bool(short_name and sub.stem.lower().startswith(f"{short_name}_"))
                 is_match = (
                     sub.stem == path.stem
                     or sub.stem.startswith(path.stem + '.')
-                    or len(list(p for p in path.parent.iterdir() if is_video(p))) == 1
+                    or is_short_match
+                    or (sdir == path.parent and len(list(p for p in path.parent.iterdir() if is_video(p))) == 1)
                 )
                 if is_match:
-                    code = (
-                        sub.stem[len(path.stem):].strip('.').split('.')[0].lower()
-                        if sub.stem.startswith(path.stem)
-                        else ''
-                    )
-                    lang_names = {'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French', 'de': 'German'}
+                    code = ''
+                    if sub.stem.startswith(path.stem):
+                        code = sub.stem[len(path.stem):].strip('.').split('.')[0].lower()
+                    elif is_short_match:
+                        parts = sub.stem.lower().split('_')
+                        if len(parts) >= 3:
+                            code = parts[-2]
+                    lang_names = {
+                        'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French',
+                        'de': 'German', 'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',
+                        'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'ar': 'Arabic', 'bn': 'Bengali'
+                    }
                     is_eng = ('eng' in sub.stem.lower() or 'english' in sub.stem.lower() or code in {'en', 'eng'})
                     detected_lang = 'en' if is_eng else (code or 'und')
-                    if detected_lang == 'en':
+                    if detected_lang == 'und':
+                        detected_lang = detect_subtitle_language(sub)
+                    if detected_lang in {'en', 'eng'}:
+                        detected_lang = 'en'
                         found_english = True
                     label = lang_names.get(detected_lang, detected_lang.upper() if detected_lang != 'und' else 'Subtitles')
                     try:

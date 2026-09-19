@@ -151,6 +151,46 @@ class ManageAndPurgeTests(unittest.TestCase):
         self.assertTrue(res2.get_json().get('success'))
         self.assertFalse(movie_file2.exists())
 
+    def test_purge_media_active_dual_gpu_transcode(self):
+        movie_name = "ActiveDualGpuPurge.2026.mkv"
+        movie_file = self.media_root / movie_name
+        movie_file.write_bytes(b"active transcode movie contents")
+
+        db = get_db()
+        db.execute("INSERT OR REPLACE INTO movies (filename, title, year) VALUES (?, ?, ?)",
+                   (movie_name, "Active Transcode Movie", 2026))
+        db.commit()
+        db.close()
+
+        hls_dir = app.config.CACHE_DIR / "hls" / movie_file.stem
+        hls_dir.mkdir(parents=True, exist_ok=True)
+        (hls_dir / "playlist.m3u8").write_text("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n")
+        (hls_dir / "segment_000000.ts").write_bytes(b"TS_0")
+
+        from unittest.mock import MagicMock
+        from app.services.chunk_transcode_service import DualGPUTranscodeJob
+        job = DualGPUTranscodeJob(movie_name, movie_file, hls_dir, hls_dir / "playlist.m3u8")
+        
+        mock_proc1 = MagicMock()
+        mock_proc1.pid = 8811
+        mock_proc1.poll.return_value = None
+        mock_proc2 = MagicMock()
+        mock_proc2.pid = 8822
+        mock_proc2.poll.return_value = None
+
+        job._active_procs.add(mock_proc1)
+        job._active_procs.add(mock_proc2)
+        app.config.HLS_PROCESSES[movie_name] = job
+
+        result = purge_media(movie_name)
+        self.assertTrue(result['success'])
+        self.assertTrue(result['file_deleted'])
+        self.assertTrue(job._cancelled.is_set())
+        mock_proc1.terminate.assert_called_once()
+        mock_proc2.terminate.assert_called_once()
+        self.assertFalse(movie_file.exists())
+        self.assertFalse(hls_dir.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -16,9 +16,31 @@ from flask import current_app, url_for
 from app import config
 from app.db import get_db
 from app.services.media_service import probe_media, video_paths
-from app.utils.filesystem import is_video, safe_path
+from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 logger = logging.getLogger(__name__)
+
+
+def is_pid_alive(pid):
+    """Safely check if a process is still running without sending signals."""
+    if not pid or pid <= 0:
+        return False
+    if sys.platform == 'win32':
+        import ctypes
+        SYNCHRONIZE = 0x00100000
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, int(pid))
+        if not handle:
+            return False
+        exit_code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return exit_code.value == 259  # STILL_ACTIVE = 259
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 class ProcessProxy:
@@ -28,11 +50,9 @@ class ProcessProxy:
         self.hls_dir = hls_dir
 
     def poll(self):
-        try:
-            os.kill(self.pid, 0)
+        if is_pid_alive(self.pid):
             return None
-        except OSError:
-            return 0
+        return 0
 
     def wait(self, timeout=None):
         deadline = time.time() + (timeout if timeout is not None else 86400)
@@ -63,11 +83,99 @@ def transcode_progress_path(path, mode='direct'):
     return transcode_cache_path(path, mode).with_suffix('.progress')
 
 
-def hls_cache_dir(path):
-    """Generate deterministic directory path for HLS chunks and playlist."""
+def get_hls_candidates(path):
+    """Return all valid candidate HLS cache directory names for a given video path across drive roots."""
     path = Path(path)
-    key = hashlib.sha256(f'hls:{path}:{path.stat().st_size}:{path.stat().st_mtime_ns}'.encode()).hexdigest()
-    return get_cache_dir() / 'hls' / key
+    candidates = set()
+    try:
+        st = path.stat()
+        candidates.add(hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+    except OSError:
+        st = None
+
+    roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
+    sorted_roots = sorted(roots, key=lambda r: len(str(r)), reverse=True)
+    rel = None
+    for r in sorted_roots:
+        try:
+            rel = path.relative_to(r)
+            break
+        except ValueError:
+            pass
+
+    rel_clean = None
+    if rel:
+        clean_parts = [p for p in rel.parts if p != '.archive']
+        if clean_parts:
+            rel_clean = Path(*clean_parts)
+
+    if st is not None:
+        for root in roots:
+            candidates.add(hashlib.sha256(f'hls:{root / path.name}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+            if rel:
+                candidates.add(hashlib.sha256(f'hls:{root / rel}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+            if rel_clean:
+                candidates.add(hashlib.sha256(f'hls:{root / rel_clean}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+                candidates.add(hashlib.sha256(f'hls:{root / ".archive" / rel_clean}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest())
+
+    size = st.st_size if st else 0
+    candidates.add(hashlib.sha256(f'hls:{path.name}:{size}'.encode()).hexdigest())
+    return candidates
+
+
+def hls_cache_dir(path):
+    """Generate deterministic directory path for HLS chunks and playlist across drive roots.
+
+    If multiple candidate directories exist, prioritizes:
+    1. Fully completed playlist containing #EXT-X-ENDLIST.
+    2. In-progress directory with the highest segment/chunk progress to resume.
+    3. Primary directory for the direct file path.
+    """
+    path = Path(path)
+    cache_base = get_cache_dir() / 'hls'
+
+    try:
+        st = path.stat()
+        primary_key = hashlib.sha256(f'hls:{path}:{st.st_size}:{st.st_mtime_ns}'.encode()).hexdigest()
+    except OSError:
+        st = None
+        primary_key = hashlib.sha256(f'hls:{path.name}:0'.encode()).hexdigest()
+    primary_dir = cache_base / primary_key
+
+    candidates = get_hls_candidates(path)
+    existing_dirs = [cache_base / cand for cand in candidates if (cache_base / cand).is_dir()]
+
+    if not existing_dirs:
+        return primary_dir
+
+    # 1. Prefer fully completed playlist
+    for d in existing_dirs:
+        pl = d / 'playlist.m3u8'
+        if pl.is_file():
+            try:
+                txt = pl.read_text(errors='replace')
+                if '#EXT-X-ENDLIST' in txt:
+                    return d
+            except OSError:
+                pass
+
+    # 2. Prefer directory with most progress (segments / chunks)
+    best_dir = None
+    max_progress = -1
+    for d in existing_dirs:
+        seg_count = len(list(d.glob('*.ts')))
+        chunk_count = len(list(d.glob('chunk_*.m3u8')))
+        prog = seg_count + (chunk_count * 15)
+        if prog > max_progress:
+            max_progress = prog
+            best_dir = d
+
+    if best_dir and max_progress > 0:
+        return best_dir
+
+    if primary_dir in existing_dirs:
+        return primary_dir
+    return existing_dirs[0]
 
 
 def needs_transcode(path):
@@ -75,19 +183,23 @@ def needs_transcode(path):
     return Path(path).suffix.lower() not in {'.mp4', '.m4v', '.webm'}
 
 
-def compat_transcode_args(vaapi_available=False):
+def compat_transcode_args(vaapi_available=False, amf_available=False):
     """Return FFmpeg video filter and encoder arguments for compatibility transcode."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
+    if amf_available:
+        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p']
 
 
-def hls_transcode_args(vaapi_available=False):
+def hls_transcode_args(vaapi_available=False, amf_available=False):
     """Return FFmpeg video filter and encoder arguments for HLS transcoding."""
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
+    if amf_available:
+        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1']
@@ -123,8 +235,283 @@ def cleanup_cache():
 
 
 def cleanup_cache_on_startup():
-    """Clean orphaned part files and enforce cache size cap on server start."""
+    """Clean orphaned part files, purge orphaned HLS/preview directories, and enforce cache size cap on server start."""
     cleanup_cache()
+    try:
+        purge_orphaned_caches()
+    except Exception as e:
+        logger.warning("Startup orphaned cache purge error: %s", e)
+
+
+def audit_orphaned_caches():
+    """Audit HLS, preview, and transcode caches against active database/filesystem media.
+
+    Returns a comprehensive audit report detailing:
+    - orphaned_hls: list of dicts for unreferenced HLS directories
+    - orphaned_previews: list of dicts for unreferenced preview directories
+    - active_hls: list of dicts for active HLS directories
+    - active_previews: list of dicts for active preview directories
+    - total_orphaned_bytes: sum of orphaned bytes
+    - total_orphaned_dirs: count of orphaned directories
+    - total_active_bytes: sum of active cache bytes
+    """
+    from app.services.preview_service import preview_dir
+
+    cache_dir = get_cache_dir()
+    hls_base = cache_dir / 'hls'
+    previews_base = cache_dir / 'previews'
+
+    # Gather active cache directories from currently known video files
+    try:
+        active_videos = video_paths()
+    except Exception:
+        active_videos = []
+
+    active_hls_map = {}       # dir_name -> source Path
+    active_preview_map = {}   # dir_name -> source Path
+
+    for p in active_videos:
+        try:
+            p_obj = Path(p)
+            if p_obj.is_file():
+                hd = hls_cache_dir(p_obj)
+                active_hls_map[hd.name] = p_obj
+                pd = preview_dir(p_obj)
+                active_preview_map[pd.name] = p_obj
+        except Exception:
+            continue
+
+    # Check if any in-flight transcode job has an active hls_dir
+    active_job_hls_names = set()
+    for job in list(config.HLS_PROCESSES.values()):
+        hd = getattr(job, 'hls_dir', None)
+        if hd:
+            active_job_hls_names.add(Path(hd).name)
+
+    # 1. Audit HLS cache directories
+    orphaned_hls = []
+    active_hls = []
+    if hls_base.is_dir():
+        for d in hls_base.iterdir():
+            if not d.is_dir():
+                continue
+            dir_name = d.name
+            size = 0
+            count = 0
+            mtime = 0
+            try:
+                st = d.stat()
+                mtime = st.st_mtime
+                for f in d.iterdir():
+                    if f.is_file():
+                        size += f.stat().st_size
+                        count += 1
+            except OSError:
+                pass
+
+            is_active = (dir_name in active_hls_map) or (dir_name in active_job_hls_names)
+            item = {
+                'name': dir_name,
+                'path': str(d),
+                'size_bytes': size,
+                'file_count': count,
+                'mtime': mtime,
+                'source_file': str(active_hls_map[dir_name].name) if dir_name in active_hls_map else None,
+            }
+
+            if is_active:
+                active_hls.append(item)
+            else:
+                orphaned_hls.append(item)
+
+    # 2. Audit Previews cache directories
+    orphaned_previews = []
+    active_previews = []
+    if previews_base.is_dir():
+        for d in previews_base.iterdir():
+            if not d.is_dir():
+                continue
+            dir_name = d.name
+            size = 0
+            count = 0
+            mtime = 0
+            try:
+                st = d.stat()
+                mtime = st.st_mtime
+                for f in d.iterdir():
+                    if f.is_file():
+                        size += f.stat().st_size
+                        count += 1
+            except OSError:
+                pass
+
+            is_active = dir_name in active_preview_map
+            item = {
+                'name': dir_name,
+                'path': str(d),
+                'size_bytes': size,
+                'file_count': count,
+                'mtime': mtime,
+                'source_file': str(active_preview_map[dir_name].name) if dir_name in active_preview_map else None,
+            }
+
+            if is_active:
+                active_previews.append(item)
+            else:
+                orphaned_previews.append(item)
+
+    total_orphaned_bytes = sum(i['size_bytes'] for i in orphaned_hls) + sum(i['size_bytes'] for i in orphaned_previews)
+    total_active_bytes = sum(i['size_bytes'] for i in active_hls) + sum(i['size_bytes'] for i in active_previews)
+
+    return {
+        'orphaned_hls': orphaned_hls,
+        'orphaned_previews': orphaned_previews,
+        'active_hls': active_hls,
+        'active_previews': active_previews,
+        'total_orphaned_bytes': total_orphaned_bytes,
+        'total_orphaned_dirs': len(orphaned_hls) + len(orphaned_previews),
+        'total_active_bytes': total_active_bytes,
+        'total_active_dirs': len(active_hls) + len(active_previews),
+    }
+
+
+def purge_orphaned_caches(dry_run=False):
+    """Purge all verified orphaned HLS and preview cache directories.
+
+    Uses _remove_path_with_retries to ensure Windows file locks are handled safely.
+    Returns dict with freed_bytes, purged_dirs, failed_dirs, dry_run.
+    """
+    audit = audit_orphaned_caches()
+    orphans = audit['orphaned_hls'] + audit['orphaned_previews']
+
+    freed_bytes = 0
+    purged_dirs = []
+    failed_dirs = []
+
+    for item in orphans:
+        target = Path(item['path'])
+        if dry_run:
+            purged_dirs.append(item['path'])
+            freed_bytes += item['size_bytes']
+            continue
+
+        success, remaining = _remove_path_with_retries(target)
+        if success:
+            purged_dirs.append(item['path'])
+            freed_bytes += item['size_bytes']
+            logger.info("Purged orphaned cache directory: %s (%d bytes)", target, item['size_bytes'])
+        else:
+            failed_dirs.append({'path': item['path'], 'remaining': remaining})
+            logger.warning("Failed to purge orphaned directory: %s", target)
+
+    return {
+        'freed_bytes': freed_bytes,
+        'purged_count': len(purged_dirs),
+        'purged_dirs': purged_dirs,
+        'failed_count': len(failed_dirs),
+        'failed_dirs': failed_dirs,
+        'dry_run': dry_run,
+    }
+
+
+def apply_post_transcode_policy(path, policy=None):
+    """Apply post-transcode retention policy to a media file whose transcode is verified 100% complete.
+
+    Supported policies:
+    - 'keep' (default): Retain original source file and HLS cache.
+    - 'archive': Move original source file to ARCHIVE_DIR preserving relative subdirectories.
+    - 'purge_cache': Purge HLS cache to save SSD space, keeping original source.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return {'status': 'error', 'message': f'Source file {path} not found'}
+
+    hls_dir = hls_cache_dir(path)
+    pl_file = hls_dir / 'playlist.m3u8'
+    if not _is_hls_truly_complete(pl_file, path):
+        return {'status': 'incomplete', 'message': 'Transcode is not yet 100% complete'}
+
+    from app.db import get_setting
+    if not policy:
+        policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
+    policy = (policy or 'keep').lower()
+
+    if policy == 'archive':
+        archive_base = config.ARCHIVE_DIR
+        archive_base.mkdir(parents=True, exist_ok=True)
+
+        # Do not re-archive files already residing within the archive tree
+        try:
+            if archive_base.resolve() in path.resolve().parents or path.resolve() == archive_base.resolve():
+                logger.info("File %s is already in archive directory; skipping redundant archive move", path)
+                return {
+                    'status': 'archived',
+                    'policy': 'archive',
+                    'source': str(path),
+                    'archived_to': str(path),
+                }
+        except Exception:
+            pass
+
+        rel = Path(get_rel_path(path))
+        clean_parts = [p for p in rel.parts if p != '.archive']
+        rel = Path(*clean_parts) if clean_parts else Path(path.name)
+        target_path = archive_base / rel
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if path.resolve() != target_path.resolve():
+                target_path.unlink(missing_ok=True)
+                shutil.move(str(path), str(target_path))
+                logger.info("Post-transcode policy 'archive': Moved %s -> %s", path, target_path)
+
+            import app.services.media_service as media_service
+            media_service._paths = (0, [])
+            if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
+                sys.modules['app']._paths = (0, [])
+
+            return {
+                'status': 'archived',
+                'policy': 'archive',
+                'source': str(path),
+                'archived_to': str(target_path),
+            }
+        except Exception as e:
+            logger.error("Failed to archive source %s: %s", path, e)
+            return {'status': 'error', 'message': str(e)}
+
+    elif policy in ('delete_source', 'delete_raw', 'delete_original'):
+        try:
+            # Truncate source file to 0 bytes so 100% disk space is reclaimed,
+            # while keeping the file record intact in the library so scanners,
+            # routes, and active HLS cache map continue functioning with zero errors.
+            with open(path, 'wb') as f:
+                pass
+            logger.info("Post-transcode policy 'delete_source': Truncated original file %s to 0 bytes (reclaimed disk space, preserved HLS)", path)
+            return {
+                'status': 'source_deleted',
+                'policy': 'delete_source',
+                'source': str(path),
+            }
+        except Exception as e:
+            logger.error("Failed to delete/truncate source %s: %s", path, e)
+            return {'status': 'error', 'message': str(e)}
+
+    elif policy == 'purge_cache':
+        res = purge_transcode_caches_for_media(path)
+        logger.info("Post-transcode policy 'purge_cache': Purged HLS cache for %s", path)
+        return {
+            'status': 'cache_purged',
+            'policy': 'purge_cache',
+            'source': str(path),
+            'purged': res,
+        }
+
+    return {
+        'status': 'kept',
+        'policy': 'keep',
+        'source': str(path),
+    }
 
 
 def find_ffmpeg_info_for_path(path):
@@ -288,9 +675,6 @@ def ensure_hls_transcode(filename):
             directory.mkdir(parents=True, exist_ok=True)
             resume_time, start_seg = _hls_resume_point(directory, playlist)
             resuming = resume_time > 0.0 and start_seg > 0
-            if not resuming and directory.is_dir():
-                for f in directory.glob('*'):
-                    f.unlink(missing_ok=True)
             if resuming and playlist.is_file():
                 pl_text = playlist.read_text(errors='replace')
                 pl_text = pl_text.replace('#EXT-X-ENDLIST', '').rstrip() + '\n'
@@ -301,11 +685,44 @@ def ensure_hls_transcode(filename):
                     pass
             streams = probe_media(path).get('streams', [])
             video = next((s for s in streams if s.get('codec_type') == 'video'), {})
+            amf = config.is_amf_enabled()
             vaapi = config.is_vaapi_enabled()
-            if vaapi:
+
+            # Dynamic Multi-GPU chunked transcoding path
+            try:
+                from app.services.gpu_service import is_dual_gpu_enabled
+                from app.services.chunk_transcode_service import start_dual_gpu_transcode
+                if (
+                    amf
+                    and is_dual_gpu_enabled()
+                    and 'pytest' not in sys.modules
+                    and not (
+                        video.get('codec_name') == 'h264'
+                        and (video.get('height') or 0) <= 1088
+                        and (video.get('width') or 0) <= 1920
+                        and video.get('pix_fmt', 'yuv420p') in {'yuv420p', 'yuvj420p'}
+                    )
+                ):
+                    job = start_dual_gpu_transcode(filename, path, directory, playlist)
+                    config.HLS_PROCESSES[filename] = job
+                    return job
+            except Exception as e:
+                logger.warning(f"Failed to initiate dual-GPU transcode for {filename}: {e}; falling back to single GPU.")
+
+            if amf:
+                adapter = os.environ.get("MEDIA_SERVER_AMF_ADAPTER", "1")
+                input_args = [
+                    '-init_hw_device', f'd3d11va=dx11:{adapter}',
+                    '-init_hw_device', 'amf=amf@dx11',
+                    '-filter_hw_device', 'amf',
+                    '-hwaccel', 'd3d11va',
+                    '-hwaccel_device', str(adapter)
+                ]
+                video_args = hls_transcode_args(amf_available=True)
+            elif vaapi:
                 dev = os.environ.get("MEDIA_SERVER_VAAPI_DEVICE", "/dev/dri/renderD128")
                 input_args = ['-vaapi_device', dev, '-hwaccel', 'vaapi', '-hwaccel_device', dev]
-                video_args = hls_transcode_args(True)
+                video_args = hls_transcode_args(vaapi_available=True)
             elif (
                 video.get('codec_name') == 'h264'
                 and (video.get('height') or 0) <= 1088
@@ -439,6 +856,16 @@ def get_active_transcodes():
             speed = float(values.get('speed', '0x').rstrip('x'))
         except (TypeError, ValueError):
             speed = 0
+
+        if speed <= 0 and encoded > 0 and playlist_file and playlist_file.is_file():
+            try:
+                first_seg = playlist_file.parent / "segment_000000.ts"
+                ref_time = first_seg.stat().st_mtime if first_seg.is_file() else playlist_file.parent.stat().st_ctime
+                elapsed = max(1.0, time.time() - ref_time)
+                speed = round(encoded / elapsed, 2)
+            except Exception:
+                pass
+
         percent = min(99.9, round(encoded / duration * 100, 1)) if duration > 0 else 0
         remaining = max(0, (duration - encoded) / speed) if speed > 0 else None
 
@@ -462,16 +889,12 @@ def get_active_transcodes():
     for p in video_paths():
         if not is_video(p) or not needs_transcode(p):
             continue
-        try:
-            rel = p.relative_to(config.MEDIA_ROOT).as_posix()
-        except ValueError:
-            continue
+        rel = get_rel_path(p)
         if rel not in config.HLS_PROCESSES or config.HLS_PROCESSES[rel].poll() is not None:
             pid, hls_dir = find_ffmpeg_info_for_path(p)
             if pid:
                 config.HLS_PROCESSES[rel] = ProcessProxy(pid, hls_dir=hls_dir)
 
-    # 1. Running HLS processes
     for fn, proc in list(config.HLS_PROCESSES.items()):
         if proc is not None and proc.poll() is None:
             try:
@@ -519,7 +942,6 @@ def get_active_transcodes():
             except Exception:
                 pass
 
-    # 2. Active direct/compat MP4 transcodes
     for lock_key, item in list(config.ACTIVE_DIRECT_TRANSCODES.items()):
         fn = item.get('filename')
         if fn and fn not in seen:
@@ -564,8 +986,39 @@ def get_active_transcodes():
     return results
 
 
+def _pid_is_running(pid):
+    return is_pid_alive(pid)
+
+
+def _wait_for_pid_exit(pid, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _pid_is_running(pid):
+            return True
+        time.sleep(0.1)
+    return not _pid_is_running(pid)
+
+
+def _terminate_pid(pid):
+    if not pid or pid == os.getpid() or not _pid_is_running(pid):
+        return True
+    try:
+        if os.name == 'nt':
+            subprocess.run(
+                ['taskkill', '/PID', str(pid), '/T', '/F'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return _wait_for_pid_exit(pid, timeout=5.0)
+
+
 def stop_transcodes_for_media(filename, path=None):
-    """Terminate and kill any active FFmpeg transcode processes associated with this media."""
+    """Terminate active FFmpeg transcodes associated with this media and verify exit."""
     stopped_pids = []
     rel_name = str(filename)
     if path is None:
@@ -574,33 +1027,32 @@ def stop_transcodes_for_media(filename, path=None):
         except Exception:
             path = None
 
-    # 1. Check in config.HLS_PROCESSES
     proc = config.HLS_PROCESSES.pop(rel_name, None)
     if proc is not None:
-        try:
+        if hasattr(proc, 'get_active_pids'):
+            for p_id in proc.get_active_pids():
+                if p_id and p_id not in stopped_pids:
+                    stopped_pids.append(p_id)
+        else:
             pid = getattr(proc, 'pid', None)
-            if pid:
+            if pid and pid not in stopped_pids:
                 stopped_pids.append(pid)
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                except OSError:
-                    pass
+        try:
             if hasattr(proc, 'terminate'):
                 proc.terminate()
+            elif hasattr(proc, 'kill'):
+                proc.kill()
+            elif pid:
+                _terminate_pid(pid)
         except Exception as e:
-            logger.warning(f"Error terminating HLS process for {rel_name}: {e}")
+            logger.warning("Error terminating HLS process for %s: %s", rel_name, e)
 
-    # 2. Check for running external FFmpeg processes via /proc
     if path is not None:
-        pid, hls_dir = find_ffmpeg_info_for_path(path)
+        pid, _ = find_ffmpeg_info_for_path(path)
         if pid and pid not in stopped_pids:
             stopped_pids.append(pid)
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
-                pass
+            _terminate_pid(pid)
 
-    # 3. Direct/compat MP4 transcodes
     for lock_key, item in list(config.ACTIVE_DIRECT_TRANSCODES.items()):
         if item.get('filename') == rel_name or (path is not None and str(item.get('path')) == str(path)):
             p = item.get('process')
@@ -609,72 +1061,107 @@ def stop_transcodes_for_media(filename, path=None):
                 if pid and pid not in stopped_pids:
                     stopped_pids.append(pid)
                 try:
-                    p.terminate()
+                    if hasattr(p, 'terminate'):
+                        p.terminate()
+                    if pid:
+                        _wait_for_pid_exit(pid, timeout=5.0)
                 except Exception:
                     pass
             config.ACTIVE_DIRECT_TRANSCODES.pop(lock_key, None)
 
-    # 4. Clean up any locks
     config.TRANSCODE_LOCKS.pop(rel_name, None)
     config.TRANSCODE_LOCKS.pop(f"{rel_name}:direct", None)
     config.TRANSCODE_LOCKS.pop(f"{rel_name}:compat", None)
 
-    # 5. Grace period then SIGKILL if still running
-    if stopped_pids:
-        time.sleep(0.3)
-        for pid in stopped_pids:
-            try:
-                os.kill(pid, 0)
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
+    for pid in stopped_pids:
+        if _pid_is_running(pid):
+            _terminate_pid(pid)
+    for pid in stopped_pids:
+        _wait_for_pid_exit(pid, timeout=5.0)
 
     return stopped_pids
 
 
-def purge_transcode_caches_for_media(path, known_hls_dir=None):
-    """Purge all HLS chunks, playlists, and transcoded MP4 files for the media path."""
-    purged = {'hls_dirs': [], 'mp4_files': []}
-
-    # 1. Purge known or calculated HLS directories
-    target_hls_dirs = []
-    if known_hls_dir and Path(known_hls_dir).is_dir():
-        target_hls_dirs.append(Path(known_hls_dir))
-
-    if path is not None and Path(path).exists():
+def _remove_path_with_retries(path, attempts=8, initial_delay=0.15):
+    """Remove a file/tree with bounded retries for transient Windows file locks."""
+    path = Path(path)
+    if not path.exists():
+        return True, []
+    last_error = None
+    for attempt in range(attempts):
         try:
-            calc_dir = hls_cache_dir(path)
-            if calc_dir.is_dir() and calc_dir not in target_hls_dirs:
-                target_hls_dirs.append(calc_dir)
-        except Exception:
-            pass
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            if not path.exists():
+                return True, []
+        except FileNotFoundError:
+            return True, []
+        except (PermissionError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(initial_delay * (attempt + 1))
+    remaining = []
+    if path.exists():
+        if path.is_dir():
+            try:
+                remaining = [str(p) for p in path.rglob('*') if p.exists()]
+            except OSError:
+                remaining = [str(path)]
+        else:
+            remaining = [str(path)]
+    if last_error:
+        logger.warning("Failed to remove %s after %d attempts: %s; remaining=%s", path, attempts, last_error, remaining)
+    return False, remaining
+
+
+def purge_transcode_caches_for_media(path, known_hls_dir=None):
+    """Purge all HLS chunks and transcoded MP4 cache files with verified deletion."""
+    purged = {'hls_dirs': [], 'mp4_files': [], 'failed': []}
+
+    target_hls_dirs = []
+    if known_hls_dir:
+        hd = Path(known_hls_dir)
+        if hd not in target_hls_dirs:
+            target_hls_dirs.append(hd)
+
+    if path is not None:
+        source_path = Path(path)
+        if source_path.exists():
+            try:
+                calc_dir = hls_cache_dir(source_path)
+                if calc_dir not in target_hls_dirs:
+                    target_hls_dirs.append(calc_dir)
+            except Exception:
+                pass
 
     for hd in target_hls_dirs:
-        try:
-            shutil.rmtree(hd, ignore_errors=True)
+        success, remaining = _remove_path_with_retries(hd)
+        if success:
             purged['hls_dirs'].append(str(hd))
-            logger.info(f"Purged HLS directory: {hd}")
-        except Exception as e:
-            logger.warning(f"Failed to remove HLS directory {hd}: {e}")
+            logger.info("Purged HLS directory: %s", hd)
+        else:
+            failure = {'path': str(hd), 'remaining': remaining}
+            purged['failed'].append(failure)
+            logger.warning("HLS purge incomplete for %s; remaining=%s", hd, remaining)
 
-    # 2. Purge direct & compat MP4 cache files if path exists or existed
     if path is not None:
-        try:
-            for mode in ('direct', 'compat'):
-                try:
-                    mp4_path = transcode_cache_path(path, mode)
-                    if mp4_path.is_file():
-                        mp4_path.unlink(missing_ok=True)
+        for mode in ('direct', 'compat'):
+            try:
+                mp4_path = transcode_cache_path(path, mode)
+                prog_path = transcode_progress_path(path, mode)
+                part_path = mp4_path.with_name(mp4_path.stem + '.part.mp4')
+            except (OSError, ValueError):
+                continue
+            for cache_path in (mp4_path, prog_path, part_path):
+                success, remaining = _remove_path_with_retries(cache_path, attempts=5, initial_delay=0.1)
+                if success:
+                    if cache_path == mp4_path and not cache_path.exists():
+                        if mp4_path.exists():
+                            continue
                         purged['mp4_files'].append(str(mp4_path))
-                    prog_path = transcode_progress_path(path, mode)
-                    prog_path.unlink(missing_ok=True)
-                    part_path = mp4_path.with_name(mp4_path.stem + '.part.mp4')
-                    part_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                else:
+                    purged['failed'].append({'path': str(cache_path), 'remaining': remaining})
 
     return purged
-
-
