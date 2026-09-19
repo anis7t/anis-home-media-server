@@ -36,7 +36,7 @@ def on_starting(server):
     )
     from app.db import init_db
     from app.services.transcode_service import cleanup_cache_on_startup
-    from app.services.worker_service import start_auto_transcoder_worker, start_metadata_refresh_worker
+    from app.services.worker_service import start_auto_transcoder_worker, start_manual_transcode_worker, start_metadata_refresh_worker
     from app.services.scanner_service import start_media_scanner_worker
 
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -47,6 +47,7 @@ def on_starting(server):
     cleanup_cache_on_startup()
     init_db()
     start_auto_transcoder_worker()
+    start_manual_transcode_worker()
     start_media_scanner_worker()
     start_metadata_refresh_worker()
 
