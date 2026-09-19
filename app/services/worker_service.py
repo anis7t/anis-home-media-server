@@ -62,7 +62,8 @@ def _manual_transcode_worker():
             _MANUAL_TRANSCODE_QUEUE.task_done()
 
 
-def _ensure_manual_transcode_worker():
+def start_manual_transcode_worker():
+    """Start the persistent manual-transcode queue worker once per process."""
     global _MANUAL_TRANSCODE_WORKER
     with _MANUAL_TRANSCODE_LOCK:
         if _MANUAL_TRANSCODE_WORKER is None or not _MANUAL_TRANSCODE_WORKER.is_alive():
@@ -73,6 +74,18 @@ def _ensure_manual_transcode_worker():
             )
             _MANUAL_TRANSCODE_WORKER.start()
 
+
+def _ensure_manual_transcode_worker():
+    global _MANUAL_TRANSCODE_WORKER
+    with _MANUAL_TRANSCODE_LOCK:
+        if _MANUAL_TRANSCODE_WORKER is None or not _MANUAL_TRANSCODE_WORKER.is_alive():
+            _MANUAL_TRANSCODE_WORKER = threading.Thread(
+                target=_manual_transcode_worker,
+                name="manual-transcode-worker",
+                daemon=True,
+            )
+            _MANUAL_TRANSCODE_WORKER.start()
+\n
 
 def trigger_missing_transcodes():
     """Queue every eligible media item missing a complete HLS cache.
