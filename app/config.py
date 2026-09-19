@@ -10,7 +10,7 @@ load_dotenv()
 
 # Base directories
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).resolve().parent.parent)).resolve()
-MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "/home/iamroot/Media/Movies")).resolve()
+MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", BASE_DIR / "media")).resolve()
 DATABASE = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 
 # Cache directories
