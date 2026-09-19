@@ -87,29 +87,29 @@ The tunnel credential file is created at:
 The installed `cloudflared` version reported a recommendation to upgrade from `2026.9.0` to `2026.9.1`; this is a warning, not a tunnel-configuration failure.
 
 ## Custom hostname routing
-The domain hostname `media.anisparvez.in` was attached to the named tunnel with:
+The domain hostname `your-media-hostname.example.com` was attached to the named tunnel with:
 
 ```bash
-cloudflared tunnel route dns media-server media.anisparvez.in
+cloudflared tunnel route dns media-server your-media-hostname.example.com
 ```
 
 If replacing an existing tunnel or changing tunnel IDs, pass `--overwrite-dns` to replace older CNAME records:
 
 ```bash
-cloudflared tunnel route dns --overwrite-dns media-server media.anisparvez.in
+cloudflared tunnel route dns --overwrite-dns media-server your-media-hostname.example.com
 ```
 
 Cloudflare confirmed:
 
 ```text
-Added CNAME media.anisparvez.in which will route to this tunnel
+Added CNAME your-media-hostname.example.com which will route to this tunnel
 ```
 
 The intended public traffic path is now:
 
 ```text
 Internet
-   -> https://media.anisparvez.in
+   -> https://your-media-hostname.example.com
    -> Cloudflare DNS / Tunnel
    -> named tunnel: media-server
    -> cloudflared on host
@@ -131,7 +131,7 @@ tunnel: <TUNNEL_UUID_OR_NAME>
 credentials-file: /path/to/.cloudflared/<TUNNEL_UUID>.json
 
 ingress:
-  - hostname: media.anisparvez.in
+  - hostname: your-media-hostname.example.com
     service: http://127.0.0.1:8000
 
   - service: http_status:404
@@ -208,7 +208,7 @@ The public Cloudflare proxy path should not automatically be treated as a genera
 For private personal access, consider a private-network/VPN-oriented architecture so the web application and media transport can be separated appropriately.
 
 ## Next recommended improvements
-1. Verify `https://media.anisparvez.in` externally with the named tunnel running.
+1. Verify `https://your-media-hostname.example.com` externally with the named tunnel running.
 2. Add authentication/access protection to the media server before wider sharing.
 3. Install the named tunnel as a managed system service so it can start automatically after boot.
 4. Review the media-delivery architecture before using the public Cloudflare proxy to serve large video files at scale.
