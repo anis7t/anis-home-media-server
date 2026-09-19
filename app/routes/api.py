@@ -17,6 +17,7 @@ from app.db import get_db, value
 logger = logging.getLogger(__name__)
 from app.services.media_service import probe_media
 from app.services.scanner_service import trigger_library_scan
+from app.services.worker_service import trigger_missing_transcodes
 from app.services.tmdb_service import download_poster
 from app.services.transcode_service import (
     _is_hls_truly_complete,
@@ -42,11 +43,15 @@ def check_which(cmd):
 
 @api_bp.route('/api/scan', methods=['GET', 'POST'])
 def api_scan():
-    """Trigger library filesystem scan and TMDB metadata refresh, reporting scanner state."""
-    started = trigger_library_scan(refresh_metadata=True, force_refresh=True)
+    """Scan the library and start HLS transcoding for media missing a completed cache."""
+    started = trigger_library_scan()
+    transcode_result = trigger_missing_transcodes()
     return jsonify(
         status="scanning" if started or config.SCANNER_LOCK.locked() else "idle",
-        busy=config.SCANNER_LOCK.locked()
+        busy=config.SCANNER_LOCK.locked(),
+        transcodes_started=transcode_result.get("started", 0),
+        transcodes_skipped=transcode_result.get("skipped", 0),
+        transcodes_errors=transcode_result.get("errors", 0)
     )
 
 
