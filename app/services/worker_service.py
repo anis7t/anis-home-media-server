@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 import time
+from queue import Empty, Queue
 
 from app import config
 from app.services.media_service import video_paths
@@ -18,15 +19,69 @@ from app.utils.filesystem import get_rel_path, is_video
 logger = logging.getLogger(__name__)
 
 
-def trigger_missing_transcodes():
-    """Start HLS transcoding for every library item missing a complete HLS cache.
+_MANUAL_TRANSCODE_QUEUE = Queue()
+_MANUAL_TRANSCODE_QUEUED = set()
+_MANUAL_TRANSCODE_LOCK = threading.Lock()
+_MANUAL_TRANSCODE_WORKER = None
 
-    Manual scans deliberately use the same eligibility rule as the automatic
-    worker: a file needs work when it is eligible for HLS *and* its cache is
-    missing/incomplete. Path handling uses get_rel_path() so media discovered
-    on secondary configured roots is not silently skipped.
+
+def _manual_transcode_worker():
+    """Process manually requested transcodes one at a time to avoid GPU/FFmpeg overload."""
+    while not config.SHUTDOWN_EVENT.is_set():
+        try:
+            rel = _MANUAL_TRANSCODE_QUEUE.get(timeout=1.0)
+        except Empty:
+            continue
+
+        try:
+            path = config.MEDIA_ROOT / rel
+            if not is_video(path):
+                continue
+
+            hls_dir = hls_cache_dir(path)
+            playlist = hls_dir / "playlist.m3u8"
+            if _is_hls_truly_complete(playlist, path) or not needs_transcode(path):
+                continue
+
+            proc = ensure_hls_transcode(rel)
+            if proc is None:
+                logger.warning("Manual transcode could not start for %s", rel)
+                continue
+
+            logger.info("Manual transcode started for %s (queued job)", rel)
+            while not config.SHUTDOWN_EVENT.is_set() and proc.poll() is None:
+                time.sleep(2)
+
+            if proc.poll() not in (0, None):
+                logger.warning("Manual transcode failed for %s with return code %s", rel, proc.poll())
+        except Exception as exc:
+            logger.warning("Manual transcode worker failed for %s: %s", rel, exc)
+        finally:
+            with _MANUAL_TRANSCODE_LOCK:
+                _MANUAL_TRANSCODE_QUEUED.discard(rel)
+            _MANUAL_TRANSCODE_QUEUE.task_done()
+
+
+def _ensure_manual_transcode_worker():
+    global _MANUAL_TRANSCODE_WORKER
+    with _MANUAL_TRANSCODE_LOCK:
+        if _MANUAL_TRANSCODE_WORKER is None or not _MANUAL_TRANSCODE_WORKER.is_alive():
+            _MANUAL_TRANSCODE_WORKER = threading.Thread(
+                target=_manual_transcode_worker,
+                name="manual-transcode-worker",
+                daemon=True,
+            )
+            _MANUAL_TRANSCODE_WORKER.start()
+
+
+def trigger_missing_transcodes():
+    """Queue every eligible media item missing a complete HLS cache.
+
+    The scan request only enqueues work. A single background worker starts
+    transcodes sequentially so one Scan click cannot launch many simultaneous
+    multi-GPU FFmpeg pipelines and exhaust the machine.
     """
-    started = 0
+    queued = 0
     skipped = 0
     errors = 0
 
@@ -34,7 +89,9 @@ def trigger_missing_transcodes():
         paths = list(video_paths())
     except Exception as exc:
         logger.warning("Unable to enumerate media for manual transcode pass: %s", exc)
-        return {"started": 0, "skipped": 0, "errors": 1}
+        return {"started": 0, "queued": 0, "skipped": 0, "errors": 1}
+
+    _ensure_manual_transcode_worker()
 
     for p in paths:
         if config.SHUTDOWN_EVENT.is_set():
@@ -46,30 +103,23 @@ def trigger_missing_transcodes():
         try:
             hls_dir = hls_cache_dir(p)
             playlist = hls_dir / "playlist.m3u8"
-            already_complete = _is_hls_truly_complete(playlist, p)
-
-            # Files that are already fully cached need no work. Otherwise,
-            # preserve the existing needs_transcode policy for direct-play
-            # containers while allowing HLS-required containers to proceed.
-            if already_complete:
-                skipped += 1
-                continue
-
-            if not needs_transcode(p):
+            if _is_hls_truly_complete(playlist, p) or not needs_transcode(p):
                 skipped += 1
                 continue
 
             rel = get_rel_path(p)
-            proc = ensure_hls_transcode(rel)
-            if proc is not None:
-                started += 1
-            else:
-                skipped += 1
+            with _MANUAL_TRANSCODE_LOCK:
+                if rel in _MANUAL_TRANSCODE_QUEUED:
+                    skipped += 1
+                    continue
+                _MANUAL_TRANSCODE_QUEUED.add(rel)
+            _MANUAL_TRANSCODE_QUEUE.put(rel)
+            queued += 1
         except Exception as exc:
             errors += 1
-            logger.warning("Manual transcode trigger failed for %s: %s", get_rel_path(p), exc)
+            logger.warning("Manual transcode queue failed for %s: %s", get_rel_path(p), exc)
 
-    return {"started": started, "skipped": skipped, "errors": errors}
+    return {"started": 0, "queued": queued, "skipped": skipped, "errors": errors}
 
 
 def auto_transcoder_loop():
