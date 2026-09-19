@@ -19,82 +19,17 @@ from app.utils.filesystem import get_rel_path, is_video, safe_path
 logger = logging.getLogger(__name__)
 
 
-_MANUAL_TRANSCODE_QUEUE = Queue()
-_MANUAL_TRANSCODE_QUEUED = set()
-_MANUAL_TRANSCODE_LOCK = threading.Lock()
-_MANUAL_TRANSCODE_WORKER = None
+_TRANSCODE_WAKE_EVENT = threading.Event()
 
-
-def _manual_transcode_worker():
-    """Process manually requested transcodes one at a time to avoid GPU/FFmpeg overload."""
-    while not config.SHUTDOWN_EVENT.is_set():
-        try:
-            rel = _MANUAL_TRANSCODE_QUEUE.get(timeout=1.0)
-        except Empty:
-            continue
-
-        try:
-            path = safe_path(rel)
-            if not is_video(path):
-                continue
-
-            hls_dir = hls_cache_dir(path)
-            playlist = hls_dir / "playlist.m3u8"
-            if _is_hls_truly_complete(playlist, path) or not needs_transcode(path):
-                continue
-
-            proc = ensure_hls_transcode(rel)
-            if proc is None:
-                logger.warning("Manual transcode could not start for %s", rel)
-                continue
-
-            logger.info("Manual transcode started for %s (queued job)", rel)
-            while not config.SHUTDOWN_EVENT.is_set() and proc.poll() is None:
-                time.sleep(2)
-
-            if proc.poll() not in (0, None):
-                logger.warning("Manual transcode failed for %s with return code %s", rel, proc.poll())
-        except Exception as exc:
-            logger.warning("Manual transcode worker failed for %s: %s", rel, exc)
-        finally:
-            with _MANUAL_TRANSCODE_LOCK:
-                _MANUAL_TRANSCODE_QUEUED.discard(rel)
-            _MANUAL_TRANSCODE_QUEUE.task_done()
-
-
-def start_manual_transcode_worker():
-    """Start the persistent manual-transcode queue worker once per process."""
-    global _MANUAL_TRANSCODE_WORKER
-    with _MANUAL_TRANSCODE_LOCK:
-        if _MANUAL_TRANSCODE_WORKER is None or not _MANUAL_TRANSCODE_WORKER.is_alive():
-            _MANUAL_TRANSCODE_WORKER = threading.Thread(
-                target=_manual_transcode_worker,
-                name="manual-transcode-worker",
-                daemon=True,
-            )
-            _MANUAL_TRANSCODE_WORKER.start()
-
-
-def _ensure_manual_transcode_worker():
-    global _MANUAL_TRANSCODE_WORKER
-    with _MANUAL_TRANSCODE_LOCK:
-        if _MANUAL_TRANSCODE_WORKER is None or not _MANUAL_TRANSCODE_WORKER.is_alive():
-            _MANUAL_TRANSCODE_WORKER = threading.Thread(
-                target=_manual_transcode_worker,
-                name="manual-transcode-worker",
-                daemon=True,
-            )
-            _MANUAL_TRANSCODE_WORKER.start()
-\n
 
 def trigger_missing_transcodes():
-    """Queue every eligible media item missing a complete HLS cache.
+    """Start HLS transcoding for missing media without concurrent overload.
 
-    The scan request only enqueues work. A single background worker starts
-    transcodes sequentially so one Scan click cannot launch many simultaneous
-    multi-GPU FFmpeg pipelines and exhaust the machine.
+    If no transcode is currently running, starts the first missing media item
+    immediately and wakes up the background auto-transcoder daemon to process
+    any subsequent missing items sequentially.
     """
-    queued = 0
+    started = 0
     skipped = 0
     errors = 0
 
@@ -102,9 +37,13 @@ def trigger_missing_transcodes():
         paths = list(video_paths())
     except Exception as exc:
         logger.warning("Unable to enumerate media for manual transcode pass: %s", exc)
-        return {"started": 0, "queued": 0, "skipped": 0, "errors": 1}
+        return {"started": 0, "skipped": 0, "errors": 1}
 
-    start_manual_transcode_worker()
+    # Check if a transcode is already active
+    active_running = any(
+        proc is not None and proc.poll() is None
+        for proc in config.HLS_PROCESSES.values()
+    )
 
     for p in paths:
         if config.SHUTDOWN_EVENT.is_set():
@@ -121,18 +60,25 @@ def trigger_missing_transcodes():
                 continue
 
             rel = get_rel_path(p)
-            with _MANUAL_TRANSCODE_LOCK:
-                if rel in _MANUAL_TRANSCODE_QUEUED:
-                    skipped += 1
-                    continue
-                _MANUAL_TRANSCODE_QUEUED.add(rel)
-            _MANUAL_TRANSCODE_QUEUE.put(rel)
-            queued += 1
+            # If nothing is currently running and we haven't started one yet, start it now
+            if not active_running and started == 0:
+                proc = ensure_hls_transcode(rel)
+                if proc is not None:
+                    started += 1
+                    active_running = True
+                else:
+                    errors += 1
+            else:
+                # Transcode is queued for background worker
+                skipped += 1
         except Exception as exc:
             errors += 1
-            logger.warning("Manual transcode queue failed for %s: %s", get_rel_path(p), exc)
+            logger.warning("Manual transcode trigger failed for %s: %s", get_rel_path(p), exc)
 
-    return {"started": 0, "queued": queued, "skipped": skipped, "errors": errors}
+    # Signal the auto transcoder worker loop to check immediately
+    _TRANSCODE_WAKE_EVENT.set()
+
+    return {"started": started, "skipped": skipped, "errors": errors}
 
 
 def auto_transcoder_loop():
@@ -167,7 +113,10 @@ def auto_transcoder_loop():
                         logger.warning(f"Failed to apply post-transcode policy for {p}: {e}")
         except Exception as e:
             logger.warning(f"Auto-transcoder loop error: {e}")
-        time.sleep(config.PRECACHE_INTERVAL)
+
+        # Sleep in intervals or until woken by trigger_missing_transcodes
+        _TRANSCODE_WAKE_EVENT.wait(timeout=config.PRECACHE_INTERVAL)
+        _TRANSCODE_WAKE_EVENT.clear()
 
 
 def start_auto_transcoder_worker():

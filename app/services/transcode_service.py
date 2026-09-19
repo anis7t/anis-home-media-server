@@ -696,12 +696,6 @@ def ensure_hls_transcode(filename):
                     amf
                     and is_dual_gpu_enabled()
                     and 'pytest' not in sys.modules
-                    and not (
-                        video.get('codec_name') == 'h264'
-                        and (video.get('height') or 0) <= 1088
-                        and (video.get('width') or 0) <= 1920
-                        and video.get('pix_fmt', 'yuv420p') in {'yuv420p', 'yuvj420p'}
-                    )
                 ):
                     job = start_dual_gpu_transcode(filename, path, directory, playlist)
                     config.HLS_PROCESSES[filename] = job

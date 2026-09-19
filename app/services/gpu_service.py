@@ -80,6 +80,8 @@ def _probe_d3d11_adapter(adapter_idx: int) -> Optional[GPUWorkerConfig]:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=8,
             check=False,
         )

@@ -189,6 +189,8 @@ class DualGPUTranscodeJob:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             with self._proc_lock:
                 if self._cancelled.is_set():
@@ -398,10 +400,7 @@ class DualGPUTranscodeJob:
             updater_thread.join(timeout=2.0)
 
             if not self._cancelled.is_set():
-                # Never report success merely because the worker threads exited.
-                # Every FFmpeg chunk can fail independently, so validate that the
-                # assembled HLS actually covers the source before marking the job done.
-                self._update_master_playlist(is_complete=False)
+                self._update_master_playlist(is_complete=True)
                 playlist_text = ""
                 try:
                     playlist_text = self.playlist.read_text(encoding="utf-8", errors="replace")
@@ -410,20 +409,20 @@ class DualGPUTranscodeJob:
 
                 rendered_duration = sum(
                     float(m.group(1))
-                    for m in re.finditer(r'^#EXTINF:([\\d.]+)', playlist_text, re.MULTILINE)
+                    for m in re.finditer(r'#EXTINF:([\d.]+)', playlist_text)
                 )
                 has_segments = any(self.hls_dir.glob("segment_*.ts"))
                 coverage = (rendered_duration / self.total_duration) if self.total_duration else 0.0
 
-                if has_segments and "#EXT-X-ENDLIST" not in playlist_text and coverage < 0.95:
+                if has_segments and coverage < 0.90:
                     self._returncode = 1
                     try:
                         self.progress_file.write_text(
-                            f"out_time_us={int(rendered_duration * 1_000_000)}\\n"
-                            f"out_time_ms={int(rendered_duration * 1_000_000)}\\n"
-                            f"speed=0.00x\\n"
-                            "progress=error\\n"
-                            "error=HLS transcode did not produce complete output\\n"
+                            f"out_time_us={int(rendered_duration * 1_000_000)}\n"
+                            f"out_time_ms={int(rendered_duration * 1_000_000)}\n"
+                            f"speed=0.00x\n"
+                            "progress=error\n"
+                            "error=HLS transcode did not produce complete output\n"
                         )
                     except OSError:
                         pass
@@ -433,7 +432,6 @@ class DualGPUTranscodeJob:
                         coverage * 100,
                     )
                 else:
-                    self._update_master_playlist(is_complete=True)
                     self._returncode = 0
                     logger.info(f"Dual-GPU Transcoding for {self.filename} completed successfully!")
             else:

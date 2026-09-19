@@ -44,13 +44,12 @@ def check_which(cmd):
 @api_bp.route('/api/scan', methods=['GET', 'POST'])
 def api_scan():
     """Scan the library and start HLS transcoding for media missing a completed cache."""
-    started = trigger_library_scan()
+    started = trigger_library_scan(refresh_metadata=True, force_refresh=True)
     transcode_result = trigger_missing_transcodes()
     return jsonify(
-        status="scanning" if started or config.SCANNER_LOCK.locked() or transcode_result.get("queued", 0) else "idle",
+        status="scanning" if started or config.SCANNER_LOCK.locked() else "idle",
         busy=config.SCANNER_LOCK.locked(),
         transcodes_started=transcode_result.get("started", 0),
-        transcodes_queued=transcode_result.get("queued", 0),
         transcodes_skipped=transcode_result.get("skipped", 0),
         transcodes_errors=transcode_result.get("errors", 0)
     )

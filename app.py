@@ -120,8 +120,6 @@ if __name__ == '__main__':
     cleanup_cache_on_startup()
     init_db()
     start_auto_transcoder_worker()
-    from app.services.worker_service import start_manual_transcode_worker
-    start_manual_transcode_worker()
     start_media_scanner_worker()
     start_metadata_refresh_worker()
     start_cache_maintenance_worker()
