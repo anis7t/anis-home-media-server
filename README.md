@@ -1,15 +1,16 @@
-# My Movies — Personal Media Server
+# Anis' Home Media Server
 
-A modern, modular, self-hosted **personal media server** built with Python and Flask for streaming a private movie library over a local network, with secure, CGNAT-compatible remote access through Cloudflare Named Tunnels.
+A modern, modular, self-hosted **personal home media server** built with Python and Flask for streaming a private movie library over a local network, with secure, CGNAT-compatible remote access through Cloudflare Named Tunnels.
 
-The platform includes dedicated routes, services, utilities, background workers, SQLite persistence, dynamic multi-GPU chunked FFmpeg transcoding, TMDb metadata ingestion, subtitle processing, resumable uploads, connected-device telemetry, live video seek preview thumbnails, and persistent Windows Service hosting.
+The platform includes dedicated routes, services, utilities, background workers, SQLite persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, subtitle processing with automatic language detection, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.
 
-> **Current status:** Fully functional personal media server. Core library and playback workflows are operational, hardware-accelerated transcoding utilizes dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails are operational, and the system runs persistently as background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record.
+> **Current status:** Fully functional home media server. Core library and playback workflows are operational, hardware-accelerated transcoding utilizes dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails are operational, and the system runs persistently as background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record and [`docs/MANUAL.md`](docs/MANUAL.md) for the comprehensive user manual.
 
 ---
 
 ## Table of Contents
 
+- [User Manual ("How to Use")](#user-manual--how-to-use)
 - [Features](#features)
   - [Media Playback & Direct Play](#media-playback)
   - [Dynamic Multi-GPU Chunked Transcoding](#dynamic-multi-gpu-chunked-transcoding)
@@ -20,6 +21,7 @@ The platform includes dedicated routes, services, utilities, background workers,
   - [Metadata, Posters & Forensic Resolver](#metadata-and-library)
   - [Resumable Chunked Uploads](#uploads)
   - [Connected Device Telemetry](#connected-devices)
+  - [Dual-Drive Storage Tiering & Cache Retention](#dual-drive-storage-tiering)
   - [Stats for Nerds & Multi-GPU Telemetry](#stats-for-nerds)
 - [Architecture](#architecture)
 - [Repository Structure](#repository-structure)
@@ -32,6 +34,14 @@ The platform includes dedicated routes, services, utilities, background workers,
 - [Active Roadmap & Next Steps](#active-roadmap--next-steps)
 - [Testing & Invariants](#testing)
 - [License and Attribution](#license-and-attribution)
+
+---
+
+## User Manual & "How to Use"
+
+Complete user and operator documentation is available:
+- **In-App Interactive Manual:** Accessible at [`/manual`](https://media.anisparvez.in/manual) directly from the footer on any page ("How to use").
+- **Repository Documentation:** A complete, detailed Markdown user manual with touch gestures, player keybindings, and operational procedures is in [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ---
 
@@ -130,6 +140,14 @@ The `/devices` telemetry dashboard provides full visibility into connected clien
 - Network classification (Local LAN vs Remote WAN, public IP, ISP/ASN organization).
 - Visibility-aware keepalive heartbeats and `sendBeacon` departure telemetry.
 - Friendly device renaming, active/offline filtering, and per-device watch history.
+
+---
+
+## Dual-Drive Storage Tiering
+
+- **Tiered Multi-Volume Architecture:** Optimizes fast NVMe SSD (`C:`) for OS, SQLite (`media.db`), in-progress scratch, seek frame previews (`cache/previews`), and active HLS stream caches (`cache/hls`), while offloading cold raw media, upload staging (`D:\Flicks\.uploads`), and archives to mass storage (`D:\Flicks`, `D:\Flicks\.archive`).
+- **Post-Transcode Retention Policies:** Configurable policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table.
+- **Safe Orphaned Cache Purge:** One-click automated cache reconciliation auditing and removing stale HLS directories without disrupting active transcodes.
 
 ---
 

@@ -105,7 +105,7 @@ def watch(filename):
 def manifest():
     """Serve PWA web app manifest."""
     manifest_data = {
-        'name': "Anis' Media Server",
+        'name': "Anis' Home Media Server",
         'short_name': 'Anis Media',
         'start_url': '/',
         'display': 'standalone',
@@ -199,6 +199,14 @@ def devices():
         stats=stats,
         current_dev_id=current_dev_id,
     )
+
+
+@pages_bp.route('/manual')
+@pages_bp.route('/help')
+@pages_bp.route('/how-to-use')
+def manual():
+    """Render the application user manual and feature guide ('How to use')."""
+    return render_template('manual.html')
 
 
 @pages_bp.after_request

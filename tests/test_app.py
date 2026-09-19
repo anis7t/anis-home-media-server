@@ -632,7 +632,7 @@ class MediaServerTests(unittest.TestCase):
         html = res.data.decode('utf-8')
         self.assertIn('class="player-header"', html)
         self.assertIn("Anis'", html)
-        self.assertIn('Media Library', html)
+        self.assertIn('Home Media Server', html)
         self.assertIn('class="player-header-actions"', html)
         self.assertIn('Home', html)
         self.assertIn('Details', html)
@@ -742,6 +742,31 @@ class MediaServerTests(unittest.TestCase):
         # Verify polished seek-ripple pill styling
         self.assertIn('.seek-ripple{display:none;position:absolute;top:50%;transform:translateY(-50%)', html)
         self.assertIn('background:rgba(18,22,32,.82)', html)
+
+    def test_manual_page_renders_guide_and_footer(self):
+        # Test /manual route
+        res = self.client.get('/manual')
+        self.assertEqual(res.status_code, 200)
+        html = res.data.decode('utf-8')
+        self.assertIn("Anis'", html)
+        self.assertIn('Home Media Server', html)
+        self.assertIn('User Manual & Guide', html)
+        self.assertIn('How to use', html)
+        self.assertIn('Dual-GPU Transcoding', html)
+        self.assertIn('Keyboard Shortcuts', html)
+
+        # Test aliases /help and /how-to-use
+        self.assertEqual(self.client.get('/help').status_code, 200)
+        self.assertEqual(self.client.get('/how-to-use').status_code, 200)
+
+        # Verify footer links on main pages
+        for path in ['/', '/movie/Example.2026.mp4', '/manage', '/devices']:
+            page_res = self.client.get(path)
+            self.assertEqual(page_res.status_code, 200)
+            page_html = page_res.data.decode('utf-8')
+            self.assertIn('href="/manual"', page_html)
+            self.assertIn('How to use', page_html)
+            self.assertIn('Home Media Server', page_html)
 
 
 

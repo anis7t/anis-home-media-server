@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090b10">
+<title>User Manual & Guide — Anis' Home Media Server</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>{{css}}</style>
+<style>
+/* ── Manual Page Specific Styles ── */
+.manual-hero {
+  text-align: center;
+  padding: 2.2rem 1rem 1.8rem;
+  max-width: 860px;
+  margin: 0 auto;
+}
+.manual-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  background: rgba(229,9,20,.16);
+  color: #ff334b;
+  border: 1px solid rgba(229,9,20,.35);
+  font-size: .8rem;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: .35rem .9rem;
+  border-radius: 9999px;
+  margin-bottom: 1.1rem;
+}
+.manual-hero h1 {
+  font-size: clamp(1.8rem, 4.5vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  line-height: 1.15;
+  margin: 0 0 .85rem;
+  color: #fff;
+}
+.manual-hero p {
+  color: #94a3b8;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  margin: 0 auto;
+  max-width: 680px;
+}
+
+/* Category Jump Rail */
+.jump-nav-rail {
+  display: flex;
+  gap: .5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: .6rem .5rem 1.4rem;
+  margin: 0 auto 2rem;
+  max-width: 1080px;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+.jump-nav-rail::-webkit-scrollbar { display: none; }
+.jump-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .95rem;
+  border-radius: 9999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1);
+  color: #cbd5e1;
+  font-size: .82rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all .16s ease;
+}
+.jump-pill:hover {
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  border-color: rgba(255,255,255,.24);
+  transform: translateY(-1px);
+}
+
+/* Content Container */
+.manual-container {
+  max-width: 1040px;
+  margin: 0 auto 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.2rem;
+  padding: 0 1rem;
+}
+.manual-section {
+  background: rgba(18,21,30,.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  padding: 1.8rem 2rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  scroll-margin-top: 5rem;
+}
+.section-header-wrap {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: 1.2rem;
+  padding-bottom: .85rem;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.section-header-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: rgba(255,42,75,.15);
+  border: 1px solid rgba(255,42,75,.3);
+  color: #ff334b;
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+.manual-section h2 {
+  font-size: 1.35rem;
+  font-weight: 750;
+  color: #f8fafc;
+  margin: 0;
+  letter-spacing: -.02em;
+}
+.manual-section p {
+  color: #cbd5e1;
+  font-size: .95rem;
+  line-height: 1.68;
+  margin: .6rem 0 1rem;
+}
+.manual-section ul, .manual-section ol {
+  color: #cbd5e1;
+  font-size: .92rem;
+  line-height: 1.7;
+  padding-left: 1.3rem;
+  margin: .6rem 0 1.2rem;
+}
+.manual-section li { margin-bottom: .45rem; }
+
+/* Highlight / Tip Callout */
+.callout-box {
+  background: rgba(30,41,59,.55);
+  border-left: 3.5px solid #ff2a4b;
+  border-radius: 6px;
+  padding: .9rem 1.15rem;
+  margin: 1.1rem 0;
+  font-size: .9rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+}
+.callout-box strong { color: #fff; }
+.callout-box.info { border-left-color: #38bdf8; }
+.callout-box.success { border-left-color: #34d399; }
+
+/* Grid of mini feature cards */
+.feature-subgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 1.1rem;
+  margin: 1.2rem 0;
+}
+.feature-box {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  transition: all .16s ease;
+}
+.feature-box:hover {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.14);
+  transform: translateY(-1px);
+}
+.feature-box h3 {
+  margin: 0 0 .4rem;
+  font-size: 1.02rem;
+  color: #f1f5f9;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.feature-box p {
+  font-size: .88rem;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* Keybindings Table */
+.shortcut-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 1rem 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: .9rem;
+}
+.shortcut-table th {
+  background: rgba(15,23,42,.75);
+  color: #94a3b8;
+  font-weight: 650;
+  padding: .75rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  text-transform: uppercase;
+  font-size: .75rem;
+  letter-spacing: .05em;
+}
+.shortcut-table td {
+  padding: .75rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  color: #e2e8f0;
+}
+.shortcut-table tr:last-child td { border-bottom: none; }
+.shortcut-table tr:hover td { background: rgba(255,255,255,.02); }
+kbd {
+  display: inline-block;
+  padding: .15rem .45rem;
+  font-size: .78rem;
+  font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-weight: 700;
+  line-height: 1;
+  color: #f8fafc;
+  background: #1e2535;
+  border: 1px solid #3b455c;
+  border-radius: 4px;
+  box-shadow: 0 1px 1px rgba(0,0,0,.4);
+}
+
+@media(max-width: 768px) {
+  .manual-section {
+    padding: 1.3rem 1.15rem;
+  }
+  .manual-hero {
+    padding: 1.5rem .5rem 1.2rem;
+  }
+  .manual-hero h1 {
+    font-size: 1.8rem;
+  }
+  .shortcut-table th, .shortcut-table td {
+    padding: .6rem .75rem;
+    font-size: .84rem;
+  }
+}
+</style>
+</head>
+<body class="manage-page">
+
+<header class="manage-header">
+  <div class="header-brand-row">
+    <a href="/" class="brand-link" title="Anis' Home Media Server">
+      <svg class="brand-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandPlayGradM" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff334b"/>
+            <stop offset="45%" stop-color="#e50914"/>
+            <stop offset="100%" stop-color="#990014"/>
+          </linearGradient>
+          <linearGradient id="brandPlayHighlightM" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+          </linearGradient>
+          <filter id="brandPlayShadowM" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#e50914" flood-opacity="0.4"/>
+          </filter>
+        </defs>
+        <rect width="36" height="36" rx="9" fill="#141822"/>
+        <rect x="0.5" y="0.5" width="35" height="35" rx="8.5" stroke="rgba(255,255,255,0.08)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" fill="url(#brandPlayGradM)" filter="url(#brandPlayShadowM)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v8.5l14.2-1.4L12 9.2z" fill="url(#brandPlayHighlightM)"/>
+        <path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-title-wrap">
+          <span class="brand-owner">Anis'</span>
+          <span class="brand-title">Home Media Server</span>
+        </div>
+        <span class="brand-subtitle">PLAY • ORGANIZE • ENJOY</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="manage-header-actions">
+    <a href="/" class="header-action-btn header-nav-btn" title="Back to Home Stream">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+      <span>Home Stream</span>
+    </a>
+    <a href="/manage" class="header-action-btn header-nav-btn" title="Manage Media Files">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        <line x1="9" y1="6" x2="15" y2="6"/>
+        <line x1="9" y1="10" x2="13" y2="10"/>
+      </svg>
+      <span>My Library</span>
+    </a>
+    <a href="/devices" class="header-action-btn header-nav-btn" title="Connected Client Devices">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2" y="3" width="14" height="11" rx="2"/>
+        <path d="M6 18h6"/>
+        <path d="M9 14v4"/>
+        <rect x="15" y="8" width="7" height="13" rx="1.5"/>
+        <path d="M18.5 18h.01"/>
+      </svg>
+      <span>Devices</span>
+    </a>
+  </div>
+</header>
+
+<main>
+  <div class="manual-hero">
+    <div class="manual-badge">📖 Application Documentation</div>
+    <h1>How to Use Anis' Home Media Server</h1>
+    <p>Everything you need to know about streaming your movies, navigating the modern player, using hardware multi-GPU acceleration, managing subtitles, and uploading files.</p>
+  </div>
+
+  <nav class="jump-nav-rail" aria-label="Quick jump to manual section">
+    <a href="#quick-start" class="jump-pill">🚀 Quick Start</a>
+    <a href="#browsing" class="jump-pill">🎬 Browsing</a>
+    <a href="#player" class="jump-pill">▶️ Player & Gestures</a>
+    <a href="#shortcuts" class="jump-pill">⌨️ Shortcuts</a>
+    <a href="#transcoding" class="jump-pill">⚡ Dual-GPU Streaming</a>
+    <a href="#subtitles" class="jump-pill">💬 Subtitles</a>
+    <a href="#uploading" class="jump-pill">📤 Uploading</a>
+    <a href="#storage" class="jump-pill">💾 Storage Pools</a>
+    <a href="#devices" class="jump-pill">📱 Devices</a>
+    <a href="#faq" class="jump-pill">❓ FAQs</a>
+  </nav>
+
+  <div class="manual-container">
+
+    <!-- Section 1: Quick Start -->
+    <section id="quick-start" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">🚀</div>
+        <h2>1. Getting Started & Remote Access</h2>
+      </div>
+      <p>Anis' Home Media Server is a private, lightweight streaming suite accessible from any web browser on your phone, tablet, laptop, or desktop computer. You can also install it as a <b>Progressive Web App (PWA)</b> for an immersive, full-screen app icon experience on iOS and Android.</p>
+      
+      <div class="feature-subgrid">
+        <div class="feature-box">
+          <h3>🏠 Local Network</h3>
+          <p>Access high-speed, zero-compression streaming at <code>http://127.0.0.1:8000</code> or your server's LAN IP when connected to your home Wi-Fi.</p>
+        </div>
+        <div class="feature-box">
+          <h3>🌐 Remote Anywhere</h3>
+          <p>Stream securely outside your house through the named Cloudflare Tunnel at <code>https://media.anisparvez.in</code> without port-forwarding or CGNAT headaches.</p>
+        </div>
+        <div class="feature-box">
+          <h3>📲 PWA Installation</h3>
+          <p>In Safari (iOS) tap <i>Share → Add to Home Screen</i>; in Chrome (Android/Desktop) click the install prompt in the address bar.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Browsing -->
+    <section id="browsing" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">🎬</div>
+        <h2>2. Browsing & Library Exploration</h2>
+      </div>
+      <p>The library view provides instant search, continue watching progress, and movie cards with rich metadata enriched automatically by TMDb:</p>
+      <ul>
+        <li><b>Instant Search:</b> Type any title or keyword into the top search bar. Matches filter dynamically across titles, release years, and movie genres.</li>
+        <li><b>Continue Watching:</b> Movies you recently started but haven't finished appear in the top rail cards with red progress indicators. Clicking any card immediately resumes from your exact saved position.</li>
+        <li><b>Movie Details Page:</b> Clicking any poster brings up the movie hero with full synopsis, release details, star ratings, genres, technical stream codecs (resolution, audio channels, bitrates), and an interactive cast avatar strip.</li>
+      </ul>
+    </section>
+
+    <!-- Section 3: Player -->
+    <section id="player" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">▶️</div>
+        <h2>3. Video Player Masterclass</h2>
+      </div>
+      <p>The HTML5 player combines desktop precision with ergonomic touch interactions designed specifically for handheld phones and tablets:</p>
+      
+      <div class="feature-subgrid">
+        <div class="feature-box">
+          <h3>🖼️ Live Hover Thumbnails</h3>
+          <p>Hovering over or scrubbing the YouTube-style layered seekbar extracts on-demand frame previews so you can preview scenes before seeking.</p>
+        </div>
+        <div class="feature-box">
+          <h3>👆 Tap-to-Reveal Controls</h3>
+          <p>A single tap on the video reveals playback controls without toggling play/pause. Controls auto-hide after 2.5s of inactivity.</p>
+        </div>
+        <div class="feature-box">
+          <h3>📱 Double-Tap Seeking</h3>
+          <p>Double-tapping the left or right third of the player rewinds or fast-forwards by 10s with animated radial ripple bubbles.</p>
+        </div>
+        <div class="feature-box">
+          <h3>🔄 Aspect Ratio & Rotation</h3>
+          <p>Cycle through <i>Best Fit</i>, <i>16:9</i>, <i>4:3</i>, and <i>Crop</i> using the aspect button, or toggle 90° hardware video rotation.</p>
+        </div>
+      </div>
+
+      <div class="callout-box info">
+        <strong>💡 Pro Tip:</strong> Click the elapsed time (<code>0:00</code>) on the bottom left to toggle between elapsed playback time and negative remaining time (e.g. <code>-42:15</code>).
+      </div>
+    </section>
+
+    <!-- Section 4: Shortcuts -->
+    <section id="shortcuts" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">⌨️</div>
+        <h2>4. Keyboard Shortcuts Cheatsheet</h2>
+      </div>
+      <p>Enjoy comprehensive physical keyboard control on desktop and laptop browsers:</p>
+      
+      <div class="shortcut-table-wrap">
+        <table class="shortcut-table">
+          <thead>
+            <tr><th>Shortcut</th><th>Action</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><kbd>Space</kbd> or <kbd>k</kbd></td><td>Play / Pause</td><td>Toggles media playback.</td></tr>
+            <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Seek ±5 seconds</td><td>Fine step scrubbing backward/forward.</td></tr>
+            <tr><td><kbd>j</kbd> / <kbd>l</kbd></td><td>Seek ±10 seconds</td><td>Rapid scene skipping.</td></tr>
+            <tr><td><kbd>Home</kbd> or <kbd>0</kbd></td><td>Replay from start</td><td>Restarts the stream instantly from 0:00.</td></tr>
+            <tr><td><kbd>1</kbd> – <kbd>9</kbd></td><td>Jump to 10%–90%</td><td>Percentage jumps along total timeline.</td></tr>
+            <tr><td><kbd>f</kbd></td><td>Toggle Fullscreen</td><td>Enters or leaves native full-screen mode.</td></tr>
+            <tr><td><kbd>m</kbd></td><td>Mute / Unmute</td><td>Silences or restores playback volume.</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Volume ±5%</td><td>Increases or decreases audio volume.</td></tr>
+            <tr><td><kbd>c</kbd></td><td>Toggle Subtitles</td><td>Quickly turns captions on or off.</td></tr>
+            <tr><td><kbd>&lt;</kbd> / <kbd>&gt;</kbd></td><td>Playback Speed</td><td>Steps between 0.75×, 1×, 1.25×, 1.5×, 2×.</td></tr>
+            <tr><td><kbd>n</kbd></td><td>Stats for Nerds</td><td>Opens the HUD reporting frame drops, buffer & GPU engines.</td></tr>
+            <tr><td><kbd>a</kbd></td><td>Aspect Ratio</td><td>Cycles through native, zoom/crop, 16:9, and 4:3.</td></tr>
+            <tr><td><kbd>p</kbd> or <kbd>i</kbd></td><td>Picture-in-Picture</td><td>Detaches video into floating desktop PIP window.</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Shortcuts Cheat-Sheet</td><td>Opens in-player shortcuts reference overlay.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Section 5: Transcoding -->
+    <section id="transcoding" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">⚡</div>
+        <h2>5. Direct Play & Dual-GPU Transcoding</h2>
+      </div>
+      <p>The media server dynamically picks the fastest, most resource-efficient delivery mode for every file:</p>
+      
+      <div class="feature-subgrid">
+        <div class="feature-box">
+          <h3>⚡ Direct Play (RFC 7233)</h3>
+          <p>Standard MP4/WebM files containing H.264 video and AAC audio stream with zero server CPU/GPU conversion using zero-copy OS range requests for instant seeking.</p>
+        </div>
+        <div class="feature-box">
+          <h3>🎮 Dynamic Dual-GPU Transcoding</h3>
+          <p>MKV and HEVC (H.265) files are segmented into keyframe-aligned chunks and split across both the discrete <b>AMD Radeon RX 560X</b> and integrated <b>AMD Vega 8</b> simultaneously.</p>
+        </div>
+      </div>
+
+      <p>During active transcoding, an in-stream progress pill and progress card report real-time encoding percentage, encoding speed (e.g. <code>2.8×</code>), and estimated completion time (ETA).</p>
+    </section>
+
+    <!-- Section 6: Subtitles -->
+    <section id="subtitles" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">💬</div>
+        <h2>6. Subtitles & Language Auto-Detection</h2>
+      </div>
+      <p>Never struggle with out-of-sync or awkwardly positioned captions again:</p>
+      <ul>
+        <li><b>Dual-Axis Positioning:</b> Customize horizontal alignment (<i>Center</i>, <i>Left</i>, <i>Right</i>) and vertical elevation (<i>Lowered Bottom</i>, <i>Bottom</i>, <i>Raised</i>, <i>Middle</i>, <i>Top</i>). Subtitles dynamically elevate to avoid colliding with playback controls.</li>
+        <li><b>In-Player & Server Subtitle Upload:</b> You can upload <code>.srt</code> or <code>.vtt</code> files directly from the details page or from within the video player's Subtitle Settings modal (<code>⚙</code>).</li>
+        <li><b>Intelligent Language Auto-Detection:</b> Uploaded subtitles are parsed for character scripts (Latin, Devanagari, Hanzi, Cyrillic, Arabic, Bengali) and NLP stop-word frequency to classify the language automatically with zero manual renaming required.</li>
+      </ul>
+    </section>
+
+    <!-- Section 7: Uploading -->
+    <section id="uploading" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">📤</div>
+        <h2>7. Uploading & Ingestion</h2>
+      </div>
+      <p>Adding movies to your server is effortless:</p>
+      <ol>
+        <li>Click the prominent <b>Upload</b> button in the top navigation header on any page.</li>
+        <li>Drag and drop any video file (<code>.mp4</code>, <code>.mkv</code>, <code>.webm</code>, <code>.mov</code>, <code>.avi</code>, <code>.m4v</code>) into the upload drop zone.</li>
+        <li>Optional: If the file came from a phone with a numeric name (e.g. <code>1000403712.mkv</code>), provide a Movie Title in the rename box.</li>
+        <li>Click <b>Upload Media</b>. Large files transfer via resumable chunks with real-time transfer rate smoothing and accurate ETA calculation.</li>
+        <li>Once finished, the animated ingestion card automatically probes video streams, queries TMDb for posters/backdrops/metadata, and adds the title to your library.</li>
+      </ol>
+    </section>
+
+    <!-- Section 8: Storage -->
+    <section id="storage" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">💾</div>
+        <h2>8. Storage Tiering & Cache Retention</h2>
+      </div>
+      <p>To preserve maximum performance while accommodating massive movie collections, the server uses a tiered multi-volume design:</p>
+      <ul>
+        <li><b>Primary Fast Drive (<code>C:</code> NVMe SSD):</b> Reserved for operating system, database (<code>media.db</code>), live seek previews, and ready-to-stream HLS cache.</li>
+        <li><b>Secondary Storage (<code>D:\Flicks</code>):</b> Dedicated mass storage holding your full raw video files, upload staging, and cold archives.</li>
+        <li><b>One-Click Cache Cleaning:</b> Visit <a href="/manage" style="color:#ff334b;text-decoration:underline;">My Library (/manage)</a> to audit storage pools, inspect transcode cache footprints, and safely purge orphaned HLS caches with a single click.</li>
+      </ul>
+    </section>
+
+    <!-- Section 9: Devices -->
+    <section id="devices" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">📱</div>
+        <h2>9. Connected Devices & Network Visibility</h2>
+      </div>
+      <p>The <a href="/devices" style="color:#ff334b;text-decoration:underline;">Connected Devices dashboard (/devices)</a> gives you complete transparency into who and what is connected:</p>
+      <ul>
+        <li><b>Device Telemetry:</b> Identifies exact hardware models (e.g. <i>Apple iPhone</i>, <i>Samsung Galaxy</i>, <i>Google Pixel</i>) using Chromium High-Entropy Client Hints.</li>
+        <li><b>Network Classification:</b> Distinguishes between local home LAN connections and remote WAN tunnel sessions with public ISP identification.</li>
+        <li><b>Friendly Renaming:</b> Click <i>Rename</i> on any device to give it a custom name (e.g. <i>Anis' iPad Pro</i> or <i>Living Room Apple TV</i>).</li>
+        <li><b>Per-Device Watch History:</b> View past watched titles and resume timestamps for each device.</li>
+      </ul>
+    </section>
+
+    <!-- Section 10: FAQ -->
+    <section id="faq" class="manual-section">
+      <div class="section-header-wrap">
+        <div class="section-header-icon">❓</div>
+        <h2>10. Frequently Asked Questions</h2>
+      </div>
+      
+      <div class="callout-box">
+        <strong>Why does an MKV file take a few seconds to start playing?</strong><br>
+        Web browsers cannot natively decode MKV containers. When you press play, the server's dual-GPU transcode engine immediately begins converting the video into browser-friendly HLS fMP4 segments. Once the first few seconds are processed, playback begins immediately while the rest encodes in the background.
+      </div>
+
+      <div class="callout-box">
+        <strong>How do I fix subtitles that appear too low or collide with controls?</strong><br>
+        Open the Subtitle Settings modal by clicking the gear icon (<code>⚙</code>) next to CC in the player controls or press <kbd>c</kbd>. Set Vertical Position to <i>Raised Bottom</i> or <i>Middle</i>.
+      </div>
+
+      <div class="callout-box">
+        <strong>Can I watch movies when away from home?</strong><br>
+        Yes! Navigate to <code>https://media.anisparvez.in</code> on your mobile device or laptop. The server communicates through Cloudflare's secure named tunnel without needing a public static IP or open firewall ports.
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <p class="footer-copy">© 2026 Anis' Home Media Server. All rights reserved.</p>
+  <ul class="footer-links">
+    <li><a href="/manual">How to use</a></li>
+    <li><button onclick="document.getElementById('privacyModal').showModal()">Privacy Policy</button></li>
+    <li><span>No registered trademarks</span></li>
+  </ul>
+</footer>
+
+<dialog id="privacyModal" aria-labelledby="privacyModalTitle">
+  <h2 id="privacyModalTitle">Privacy Policy</h2>
+  <p>Anis' Home Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
+  <p>Playback progress and connected device information are stored locally in a SQLite database on the server and are never uploaded externally.</p>
+  <p>Remote access is provided via a Cloudflare Quick Tunnel solely for convenience. No analytics or tracking scripts are embedded in this application.</p>
+  <p>This policy was last updated in 2026.</p>
+  <button class="modal-close-btn" onclick="document.getElementById('privacyModal').close()">Close</button>
+</dialog>
+
+<script src="/static/js/nav.js?v=5" defer></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#090b10">
-<title>Connected Devices & Network — Anis' Media Server</title>
+<title>Connected Devices & Network — Anis' Home Media Server</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>{{css}}</style>
@@ -12,7 +12,7 @@
 <body class="devices-page">
 <header class="manage-header">
   <div class="header-brand-row">
-    <a href="/" class="brand-link" title="Anis' Media Library">
+    <a href="/" class="brand-link" title="Anis' Home Media Server">
       <svg class="brand-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
           <linearGradient id="brandPlayGradD" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -37,7 +37,7 @@
       <div class="brand-text">
         <div class="brand-title-wrap">
           <span class="brand-owner">Anis'</span>
-          <span class="brand-title">Media Library</span>
+          <span class="brand-title">Home Media Server</span>
         </div>
         <span class="brand-subtitle">PLAY • ORGANIZE • ENJOY</span>
       </div>
@@ -626,15 +626,16 @@ async function refreshTelemetry() {
 setInterval(refreshTelemetry, 15000);
 </script>
 <footer class="site-footer">
-  <p class="footer-copy">© 2026 Anis' Media Server. All rights reserved.</p>
+  <p class="footer-copy">© 2026 Anis' Home Media Server. All rights reserved.</p>
   <ul class="footer-links">
+    <li><a href="/manual">How to use</a></li>
     <li><button onclick="document.getElementById('privacyModal').showModal()">Privacy Policy</button></li>
     <li><span>No registered trademarks</span></li>
   </ul>
 </footer>
 <dialog id="privacyModal" aria-labelledby="privacyModalTitle">
   <h2 id="privacyModalTitle">Privacy Policy</h2>
-  <p>Anis' Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
+  <p>Anis' Home Media Server is a private, self-hosted application. It does not collect, transmit, or share personal data with any third party.</p>
   <p>Playback progress and connected device information are stored locally in a SQLite database on the server and are never uploaded externally.</p>
   <p>Remote access is provided via a Cloudflare Quick Tunnel solely for convenience. No analytics or tracking scripts are embedded in this application.</p>
   <p>This policy was last updated in 2026.</p>
