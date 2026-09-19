@@ -7,7 +7,7 @@ This document records the complete Windows development and production environmen
 ## 1. Project Layout & Environment
 
 - **Repository Root:** `C:\MediaServer`
-- **Media Library:** `C:\Flicks`
+- **Media Library:** `C:\Media`
 - **Archive Storage Pool:** `D:\Flicks\.archive` (215+ GB free storage pool on D:)
 - **SQLite Database:** `C:\MediaServer\media.db`
 - **Environment File:** `C:\MediaServer\.env`
@@ -67,12 +67,12 @@ Registered using NSSM (Non-Sucking Service Manager):
 
 ### B. Cloudflared (Remote Named Tunnel)
 Runs as an automatic Windows Service pointing to `C:\Users\<USER>\.cloudflared\config.yml`:
-- **Hostname:** `media.anisparvez.in`
+- **Hostname:** `your-media-hostname.example.com`
 - **Origin:** `http://127.0.0.1:8000`
 
 If DNS retains stale CNAME records from an earlier tunnel, update dynamically using:
 ```powershell
-cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> media.anisparvez.in
+cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> your-media-hostname.example.com
 ```
 
 ---
