@@ -482,19 +482,35 @@ def apply_post_transcode_policy(path, policy=None):
 
     elif policy in ('delete_source', 'delete_raw', 'delete_original'):
         try:
-            # Truncate source file to 0 bytes so 100% disk space is reclaimed,
-            # while keeping the file record intact in the library so scanners,
-            # routes, and active HLS cache map continue functioning with zero errors.
-            with open(path, 'wb') as f:
-                pass
-            logger.info("Post-transcode policy 'delete_source': Truncated original file %s to 0 bytes (reclaimed disk space, preserved HLS)", path)
+            # Move to .deleted staging area instead of truncating
+            deleted_base = config.DELETED_DIR
+            deleted_base.mkdir(parents=True, exist_ok=True)
+
+            rel = Path(get_rel_path(path))
+            clean_parts = [p for p in rel.parts if p != '.archive']
+            rel = Path(*clean_parts) if clean_parts else Path(path.name)
+            target_path = deleted_base / rel
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if path.resolve() != target_path.resolve():
+                target_path.unlink(missing_ok=True)
+                shutil.move(str(path), str(target_path))
+                logger.info("Post-transcode policy 'delete_source': Moved %s -> %s", path, target_path)
+
+            # Invalidate paths cache so video_paths() reflects the change immediately
+            import app.services.media_service as media_service
+            media_service._paths = (0, [])
+            if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
+                sys.modules['app']._paths = (0, [])
+
             return {
                 'status': 'source_deleted',
                 'policy': 'delete_source',
                 'source': str(path),
+                'moved_to': str(target_path),
             }
         except Exception as e:
-            logger.error("Failed to delete/truncate source %s: %s", path, e)
+            logger.error("Failed to move source to .deleted %s: %s", path, e)
             return {'status': 'error', 'message': str(e)}
 
     elif policy == 'purge_cache':
@@ -623,7 +639,7 @@ def _hls_resume_point(directory, playlist_path):
 
 
 def _is_hls_truly_complete(playlist_path, source_path):
-    """Check if an HLS playlist is truly complete (covers at least 90% of source duration)."""
+    """Check if an HLS playlist is truly complete (has ENDLIST tag)."""
     playlist_path = Path(playlist_path)
     source_path = Path(source_path)
     if not playlist_path.is_file():
@@ -632,9 +648,11 @@ def _is_hls_truly_complete(playlist_path, source_path):
         text = playlist_path.read_text(errors='replace')
     except OSError:
         return False
-    if '#EXT-X-ENDLIST' not in text:
-        return False
+    # ENDLIST is the authoritative marker of completion - if present, trust it
+    if '#EXT-X-ENDLIST' in text:
+        return True
 
+    # For in-progress playlists (no ENDLIST), check if we have substantial coverage
     extinf_re = re.compile(r'^#EXTINF:([\d.]+)', re.MULTILINE)
     cumulative = sum(float(m.group(1)) for m in extinf_re.finditer(text))
     try:
@@ -642,7 +660,7 @@ def _is_hls_truly_complete(playlist_path, source_path):
     except (TypeError, ValueError):
         source_duration = 0
     if source_duration <= 0:
-        return True
+        return False
     ratio = cumulative / source_duration
     if ratio >= 0.90:
         return True

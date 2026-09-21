@@ -180,7 +180,7 @@ class StorageRetentionTests(unittest.TestCase):
         shutil.rmtree(hls_dir, ignore_errors=True)
 
     def test_apply_post_transcode_policy_delete_source(self):
-        """Policy 'delete_source' truncates original source to 0 bytes while keeping HLS cache intact."""
+        """Policy 'delete_source' moves original source to .deleted staging while keeping HLS cache intact."""
         test_file = app.config.MEDIA_ROOT / "PolicyDeleteSourceTest.2026.mkv"
         test_file.write_bytes(b"large raw multi-gigabyte source data")
         self.assertGreater(test_file.stat().st_size, 0)
@@ -195,12 +195,19 @@ class StorageRetentionTests(unittest.TestCase):
             res = apply_post_transcode_policy(test_file, policy="delete_source")
             self.assertEqual(res["status"], "source_deleted")
             self.assertEqual(res["policy"], "delete_source")
-            self.assertTrue(test_file.exists())
-            self.assertEqual(test_file.stat().st_size, 0)
+            # Source file should be moved to .deleted, not truncated
+            self.assertFalse(test_file.exists())
+            self.assertIn("moved_to", res)
+            moved_to = Path(res["moved_to"])
+            self.assertTrue(moved_to.exists())
+            self.assertEqual(moved_to.stat().st_size, test_file.stat().st_size if test_file.exists() else len(b"large raw multi-gigabyte source data"))
+            # HLS cache should remain intact
             self.assertTrue(hls_dir.exists())
             self.assertTrue((hls_dir / "playlist.m3u8").exists())
 
-        test_file.unlink(missing_ok=True)
+        # Cleanup
+        if moved_to.exists():
+            moved_to.unlink(missing_ok=True)
         shutil.rmtree(hls_dir, ignore_errors=True)
 
     def test_api_storage_endpoints(self):

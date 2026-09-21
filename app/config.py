@@ -50,6 +50,23 @@ def _resolve_default_archive_dir():
 
 
 ARCHIVE_DIR = _resolve_default_archive_dir()
+
+
+def _resolve_default_deleted_dir():
+    env_dir = os.environ.get("MEDIA_SERVER_DELETED_DIR")
+    if env_dir:
+        return Path(env_dir).resolve()
+    try:
+        d_flicks = Path("D:/Flicks/.deleted")
+        if Path("D:/").exists():
+            return d_flicks.resolve()
+    except Exception:
+        pass
+    return (MEDIA_ROOT / ".deleted").resolve()
+
+
+DELETED_DIR = _resolve_default_deleted_dir()
+
 ALLOWED_RETENTION_POLICIES = {"keep", "archive", "purge_cache", "delete_source", "delete_raw", "delete_original"}
 
 

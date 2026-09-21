@@ -486,15 +486,26 @@ class MediaServerTests(unittest.TestCase):
 
         self.assertFalse(app._is_hls_truly_complete(pl_file, media_file))
 
-        # Playlist with ENDLIST but only 20s out of 100s source
+        # Playlist with ENDLIST - now considered complete regardless of duration sum
+        # (ENDLIST is the authoritative marker that FFmpeg finished the transcode)
         pl_file.write_text("#EXTM3U\n#EXTINF:10.0,\nseg0.ts\n#EXTINF:10.0,\nseg1.ts\n#EXT-X-ENDLIST\n")
         with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
-            self.assertFalse(app._is_hls_truly_complete(pl_file, media_file))
+            self.assertTrue(app._is_hls_truly_complete(pl_file, media_file))
 
-        # Playlist covering 95% of source
+        # Playlist covering 95% of source with ENDLIST
         pl_file.write_text("#EXTM3U\n#EXTINF:50.0,\nseg0.ts\n#EXTINF:45.0,\nseg1.ts\n#EXT-X-ENDLIST\n")
         with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
             self.assertTrue(app._is_hls_truly_complete(pl_file, media_file))
+
+        # In-progress playlist (no ENDLIST) with 95% coverage - still complete
+        pl_file.write_text("#EXTM3U\n#EXTINF:50.0,\nseg0.ts\n#EXTINF:45.0,\nseg1.ts\n")
+        with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
+            self.assertTrue(app._is_hls_truly_complete(pl_file, media_file))
+
+        # In-progress playlist (no ENDLIST) with 20% coverage - incomplete
+        pl_file.write_text("#EXTM3U\n#EXTINF:10.0,\nseg0.ts\n#EXTINF:10.0,\nseg1.ts\n")
+        with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
+            self.assertFalse(app._is_hls_truly_complete(pl_file, media_file))
 
         # 2. Test _hls_resume_point
         test_hls_dir = Path(TMP.name) / 'hls_test'

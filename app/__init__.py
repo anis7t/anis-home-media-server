@@ -20,6 +20,7 @@ from app.config import (
     CACHE_DIR,
     CACHE_MAX_BYTES,
     DATABASE,
+    DELETED_DIR,
     HLS_PROCESSES,
     LOG_LEVEL,
     MEDIA_ROOT,

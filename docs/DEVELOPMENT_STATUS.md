@@ -53,7 +53,12 @@ Venv:          C:\MediaServer\venv
 - **Cross-Root Subtitle Mirror Discovery:** Resolves sidecar `.srt`/`.vtt` files across mirror subdirectories in any active drive root (stripping `.archive` subpaths).
 
 ### Post-Transcode Storage Retention & Safe Orphaned Cache Purge
-- **Configurable Retention Policies:** User-configurable retention actions (`keep`, `archive`, `purge_cache`) persisted in SQLite settings.
+- **Configurable Retention Policies:** User-configurable retention actions (`keep`, `archive`, `delete_source`) persisted in SQLite settings.
+- **Zero-Byte Corruption Fix (2026-09-20):** Fixed critical bug where `delete_source` policy truncated source files to 0 bytes, causing infinite re-transcoding loops that overwrote valid HLS caches.
+  - Changed `apply_post_transcode_policy()` to **move source files to `.deleted` staging area** (`D:\Flicks\.deleted`) instead of truncating
+  - Added defensive size check in `is_video()` (`p.stat().st_size > 0`) to prevent zero-byte files from being discovered
+  - Source files now recoverable from staging until manual cleanup
+- **HLS Cache Preservation Fix (2026-09-20):** Fixed `_is_hls_truly_complete()` to treat any playlist with `#EXT-X-ENDLIST` as complete (ENDLIST is the authoritative FFmpeg completion signal). Previously, caches with ENDLIST but EXTINF duration sums < 90% of source duration were incorrectly flagged incomplete and purged by cache maintenance. This prevented accidental loss of valid completed transcodes.
 - **Automated Orphaned Cache Auditing:** `audit_orphaned_caches()` reconciles `cache/hls/` and `cache/previews/` against active video files and in-flight transcode jobs.
 - **Safe Orphaned Cache Purge:** `purge_orphaned_caches()` with bounded Windows file-lock retries, triggered automatically on server launch and via background worker every 2 hours. Reclaimed 57 orphaned cache directories.
 - **Management UI:** Storage Retention & Cache Governance card on `/manage` with live storage pool telemetry, interactive policy selector, and clean orphaned caches modal (`#cleanOrphansModal`).
