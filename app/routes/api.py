@@ -69,13 +69,21 @@ def media_info(filename):
         duration = 0
     video_stream = next((s for s in probe_data.get('streams', []) if s.get('codec_type') == 'video'), {})
     probe = check_which('ffprobe')
+    direct_play = path.suffix.lower() in {'.mp4', '.m4v', '.webm'}
+    if not direct_play:
+        # HLS playback is built from our own playlist, so advertise the video stream's end:
+        # a mux whose audio/subtitles outlive the picture (e.g. a truncated video track) would
+        # otherwise show a tail in the seek bar that can never play - the "83% complete" wall.
+        # Direct play keeps the container duration, because there the browser's timeline comes
+        # from the file's own metadata and a different value would desync seeking.
+        duration = _source_progress_duration(path) or duration
     return jsonify(
         container=path.suffix[1:].lower(),
         duration=duration,
         video_codec=video_stream.get('codec_name', ''),
         width=video_stream.get('width'),
         height=video_stream.get('height'),
-        direct_play=path.suffix.lower() in {'.mp4', '.m4v', '.webm'},
+        direct_play=direct_play,
         ffprobe_available=bool(probe),
         transcoding_available=bool(check_which('ffmpeg')),
         reason=(
@@ -84,6 +92,25 @@ def media_info(filename):
             else 'Direct play is preferred; codec inspection can be extended without changing media files.'
         )
     )
+
+
+def _source_progress_duration(path):
+    """Source duration to report progress against.
+
+    Uses the video stream's end when it differs from the container duration: WEB-DL/WEBRip
+    muxes often carry audio/subtitle packets past the last video frame, and reporting the
+    container duration would peg a finished transcode at e.g. 84% forever.
+    """
+    try:
+        container = float(probe_media(path).get('format', {}).get('duration') or 0)
+    except (TypeError, ValueError, OSError):
+        return 0
+    try:
+        from app.services.transcode_service import source_video_duration
+        video = source_video_duration(path, fallback=container)
+    except Exception:
+        video = container
+    return float(video or container)
 
 
 @api_bp.route('/api/transcode-status/<path:filename>')
@@ -110,7 +137,7 @@ def transcode_status(filename):
         if hls_complete:
             bytes_val = sum(p.stat().st_size for p in hls_dir.glob('segment_*.*')) if hls_dir.is_dir() else 0
             try:
-                dur_val = float(probe_media(path).get('format', {}).get('duration') or 0)
+                dur_val = _source_progress_duration(path)
             except (TypeError, ValueError):
                 dur_val = 0
             return jsonify(status='ready', bytes=bytes_val, percent=100, remaining=0, encoded=dur_val, duration=dur_val, speed=0)
@@ -120,7 +147,7 @@ def transcode_status(filename):
         part = cached.with_name(cached.stem + '.part.mp4')
         if cached.is_file() and cached.stat().st_size:
             try:
-                dur_val = float(probe_media(path).get('format', {}).get('duration') or 0)
+                dur_val = _source_progress_duration(path)
             except (TypeError, ValueError):
                 dur_val = 0
             return jsonify(status='ready', bytes=cached.stat().st_size, percent=100, remaining=0, encoded=dur_val, duration=dur_val, speed=0)
@@ -133,7 +160,7 @@ def transcode_status(filename):
                 key, value_text = line.split('=', 1)
                 values[key] = value_text.strip()
     try:
-        duration = float(probe_media(path).get('format', {}).get('duration') or 0)
+        duration = _source_progress_duration(path)
     except (TypeError, ValueError):
         duration = 0
     try:

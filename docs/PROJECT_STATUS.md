@@ -4,6 +4,150 @@ Last reviewed: 2026-09-17
 Repository: `anis7t/media-server`
 Working branch: `feat/unified-header-navigation`
 
+## 0. Recent work — 2026-09-21 (video-duration completeness + cache-purge safety)
+
+### 2026-09-22 — root cause found: segment-index collision between chunks (content loss)
+
+**Correction to the first version of this entry.** It claimed the AMF encoders "mislabel" the first
+segment of every chunk and that a measurement-based label rewrite fixed it. That was wrong, and
+the "99.88 %" repair of the Spider-Man playlist was actively harmful: ffmpeg's `#EXTINF` labels are
+**honest** (a segment labelled 2.4 s really holds 60 frames = 2.4 s at 25 fps). The label looked
+short only because it was being compared against `ffprobe -show_entries format=duration`, which
+includes the segment's **audio pre-roll** (measured 4.33 s container vs 2.4 s of video for the same
+segment). Rewriting labels from that quantity inflated the playlist and hid the loss behind an
+ENDLIST. The label-rewrite code (`measured_label_overrides`, `repair_playlist_labels`) has been
+**removed**, and the playlist builder now deliberately keeps ffmpeg's labels.
+
+- **The real defect: a 60 s chunk does not emit the 15 segments the plan assumes, and the dense
+  index grid let it overwrite the next chunk.** The plan gives chunk N `start_seg =
+  round(start/4)`, contiguous with chunk N+1. Measured with the real pipeline and the real AMF
+  encoders, a 60 s chunk emits **15, 16 or 17** segments depending on source/GPU/driver (Vega 8
+  and RX 560X differ; pinning `-g` to a 4 s GOP - 15 x 4.0 s on the Vega 8 - makes the RX 560X
+  emit a **single 60 s segment**, so no encoder-side setting fixes it). When a chunk emitted an
+  extra segment, its last segment was written at the **next chunk's first segment index**;
+  whichever render finished last won, and ~1.25 s of the previous chunk's tail was destroyed at
+  every overflowing boundary.
+- **Live proof, exact match.** Of the ten caches, the nine whose chunks emitted exactly 15
+  segments each have **0 packet gaps**; Spider-Man - the only cache with overflowing chunks
+  (**16 segments x70, 17 x15 = 85**) - has exactly **85 gaps / 279.4 s / 6,900 frames missing**
+  (independent packet-PTS inventory). The earlier "resume-from-wrong-labels" explanation was a
+  symptom of the same dense grid, not the cause.
+- **Fix: strided, collision-proof segment indices.** Each chunk owns
+  `chunk_id x SEGMENTS_PER_CHUNK_STRIDE` (32), so an extra segment can never reach the next
+  chunk whatever the encoder does. Everything that assumed dense indices was fixed:
+  `plan_chunks`, `_chunk_output_ok` (fails a chunk that leaves its stride), `_update_master_playlist`
+  (walked indices densely from 0 - it stopped at the first inter-chunk gap and silently dropped
+  every later chunk; coverage read 50 % for a fully rendered 120 s source), `_hls_resume_point`'s
+  playlist reconstruction, `chunk_content_holes`, and `chunk_content_deficits` (now measures a
+  chunk's **own run** of segments, not a fixed 15, which made complete chunks look 1.25 s short).
+- **Legacy caches are migrated, not thrown away.** `_prepare_cache_layout()` runs before the queue
+  is planned: an intact dense cache (chunk playlists that do not overlap) is **renumbered onto the
+  strided grid by renaming files and rewriting the playlists - no re-encode**, preserving hours of
+  GPU work; a cache whose chunk playlists **overlap** has already lost the content at those
+  boundaries and is cleared for a full re-render. Validated against the real caches via a
+  same-volume copy/hardlink harness: 1656- and 1356-segment caches migrated with **0 missing
+  playlist entries** and the live directories asserted unchanged; Spider-Man's overlapping layout
+  was detected as unrepairable. `.seg_layout` (value `stride32`) marks a migrated cache.
+- **No label rewriting anywhere.** `repair_understated_caches()` (maintenance worker) now only
+  strips ENDLIST from a cache that is short of **frames**, so the pipeline re-renders it; a
+  genuinely short cache must be re-rendered, never relabelled.
+- **Kept from the first round** (all still correct): frame accounting as the sole content measure
+  (`chunk_content_deficits`; `-1` = unknown, never empty), ENDLIST refused while any chunk is
+  short, video-stream-end denominator for completeness, memoised segment probes with a 3 s
+  freshness guard, serialised atomic playlist writes, the phantom-cache-key guard, and
+  fail-closed orphan auditing.
+- Tests: **218 passing**, including the strided plan, migration vs clear, per-chunk frame
+  accounting, boundary-stride rejection, resume-from-label-sum, and "unknown frames are not a
+  deficit".
+- Tools added: `scripts/hls_frame_audit.py` (per-chunk frame accounting),
+  `scripts/hls_pipeline_regression.py` (real pipeline over a synthetic source - expect "deficient
+  chunks: 0", full frame total, 100 % coverage, ENDLIST),
+  `scripts/hls_layout_migration_check.py` (migration validated against real caches, read-only),
+  `scripts/hls_per_gpu_segments.py` (per-GPU segment counts / why the plan cannot be trusted), in
+  addition to `hls_content_gap_inventory.py`, `hls_gop_matrix.py`, `final_verification_battery.py`,
+  `snapshot_live_data.py`.
+
+
+#### Live rollout findings (same day, after the first restart)
+
+The fix behaved correctly on the real movie - a full heal on a copy of Spider-Man's cache
+(detect -> clear -> re-render 137 chunks -> `rc=0`, **0 deficient chunks, 204,595 frames =
+8183.8 s = exactly the source's count**, 2146 playlist entries / 0 missing, ENDLIST, live cache
+byte-identical) - but going live surfaced two more defects, both now fixed and tested:
+
+1. **Frame measurement ignored the cache's layout (introduced by this round).**
+   `chunk_content_deficits()` walked *strided* windows on caches still on the *legacy dense* grid.
+   Chunk N's overflow segment sits on chunk N+1's first index, so for most chunks the walk read a
+   neighbour's 32 segments (over-counting) and for the last ones a near-empty tail - reporting
+   **complete caches as missing 38.5 s / 24.2 s / 33.2 s / 34.2 s / 13.7 s** and stripping their
+   ENDLIST (5 live caches: Coyote, I Want Your Sex, Lust Stories 3, Moana, The Invite). No content
+   was lost - only the ENDLIST line was removed. Fixed by dispatching on
+   `cache_uses_strided_layout()`: a dense cache is judged on its whole-cache frame total (one
+   aggregate entry, `chunk_id` -1); per-chunk windows are used only where they are exact. Verified
+   live: Coyote 38.5 s -> **0 s**, I Want Your Sex 13.7 s -> **0 s**. The 5 caches were restored
+   with ENDLIST after re-measuring (`_restore_endlist.py`, backup + atomic write).
+2. **The ENDLIST strip was never wired to a re-render.** `_is_hls_truly_complete()` is label-based
+   and a frame-deficient cache's labels can still sum to 100 %, so the auto-transcoder called such
+   a cache complete and skipped it - exactly why Spider-Man sat at 99.88 % after the label
+   "repair" hid its 277.2 s gap. `repair_understated_caches()` now calls `ensure_hls_transcode()`
+   for every cache with a real deficit (including one already stripped by an earlier pass), so the
+   heal completes instead of stranding.
+
+Lesson recorded in `AGENTS.md`: frame measurement must respect the layout, and stripping ENDLIST
+is not a heal on its own.
+### Incident investigated: mass transcode-cache deletion
+- ~25.7 GB of `cache/hls` (9 directories, incl. the `Punjab.95.Satluj` cache) vanished around 15:45–15:46 while the service was running. **No media file was affected** (all 9 MKVs in `D:\Flicks` intact); the server rebuilt the caches automatically.
+- Root-cause class identified in code: orphan detection was **fail-open**. `audit_orphaned_caches()` wrapped `video_paths()` in `try/except` and set `active_videos = []` on any exception, and skipped individual files whose cache key raised — so a transient error (e.g. `database is locked`; SQLite here has no WAL and no `busy_timeout` under 8 Waitress threads) marked *every* directory orphaned. Two automatic non-dry-run purges consume that result: `cleanup_cache_on_startup()` (every service start) and `cache-maintenance-worker` (every 2 hours). The log holds 92 historical `Purged orphaned cache directory` events including multi-GB ones (`3536856922`, `3041758276`, `2811899673` bytes), i.e. this failure mode is recurring, not new.
+- Evidence limits: the app log had **no timestamps** (see below), so individual purge events could not be dated; no single purge of ~25 GB was logged, so the exact trigger of this instance remains unproven. The service was not restarted manually around the event.
+
+### Safety fixes applied
+- `audit_orphaned_caches()` now **fails closed**: enumeration exceptions, per-file cache-key failures, and "no videos found while cache directories exist" all set `degraded` + `degraded_reasons`, and the orphan lists are returned **empty** rather than complete.
+- `purge_orphaned_caches()` **refuses to delete** when the audit is degraded (`refused: True`, `reason`), and skips directories holding `hls.progress`/`playlist.m3u8` written within `RECENT_CACHE_GRACE_SECONDS` (600 s) — previously a purge could delete a directory an FFmpeg worker was still writing, producing `failed to rename ... Operation not permitted` storms.
+- `cleanup_cache_on_startup()` no longer purges orphans; it only clears `.part` files and enforces the transcode-cache cap. Opt in with `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
+- `run_production.py` configures logging with `force=True` and `%(asctime)s` — `create_app()`'s earlier `basicConfig` had won, so service logs carried no timestamps and incident timelines were unreconstructable.
+
+### Resolved: the disappearances were caused by the test suite, not by the app or the OS
+- **Root cause proven.** `cache/hls` was being deleted by `pytest` runs on this host. Cache isolation was done by rebinding Python attributes at import, and two other modules silently undo that:
+  - `tests/test_app.py::MediaServerTests.tearDownClass` restores the environment and then calls `importlib.reload(app.config)`, so `app.config.CACHE_DIR` becomes the live `C:\MediaServer\cache` again;
+  - `tests/test_selenium_multi_seek_coyote.py` then executes `app_module.CACHE_DIR = app_module.config.CACHE_DIR`, rebinding the app back to the live cache and defeating `tests/test_storage_retention.py`'s import-time patch.
+  From that point the non-dry-run purge tests in `test_storage_retention.py` walked the **live** cache, treated every directory as orphaned (the "active" set is derived from a temporary `MEDIA_ROOT`), and deleted real transcodes.
+- **Reproduced deterministically**, not inferred: a 1-second cache watchdog caught the suite deleting four real directories at 18:43:48 (`372fdd0e`, `512dd05c`, `71f81790`, `9bf62fc5` gone; `f3ec5869` shrunk 1826 → 262 MB) while test-created directories (`ActiveDualGpuPur…`, `orphan_hls_fakehash…`, `orphan_enum_error`) appeared **inside the live cache**. The service log has no purge line in that window, so the deletions were not the service's.
+- This also accounts for the **17:27:52** loss of the 3.3 GB `c4d01521…` (Moana) directory: it coincided with a full-suite run, and no application purge was logged at that time.
+- The **15:45** loss of ~25.7 GB is the *service-side* mechanism: `audit_orphaned_caches()` was fail-open, so a transient enumeration failure marked every directory orphaned and the automatic non-dry-run purges removed them (92 `Purged orphaned cache directory` events are in the log, including multi-GB ones). The suite shares the production database after `test_app`'s teardown reloads `app.config`, so DB contention from a concurrent test run is a plausible trigger — that part remains inference, but the fail-open path itself is proven and fixed.
+- Corrections to earlier notes in this section: the deletions were **not** attributable to Storage Sense, `SilentCleanup`, Defender or the recycle bin (no events, no records, and the USN journals on `C:` cover only ~15 minutes so they cannot reach the incident). `RefreshCache` is a `\Flighting\OneSettings\` telemetry task, unrelated to disk cleanup. Kernel object-access auditing and 1-second cache watching were installed during the investigation and are what produced the proof.
+- The `MEDIA_SERVER_PURGE_ON_STARTUP` recommendation is unaffected: relocating `cache/` to `D:` remains a reasonable hardening step, but it is no longer needed to explain or stop these losses.
+
+### Test-suite isolation fix (2026-09-21)
+- New `tests/conftest.py` gives the suite two independent protections:
+  1. `pytest_runtest_setup` re-points `config.CACHE_DIR`, `POSTER_CACHE`, `BACKDROP_CACHE`, `SUBTITLE_CACHE`, `SUBTITLE_EMBEDDED_CACHE` and `SUBTITLE_ONLINE_CACHE` at a throwaway tree **before every test**, so no import-order accident or module reload can leave the live cache active, and it fails the test if the live cache is ever resolved;
+  2. the removal primitives (`shutil.rmtree`, `os.remove`/`os.unlink`, `Path.unlink`, `Path.rmdir`) refuse any deletion inside the checkout's `cache/` tree with a loud `TEST ISOLATION VIOLATION` error.
+- The rest of the environment (media root, database, archive) is intentionally left at the host's real configuration: the page-rendering tests assert against the template/CSS constants that `app/__init__.py` reads from `BASE_DIR`, and the library tests need the real media root.
+- Verified: full suite **184 passed** with `cache/hls` byte-identical before and after (5 directories / 11 GB), zero watchdog events and zero violations; the guard's teeth were confirmed by a temporary probe that attempted to delete a planted file and directory inside the live cache and was refused both times.
+
+ ### Second leak fixed: the suite also wrote into the live library and database
+ - The upload fixtures in `tests/test_app.py` (`Upload_Test_Movie.2025.mp4` 22 bytes, `Mayday (2026).mkv` 23 bytes) were written into the real `C:\Flicks` library, because `app/config.py::_resolve_upload_dirs()` returns `MEDIA_ROOT` while pytest is running and no upload target is configured. Fixture rows also went straight into the production database — `Mock.mkv` (tmdb 999999) is inserted by `tests/test_app.py`, plus `RichMovie.2026.mp4` and `Moana.2016.mp4`.
+ - `tests/conftest.py` now redirects the database, upload target/staging, archive and deleted directories onto the throwaway tree **through the environment before the app is imported**, so an `importlib.reload(app.config)` recomputes throwaway paths instead of live ones; `pytest_runtest_setup` re-asserts every cache, database and upload path before each test and fails the test if the live cache or the live database is ever resolved.
+ - Verified after the change: library **35 files**, production database **18 rows** and live cache **11 dirs / 17,957 segments** all hash-identical before and after a full **186-test** run. The artefacts were then removed through the application's own `purge_media()` (files, stub HLS/transcode caches, subtitle cache, metadata and database rows), leaving **13** real movie rows.
+
+ ### Playback duration honesty: report the video stream's end for HLS
+ - `/api/media-info` used the container duration, so a mux whose audio/subtitles outlive the picture advertised a seek-bar tail that can never play — the same "83 % complete" wall as the transcode denominator bug, but on the player side. It now returns `_source_progress_duration(path)` (video stream's end) for HLS playback and keeps the container duration for direct play, where the browser's own timeline comes from the file.
+ - Motivating case: `Punjab.95.Satluj.2026.1080p.WEBRip.DD+5.1.Atmos.x264-KIN.mkv` — the **video track ends at 8254.6 s** while audio (9839.04 s), both subtitle streams (9839.07 s) and the container (9839.07 s) run to 2:43:59, and TMDb gives the runtime as 164 min. The container matches the intended length, so the **video track itself is truncated**; the HLS cache is complete and faithful (2064 segments covering all 8254.6 s of picture), and playback correctly stops where the picture ends.
+
+
+### Security finding (fixed): unauthenticated arbitrary file deletion via /api/media/delete
+- `purge_media()` caught `safe_path()`'s `abort(404)` and fell back to `config.MEDIA_ROOT / filename`, then unlinked that path with no containment check. Because the Waitress service runs as **LocalSystem**, a traversal name let `POST /api/media/delete/<name>` delete **any file on the host**.
+- Verified live before the fix: `..%5C..%5C..%5CMediaServer%5C<file>` returned `{"file_deleted": true}` for a file outside the library, the absolute-path variant deleted the same way, and the `..%5C..%5C..%5CWindows%5CSystem32%5Cdrivers%5Cetc%5Chosts` variant **removed the Windows hosts file** (restored from `hosts.rollback`; the exact pre-deletion content is not recoverable). There is still no authentication in front of this route.
+- Fix: the fallback is accepted only when `_is_within_media_roots(candidate)` is true, otherwise the call returns `{'success': False, 'error': 'Unsafe or unknown media path'}`; the unlink itself is additionally gated on containment. Regression tests: `tests/test_media_delete_safety.py` (fail without the fix).
+
+### Transcode completeness fix (container vs video duration)
+- `source_video_duration()` measures the **video stream's end** (`ffprobe -read_intervals <midpoint>%+99999`, ~0.3 s, memoised per path/size/mtime) instead of trusting `format.duration`.
+- `DualGPUTranscodeJob` plans chunks and validates coverage against that value. `cleanup_cache_on_startup`/`transcode_status` report it too.
+- `_finalize()` writes `#EXT-X-ENDLIST` **only when coverage validates** (≥ `MIN_COVERAGE_RATIO`, 0.98 of video duration); a failed validation leaves an EVENT playlist plus `progress=error`, bounded by `MAX_VALIDATION_ATTEMPTS` (3) so the auto-transcoder cannot re-encode the same tail forever.
+- Per-chunk underproduction detection: a chunk that exits 0 while rendering < `MIN_CHUNK_YIELD_RATIO` (0.5) of its expected duration retires that GPU for the job and the chunk is retried on a healthy worker.
+- Motivating case: a WEBRip whose audio/subtitles run ~26 min past the last video frame (video ends 8254.6 s inside a 9839.1 s container) was scored 83.9 % complete forever — every tail chunk could only emit a zero-duration segment.
+
+---
+
 ## 1. Executive summary
 
 This is a Flask-based personal media server designed for LAN playback and remote access. The codebase has been substantially modularized from the earlier monolithic application into an `app/` package containing routes, services, utilities, configuration, and database code. The server supports direct media streaming, on-demand HLS transcoding, dynamic multi-GPU chunked transcoding, TMDb metadata, local subtitles, resumable uploads, library management, device telemetry, live playback telemetry, live video seek preview thumbnails, storage retention policies, automated orphaned cache governance, and Cloudflare Tunnel remote access.

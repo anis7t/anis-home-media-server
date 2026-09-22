@@ -124,7 +124,92 @@ The current project includes:
 - Direct MP4/AAC seeking and MKV/HEVC HLS seeking must both remain functional.
 - Preserve player container isolation and mobile viewport clamping.
 - `templates/player.html` has a strict single-`<script>` invariant; external scripts must be dynamically injected from the existing script block.
+- `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end — a WEBRip whose audio/subtitles outlive the picture otherwise shows an unplayable tail.
 - Do not perform broad player rewrites for narrow playback bugs.
+
+### HLS cache integrity (learned the hard way)
+
+- **Segment indices are strided per chunk (`SEGMENTS_PER_CHUNK_STRIDE = 32`), and that is what
+  keeps chunks from overwriting each other.** A 60 s chunk does **not** reliably emit the 15
+  segments the plan expects: with the AMF encoders it emits 15, 16 or 17 depending on
+  source/GPU/driver (the Vega 8 and RX 560X even disagree - pinning `-g` to a 4 s GOP makes the
+  RX 560X emit a *single* 60 s segment, so no encoder-side setting fixes this). Under the old
+  dense grid (`start_seg = round(start/4)`) an extra segment landed on the **next** chunk's first
+  index, and whichever render finished last won - destroying ~1.25 s of the previous chunk's tail
+  at **every** overflowing boundary. Live proof: of 10 caches, the nine whose chunks emitted
+  exactly 15 segments have 0 packet gaps, while Spider-Man - the only cache with overflowing
+  chunks (16 x70, 17 x15) - has exactly **85 gaps**, matching its 85 overflowing chunks.
+  Consequences for anything that touches segments:
+  - Never walk segment indices densely from 0 (`while segment_{idx}.ts exists`): it stops at the
+    first inter-chunk gap and silently drops every later chunk (coverage read 50 % for a fully
+    rendered 120 s source). Glob and sort instead, and bound a chunk's run by
+    `start_seg + SEGMENTS_PER_CHUNK_STRIDE`.
+  - Frame accounting must measure a chunk's **own run** of segments, not a fixed 15: measuring
+    only the planned count made complete chunks look 1.25 s short.
+  - A cache built on the old dense grid cannot be migrated in place (the indices *are* the
+    ordering): `_prepare_cache_layout` clears an unmarked cache and re-renders it on the strided
+    grid, marking the directory with `.seg_layout` = `stride32`.
+  - `-force_key_frames` does not make the AMF encoders obey the plan, and `-g` changes the segment
+    count rather than controlling it. Treat the segment count as unknown; the layout must
+    tolerate it.
+
+- **`#EXTINF` labels are honest - do not "correct" them.** A segment labelled 2.4 s really holds
+  60 frames = 2.4 s of video at 25 fps. The trap is `ffprobe -show_entries format=duration` on a
+  segment: the container duration includes the **audio pre-roll** (measured 4.33 s container vs
+  2.4 s video for the same segment). Rewriting labels from that quantity overstates the video
+  timeline and **hides real content loss** - it is how a 99.88 % "repair" once masked 277 s of
+  missing frames. Never relabel a playlist from container durations.
+- **Frame accounting is the only trustworthy content measure.** `chunk_content_deficits()`
+  counts video packets per chunk and compares with `chunk window x source fps`; a real cache
+  measured 100 % by duration while missing **277.2 s of frames across 101 chunks** (independent
+  packet-PTS scan: 85 gaps / 279.4 s - the two agree within 2 s). A frame count of `-1` means
+  *unknown* (unreadable file, no ffprobe, segment still being written) and must never be treated
+  as empty, or every chunk looks deficient and the cache re-renders forever.
+- **ENDLIST must never be written while any chunk is short of frames**, and a chunk with a frame
+  deficit is not "rendered". `repair_understated_caches()` (cache-maintenance-worker) strips
+  ENDLIST from caches that claim completion but are short, so the pipeline re-renders them. It
+  never relabels: a genuinely short cache must be re-rendered, not rewritten.
+- **Frame measurement must respect the cache's layout.** Per-chunk windows are exact *only* on the
+  strided grid (`.seg_layout` = `stride32`). On a legacy dense cache chunk N's overflow segment
+  sits on chunk N+1's first index, so a strided window reads a neighbour's segments for most
+  chunks and a near-empty tail for the last ones - that is how three complete caches were
+  reported as missing 38.5 s / 24.2 s / 13.7 s and had their ENDLIST stripped. `chunk_content_deficits()`
+  therefore dispatches on `cache_uses_strided_layout()` and judges a dense cache on its
+  whole-cache frame total (one aggregate entry, `chunk_id` -1).
+- **Duplicate-job detection must not rely on `/proc`.** `find_ffmpeg_info_for_path()` originally
+  scanned `/proc/[0-9]*/cmdline` only, so on Windows it returned `(None, None)` on every call and
+  the guard in `ensure_hls_transcode()` never fired: the auto-transcoder started a second job on a
+  cache another job was already rendering (two jobs, same segment indices). It now enumerates
+  processes with `psutil` first and falls back to `/proc`. Caveat: a *user* process cannot read a
+  *LocalSystem* process's command line (Windows access control), so the service can detect
+  externally started encoders but not the reverse. `ensure_hls_transcode(filename, force=True)`
+  skips the completeness gate and is only for a *measured* frame deficit.
+- **Stripping ENDLIST is not a heal on its own - the re-render must be queued with it.**
+  `_is_hls_truly_complete()` is label-based, and a frame-deficient cache's labels can still sum to
+  100 %, so the auto-transcoder called such a cache complete and never touched it (the state
+  Spider-Man sat in at 99.88 %). `repair_understated_caches()` calls `ensure_hls_transcode()` for
+  every cache with a real deficit, including one already stripped by an earlier pass.
+- **Resume from the label sum, never from container durations.** `_hls_resume_point()` resumes at
+  the content the existing segments hold; resuming from inflated container durations skips
+  content that still has to be produced.
+- **Packet-PTS jumps at chunk boundaries are expected** (`#EXT-X-DISCONTINUITY` is declared
+  there): `chunk_content_holes()` is diagnostic only and must never gate anything.
+- **The chunk command itself is frame-complete** - verified with the exact job command shape,
+  with/without `-c:a copy`, with/without `-output_ts_offset`, and with two chunks encoding
+  concurrently on both GPUs (1500/1500 frames every time). A deficient cache is therefore legacy
+  (older code or interrupted runs) and is healed by re-rendering, not by relabelling.
+- **All segment measurement is memoised by (path, size, mtime)** and files younger than 3 s are
+  skipped. The 1 Hz progress updater rebuilds the master playlist; an unmemoised probe there
+  spawned ~1 ffprobe per chunk boundary per second for the whole run.
+- **Playlist writes are serialised and atomic** (`_PLAYLIST_WRITE_LOCK`, `write_text_atomic`):
+  a torn read is what `_hls_resume_point` then freezes into both `playlist.m3u8` and its `.bak`.
+- Completeness decisions divide by `source_video_duration()` (the video-stream end), never the
+  container duration: a WEB-DL container can run minutes past the last video frame and would mark
+  a finished cache incomplete forever.
+- Verification tools: `scripts/hls_content_gap_inventory.py` (label-independent packet audit of
+  every cache), `scripts/hls_frame_audit.py` (per-chunk frame accounting), `scripts/hls_gop_matrix.py`
+  (real dual-GPU pipeline over synthetic keyframe cadences), `scripts/final_verification_battery.py`,
+  `scripts/snapshot_live_data.py`.
 
 ## 7. Testing protocol
 
@@ -134,6 +219,13 @@ Before committing:
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 .\venv\Scripts\python.exe -m pytest tests/
 ```
+
+Cache-directory safety when running the suite on the live host:
+- `tests/conftest.py` owns test isolation: it redirects the cache, database, upload target/staging, archive and deleted directories onto a throwaway tree **through the environment before the app is imported** (so a `config` reload recomputes throwaway paths), re-asserts them before every test, and refuses any deletion inside the checkout's `cache/` tree. Never rely on import-time attribute rebinding alone: `tests/test_app.py`'s teardown reloads `app.config` and `tests/test_selenium_multi_seek_coyote.py` rebinds `app.CACHE_DIR = app.config.CACHE_DIR` — that is how a full-suite run once deleted the live transcode cache. `audit_orphaned_caches()` derives the "active" set from `video_paths()`, so any run whose cache is not isolated makes every real HLS directory look orphaned and the non-dry-run purge deletes production transcodes; likewise, `_resolve_upload_dirs()` returns `MEDIA_ROOT` under pytest, which once wrote 22-byte fixtures into the real library and fixture rows into the production database.
+- Verify isolation the hard way after touching it: snapshot the library file list, the production `movies` rows and the `cache/hls` directory list (plus a hash of each) before and after a full run — all three must be unchanged.
+- The orphan audit is fail-closed by design; do not reintroduce bare `except Exception: <empty active set>` handling around media enumeration.
+- `purge_orphaned_caches()` refuses to run when the audit reports itself degraded, and skips any directory holding `hls.progress`/`playlist.m3u8`/`chunk_*.m3u8*` written within `RECENT_CACHE_GRACE_SECONDS` (live transcode). Startup no longer purges orphans unless `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
+- Never fall back to a bare `MEDIA_ROOT / user_input` join when `safe_path()` refuses a name, and never unlink without an `_is_within_media_roots()` check: the service runs as LocalSystem, so a traversal name in `/api/media/delete` deletes arbitrary host files (see `docs/PROJECT_STATUS.md`). Audit sibling deletion paths the same way.
 
 Verify at minimum:
 - Direct MP4/AAC playback.

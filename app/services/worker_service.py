@@ -89,6 +89,11 @@ def auto_transcoder_loop():
             for p in video_paths():
                 if config.SHUTDOWN_EVENT.is_set():
                     break
+                if not p.is_file():
+                    # Enumerated but gone (deleted between the cached listing and now):
+                    # skipping it keeps one vanished file from starving the real queue.
+                    logger.warning('Auto-transcoder: skipping missing media file: %s', p.name)
+                    continue
                 if not is_video(p) or not needs_transcode(p):
                     continue
                 rel = get_rel_path(p)
@@ -168,6 +173,19 @@ def cache_maintenance_loop():
             if res.get('purged_count', 0) > 0:
                 logger.info(
                     f"Periodic cache maintenance purged {res['purged_count']} orphaned directories ({res['freed_bytes']} bytes freed)"
+                )
+            # Caches can claim completion (ENDLIST) while missing seconds of video frames: a
+            # legacy chunk layout let one chunk's render overwrite the next chunk's first segment,
+            # and old resumes skipped content that the understated labels implied was already
+            # there. Heal them here rather than waiting for a playback attempt: a cache that is
+            # short of frames has ENDLIST stripped so the pipeline re-renders it. Labels are never
+            # rewritten - a genuinely short cache must be re-rendered, not relabelled.
+            from app.services.transcode_service import repair_understated_caches
+            rep = repair_understated_caches()
+            if rep.get('repaired') or rep.get('stripped'):
+                logger.info(
+                    f"Cache label audit: {len(rep['repaired'])} playlist(s) repaired, "
+                    f"{len(rep['stripped'])} stripped of ENDLIST for re-render"
                 )
         except Exception as e:
             logger.warning(f"Cache maintenance loop error: {e}")

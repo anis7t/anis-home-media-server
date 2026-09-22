@@ -1,10 +1,13 @@
 """Media inspection, technical specifications, and library metadata service."""
 import json
+import logging
 import subprocess
 import sys
 import time
 from pathlib import Path
 from shutil import which
+
+logger = logging.getLogger(__name__)
 
 from app import config
 from app.db import get_db, value
@@ -241,12 +244,46 @@ def extract_media_technical_specs(path, movie_meta=None):
     return specs
 
 
+def _is_within_media_roots(candidate):
+    """True only when *candidate* resolves inside one of the configured media roots.
+
+    Deletion paths must never rely on the caller having passed a safe name: this is the last
+    line of defence before an unlink.
+    """
+    try:
+        resolved = Path(candidate).resolve()
+    except Exception:
+        return False
+    roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
+    for root in roots:
+        try:
+            root_resolved = Path(root).resolve()
+        except Exception:
+            continue
+        if resolved == root_resolved or root_resolved in resolved.parents:
+            return True
+    return False
+
+
 def purge_media(filename):
     """Permanently delete media file, transcode caches, subtitles, TMDb metadata, posters, and playback progress."""
     try:
         path = safe_path(filename)
     except Exception:
-        path = config.MEDIA_ROOT / filename
+        # safe_path() aborts on traversal attempts and unknown names. A bare join here let
+        # POST /api/media/delete delete any file the service account could write (verified on
+        # this host: it removed C:\Windows\System32\drivers\etc\hosts). Accept the fallback
+        # only while the joined path stays inside a configured media root.
+        candidate = config.MEDIA_ROOT / filename
+        if _is_within_media_roots(candidate):
+            path = candidate
+        else:
+            logger.warning("Refusing to purge media: unsafe or unknown path %r", filename)
+            return {
+                'success': False,
+                'error': 'Unsafe or unknown media path',
+                'filename': filename,
+            }
 
     rel_filename = get_rel_path(path)
 
@@ -334,7 +371,7 @@ def purge_media(filename):
 
     # 6. Delete media file on disk and any upload part files
     file_deleted = False
-    if path.is_file():
+    if path.is_file() and _is_within_media_roots(path):
         path.unlink(missing_ok=True)
         file_deleted = True
 

@@ -497,8 +497,14 @@ class MediaServerTests(unittest.TestCase):
         with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
             self.assertTrue(app._is_hls_truly_complete(pl_file, media_file))
 
-        # In-progress playlist (no ENDLIST) with 95% coverage - still complete
+        # In-progress playlist (no ENDLIST) with 95% coverage - NOT complete: an abandoned
+        # partial cache must be resumed, not silently accepted (validated coverage >= 98%).
         pl_file.write_text("#EXTM3U\n#EXTINF:50.0,\nseg0.ts\n#EXTINF:45.0,\nseg1.ts\n")
+        with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
+            self.assertFalse(app._is_hls_truly_complete(pl_file, media_file))
+
+        # In-progress playlist (no ENDLIST) at validated coverage (99%) - complete
+        pl_file.write_text("#EXTM3U\n#EXTINF:50.0,\nseg0.ts\n#EXTINF:49.0,\nseg1.ts\n")
         with patch('app.probe_media', return_value={'format': {'duration': '100.0'}}):
             self.assertTrue(app._is_hls_truly_complete(pl_file, media_file))
 
@@ -707,6 +713,34 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn('ccHoldTimer', html)
         self.assertIn('ccHoldFired', html)
         self.assertIn('cancelCcHold', html)
+
+    def test_media_info_reports_video_end_for_hls_playback(self):
+        """HLS playback must advertise the video stream's end, not an unplayable container tail.
+
+        A WEBRip whose video track stops 26 minutes before its audio would otherwise hand the
+        player a seek bar spanning content that cannot play (the "83% complete" wall).
+        """
+        mkv = Path(TMP.name) / "TailTest.2026.mkv"
+        mkv.write_bytes(b"stub")
+        with patch('app.routes.api.probe_media',
+                   return_value={'format': {'duration': '9839.072'}, 'streams': []}), \
+             patch('app.services.transcode_service.source_video_duration',
+                   return_value=8254.563):
+            data = self.client.get('/api/media-info/TailTest.2026.mkv').json
+        self.assertFalse(data['direct_play'])
+        self.assertEqual(data['duration'], 8254.563)
+
+    def test_media_info_keeps_container_duration_for_direct_play(self):
+        """Direct play keeps the container duration: the browser's timeline comes from the file."""
+        mp4 = Path(TMP.name) / "DirectTest.2026.mp4"
+        mp4.write_bytes(b"stub")
+        with patch('app.routes.api.probe_media',
+                   return_value={'format': {'duration': '3600.5'}, 'streams': []}), \
+             patch('app.services.transcode_service.source_video_duration',
+                   return_value=3500.0):
+            data = self.client.get('/api/media-info/DirectTest.2026.mp4').json
+        self.assertTrue(data['direct_play'])
+        self.assertEqual(data['duration'], 3600.5)
 
     def test_player_modals_fixed_viewport_and_dismissal(self):
         mkv = Path(TMP.name) / 'ModalFix.2026.mkv'

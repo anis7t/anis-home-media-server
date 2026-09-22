@@ -44,9 +44,14 @@ def init_runtime():
 
 
 def main():
+    # force=True: app/__init__.py's create_app() also calls basicConfig, and whichever runs
+    # first wins — without this the service logs had no timestamps at all, which made an
+    # incident timeline impossible to reconstruct. asctime uses local time (system timezone).
     logging.basicConfig(
         level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
     )
 
     init_runtime()

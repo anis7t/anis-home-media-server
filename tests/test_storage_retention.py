@@ -13,11 +13,22 @@ from app.db import get_db, get_setting, init_db, set_setting
 from app.services.transcode_service import (
     apply_post_transcode_policy,
     audit_orphaned_caches,
+    cleanup_cache_on_startup,
     get_cache_dir,
     hls_cache_dir,
     purge_orphaned_caches,
     purge_transcode_caches_for_media,
 )
+
+# Isolate the cache directory for this module. audit_orphaned_caches() discovers "active" cache
+# dirs from video_paths() (a temp MEDIA_ROOT under pytest) while get_cache_dir() resolves
+# app.CACHE_DIR, so against a developer machine's live cache every real HLS directory looks
+# orphaned and the non-dry-run purge below would delete production transcodes.
+_CACHE_TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+app.CACHE_DIR = Path(_CACHE_TMP.name) / "cache"
+app.config.CACHE_DIR = app.CACHE_DIR
+(app.CACHE_DIR / "hls").mkdir(parents=True, exist_ok=True)
+(app.CACHE_DIR / "previews").mkdir(parents=True, exist_ok=True)
 
 
 class StorageRetentionTests(unittest.TestCase):
@@ -286,3 +297,104 @@ class StorageRetentionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CachePurgeSafetyTests(unittest.TestCase):
+    """Regression coverage for the fail-open orphan audit that let a transient failure wipe caches.
+
+    If media enumeration fails or returns nothing while cache directories exist, the audit must
+    report itself degraded and the purge must refuse to delete anything.
+    """
+
+    def setUp(self):
+        self.hls_base = get_cache_dir() / "hls"
+        self.hls_base.mkdir(parents=True, exist_ok=True)
+
+    def _make_dir(self, name, files):
+        d = self.hls_base / name
+        d.mkdir(parents=True, exist_ok=True)
+        for fname, payload in files.items():
+            (d / fname).write_bytes(payload)
+        return d
+
+    @patch("app.services.transcode_service.video_paths", return_value=[])
+    def test_audit_fails_closed_when_enumeration_returns_nothing(self, _mock_vp):
+        orphan = self._make_dir("orphan_enum_empty", {"segment_000000.ts": b"X" * 4096})
+        try:
+            audit = audit_orphaned_caches()
+            self.assertTrue(audit["degraded"])
+            self.assertEqual(audit["orphaned_hls"], [])
+            self.assertEqual(audit["total_orphaned_dirs"], 0)
+
+            res = purge_orphaned_caches(dry_run=False)
+            self.assertTrue(res["refused"])
+            self.assertEqual(res["purged_count"], 0)
+            self.assertTrue(orphan.exists())
+        finally:
+            shutil.rmtree(orphan, ignore_errors=True)
+
+    @patch("app.services.transcode_service.video_paths", side_effect=RuntimeError("database is locked"))
+    def test_audit_fails_closed_when_enumeration_raises(self, _mock_vp):
+        orphan = self._make_dir("orphan_enum_error", {"segment_000000.ts": b"X" * 4096})
+        try:
+            audit = audit_orphaned_caches()
+            self.assertTrue(audit["degraded"])
+            self.assertTrue(any("enumeration failed" in r for r in audit["degraded_reasons"]))
+            self.assertEqual(audit["orphaned_hls"], [])
+
+            res = purge_orphaned_caches(dry_run=False)
+            self.assertTrue(res["refused"])
+            self.assertTrue(orphan.exists())
+        finally:
+            shutil.rmtree(orphan, ignore_errors=True)
+
+    def test_purge_spares_directory_in_active_use(self):
+        media = app.config.MEDIA_ROOT / "GracePeriodTest.2026.mkv"
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"media")
+        live = self._make_dir("orphan_but_live", {
+            "playlist.m3u8": b"#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n",
+            "segment_000000.ts": b"Y" * 2048,
+        })
+        stale = self._make_dir("orphan_and_stale", {"segment_000000.ts": b"Z" * 1024})
+        try:
+            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
+                res = purge_orphaned_caches(dry_run=False)
+
+            self.assertFalse(res["refused"])
+            self.assertTrue(live.exists(), "a directory an FFmpeg is still writing must survive")
+            self.assertFalse(stale.exists(), "a genuine orphan with no live artifacts is purged")
+            self.assertGreaterEqual(res["skipped_live_count"], 1)
+        finally:
+            media.unlink(missing_ok=True)
+            shutil.rmtree(live, ignore_errors=True)
+            shutil.rmtree(stale, ignore_errors=True)
+
+    def test_purge_spares_directory_holding_only_a_chunk_playlist(self):
+        """First chunk of a fresh job: no master playlist and no hls.progress exist yet."""
+        media = app.config.MEDIA_ROOT / "FirstChunkWindowTest.2026.mkv"
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"media")
+        live = self._make_dir("orphan_first_chunk", {
+            "chunk_0.m3u8.tmp": b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n",
+            "segment_000000.ts": b"W" * 2048,
+        })
+        try:
+            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
+                res = purge_orphaned_caches(dry_run=False)
+            self.assertFalse(res["refused"])
+            self.assertTrue(live.exists(), "a chunk playlist being written must protect the directory")
+            self.assertGreaterEqual(res["skipped_live_count"], 1)
+        finally:
+            media.unlink(missing_ok=True)
+            shutil.rmtree(live, ignore_errors=True)
+
+    def test_startup_cleanup_does_not_purge_orphans_by_default(self):
+        with patch("app.services.transcode_service.purge_orphaned_caches") as mock_purge:
+            cleanup_cache_on_startup()
+            mock_purge.assert_not_called()
+
+        with patch.dict(os.environ, {"MEDIA_SERVER_PURGE_ON_STARTUP": "1"}):
+            with patch("app.services.transcode_service.purge_orphaned_caches") as mock_purge:
+                cleanup_cache_on_startup()
+                mock_purge.assert_called_once()
+
