@@ -235,3 +235,26 @@ Verify at minimum:
 - System Telemetry HUD reports active GPU engine load.
 - Subtitles remain correctly positioned.
 - No mobile horizontal/vertical layout regression.
+
+## 8. Agent fleet, roles and project memory
+
+Work on this repository may be performed by a fleet of Hermes bots (Bot Mode profiles). Kanban
+assignee = profile name; `hermes kanban assignees` is the source of truth for dispatch.
+
+| Bot | Role | Owns | Must not own |
+| --- | --- | --- | --- |
+| `@deepseek-flash` | Lead Developer / Architect | requirements, architecture, backend, database, APIs, major features, cross-cutting changes, final integration | being the only reviewer of its own work |
+| `@gemini-agy` | Repository Investigator / Integration Engineer | exploring unfamiliar code, tracing flows, investigating bugs, dependencies, logs, running CLI/tests, backend and system integration verification (Gemini 3.8 Flash High via the Antigravity CLI) | UI / visual verification |
+| `@glm-flash` | Frontend Specialist / Independent Reviewer | modern web UI, CSS/UX, responsive design, accessibility, visual refinement, independent review, browser-driven visual verification | owning overall architecture |
+
+Rules:
+
+- **Verification is done by a bot that did not write the artefact.** A role states the duty; the
+  `media-server` kanban board enforces it by assigning review to a different bot.
+- **Persistent project memory lives in the Obsidian vault** at
+  `C:\Users\anis7\Documents\Obsidian Vault\Media Server\` (`OBSIDIAN_VAULT_PATH` is set in every
+  Hermes profile). Read `Media Server — Memory Index` and `Gotchas & Pitfalls` before non-trivial
+  work, and append dated entries to `Decisions Log` / `Verification Log` afterwards. Append only —
+  never rewrite another agent's entry. Code and architecture facts stay in this file and `docs/`.
+- Task state, assignment and verification gates live on the kanban board (`media-server`), not in
+  chat.
