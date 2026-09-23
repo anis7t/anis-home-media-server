@@ -165,6 +165,7 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
   String? _previewImageUrl;
   Timer? _previewDebounceTimer;
   int _previewRequestCounter = 0;
+  int _lastCommittedPreviewReq = 0;
 
   @override
   void initState() {
@@ -675,7 +676,20 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
 
     final meta = _previewMeta;
     final count = meta != null ? ((meta['count'] as num?)?.toInt() ?? 0) : 0;
-    _logEvent('Scrubbing through frame thumbnails in sandbox (total $count frames)...');
+
+    // Test 1: Rapid burst debounce verification (A -> B -> C -> D)
+    _logEvent('2E: Testing rapid burst debounce (A -> B -> C -> D)...');
+    for (final frameIdx in [1, 2, 3, 4]) {
+      _requestPreviewFrame(frameIdx);
+      await Future.delayed(const Duration(milliseconds: 15));
+    }
+    // Wait for 80ms debounce to settle for the final frame (index 4)
+    await Future.delayed(const Duration(milliseconds: 120));
+    final debounceOk = _previewFrameIndex == 4;
+    _logEvent('2E: Debounce settled on latest requested index 4: $debounceOk (active index: $_previewFrameIndex)');
+
+    // Test 2: Sequential frame scrub
+    _logEvent('2E: Scrubbing through frame thumbnails in sandbox (total $count frames)...');
     for (final frameIdx in [0, 5, 10, 15, 20]) {
       if (frameIdx < count) {
         _requestPreviewFrame(frameIdx);
@@ -690,15 +704,15 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
       logLabel: '2E: preview image url set',
     );
 
-    final pass = _previewMeta != null && _previewImageUrl != null;
+    final pass = _previewMeta != null && _previewImageUrl != null && debounceOk;
     setState(() {
       _batteryStages[5].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
       _batteryStages[5].detail =
-          '${pass ? 'PASS' : 'FAIL'} — $count frames, thumbnail scrub verified';
+          '${pass ? 'PASS' : 'FAIL'} — $count frames, burst debounce & thumbnail scrub verified';
     });
     _logEvent(
       'Stage 2E ${pass ? 'PASS' : 'FAIL'}: '
-      'Rapid frame scrubbing verified (independent of video player state)',
+      'Rapid frame scrubbing & debounce verified (independent of video player state)',
     );
   }
 
@@ -709,6 +723,8 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
       _previewMeta = null;
       _previewImageUrl = null;
       _previewFrameIndex = 0;
+      _previewRequestCounter = 0;
+      _lastCommittedPreviewReq = 0;
     });
 
     final deviceId = ref.read(connectionControllerProvider).deviceId;
@@ -746,6 +762,8 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
 
     _previewDebounceTimer = Timer(const Duration(milliseconds: 80), () {
       if (!mounted) return;
+      if (currentReq < _lastCommittedPreviewReq) return; // Out-of-order stale response suppression
+      _lastCommittedPreviewReq = currentReq;
       final encoded = Uri.encodeComponent(_selectedCandidate.filename);
       final thumbStr = index.toString().padLeft(5, '0');
       final imgUrl = '$_serverOrigin/seek-preview/$encoded/thumb_$thumbStr.jpg?req=$currentReq';

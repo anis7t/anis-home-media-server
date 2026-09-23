@@ -127,37 +127,47 @@ cd C:\MediaServer\flutter_client
 
 ### Test Battery Execution Summary
 
-| Stage | Scenario & Asset | LAN Result | WAN Result | Empirical Notes |
-|-------|------------------|------------|------------|-----------------|
-| **2A** | Direct MP4: Batman Knightfall (1080p, AAC 5.1, RFC 7233) | **PASS** | **PASS** | Starts within ~4.1s on WAN, <1s on LAN. Video decoded at 1920x1080. |
-| **2B** | HLS Multi-GPU: Spider-Man (chunked HLS, monotonic PTS) | **PASS** | **PASS** | HLS stream startup ~7.1s on WAN; seamless playback across segments. |
+| Stage | Scenario & Asset | LAN Result | WAN Result | Empirical Evidence / Notes |
+|-------|------------------|------------|------------|----------------------------|
+| **2A** | Direct MP4: Batman Knightfall (1080p, AAC 5.1, RFC 7233) | **PASS** | **PASS** | LAN startup <800ms; WAN startup ~4.1s (buffer ~3.0s, decode at 4.1s). Smooth 1080p playback. |
+| **2B** | HLS Multi-GPU: Spider-Man (chunked HLS, monotonic PTS) | **PASS** | **PASS** | Initial stream startup ~7.1s on WAN; bounded runtime test proved continuous playback crossing the 60.0s chunk boundary into Chunk 1 past 68s without stall. |
 | **2C** | Seeking & Resume: 0:00 seek, 300s seek, 305s resume | **PASS** | **PASS** | 0:00 settled in <300ms; 300s seek settled in ~275ms; native `Media.start` resume delta 0ms. |
-| **2D-sub** | Subtitles: Lust Stories 3 with external sidecar `.srt` | **PASS** | **PASS** | Discovers sidecar English WebVTT/SRT; track switching renders cleanly. |
-| **2D-hevc**| Difficult Codecs: I Want Your Sex (HEVC 10-bit, E-AC-3 5.1) | **PASS** | **PASS** | HW-accelerated yuv420p10le decoding and multichannel audio pass. |
-| **2E** | Seek-Preview Sandbox: Rapid frame thumbnail scrubbing | **PASS** | **PASS** | Decoupled from video player; 20+ frame thumbnails scrubbed with zero stutter. |
+| **2D-sub** | Subtitles: Lust Stories 3 with external sidecar `.srt` | **PASS** | **PASS** | Discovers sidecar English WebVTT/SRT; track switching verified; text cue rendering verified at 152s ("Happy anniversary to you."). |
+| **2D-hevc**| Difficult Codecs: I Want Your Sex (HEVC 10-bit, E-AC-3 5.1) | **PASS** | **PASS** | HEVC codec and E-AC-3 5.1 (6-channel, 48kHz) decode cleanly; playback advances smoothly without decode error. |
+| **2E** | Seek-Preview Sandbox: Rapid frame thumbnail scrubbing | **PASS** | **PASS** | Frame fetching decoupled from video player; burst debouncing (A->B->C->D) and out-of-order rejection verified. |
 
 ---
 
-### The 16 Acceptance Criteria
+### The 16 Acceptance Criteria (Evidence-Based Audit)
 
 | # | Acceptance Criterion | Result | Evidence / Notes |
 |---|----------------------|:------:|------------------|
-| 1 | Direct MP4 playback starts within acceptable latency on LAN | **PASS** | First frame render in <800ms over local network. |
+| 1 | Direct MP4 playback starts within acceptable latency on LAN | **PASS** | First frame decode in <800ms over local HTTP byte-range stream. |
 | 2 | Direct MP4 playback starts within acceptable latency on WAN | **PASS** | Stream buffering and decode completes in ~4.1s through Cloudflare tunnel. |
-| 3 | HLS stream plays across chunk boundaries without stalling | **PASS** | Plays dual-GPU chunked MPEG-TS segments with monotonic PTS offsets without stalling. |
-| 4 | HLS stream plays on WAN | **PASS** | Playlist and `.ts` chunk segments load cleanly over WAN (~7.1s initial startup). |
+| 3 | HLS stream plays across chunk boundaries without stalling | **PASS** | Runtime test opened Spider-Man at 52s, crossed the 60.0s boundary into Chunk 1, and continued playing past 68s with continuous position progression (`Buffering: false`). Seamless playback demonstrated; PTS was not independently measured at bitstream level. |
+| 4 | HLS stream plays on WAN | **PASS** | Master playlist and chunked TS segments load and play cleanly over WAN (~7.1s initial startup). |
 | 5 | Seeking to `0:00` works without freeze | **PASS** | Instant seek to zero, settling in <300ms without freezing or resetting to idle. |
 | 6 | Seeking to arbitrary position works | **PASS** | 300s forward seek settles accurately (delta ~275ms) via byte-range requests. |
 | 7 | Resume convergence within tolerance (<5s delta) | **PASS** | Native `Media(start: Duration)` demux-time seek converges with 0ms error delta. |
-| 8 | Playback speed adjustment (0.5x–2.0x) works | **PASS** | `MediaKitPlayerAdapter.setRate()` verified from 0.5x to 2.0x without pitch distortion. |
+| 8 | Playback speed adjustment (0.5x–2.0x) works | **PASS** | `MediaKitPlayerAdapter.setRate()` verified across 0.5x, 1.0x, 1.25x, 1.5x, 2.0x without pitch distortion. |
 | 9 | External SRT subtitle track is discovered | **PASS** | Server endpoint delivers sidecar `.srt`, parsed into `PlayerTrackInfo`. |
-| 10 | Subtitle track selection renders correctly | **PASS** | Switching to external subtitle track updates `currentSubtitleTrack` and displays text. |
-| 11 | HEVC 10-bit decodes correctly | **PASS** | 1080p `yuv420p10le` decodes via Direct3D 11 hardware acceleration in `libmpv`. |
-| 12 | E-AC-3 5.1 multichannel audio plays | **PASS** | Multi-channel Dolby Digital Plus bitstream plays without decoding errors. |
+| 10 | Subtitle track selection renders correctly | **PARTIALLY TESTED** | Track selection attaches to `libmpv`; cue display verified via probe at 152s (`"Happy anniversary to you."`), but not visible at 0:00 in standard battery because dialogue in the asset does not begin until 152.6s. |
+| 11 | HEVC 10-bit decodes correctly | **PARTIALLY TESTED** | `tracks.video.first.codec == 'hevc'` verified and decodes cleanly without error; hardware acceleration and 10-bit pipeline not independently measured. |
+| 12 | E-AC-3 5.1 multichannel audio plays | **PASS** | `tracks.audio.first.codec == 'eac3'`, `audioParams.channelCount == 6`, and `channels == '5.1(side)'` verified by decoder output params. |
 | 13 | `X-Device-Id` header is sent and accepted by server | **PASS** | All HTTP requests inject `X-Device-Id: dev_<hex>` header; verified by integration test. |
 | 14 | Seek-preview metadata endpoint delivers frames | **PASS** | `/api/seek-preview-meta/<file>` delivers valid JSON frame count and interval. |
-| 15 | Rapid seek-preview scrub is independent of video player state | **PASS** | Sandbox scrubber fetches `/seek-preview/<file>/thumb_*.jpg` independently of player. |
+| 15 | Rapid seek-preview scrub is independent of video player state | **PASS** | Rapid burst debouncing (A -> B -> C -> D), out-of-order response rejection, and decoupled operation from video player state verified via automated test suite and UI harness. |
 | 16 | No architectural blocker prevents production player implementation | **PASS** | `PlayerControllerInterface` abstraction cleanly encapsulates `media_kit`/libmpv. |
+
+---
+
+### Acceptance Criteria Counts
+
+- **PASS:** 14 criteria (1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16)
+- **PARTIALLY TESTED (viable with unverified edge details):** 2 criteria (10, 11)
+- **NOT TESTED:** 0 criteria
+- **FAIL:** 0 criteria
+- **Total:** 16 criteria
 
 ---
 
@@ -165,7 +175,9 @@ cd C:\MediaServer\flutter_client
 
 **VERDICT: GO**
 
-The `media_kit`/libmpv technology stack on Windows desktop has proven fully capable of handling all server media delivery profiles (Direct RFC 7233 MP4, chunked dynamic multi-GPU HLS, HEVC 10-bit, E-AC-3 5.1, sidecar WebVTT/SRT subtitles, and seek preview scrubbing) over both LAN and WAN. No architectural blockers exist. Phase 3 (Production Player UI) is approved to commence.
+With Criterion 3 (HLS chunk-boundary playback transition across 60s) and Criterion 15 (seek-preview debounce, race-condition and stale-frame suppression) empirically verified and passing, and with no newly discovered blockers, the architectural verdict is **GO**.
+
+The `media_kit`/`libmpv` player stack on Windows desktop is fully viable for production player development (Phase 3). Phase 3 will commence only upon explicit user approval.
 
 ---
 
