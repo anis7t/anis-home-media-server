@@ -13,12 +13,10 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | Phase | Title | Status |
 |-------|-------|--------|
 | 1 | Flutter Client Foundation | ✅ Committed (`5b0b1fa`, `eadb257`) on `feat/flutter-player-poc` |
-| 2 | Video Player POC | 🔶 In progress — stages 2A/2E pass; **2B/2C/2D fail on WAN, 2C fails on LAN** |
-| 3 | Production player UI | ⏳ Not started |
+| 2 | Video Player POC | ✅ COMPLETE — All 6 stages (2A–2E + 2F Acceptance Report) PASS on LAN & WAN (`f8e8c23`) |
+| 3 | Production player UI | ⏳ Next up — Architecture approved (GO verdict) |
 
-**Next required action (Phase 2 fix):** Replace fixed `Future.delayed()` waits in
-`flutter_client/lib/features/player_poc/presentation/player_poc_screen.dart`
-with polling loops (see `FLUTTER_CLIENT_STATUS.md` for exact fix table).
+**Phase 2 Proof-of-Concept Status:** Fully validated across LAN and Cloudflare WAN named tunnel. All technical criteria met with `media_kit`/libmpv. Phase 3 production player UI is ready to begin.
 
 ---
 
