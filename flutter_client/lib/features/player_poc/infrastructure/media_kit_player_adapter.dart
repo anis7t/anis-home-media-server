@@ -147,13 +147,12 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
     final media = Media(
       url,
       httpHeaders: headers,
+      start: (startPosition != null && startPosition > Duration.zero)
+          ? startPosition
+          : null,
     );
 
     await player.open(media, play: false);
-
-    if (startPosition != null && startPosition > Duration.zero) {
-      await player.seek(startPosition);
-    }
 
     if (externalSubtitleUrl != null && externalSubtitleUrl.isNotEmpty) {
       try {

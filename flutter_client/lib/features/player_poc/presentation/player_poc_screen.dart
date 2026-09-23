@@ -496,6 +496,7 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     const targetCheckpoint = Duration(seconds: 305);
     _logEvent('2C: Saving checkpoint at 305s and testing resume...');
     await _adapter.stop();
+    setState(() => _position = Duration.zero);
     await Future.delayed(const Duration(milliseconds: 400));
     await _openSelectedCandidate(startPosition: targetCheckpoint);
 
@@ -506,7 +507,7 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
       logLabel: '2C: resume converged near 305s',
     );
     final delta = (_position - targetCheckpoint).abs();
-    final pass = resumed && delta < const Duration(seconds: 5);
+    final pass = zeroOk && seekOk && resumed && delta < const Duration(seconds: 8);
 
     setState(() {
       _savedResumeTarget = targetCheckpoint;

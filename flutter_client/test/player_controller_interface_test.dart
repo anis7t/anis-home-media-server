@@ -1,17 +1,17 @@
 import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/player_poc/domain/player_controller_interface.dart';
 
 /// A mock implementation of PlayerControllerInterface for testing pure domain logic & contracts
 class MockPlayerController implements PlayerControllerInterface {
   Duration _position = Duration.zero;
-  Duration _duration = const Duration(minutes: 120);
+  final Duration _duration = const Duration(minutes: 120);
   PlayerPlaybackState _state = PlayerPlaybackState.idle;
-  bool _isBuffering = false;
+  final bool _isBuffering = false;
   double _rate = 1.0;
   double _volume = 100.0;
   PlayerTrackInfo _trackInfo = const PlayerTrackInfo();
-  VideoDimensions _dimensions = VideoDimensions.zero;
 
   final _positionController = StreamController<Duration>.broadcast();
   final _durationController = StreamController<Duration>.broadcast();
@@ -157,35 +157,41 @@ void main() {
       expect(info.currentSubtitleTrack.id, '1');
     });
 
-    test('MockPlayerController respects PlayerControllerInterface contracts', () async {
-      final controller = MockPlayerController();
+    test(
+      'MockPlayerController respects PlayerControllerInterface contracts',
+      () async {
+        final controller = MockPlayerController();
 
-      expect(controller.state, PlayerPlaybackState.idle);
-      expect(controller.position, Duration.zero);
+        expect(controller.state, PlayerPlaybackState.idle);
+        expect(controller.position, Duration.zero);
 
-      final states = <PlayerPlaybackState>[];
-      final sub = controller.stateStream.listen(states.add);
+        final states = <PlayerPlaybackState>[];
+        final sub = controller.stateStream.listen(states.add);
 
-      await controller.open('http://127.0.0.1:8000/media/test.mp4', startPosition: const Duration(seconds: 45));
-      expect(controller.position, const Duration(seconds: 45));
+        await controller.open(
+          'http://127.0.0.1:8000/media/test.mp4',
+          startPosition: const Duration(seconds: 45),
+        );
+        expect(controller.position, const Duration(seconds: 45));
 
-      await controller.pause();
-      expect(controller.state, PlayerPlaybackState.paused);
+        await controller.pause();
+        expect(controller.state, PlayerPlaybackState.paused);
 
-      await controller.seek(const Duration(seconds: 120));
-      expect(controller.position, const Duration(seconds: 120));
+        await controller.seek(const Duration(seconds: 120));
+        expect(controller.position, const Duration(seconds: 120));
 
-      await controller.setRate(1.5);
-      expect(controller.rate, 1.5);
+        await controller.setRate(1.5);
+        expect(controller.rate, 1.5);
 
-      await controller.setVolume(85.0);
-      expect(controller.volume, 85.0);
+        await controller.setVolume(85.0);
+        expect(controller.volume, 85.0);
 
-      await controller.stop();
-      expect(controller.state, PlayerPlaybackState.idle);
+        await controller.stop();
+        expect(controller.state, PlayerPlaybackState.idle);
 
-      await sub.cancel();
-      await controller.dispose();
-    });
+        await sub.cancel();
+        await controller.dispose();
+      },
+    );
   });
 }
