@@ -4,7 +4,12 @@ import 'routes.dart';
 import 'theme/app_theme.dart';
 
 class MediaServerApp extends ConsumerWidget {
-  const MediaServerApp({super.key});
+  final String? initialRoute;
+
+  const MediaServerApp({
+    super.key,
+    this.initialRoute,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -12,7 +17,9 @@ class MediaServerApp extends ConsumerWidget {
       title: "Anis' Home Media Server",
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      routerConfig: AppRoutes.router,
+      routerConfig: initialRoute != null && initialRoute != AppRoutes.connection
+          ? AppRoutes.createRouter(initialLocation: initialRoute!)
+          : AppRoutes.router,
     );
   }
 }

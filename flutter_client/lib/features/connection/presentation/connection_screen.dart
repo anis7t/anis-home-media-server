@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_typography.dart';
 import '../controllers/connection_controller.dart';
@@ -412,6 +414,14 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                   ),
                 )
               : const Text('Save & Set Active Server'),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            context.push(AppRoutes.playerPoc);
+          },
+          icon: const Icon(Icons.movie_outlined, size: 18),
+          label: const Text('Launch Player POC Test Harness (Phase 2)'),
         ),
       ],
     );
