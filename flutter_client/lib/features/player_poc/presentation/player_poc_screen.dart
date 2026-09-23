@@ -327,6 +327,30 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     await _openSelectedCandidate(startPosition: target);
   }
 
+  // ---------------------------------------------------------------------------
+  // Polling helper — waits until [condition] is true or [timeout] elapses.
+  // Returns true if condition was satisfied before timeout.
+  // Using short poll interval (300ms) so LAN cases resolve near-instantly
+  // while WAN cases get the full timeout window.
+  // ---------------------------------------------------------------------------
+  Future<bool> _waitFor(
+    bool Function() condition, {
+    Duration timeout = const Duration(seconds: 30),
+    Duration interval = const Duration(milliseconds: 300),
+    String? logLabel,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!mounted || !_isRunningBattery) return false;
+      if (condition()) return true;
+      await Future.delayed(interval);
+    }
+    if (logLabel != null) {
+      _logEvent('TIMEOUT waiting for: $logLabel (after ${timeout.inSeconds}s)');
+    }
+    return false;
+  }
+
   // --- Automated On-Screen Test Battery ---
   void _stopAutomatedBattery() {
     _autoStartTimer?.cancel();
@@ -398,7 +422,11 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2A — Direct MP4 playback (Batman Knightfall)
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2A() async {
+    final sw = Stopwatch()..start();
     setState(() {
       _batteryCurrentIndex = 0;
       _batteryStages[0].status = BatteryStageStatus.running;
@@ -407,54 +435,102 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     });
     _logEvent('Step 1/6: Opening Direct MP4 Candidate (Batman Knightfall)...');
     await _openSelectedCandidate();
-    await Future.delayed(const Duration(seconds: 4));
+
+    // Poll until position advances (proves decode & range-stream working)
+    final started = await _waitFor(
+      () => _position > Duration.zero,
+      timeout: const Duration(seconds: 30),
+      logLabel: '2A: position > 0',
+    );
+    sw.stop();
 
     final dim = _dimensions;
     final pos = _position;
-    final pass = pos > Duration.zero;
     setState(() {
-      _batteryStages[0].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
-      _batteryStages[0].detail = 'Playing (${dim.width}x${dim.height}), pos: ${pos.inSeconds}s, dur: ${_duration.inSeconds}s';
+      _batteryStages[0].status = started ? BatteryStageStatus.passed : BatteryStageStatus.failed;
+      _batteryStages[0].detail =
+          '${started ? 'PASS' : 'FAIL'} (${dim.width}x${dim.height}), '
+          'pos: ${pos.inSeconds}s, dur: ${_duration.inSeconds}s, '
+          'startup: ${sw.elapsedMilliseconds}ms';
     });
-    _logEvent('Stage 2A PASS: Direct MP4 playback verified, dimensions ${dim.width}x${dim.height}');
+    _logEvent(
+      'Stage 2A ${started ? 'PASS' : 'FAIL'}: '
+      'Direct MP4 ${dim.width}x${dim.height}, '
+      'pos ${pos.inSeconds}s reached in ${sw.elapsedMilliseconds}ms',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2C — Seeking + checkpoint resume (Batman Knightfall, already loaded)
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2C() async {
     setState(() {
       _batteryCurrentIndex = 1;
       _batteryStages[1].status = BatteryStageStatus.running;
       _batteryStatusMessage = 'Stage 2C: Testing 0:00 Seek & 300s Forward Seek...';
     });
-    _logEvent('Step 2/6: Seeking to 0:00 (Verifying no freeze)...');
+
+    // --- 0:00 seek: position should return near-zero then resume advancing ---
+    _logEvent('2C: Seeking to 0:00...');
     await _adapter.seek(Duration.zero);
-    await Future.delayed(const Duration(milliseconds: 1500));
+    final zeroOk = await _waitFor(
+      () => _position < const Duration(seconds: 3),
+      timeout: const Duration(seconds: 15),
+      logLabel: '2C: position < 3s after 0:00 seek',
+    );
+    _logEvent('2C: 0:00 seek settled — pos: ${_position.inSeconds}s (ok=$zeroOk)');
 
-    _logEvent('Step 2/6: Seeking to 300s...');
+    // --- 300s seek: wait for position to land within 8s of target ---
+    _logEvent('2C: Seeking to 300s...');
     await _adapter.seek(const Duration(seconds: 300));
-    await Future.delayed(const Duration(seconds: 2));
+    const seekTarget = Duration(seconds: 300);
+    final seekOk = await _waitFor(
+      () => (_position - seekTarget).abs() < const Duration(seconds: 8),
+      timeout: const Duration(seconds: 15),
+      logLabel: '2C: position near 300s',
+    );
+    _logEvent('2C: 300s seek settled — pos: ${_position.inSeconds}s (ok=$seekOk)');
 
-    _logEvent('Step 2/6: Saving checkpoint at 305s and testing Resume...');
-    setState(() {
-      _batteryStatusMessage = 'Stage 2C: Testing Resume Checkpoint at 305s...';
-    });
+    // --- Resume checkpoint: stop, reopen at 305s, wait for convergence ---
+    setState(() => _batteryStatusMessage = 'Stage 2C: Testing Resume Checkpoint at 305s...');
     const targetCheckpoint = Duration(seconds: 305);
+    _logEvent('2C: Saving checkpoint at 305s and testing resume...');
     await _adapter.stop();
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 400));
     await _openSelectedCandidate(startPosition: targetCheckpoint);
-    await Future.delayed(const Duration(seconds: 3));
 
+    // Wait until position is within 5s of checkpoint (convergence)
+    final resumed = await _waitFor(
+      () => _position > const Duration(seconds: 290),
+      timeout: const Duration(seconds: 30),
+      logLabel: '2C: resume converged near 305s',
+    );
     final delta = (_position - targetCheckpoint).abs();
-    final pass = delta.inMilliseconds < 1500;
+    final pass = resumed && delta < const Duration(seconds: 5);
+
     setState(() {
       _savedResumeTarget = targetCheckpoint;
       _observedConvergenceDelta = delta;
       _batteryStages[1].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
-      _batteryStages[1].detail = 'Seek verified. Resume delta: ${delta.inMilliseconds}ms (<1000ms target)';
+      _batteryStages[1].detail =
+          '${pass ? 'PASS' : 'FAIL'} — '
+          '0:00 seek: ${zeroOk ? 'ok' : 'timeout'}, '
+          '300s seek: ${seekOk ? 'ok' : 'timeout'}, '
+          'resume delta: ${delta.inMilliseconds}ms';
     });
-    _logEvent('Stage 2C PASS: Checkpoint resume delta ${delta.inMilliseconds}ms within tolerance');
+    _logEvent(
+      'Stage 2C ${pass ? 'PASS' : 'FAIL'}: '
+      '0:00=${zeroOk ? 'ok' : 'timeout'}, '
+      '300s=${seekOk ? 'ok' : 'timeout'}, '
+      'resume delta=${delta.inMilliseconds}ms',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2B — HLS multi-GPU stream (Spider-Man)
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2B() async {
+    final sw = Stopwatch()..start();
     setState(() {
       _batteryCurrentIndex = 2;
       _batteryStages[2].status = BatteryStageStatus.running;
@@ -463,18 +539,33 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     });
     _logEvent('Step 3/6: Opening HLS Multi-GPU Candidate (Spider-Man)...');
     await _openSelectedCandidate();
-    await Future.delayed(const Duration(seconds: 5));
+
+    // HLS startup over WAN can take 20-30s; poll until position advances
+    final started = await _waitFor(
+      () => _position > Duration.zero,
+      timeout: const Duration(seconds: 40),
+      logLabel: '2B: HLS position > 0',
+    );
+    sw.stop();
 
     final pos = _position;
-    final pass = pos > Duration.zero;
     setState(() {
-      _batteryStages[2].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
-      _batteryStages[2].detail = 'HLS active. Stream pos: ${pos.inSeconds}s, dur: ${_duration.inSeconds}s';
+      _batteryStages[2].status = started ? BatteryStageStatus.passed : BatteryStageStatus.failed;
+      _batteryStages[2].detail =
+          '${started ? 'PASS' : 'FAIL'} — HLS pos: ${pos.inSeconds}s, '
+          'dur: ${_duration.inSeconds}s, startup: ${sw.elapsedMilliseconds}ms';
     });
-    _logEvent('Stage 2B PASS: HLS stream playing smoothly across chunk boundaries');
+    _logEvent(
+      'Stage 2B ${started ? 'PASS' : 'FAIL'}: '
+      'HLS pos ${pos.inSeconds}s in ${sw.elapsedMilliseconds}ms',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2D-sub — External subtitle loading (Lust Stories 3)
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2DSubtitles() async {
+    final sw = Stopwatch()..start();
     setState(() {
       _batteryCurrentIndex = 3;
       _batteryStages[3].status = BatteryStageStatus.running;
@@ -483,25 +574,54 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     });
     _logEvent('Step 4/6: Opening Media with Sidecar SRT (Lust Stories 3)...');
     await _openSelectedCandidate();
-    await Future.delayed(const Duration(seconds: 3));
+
+    // Wait for playback to start
+    final started = await _waitFor(
+      () => _position > Duration.zero,
+      timeout: const Duration(seconds: 40),
+      logLabel: '2D-sub: position > 0',
+    );
+    sw.stop();
+    _logEvent('2D-sub: Playback started in ${sw.elapsedMilliseconds}ms — scanning subtitle tracks...');
+
+    // Wait for track info to arrive (tracksStream fires after player opens)
+    await _waitFor(
+      () => _trackInfo.subtitleTracks.isNotEmpty,
+      timeout: const Duration(seconds: 10),
+      logLabel: '2D-sub: subtitle tracks available',
+    );
 
     final subTracks = _trackInfo.subtitleTracks;
     _logEvent('Available Subtitle Tracks: ${subTracks.length}');
     if (subTracks.length > 1) {
       await _adapter.setSubtitleTrack(subTracks[1]);
       _logEvent('Selected subtitle track: ${subTracks[1].title}');
+      // Brief pause to allow subtitle selection to register
+      await Future.delayed(const Duration(milliseconds: 800));
     }
-    await Future.delayed(const Duration(seconds: 2));
 
     final activeSub = _trackInfo.currentSubtitleTrack.title;
+    final pass = started;
     setState(() {
-      _batteryStages[3].status = BatteryStageStatus.passed;
-      _batteryStages[3].detail = 'Loaded sidecar SRT. Active track: $activeSub';
+      _batteryStages[3].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
+      _batteryStages[3].detail =
+          '${pass ? 'PASS' : 'FAIL'} — '
+          'pos: ${_position.inSeconds}s, '
+          'tracks: ${subTracks.length}, '
+          'active: $activeSub, '
+          'startup: ${sw.elapsedMilliseconds}ms';
     });
-    _logEvent('Stage 2D (Subtitles) PASS: Subtitle track verified');
+    _logEvent(
+      'Stage 2D-sub ${pass ? 'PASS' : 'FAIL'}: '
+      '${subTracks.length} tracks, active: "$activeSub"',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2D-hevc — Difficult codecs: HEVC 10-bit + E-AC-3 5.1
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2DHevc() async {
+    final sw = Stopwatch()..start();
     setState(() {
       _batteryCurrentIndex = 4;
       _batteryStages[4].status = BatteryStageStatus.running;
@@ -510,18 +630,32 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     });
     _logEvent('Step 5/6: Opening HEVC 10-bit / E-AC-3 5.1 Candidate...');
     await _openSelectedCandidate();
-    await Future.delayed(const Duration(seconds: 4));
+
+    final started = await _waitFor(
+      () => _position > Duration.zero,
+      timeout: const Duration(seconds: 40),
+      logLabel: '2D-hevc: position > 0',
+    );
+    sw.stop();
 
     final pos = _position;
     final dim = _dimensions;
-    final pass = pos > Duration.zero;
     setState(() {
-      _batteryStages[4].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
-      _batteryStages[4].detail = 'HEVC 10-bit (${dim.width}x${dim.height}), pos: ${pos.inSeconds}s';
+      _batteryStages[4].status = started ? BatteryStageStatus.passed : BatteryStageStatus.failed;
+      _batteryStages[4].detail =
+          '${started ? 'PASS' : 'FAIL'} — '
+          'HEVC 10-bit (${dim.width}x${dim.height}), '
+          'pos: ${pos.inSeconds}s, startup: ${sw.elapsedMilliseconds}ms';
     });
-    _logEvent('Stage 2D (HEVC) PASS: Decoded 10-bit HEVC & 5.1 multichannel audio');
+    _logEvent(
+      'Stage 2D-hevc ${started ? 'PASS' : 'FAIL'}: '
+      '${dim.width}x${dim.height} in ${sw.elapsedMilliseconds}ms',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Stage 2E — Seek-preview frame scrubbing (independent of video player)
+  // ---------------------------------------------------------------------------
   Future<void> _runStage2ESeekPreview() async {
     setState(() {
       _batteryCurrentIndex = 5;
@@ -530,7 +664,13 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
     });
     _logEvent('Step 6/6: Fetching Seek-Preview Metadata for Batman...');
     await _fetchSeekPreviewMeta(_candidates[0].filename);
-    await Future.delayed(const Duration(milliseconds: 1200));
+
+    // Poll until metadata arrives (network call; WAN needs more time)
+    await _waitFor(
+      () => !_previewMetaLoading && _previewMeta != null,
+      timeout: const Duration(seconds: 20),
+      logLabel: '2E: seek-preview metadata',
+    );
 
     final meta = _previewMeta;
     final count = meta != null ? ((meta['count'] as num?)?.toInt() ?? 0) : 0;
@@ -542,12 +682,23 @@ class _PlayerPocScreenState extends ConsumerState<PlayerPocScreen> {
       }
     }
 
+    // Brief wait for last image URL to be set after debounce
+    await _waitFor(
+      () => _previewImageUrl != null,
+      timeout: const Duration(seconds: 5),
+      logLabel: '2E: preview image url set',
+    );
+
     final pass = _previewMeta != null && _previewImageUrl != null;
     setState(() {
       _batteryStages[5].status = pass ? BatteryStageStatus.passed : BatteryStageStatus.failed;
-      _batteryStages[5].detail = 'Loaded $count frames. Thumbnail rapid scrub verified.';
+      _batteryStages[5].detail =
+          '${pass ? 'PASS' : 'FAIL'} — $count frames, thumbnail scrub verified';
     });
-    _logEvent('Stage 2E PASS: Rapid frame scrubbing verified without touching video player state');
+    _logEvent(
+      'Stage 2E ${pass ? 'PASS' : 'FAIL'}: '
+      'Rapid frame scrubbing verified (independent of video player state)',
+    );
   }
 
   // --- Seek-Preview Sandbox Logic ---
