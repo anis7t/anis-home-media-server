@@ -1,8 +1,26 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-17
+Last reviewed: 2026-09-24
 Repository: `anis7t/media-server`
 Working branch: `feat/unified-header-navigation`
+
+---
+
+## Flutter Client Migration (active — read before touching `flutter_client/`)
+
+Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS.md)**
+
+| Phase | Title | Status |
+|-------|-------|--------|
+| 1 | Flutter Client Foundation | ✅ Committed (`5b0b1fa`, `eadb257`) on `feat/flutter-player-poc` |
+| 2 | Video Player POC | 🔶 In progress — stages 2A/2E pass; **2B/2C/2D fail on WAN, 2C fails on LAN** |
+| 3 | Production player UI | ⏳ Not started |
+
+**Next required action (Phase 2 fix):** Replace fixed `Future.delayed()` waits in
+`flutter_client/lib/features/player_poc/presentation/player_poc_screen.dart`
+with polling loops (see `FLUTTER_CLIENT_STATUS.md` for exact fix table).
+
+---
 
 ## 0. Recent work — 2026-09-21 (video-duration completeness + cache-purge safety)
 
