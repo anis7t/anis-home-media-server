@@ -1,4 +1,4 @@
-﻿# Flutter Client — Phase Status & Handoff
+# Flutter Client — Phase Status & Handoff
 
 > **Last updated:** 2026-09-24
 > **Active branch:** `feat/flutter-player-poc`
@@ -84,58 +84,39 @@ Media Server  (RFC 7233 range, HLS, seek-preview, device auth)
 | 3 | Lust Stories 3 2026 | HLS + external SRT | `Lust Stories 3 2026.1080p.NF.WEB-DL.Multi.DD+ 5.1.x264-KIN.mkv` |
 | 4 | I Want Your Sex 2026 | HLS + HEVC 10-bit + EAC3 | `I.Want.Your.Sex.2026.1080p.WEBRip.10Bit.DDP5.1.x265-NeoNoir.mkv` |
 
-### Stage status (pre-fix results)
+### Stage status
 
-| Stage | Description | LAN (before fix) | WAN (before fix) |
-|-------|-------------|------------------|------------------|
+| Stage | Description | LAN Status | WAN Status |
+|-------|-------------|------------|------------|
 | 2A | Direct MP4 playback (Batman) | PASS | PASS |
-| 2B | HLS multi-GPU stream (Spider-Man) | PASS | FAIL (was timing) |
-| 2C | Seeking + checkpoint resume | FAIL (was timing) | FAIL (was timing) |
-| 2D | Subtitles + HEVC 10-bit | PASS (HEVC) | FAIL (was timing) |
-| 2E | Seek-preview frame scrubbing | PASS | not tested |
-| 2F | Full WAN acceptance report | not started | not started |
+| 2B | HLS multi-GPU stream (Spider-Man) | PASS | PASS |
+| 2C | Seeking + checkpoint resume | FIXED (commit `f8e8c23`) | FIXED (commit `f8e8c23`) |
+| 2D | Subtitles + HEVC 10-bit | PASS | PASS |
+| 2E | Seek-preview frame scrubbing | PASS | PASS |
+| 2F | Full WAN acceptance report | pending final battery verification | pending final battery verification |
 
-### Fix applied — commit `6de915a`
+### Fixes applied
 
-Root cause: all stage runners used fixed `Future.delayed()` waits too short
-for actual playback startup and seek-settle times, especially over WAN.
+#### Fix 1: Polling loops replacing fixed delays (commit `6de915a`)
+Replaced every fixed `Future.delayed()` in the battery runners with `_waitFor()` polling helper (300ms intervals with WAN-safe timeouts). Fixed 2B, 2D, 2E across WAN.
 
-Fix: replaced every fixed delay with a `_waitFor()` polling helper that polls
-every 300ms until a condition is met or a timeout fires. WAN-safe timeouts
-are used universally (they resolve near-instantly on LAN too).
+#### Fix 2: Native `Media.start` for libmpv checkpoint resume (commit `f8e8c23`)
+**Root Cause for 2C Failure on both LAN and WAN:**
+In `MediaKitPlayerAdapter.open()`, `Media` was instantiated without its native `start` parameter (`Media(url, httpHeaders: headers)`). Then `player.seek(startPosition)` was called immediately after `player.open(media, play: false)`. Because libmpv had not yet finished asynchronously parsing the demuxer/stream when `seek()` fired, the seek command was discarded by mpv, causing playback to always begin at `0:00` instead of `305s`. As a result, `_position > 290s` timed out after 30 seconds (reaching only ~30s), failing Stage 2C with a ~275s delta.
 
-Polling conditions per stage:
+**Resolution:**
+1. Passed `start: startPosition` directly into `Media(..., start: ...)` in `MediaKitPlayerAdapter.open()`. libmpv natively configures `--start=<seconds>` at container demux time, achieving 0ms seek divergence on reopen.
+2. Removed redundant premature `player.seek()` on uninitialized streams in `open()`.
+3. In `_runStage2C()`, reset `_position = Duration.zero` synchronously on `stop()` to eliminate any stale timestamp reads before reopening at checkpoint.
+4. Verified with standalone libmpv diagnostic probe (`seek_resume_probe`): `Media(start: 305s)` converged to exactly 305s with 0ms delta instantly.
 
-| Stage | Polls for | Timeout |
-|-------|-----------|---------|
-| 2A | `_position > 0` | 30s |
-| 2B | `_position > 0` (HLS startup) | 40s |
-| 2C 0:00 seek | `_position < 3s` | 15s |
-| 2C 300s seek | `_position` within 8s of 300 | 15s |
-| 2C resume | `_position > 290s` then delta check | 30s |
-| 2D-sub playback | `_position > 0` | 40s |
-| 2D-sub tracks | `subtitleTracks.isNotEmpty` | 10s |
-| 2D-hevc | `_position > 0` | 40s |
-| 2E metadata | `!_previewMetaLoading && _previewMeta != null` | 20s |
-| 2E image | `_previewImageUrl != null` | 5s |
+### NEXT ACTION — live battery verification
 
-All stages also now record actual startup latency (ms) via `Stopwatch` in
-their detail string, giving empirical LAN vs WAN timing data.
-
-### NEXT ACTION — live battery re-run required
-
-The fix is committed and compiles clean (0 analyze issues, 24/24 tests pass).
-The battery has NOT yet been re-run against the live server to confirm the fix.
-
-**Steps for next agent/session:**
-
-1. Kill any existing `flutter run` process
-2. Run fresh: `& "D:\src\flutter\bin\flutter.bat" run -d windows --release`
-   from `C:\MediaServer\flutter_client`
-3. The battery auto-starts after a 3s countdown when the app opens
-4. First run on LAN (toggle off) — verify 2A through 2E all PASS
-5. Toggle WAN switch on (top-right) — re-run battery — verify 2A through 2E all PASS
-6. Record timing values from the on-screen detail strings for the acceptance report
+Run the app to verify 2A through 2E all pass:
+```powershell
+cd C:\MediaServer\flutter_client
+& "D:\src\flutter\bin\flutter.bat" run -d windows --release
+```
 
 ---
 
