@@ -28,3 +28,13 @@ app.py.phase2
 skills-lock.json
 bin/
 logs/
+
+# Agent workspaces and tooling metadata
+.kilo/
+.freebuff/
+
+# External standalone sub-repos
+Hermes-agent-android-PC-companion-app/
+
+# Scratch notes
+IDEA.md

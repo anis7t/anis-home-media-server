@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  .tl { width: 900px; color: var(--foreground); font-variant-numeric: tabular-nums; }
+  .tl h1 { font-size: 17px; font-weight: 600; margin: 0 0 3px; letter-spacing: .01em; }
+  .tl .sub { font-size: 12.5px; color: var(--muted-foreground, #8a8f98); margin-bottom: 20px; line-height: 1.5; }
+  .tl .sub b { color: var(--foreground); font-weight: 600; }
+
+  .axis { position: relative; height: 16px; margin: 0 0 4px 138px; border-bottom: 1px solid var(--border, #3a3f45); }
+  .axis span { position: absolute; top: 0; font-size: 10.5px; color: var(--muted-foreground, #8a8f98); transform: translateX(-50%); white-space: nowrap; }
+  .axis i { position: absolute; bottom: -4px; width: 1px; height: 5px; background: var(--border, #3a3f45); }
+
+  .row { display: grid; grid-template-columns: 138px 1fr; align-items: start; height: 60px; }
+  .lbl { font-size: 12.5px; padding-right: 14px; line-height: 1.35; }
+  .lbl small { display: block; font-size: 10.5px; color: var(--muted-foreground, #8a8f98); }
+  .track { position: relative; height: 26px; }
+  .bar { position: absolute; top: 0; height: 26px; border-radius: 3px; }
+  .up { background: color-mix(in srgb, var(--accent, #e5484d) 20%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #e5484d) 55%, transparent); }
+  .render { background: color-mix(in srgb, var(--accent, #e5484d) 62%, transparent); border: 1px solid color-mix(in srgb, var(--accent, #e5484d) 85%, transparent); }
+  .prep { background: color-mix(in srgb, var(--muted-foreground, #8a8f98) 40%, transparent); border: 1px solid color-mix(in srgb, var(--muted-foreground, #8a8f98) 60%, transparent); }
+  .verify { background: color-mix(in srgb, var(--muted-foreground, #8a8f98) 18%, transparent); border: 1px solid color-mix(in srgb, var(--muted-foreground, #8a8f98) 45%, transparent); }
+  .outside { position: absolute; top: 5px; font-size: 11.5px; white-space: nowrap; color: var(--foreground); }
+  .range { position: absolute; top: 28px; height: 2px; background: var(--muted-foreground, #8a8f98); opacity: .5; }
+  .legend { position: absolute; top: 34px; left: 0; font-size: 11px; color: var(--muted-foreground, #8a8f98); white-space: nowrap; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+  .ctl { display: grid; grid-template-columns: 138px 1fr; align-items: center; margin: 6px 0 22px; }
+  .ctl label { font-size: 12.5px; padding-right: 14px; }
+  .ctl .slider { display: flex; align-items: center; gap: 12px; }
+  .ctl input { flex: 1; accent-color: var(--accent, #e5484d); }
+  .ctl output { font-size: 12.5px; white-space: nowrap; color: var(--muted-foreground, #8a8f98); }
+
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted-foreground, #8a8f98); font-weight: 600; margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 26px; }
+  th, td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border, #3a3f45); vertical-align: top; }
+  th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-foreground, #8a8f98); font-weight: 600; }
+  td.n { text-align: right; padding-right: 22px; white-space: nowrap; }
+  tr.sum td { border-bottom: none; font-weight: 600; }
+  .tag { font-size: 10px; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border, #3a3f45); color: var(--muted-foreground, #8a8f98); white-space: nowrap; }
+  .tag.m { color: var(--accent, #e5484d); border-color: color-mix(in srgb, var(--accent, #e5484d) 55%, transparent); }
+  .note { font-size: 11.5px; color: var(--muted-foreground, #8a8f98); line-height: 1.6; max-width: 860px; }
+  .note b { color: var(--foreground); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="tl">
+  <h1>Upload → cache complete</h1>
+  <div class="sub">Worked example, real file and real timings: <b>Spider-Man — Brand New Day</b> · 3.55 GiB MKV ·
+    2 h 16 m 24 s (8183.8 s) · 204,595 frames @ 25 fps · 1080p · 137 × 60 s chunks · 2204 MiB cache</div>
+
+  <div class="axis" id="axis"></div>
+
+  <div class="row">
+    <div class="lbl">Upload<small>8 MiB resumable chunks</small></div>
+    <div class="track">
+      <div class="bar up" id="upBar"></div>
+      <div class="outside" id="upTxt"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="lbl">Compute<small>2 GPUs: RX 560X + Vega 8</small></div>
+    <div class="track">
+      <div class="bar prep"   id="prepBar"></div>
+      <div class="bar render" id="renderBar"></div>
+      <div class="bar verify" id="verifyBar"></div>
+      <div class="range"      id="rangeBar" title="render time while the 2-hourly maintenance audit probes concurrently"></div>
+      <div class="legend">
+        <span class="sw" style="background:color-mix(in srgb, var(--muted-foreground,#8a8f98) 40%, transparent)"></span>probe + layout prep ~7 s
+        &nbsp;·&nbsp;
+        <span class="sw" style="background:color-mix(in srgb, var(--accent,#e5484d) 62%, transparent)"></span>render <b id="renderTxt"></b>
+        &nbsp;·&nbsp;
+        <span class="sw" style="background:color-mix(in srgb, var(--muted-foreground,#8a8f98) 18%, transparent)"></span>verify <b id="verifyTxt"></b>
+        &nbsp;·&nbsp;the thin line runs to <span id="rangeTxt"></span> when the audit probes concurrently
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <label for="mbps">Your uplink</label>
+    <div class="slider"><input id="mbps" type="range" min="20" max="1000" step="10" value="50"><output id="mbpsOut">50 Mbit/s</output></div>
+  </div>
+
+  <h2>Stage by stage</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>What it does</th><th style="text-align:right">Duration</th><th>Basis</th></tr></thead>
+    <tbody>
+      <tr><td>Upload</td><td>resumable 8 MiB chunks into staging, then moved into the library</td><td class="n" id="tUp">10 min 09 s</td><td><span class="tag">depends on uplink</span></td></tr>
+      <tr><td>Probe + scan</td><td>ffprobe (duration, fps, streams), library insert, TMDb metadata</td><td class="n">~5 s</td><td><span class="tag m">measured</span></td></tr>
+      <tr><td>Queue</td><td>the post-upload hook starts the job immediately — no wait for the 30 s loop</td><td class="n">~0 s</td><td><span class="tag">code path</span></td></tr>
+      <tr><td>Layout prep</td><td>clear a legacy/overlapping cache, or renumber an intact one (rename only)</td><td class="n">~2 s</td><td><span class="tag m">measured</span></td></tr>
+      <tr><td>Render</td><td>137 chunks, 2 concurrent encoders, strided segment indices, 1 Hz progress</td><td class="n">18 min 24 s – 26 min 10 s</td><td><span class="tag m">measured</span></td></tr>
+      <tr><td>Frame verify</td><td>per-chunk frame accounting against the source; gate before ENDLIST</td><td class="n">4 min 46 s</td><td><span class="tag m">measured</span></td></tr>
+      <tr><td>Finalize</td><td>master playlist + ENDLIST written atomically; the cache becomes playable</td><td class="n">~0 s</td><td><span class="tag m">measured</span></td></tr>
+      <tr class="sum"><td>Total after upload</td><td></td><td class="n">23 min 17 s – 25 min 08 s</td><td></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Scaling at the measured rate</h2>
+  <table>
+    <thead><tr><th>Source</th><th style="text-align:right">Chunks</th><th style="text-align:right">Render</th><th style="text-align:right">Verify</th><th style="text-align:right">Total</th><th style="text-align:right">Speed</th></tr></thead>
+    <tbody>
+      <tr><td>45 min · 1.5 GiB</td><td class="n">45</td><td class="n">6 min – 8 min 36 s</td><td class="n">1 min 36 s</td><td class="n">8 min – 10 min</td><td class="n">7.4× – 5.2×</td></tr>
+      <tr><td>1 h 30 · 2.0 GiB</td><td class="n">90</td><td class="n">12 min – 17 min</td><td class="n">3 min 12 s</td><td class="n">15 min – 20 min</td><td class="n">7.4× – 5.2×</td></tr>
+      <tr><td><b>2 h 16 · 3.55 GiB</b> (this file)</td><td class="n">137</td><td class="n">18 min – 26 min</td><td class="n">4 min 52 s</td><td class="n">23 min – 31 min</td><td class="n">7.4× – 5.2×</td></tr>
+      <tr><td>2 h 45 · 5.0 GiB</td><td class="n">165</td><td class="n">22 min – 32 min</td><td class="n">5 min 52 s</td><td class="n">28 min – 38 min</td><td class="n">7.4× – 5.2×</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>Measured on this host:</b> render 8.06 s/chunk uncontended (137 chunks in 1104 s) and 11.46 s/chunk while the
+    2-hourly maintenance audit was probing concurrently (131 chunks in 1501 s) — 5.2×–7.4× realtime. Frame verify
+    runs at ~0.13 s/segment (the audit's own pass covers ~18,000 segments in ~40 min). The cache is 2204 MiB for a
+    3632 MiB source. <b>Assumed:</b> the upload stage is network-bound, so it depends on your uplink — drag the
+    slider. Upload and compute share one time axis, so at 20 Mbit/s the upload (25 min 23 s) outlasts the GPU work
+    (23 min 17 s). Hover thumbnails are extracted on demand during playback and are not on this path.
+  </div>
+</div>
+
+<script>
+(function () {
+  var SRC_MIB = 3631.70, BITS_PER_MIB = 8.388608;
+  var SCAN = 5, PREP = 2, RENDER = 1104, VERIFY = 286, RENDER_RANGE = 1215;   // seconds, measured
+  var AXIS_MAX = 2400, AXIS_LABEL = 40;                                       // 40 min axis
+
+  function fmt(s) {
+    s = Math.round(s);
+    var m = Math.floor(s / 60), r = s % 60;
+    return m ? m + ' min ' + (r < 10 ? '0' + r : r) + ' s' : r + ' s';
+  }
+
+  function layout() {
+    var W = document.querySelector('.track').clientWidth;
+    var up = BITS_PER_MIB * SRC_MIB / (+document.getElementById('mbps').value);
+    function px(sec) { return Math.max(0, sec / AXIS_MAX * W); }
+
+    var upW = Math.min(px(up), W - 120);
+    var upBar = document.getElementById('upBar'), upTxt = document.getElementById('upTxt');
+    upBar.style.width = upW + 'px';
+    upTxt.style.left = (upW + 10) + 'px';
+    upTxt.textContent = fmt(up) + (px(up) > W - 120 ? ' (fills the axis)' : '');
+
+    var prepW = Math.max(px(SCAN + PREP), 3);
+    document.getElementById('prepBar').style.width = prepW + 'px';
+
+    var rBar = document.getElementById('renderBar');
+    rBar.style.left = prepW + 'px';
+    rBar.style.width = px(RENDER) + 'px';
+
+    var vBar = document.getElementById('verifyBar');
+    vBar.style.left = (prepW + px(RENDER)) + 'px';
+    vBar.style.width = px(VERIFY) + 'px';
+
+    var rng = document.getElementById('rangeBar');
+    rng.style.left = prepW + 'px';
+    rng.style.width = px(RENDER_RANGE) + 'px';
+    document.getElementById('rangeTxt').textContent = fmt(RENDER_RANGE);
+    document.getElementById('renderTxt').textContent = fmt(RENDER) + ' · 137 chunks · 2 GPUs';
+    document.getElementById('verifyTxt').textContent = fmt(VERIFY);
+    document.getElementById('tUp').textContent = fmt(up);
+  }
+
+  var axis = document.getElementById('axis');
+  for (var m = 0; m <= AXIS_LABEL; m += 5) {
+    var s = document.createElement('span');
+    s.textContent = m === 0 ? '0' : m + ' min';
+    s.style.left = (m / AXIS_LABEL * 100) + '%';
+    axis.appendChild(s);
+    var t = document.createElement('i');
+    t.style.left = (m / AXIS_LABEL * 100) + '%';
+    axis.appendChild(t);
+  }
+
+  var slider = document.getElementById('mbps');
+  slider.addEventListener('input', function () {
+    document.getElementById('mbpsOut').textContent = this.value + ' Mbit/s';
+    layout();
+  });
+  window.addEventListener('resize', layout);
+  layout();
+})();
+</script>
+</body>
+</html>
