@@ -1,0 +1,24 @@
+<Project>
+  <PropertyGroup>
+    <WindowsSdkDir_10>D:\WindowsKits\10\</WindowsSdkDir_10>
+    <WindowsSdkDir>D:\WindowsKits\10\</WindowsSdkDir>
+    <UniversalCRTSdkDir_10>D:\WindowsKits\10\</UniversalCRTSdkDir_10>
+    <UniversalCRTSdkDir>D:\WindowsKits\10\</UniversalCRTSdkDir>
+    <UCRTContentRoot>D:\WindowsKits\10\</UCRTContentRoot>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
+    <WindowsSDKInstalled>true</WindowsSDKInstalled>
+    <WindowsSDK_Desktop_Support>true</WindowsSDK_Desktop_Support>
+    <VC_ATLMFC_IncludePath>D:\atlmfc\include;</VC_ATLMFC_IncludePath>
+    <VC_LibraryPath_ATL_x64>D:\atlmfc\lib\x64;</VC_LibraryPath_ATL_x64>
+    <_VC_LibraryPath_ATL_x64>D:\atlmfc\lib\x64;</_VC_LibraryPath_ATL_x64>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalLibraryDirectories>D:\WindowsKits\10\Lib\10.0.26100.0\um\x64;D:\WindowsKits\10\Lib\10.0.26100.0\ucrt\x64;D:\atlmfc\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\WindowsKits\10\Include\10.0.26100.0\um;D:\WindowsKits\10\Include\10.0.26100.0\shared;D:\WindowsKits\10\Include\10.0.26100.0\winrt;D:\WindowsKits\10\Include\10.0.26100.0\cppwinrt;D:\WindowsKits\10\Include\10.0.26100.0\ucrt;D:\atlmfc\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>
