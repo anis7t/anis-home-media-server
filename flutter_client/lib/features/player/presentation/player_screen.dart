@@ -1,18 +1,25 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/storage/device_identity_service.dart';
+import '../../connection/controllers/connection_controller.dart';
 import '../domain/player_controller_interface.dart';
+import '../domain/seek_preview_controller.dart';
 import '../infrastructure/media_kit_player_adapter.dart';
+import 'widgets/double_tap_seek_detector.dart';
 import 'widgets/player_controls_overlay.dart';
 import 'widgets/player_error_card.dart';
 import 'widgets/player_loading_indicator.dart';
 import 'widgets/player_surface.dart';
 
-/// Production player screen for Phase 3A.
+/// Production player screen for Phase 3B.
+///
+/// Features video rendering, responsive Android/touch controls, seek-bar timeline
+/// with debounced seek-preview thumbnails, double-tap ±10s seeking, and fullscreen.
 class PlayerScreen extends ConsumerStatefulWidget {
   final String mediaUrl;
   final String title;
@@ -20,7 +27,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final Duration? startPosition;
   final String? externalSubtitleUrl;
   final String? deviceId;
+  final String? mediaFilename;
   final PlayerControllerInterface? customController;
+  final Dio? customDio;
 
   const PlayerScreen({
     super.key,
@@ -30,7 +39,9 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.startPosition,
     this.externalSubtitleUrl,
     this.deviceId,
+    this.mediaFilename,
     this.customController,
+    this.customDio,
   });
 
   @override
@@ -56,6 +67,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _autoHideTimer;
   String? _errorMessage;
 
+  // Seek preview & scrubbing state
+  late final SeekPreviewController _seekPreviewController;
+  PreviewUrlResolver? _previewUrlResolver;
+  Map<String, dynamic>? _previewMeta;
+  CancelToken? _previewCancelToken;
+  bool _isScrubbing = false;
+
   final FocusNode _keyboardFocusNode = FocusNode();
 
   @override
@@ -78,6 +96,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _volume = _controller.volume > 0 ? _controller.volume : 100.0;
     _lastPreMuteVolume = _volume;
 
+    // Initialize canonical SeekPreviewController
+    _seekPreviewController = SeekPreviewController(
+      debounceDuration: const Duration(milliseconds: 80),
+      urlResolver: (int frameIndex, int sequenceId) async {
+        if (_previewUrlResolver != null) {
+          return await _previewUrlResolver!(frameIndex, sequenceId);
+        }
+        return '';
+      },
+      onStateChanged: (state) {
+        if (mounted) setState(() {});
+      },
+    );
+
     _listenToStreams();
     _openMedia();
 
@@ -97,7 +129,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _errorMessage = 'Failed to load media or decode stream.';
         } else if (s == PlayerPlaybackState.playing) {
           _errorMessage = null;
-          _resetAutoHideTimer();
+          if (!_isScrubbing) {
+            _resetAutoHideTimer();
+          }
         } else if (s == PlayerPlaybackState.paused) {
           _cancelAutoHideTimer();
           _controlsVisible = true;
@@ -107,7 +141,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _subscriptions.add(_controller.positionStream.listen((p) {
       if (!mounted) return;
-      setState(() => _position = p);
+      // Do not snap back during user scrubbing gestures
+      if (!_isScrubbing) {
+        setState(() => _position = p);
+      }
     }));
 
     _subscriptions.add(_controller.durationStream.listen((d) {
@@ -121,11 +158,112 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }));
   }
 
+  String? _resolveFilename() {
+    if (widget.mediaFilename != null && widget.mediaFilename!.isNotEmpty) {
+      return widget.mediaFilename;
+    }
+    final uri = Uri.tryParse(widget.mediaUrl);
+    if (uri == null) return null;
+
+    final path = uri.path;
+    if (path.startsWith('/media/')) {
+      return Uri.decodeComponent(path.substring('/media/'.length));
+    } else if (path.startsWith('/hls/')) {
+      const prefix = '/hls/';
+      var rest = path.substring(prefix.length);
+      if (rest.endsWith('/playlist.m3u8')) {
+        rest = rest.substring(0, rest.length - '/playlist.m3u8'.length);
+      }
+      return Uri.decodeComponent(rest);
+    }
+    return null;
+  }
+
+  String? _resolveServerOrigin() {
+    final uri = Uri.tryParse(widget.mediaUrl);
+    if (uri != null && uri.hasScheme && uri.hasAuthority) {
+      return uri.origin;
+    }
+    try {
+      final serverUrl = ref.read(connectionControllerProvider).serverUrl;
+      if (serverUrl.isNotEmpty) {
+        final parsed = Uri.tryParse(serverUrl);
+        if (parsed != null && parsed.hasScheme && parsed.hasAuthority) {
+          return parsed.origin;
+        }
+      }
+    } catch (_) {}
+    return 'http://127.0.0.1:8000';
+  }
+
+  Future<void> _loadPreviewMeta() async {
+    setState(() {
+      _previewMeta = null;
+    });
+
+    if (widget.customController != null && widget.customDio == null) {
+      return;
+    }
+
+    try {
+      final filename = _resolveFilename();
+      final serverOrigin = _resolveServerOrigin();
+      if (filename == null || serverOrigin == null) {
+        return;
+      }
+
+      final encoded = Uri.encodeComponent(filename);
+      final url = '$serverOrigin/api/seek-preview-meta/$encoded';
+
+      _previewCancelToken?.cancel();
+      _previewCancelToken = CancelToken();
+
+      final dio = widget.customDio ?? Dio();
+      final res = await dio.get(
+        url,
+        cancelToken: _previewCancelToken,
+        options: Options(
+          responseType: ResponseType.json,
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (res.statusCode == 200 && res.data != null) {
+        final data = res.data is Map<String, dynamic>
+            ? res.data as Map<String, dynamic>
+            : (res.data as Map).cast<String, dynamic>();
+
+        setState(() {
+          _previewMeta = data;
+        });
+
+        _previewUrlResolver = (int frameIndex, int sequenceId) async {
+          final thumbStr = frameIndex.toString().padLeft(5, '0');
+          return '$serverOrigin/seek-preview/$encoded/thumb_$thumbStr.jpg?req=$sequenceId';
+        };
+      } else {
+        setState(() {
+          _previewMeta = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _previewMeta = null;
+        });
+      }
+    }
+  }
+
   Future<void> _openMedia() async {
     setState(() {
       _errorMessage = null;
       _state = PlayerPlaybackState.opening;
     });
+
+    _loadPreviewMeta();
 
     try {
       String deviceId = widget.deviceId ?? 'dev_flutter_client';
@@ -157,16 +295,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (!_controlsVisible) {
       setState(() => _controlsVisible = true);
     }
-    if (_state == PlayerPlaybackState.playing) {
+    if (_state == PlayerPlaybackState.playing && !_isScrubbing) {
+      _resetAutoHideTimer();
+    }
+  }
+
+  void _toggleControlsVisibility() {
+    _onUserInteraction();
+    setState(() {
+      _controlsVisible = !_controlsVisible;
+    });
+    if (_controlsVisible && _state == PlayerPlaybackState.playing && !_isScrubbing) {
       _resetAutoHideTimer();
     }
   }
 
   void _resetAutoHideTimer() {
     _autoHideTimer?.cancel();
-    _autoHideTimer = Timer(const Duration(milliseconds: 2500), () {
+    _autoHideTimer = Timer(const Duration(milliseconds: 2800), () {
       if (!mounted) return;
-      if (_state == PlayerPlaybackState.playing) {
+      if (_state == PlayerPlaybackState.playing && !_isScrubbing) {
         setState(() => _controlsVisible = false);
       }
     });
@@ -228,6 +376,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
   }
 
+  void _onSeek(Duration target) {
+    _onUserInteraction();
+    _controller.seek(target);
+    setState(() => _position = target);
+  }
+
+  void _seekRelative(int seconds) {
+    _onUserInteraction();
+    final currentSec = _position.inSeconds;
+    final totalSec = _duration.inSeconds;
+    final targetSec = (currentSec + seconds).clamp(0, totalSec > 0 ? totalSec : 0);
+    final target = Duration(seconds: targetSec);
+    _controller.seek(target);
+    setState(() => _position = target);
+  }
+
+  void _onScrubbingChanged(bool isScrubbing) {
+    setState(() => _isScrubbing = isScrubbing);
+    if (isScrubbing) {
+      _cancelAutoHideTimer();
+      _controlsVisible = true;
+    } else {
+      if (_state == PlayerPlaybackState.playing) {
+        _resetAutoHideTimer();
+      }
+    }
+  }
+
   void _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent) return;
 
@@ -238,6 +414,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _toggleMute();
     } else if (key == LogicalKeyboardKey.keyF) {
       _toggleFullscreen();
+    } else if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
+      _seekRelative(-10);
+    } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
+      _seekRelative(10);
     } else if (key == LogicalKeyboardKey.escape) {
       if (_isFullscreen) {
         _toggleFullscreen();
@@ -251,6 +431,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       defaultExitNativeFullscreen();
     }
     _autoHideTimer?.cancel();
+    _previewCancelToken?.cancel();
+    _seekPreviewController.dispose();
     _keyboardFocusNode.dispose();
     for (final s in _subscriptions) {
       s.cancel();
@@ -278,17 +460,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         },
         child: MouseRegion(
           onHover: (_) => _onUserInteraction(),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _onUserInteraction,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // 1. Isolated video surface
-                if (_videoController != null)
-                  PlayerSurface(controller: _videoController!)
-                else
-                  Container(color: Colors.black),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Isolated video surface with DoubleTapSeekDetector
+              Positioned.fill(
+                child: DoubleTapSeekDetector(
+                  onDoubleTapRewind: () => _seekRelative(-10),
+                  onDoubleTapForward: () => _seekRelative(10),
+                  onTap: _toggleControlsVisibility,
+                  child: _videoController != null
+                      ? PlayerSurface(controller: _videoController!)
+                      : Container(color: Colors.black),
+                ),
+              ),
 
                 // 2. Loading indicator
                 if (isOpening || _isBuffering)
@@ -325,9 +510,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     onToggleFullscreen: _toggleFullscreen,
                     onBack: _onBack,
                     onUserInteraction: _onUserInteraction,
+                    onSeek: _onSeek,
+                    onScrubbingChanged: _onScrubbingChanged,
+                    seekPreviewController: _seekPreviewController,
+                    previewMeta: _previewMeta,
                   ),
               ],
-            ),
           ),
         ),
       ),

@@ -311,5 +311,52 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('Fullscreen (f)'), findsWidgets);
     });
+
+    testWidgets('PlayerControlsOverlay pads top header and bottom controls against system insets', (tester) async {
+      const insets = EdgeInsets.only(top: 48, bottom: 34, left: 16, right: 16);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(400, 800),
+              padding: insets,
+              viewPadding: insets,
+            ),
+            child: Scaffold(
+              body: PlayerControlsOverlay(
+                title: 'Test Safe Area Movie',
+                isVisible: true,
+                isPlaying: true,
+                isBuffering: false,
+                position: const Duration(minutes: 5),
+                duration: const Duration(minutes: 90),
+                volume: 80,
+                isFullscreen: false,
+                onTogglePlay: () {},
+                onVolumeChanged: (_) {},
+                onToggleMute: () {},
+                onToggleFullscreen: () {},
+                onBack: () {},
+                onUserInteraction: () {},
+                onSeek: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify top back button is positioned below top notch (top >= 48)
+      final backButton = find.byTooltip('Back');
+      expect(backButton, findsOneWidget);
+      final backTopY = tester.getTopLeft(backButton).dy;
+      expect(backTopY, greaterThanOrEqualTo(48.0));
+
+      // Verify bottom play button is positioned above bottom gesture bar (bottom <= 800 - 34 = 766)
+      final playButton = find.byTooltip('Pause (Space / k)');
+      expect(playButton, findsOneWidget);
+      final playBottomY = tester.getBottomLeft(playButton).dy;
+      expect(playBottomY, lessThanOrEqualTo(800.0 - 34.0));
+    });
   });
 }
