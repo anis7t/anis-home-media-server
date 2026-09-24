@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-09-24
 Repository: `anis7t/media-server`
-Working branch: `feat/unified-header-navigation`
+Working branch: `feat/flutter-production-player`
 
 ---
 
@@ -14,13 +14,29 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 |-------|-------|--------|
 | 1 | Flutter Client Foundation | ✅ Committed (`5b0b1fa`, `eadb257`) on `feat/flutter-player-poc` |
 | 2 | Video Player POC | ✅ COMPLETE — All 6 stages (2A–2E + 2F Acceptance Report) PASS on LAN & WAN (`f8e8c23`) |
-| 3 | Production player UI | ⏳ Next up — Architecture approved (GO verdict) |
-
-**Phase 2 Proof-of-Concept Status:** Fully validated across LAN and Cloudflare WAN named tunnel. All technical criteria met with `media_kit`/libmpv. Phase 3 production player UI is ready to begin.
+| 3A | Production Player Architecture | ✅ COMPLETE — Committed on `feat/flutter-production-player` |
+| 3B | Android-First Timeline & Live Seek Preview | ✅ COMPLETE — Committed (`2e95246`) |
+| Android Native | Physical Device Engine (`libmpv.so`) | ✅ COMPLETE — Vivo I2217 (Android 16, SDK 36, NDK 28) |
+| 3C | Audio & Subtitle Track Selectors | ⏳ Next up |
 
 ---
 
-## 0. Recent work — 2026-09-21 (video-duration completeness + cache-purge safety)
+## 0. Recent work
+
+### 2026-09-24 — Waitress process-inspection optimization (~240x speedup) & Android native media_kit setup
+
+- **Root Cause of Unbrowsable / Timeout Behavior:**
+  On Windows, `find_ffmpeg_info_for_path()` called `psutil.process_iter(['pid', 'name', 'cmdline'])` eagerly querying `cmdline` across every running system process (~2.1s per invocation). In `get_active_transcodes()`, this ran sequentially for every video file needing transcoding (~10 files), locking Waitress worker threads for 21–25 seconds per full HTML render (`/`, `/movie/<filename>`, `/watch/<filename>`).
+  With 8 Waitress worker threads, concurrent browser requests caused task queue depth warnings (`Task queue depth is 33`) and triggered `"The operation has timed out"` on any client/health probe with standard 4–6s timeouts.
+- **Resolution:**
+  1. Implemented `get_active_ffmpeg_processes()` in `app/services/transcode_service.py` filtering by process name (`'ffmpeg' in name`) *before* accessing command-line memory (`proc.cmdline()`).
+  2. Batched inspection in `get_active_transcodes()` to query active FFmpeg processes once per cycle rather than once per video file, immediately skipping remaining files if no FFmpeg process is running.
+  3. Increased `WAITRESS_THREADS=16` in `.env` for expanded concurrent range streaming headroom.
+  4. Benchmark: `get_active_transcodes()` reduced from 21.0s to **0.088s** (~240× speedup).
+  5. Test suite verification: **226 / 226 tests passed** (0 failures).
+- **Android Physical Device Runtime Setup:**
+  Integrated `media_kit_libs_android_video: ^1.3.8` to provide native `libmpv.so` (arm64-v8a) on Android 16 / SDK 36 for the Vivo I2217 physical test device. Verified clean `MediaKit.ensureInitialized()` runtime lifecycle.
+
 
 ### 2026-09-22 — root cause found: segment-index collision between chunks (content loss)
 

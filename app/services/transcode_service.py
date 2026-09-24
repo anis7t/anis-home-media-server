@@ -619,56 +619,80 @@ def apply_post_transcode_policy(path, policy=None):
     }
 
 
-def find_ffmpeg_info_for_path(path):
-    """Find any running external FFmpeg process actively converting target media path and extract PID and HLS output dir.
+def get_active_ffmpeg_processes():
+    """Return a list of dicts [{'pid': pid, 'cmdline': content}] for all running FFmpeg processes.
 
-    Works on Windows too. The original implementation only scanned /proc, so on this host it
-    returned (None, None) on every call: the duplicate-job guard in ensure_hls_transcode never
-    fired, and the auto-transcoder started a second job on a cache another job was already
-    rendering (two jobs writing the same segment indices). psutil is already a dependency.
+    Fast on Windows and Linux: filters by process name first before querying command line arguments,
+    avoiding expensive PEB/cmdline reads across all unrelated system processes.
     """
-    target = str(path)
-    target_name = Path(path).name
+    procs = []
     try:
         import psutil
     except ImportError:
         psutil = None
+
     if psutil is not None:
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                name = (proc.info.get('name') or '').lower()
-                if 'ffmpeg' not in name:
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    name = (proc.info.get('name') or '').lower()
+                    if 'ffmpeg' not in name:
+                        continue
+                    raw_cmd = proc.info.get('cmdline')
+                    if raw_cmd is None and hasattr(proc, 'cmdline'):
+                        try:
+                            raw_cmd = proc.cmdline()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+                            raw_cmd = []
+                    content = ' '.join(raw_cmd or [])
+                    if content:
+                        procs.append({'pid': proc.info.get('pid') or getattr(proc, 'pid', None), 'cmdline': content})
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
                     continue
-                content = ' '.join(proc.info.get('cmdline') or [])
-                if not content:
-                    continue
-                if target not in content and target_name not in content:
-                    continue
-                hls_dir = None
-                m = re.search(r'-hls_segment_filename\s+([^\s]+)[\\/]segment_%06d\.ts', content)
-                if m:
-                    hls_dir = Path(m.group(1))
-                elif 'chunk_' in content:
-                    m = re.search(r'-hls_segment_filename\s+([^\s]+)[\\/]', content)
-                    if m:
-                        hls_dir = Path(m.group(1))
-                return proc.info['pid'], hls_dir
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
-                continue
-        return None, None
+            return procs
+        except Exception:
+            pass
+
+    # Fallback for Linux /proc without psutil
     for cmd_file in glob.glob('/proc/[0-9]*/cmdline'):
         try:
             with open(cmd_file, 'rb') as f:
                 content = f.read().decode('utf-8', errors='ignore').replace('\x00', ' ')
-                if 'ffmpeg' in content and (target in content or target_name in content):
-                    pid = int(cmd_file.split('/')[2])
-                    hls_dir = None
-                    m = re.search(r'-hls_segment_filename\s+([^\s]+)/segment_%06d\.ts', content)
-                    if m:
-                        hls_dir = Path(m.group(1))
-                    return pid, hls_dir
+                if 'ffmpeg' in content:
+                    parts = cmd_file.split('/')
+                    if len(parts) > 2 and parts[2].isdigit():
+                        procs.append({'pid': int(parts[2]), 'cmdline': content})
         except Exception:
             pass
+
+    return procs
+
+
+def find_ffmpeg_info_for_path(path, ffmpeg_procs=None):
+    """Find any running external FFmpeg process actively converting target media path and extract PID and HLS output dir.
+
+    Works on Windows too. Enumerates processes with psutil and falls back to /proc.
+    """
+    target = str(path)
+    target_name = Path(path).name
+    if ffmpeg_procs is None:
+        ffmpeg_procs = get_active_ffmpeg_processes()
+
+    for item in ffmpeg_procs:
+        content = item.get('cmdline') or ''
+        if target not in content and target_name not in content:
+            continue
+        pid = item.get('pid')
+        hls_dir = None
+        m = re.search(r'-hls_segment_filename\s+([^\s]+)[\\/]segment_%06d\.ts', content)
+        if m:
+            hls_dir = Path(m.group(1))
+        elif 'chunk_' in content:
+            m = re.search(r'-hls_segment_filename\s+([^\s]+)[\\/]', content)
+            if m:
+                hls_dir = Path(m.group(1))
+        return pid, hls_dir
+
     return None, None
 
 
@@ -1609,12 +1633,17 @@ def get_active_transcodes():
             'eta_str': eta_str
         }
 
+    active_ffmpegs = None
     for p in video_paths():
         if not is_video(p) or not needs_transcode(p):
             continue
         rel = get_rel_path(p)
         if rel not in config.HLS_PROCESSES or config.HLS_PROCESSES[rel].poll() is not None:
-            pid, hls_dir = find_ffmpeg_info_for_path(p)
+            if active_ffmpegs is None:
+                active_ffmpegs = get_active_ffmpeg_processes()
+            if not active_ffmpegs:
+                continue
+            pid, hls_dir = find_ffmpeg_info_for_path(p, ffmpeg_procs=active_ffmpegs)
             if pid:
                 config.HLS_PROCESSES[rel] = ProcessProxy(pid, hls_dir=hls_dir)
 

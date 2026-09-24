@@ -1,8 +1,8 @@
 # Flutter Client — Phase Status & Handoff
 
 > **Last updated:** 2026-09-24
-> **Active branch:** `feat/flutter-player-poc`
-> **Source conversations:** `8478b150-1239-4291-9a25-9155d6f2ad87` (Phase 1 & 2 work), `995057c0-0007-447a-93e5-ea547828e71c` (2B/2C/2D timing fix)
+> **Active branch:** `feat/flutter-production-player`
+> **Source conversations:** `8478b150-1239-4291-9a25-9155d6f2ad87` (Phase 1 & 2 work), `995057c0-0007-447a-93e5-ea547828e71c` (Phase 2 fixes, Phase 3A/3B, Android native)
 > **Purpose:** Persistent handoff document. Read this before touching the Flutter client.
 
 ---
@@ -12,8 +12,11 @@
 | Phase | Title | Status |
 |-------|-------|--------|
 | 1 | Flutter Client Foundation | COMPLETE — committed (`5b0b1fa`, `eadb257`) |
-| 2 | Video Player Proof-of-Concept | COMPLETE — all 6 stages verified on LAN & WAN, Stage 2F report accepted (`f8e8c23`) |
-| 3 | Production Player UI | Ready to begin — Architectural Verdict: GO |
+| 2 | Video Player Proof-of-Concept | COMPLETE — all 6 stages verified on LAN & WAN (`f8e8c23`) |
+| 3A | Production Player Core Architecture | COMPLETE — committed on `feat/flutter-production-player` |
+| 3B | Android-First Timeline & Live Seek Preview | COMPLETE — committed (`2e95246`) |
+| Android Native | Physical Device Engine (`libmpv.so`) | COMPLETE — Vivo I2217 (Android 16, SDK 36, NDK 28) |
+| 3C | Audio & Subtitle Track Selectors | NEXT |
 
 ---
 
@@ -196,9 +199,71 @@ Expected path: `build\windows\x64\runner\Release\libmpv-2.dll`
 
 ---
 
-## Open questions for Phase 3
+---
 
-1. Phase 3 scope TBD — Phase 2 acceptance verdict drives the Phase 3 plan.
-2. Cloudflare WAN delivery policies for large video files need review before
-   treating the tunnel as a scalable distribution path.
-3. Authentication must be added to the Cloudflare hostname before wider sharing.
+## Phase 3 Strategic Pivot: Android-First, Desktop-Second
+
+Before commencing Phase 3, the product strategy was refined:
+1. **Primary Target Platform:** **Android** (touch interactions, physical mobile viewports, safe area insets, notch handling, gesture navigation, back handling).
+2. **Secondary Target Platform:** **Windows/Desktop** (mouse hover, physical keyboard shortcuts, window resizing).
+3. **Strict Backend Constraint:** Flask backend contracts must remain frozen (`/api/progress`, `/api/seek-preview-meta/<file>`, `/seek-preview/<file>/thumb_XXXXX.jpg`).
+
+---
+
+## Phase 3A — Production Player Architecture & Core UI (DONE)
+
+**Goal:** Establish clean, decoupled production player feature architecture in `flutter_client/lib/features/player/`.
+
+### Architecture & Key Components:
+- **Domain Layer:**
+  - `PlayerControllerInterface`: Pure abstract contract governing playback, rates, seeks, and track metadata.
+  - `PlayerState`: Immutable state model exposing `playbackState`, `position`, `duration`, `buffered`, `rate`, `tracks`.
+  - `SeekPreviewController`: Frame thumbnail lifecycle manager with sequence tracking and stale-frame suppression.
+- **Infrastructure Layer:**
+  - `ProductionPlayerController`: Wraps `MediaKitPlayerAdapter`, binds stream events, and coordinates playback session lifecycles.
+- **Presentation Layer:**
+  - `PlayerScreen`: Root player view managing wake locks, immersive fullscreen, and keyboard/touch routing.
+  - `PlayerControlsOverlay`: Top bar (title, back, settings), center play/pause HUD, bottom controls rail.
+  - `PlayerSurface`: Clamped video viewport rendering `Video` widget without layout overflow.
+  - `PlayerLoadingIndicator`: Pulsing translucent loading spinner during demuxing/buffering.
+  - `DoubleTapSeekDetector`: Left/right dual-zone double-tap gesture detector (±10s) with animated ripple feedback.
+
+---
+
+## Phase 3B — Android-First Timeline & Live Seek Preview (DONE — Commit `2e95246`)
+
+**Goal:** Provide smooth touch scrubbing and live visual seek preview thumbnails without video stream interruption.
+
+### Key Achievements:
+- **`VideoTimelineBar`:**
+  - Interactive touch slider with buffered range fill, current position track, and thumb pill.
+  - Dragging/scrubbing decoupled from player `currentTime` (zero HTTP range flood during scrub).
+  - Seek is committed strictly on `onSeekEnd` (finger lift / mouse release).
+- **Live Frame Thumbnails (`SeekPreviewController`):**
+  - Fetches metadata via `GET /api/seek-preview-meta/<path:filename>` (frame interval, total count).
+  - Resolves individual JPEG thumbnails via `GET /seek-preview/<path:filename>/thumb_XXXXX.jpg`.
+  - Debounces rapid scrubbing (30ms burst window) with atomic sequence counter discarding out-of-order stale images.
+  - Floating preview card with smooth positioning clamped within screen boundaries; graceful fallback to formatted timestamp badge when thumbnails are unavailable.
+- **Automated Validation:**
+  - `flutter test`: 47 tests passed (including `runtime_player_3b_test.dart`, `seek_preview_race_debounce_test.dart`, `double_tap_seek_detector_test.dart`, `player_screen_test.dart`).
+
+---
+
+## Android Physical Device Setup & Native Engine Integration (DONE)
+
+- **Device:** Vivo I2217 (Android 16, API 36) via wireless ADB (`192.168.1.6:40307`).
+- **Toolchain:** Android SDK 36, NDK 28.2.13676358, JDK 17.
+- **Issue Resolved:** `Cannot find libmpv.so. Please ensure it's presence in the APK.`
+  - Added `media_kit_libs_android_video: ^1.3.8` to `flutter_client/pubspec.yaml`.
+  - Verified `libmpv.so` is bundled into APK arm64-v8a native libraries.
+  - `MediaKit.ensureInitialized()` initializes cleanly at runtime on Android 16.
+
+---
+
+## Next Up — Phase 3C (Audio & Subtitle Selectors)
+
+- Modal bottom sheet for audio stream selection and subtitle tracks.
+- Sidecar subtitle styling and elevation above controls.
+- Playback speed selector dialog (0.5x to 2.0x).
+- Android back gesture navigation handling.
+
