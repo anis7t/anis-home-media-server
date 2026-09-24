@@ -220,7 +220,10 @@ class PlayerControlsOverlay extends StatelessWidget {
               left: 0,
               right: 0,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: EdgeInsets.symmetric(
+                  horizontal: MediaQuery.of(context).size.width < 620 ? 8 : 16,
+                  vertical: 8,
+                ),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -258,16 +261,21 @@ class PlayerControlsOverlay extends StatelessWidget {
                         builder: (context, constraints) {
                           final isCompact = constraints.maxWidth < 620;
 
+                          final btnConstraints = BoxConstraints(
+                            minWidth: isCompact ? 36 : 44,
+                            minHeight: isCompact ? 36 : 44,
+                          );
+
                           return Row(
                             children: [
                               // Play / Pause button
                               IconButton(
                                 tooltip: isPlaying ? 'Pause (Space / k)' : 'Play (Space / k)',
-                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                constraints: btnConstraints,
                                 icon: Icon(
                                   isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                                   color: Colors.white,
-                                  size: 26,
+                                  size: isCompact ? 24 : 26,
                                 ),
                                 onPressed: onTogglePlay,
                               ),
@@ -276,21 +284,21 @@ class PlayerControlsOverlay extends StatelessWidget {
                               if (onRestart != null)
                                 IconButton(
                                   tooltip: 'Replay (Home / 0)',
-                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                                  icon: const Icon(
+                                  constraints: btnConstraints,
+                                  icon: Icon(
                                     Icons.replay_rounded,
                                     color: Colors.white,
-                                    size: 22,
+                                    size: isCompact ? 20 : 22,
                                   ),
                                   onPressed: onRestart,
                                 ),
 
-                              const SizedBox(width: 2),
+                              if (!isCompact) const SizedBox(width: 2),
 
                               // Mute / Unmute
                               IconButton(
                                 tooltip: volume == 0 ? 'Unmute (m)' : 'Mute (m)',
-                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                constraints: btnConstraints,
                                 icon: Icon(
                                   volume == 0
                                       ? Icons.volume_off_rounded
@@ -298,7 +306,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                                           ? Icons.volume_down_rounded
                                           : Icons.volume_up_rounded,
                                   color: Colors.white,
-                                  size: 22,
+                                  size: isCompact ? 20 : 22,
                                 ),
                                 onPressed: onToggleMute,
                               ),
@@ -332,7 +340,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                                 '${_formatDuration(position)} / ${_formatDuration(duration)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: isCompact ? 12 : 13,
+                                  fontSize: isCompact ? 11 : 13,
                                   fontWeight: FontWeight.w500,
                                   fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
@@ -346,7 +354,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                                   onTap: onOpenSpeedSheet,
                                   borderRadius: BorderRadius.circular(16),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isCompact ? 6 : 8,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.white12,
                                       borderRadius: BorderRadius.circular(14),
@@ -363,7 +374,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                                         color: playbackRate != 1.0
                                             ? const Color(0xFFFF334B)
                                             : Colors.white,
-                                        fontSize: 12,
+                                        fontSize: isCompact ? 11 : 12,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -374,11 +385,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                               if (onOpenAudioSheet != null)
                                 IconButton(
                                   tooltip: 'Audio Tracks',
-                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                                  icon: const Icon(
+                                  constraints: btnConstraints,
+                                  icon: Icon(
                                     Icons.audiotrack_rounded,
                                     color: Colors.white,
-                                    size: 20,
+                                    size: isCompact ? 18 : 20,
                                   ),
                                   onPressed: onOpenAudioSheet,
                                 ),
@@ -387,30 +398,31 @@ class PlayerControlsOverlay extends StatelessWidget {
                               if (onOpenSubtitleSheet != null)
                                 IconButton(
                                   tooltip: 'Subtitles (c)',
-                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                  constraints: btnConstraints,
                                   icon: Icon(
                                     Icons.subtitles_rounded,
                                     color: hasActiveSubtitles
                                         ? const Color(0xFFFF334B)
                                         : Colors.white,
-                                    size: 20,
+                                    size: isCompact ? 18 : 20,
                                   ),
                                   onPressed: onOpenSubtitleSheet,
                                 ),
 
-                              // Fullscreen toggle
-                              IconButton(
-                                tooltip: isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
-                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                                icon: Icon(
-                                  isFullscreen
-                                      ? Icons.fullscreen_exit_rounded
-                                      : Icons.fullscreen_rounded,
-                                  color: Colors.white,
-                                  size: 24,
+                              // Fullscreen toggle (wide/desktop only; mobile uses the dedicated header button)
+                              if (!isCompact)
+                                IconButton(
+                                  tooltip: isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
+                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                  icon: Icon(
+                                    isFullscreen
+                                        ? Icons.fullscreen_exit_rounded
+                                        : Icons.fullscreen_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                  onPressed: onToggleFullscreen,
                                 ),
-                                onPressed: onToggleFullscreen,
-                              ),
                             ],
                           );
                         },
