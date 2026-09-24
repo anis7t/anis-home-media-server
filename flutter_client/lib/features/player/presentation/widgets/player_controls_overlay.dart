@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/seek_preview_controller.dart';
+import 'player_hud_toast.dart';
 import 'video_timeline_bar.dart';
 
-/// Full-featured controls overlay for Phase 3B.
+/// Full-featured controls overlay for Phase 3.
 ///
 /// Features top title/back bar, center play/pause tap target, interactive
-/// touch/mouse timeline scrubber with seek preview thumbnails, and bottom
-/// control rail with play/pause, volume slider, mute toggle, time, and fullscreen.
+/// touch/mouse timeline scrubber with seek preview thumbnails, HUD action toast,
+/// and bottom control rail with play/pause, replay, volume/mute, time display,
+/// speed selector, audio selector, subtitle selector, and fullscreen toggle.
 class PlayerControlsOverlay extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -30,6 +32,17 @@ class PlayerControlsOverlay extends StatelessWidget {
   final SeekPreviewController? seekPreviewController;
   final Map<String, dynamic>? previewMeta;
   final SeekPreviewState? previewStateOverride;
+
+  // Phase 3C enhancements
+  final VoidCallback? onRestart;
+  final VoidCallback? onOpenSpeedSheet;
+  final VoidCallback? onOpenAudioSheet;
+  final VoidCallback? onOpenSubtitleSheet;
+  final double playbackRate;
+  final bool hasActiveSubtitles;
+  final String? hudMessage;
+  final IconData? hudIcon;
+  final bool isHudVisible;
 
   const PlayerControlsOverlay({
     super.key,
@@ -54,6 +67,15 @@ class PlayerControlsOverlay extends StatelessWidget {
     this.seekPreviewController,
     this.previewMeta,
     this.previewStateOverride,
+    this.onRestart,
+    this.onOpenSpeedSheet,
+    this.onOpenAudioSheet,
+    this.onOpenSubtitleSheet,
+    this.playbackRate = 1.0,
+    this.hasActiveSubtitles = false,
+    this.hudMessage,
+    this.hudIcon,
+    this.isHudVisible = false,
   });
 
   String _formatDuration(Duration d) {
@@ -150,6 +172,18 @@ class PlayerControlsOverlay extends StatelessWidget {
               ),
             ),
 
+            // In-Player Action Feedback HUD Toast
+            Positioned.fill(
+              child: Align(
+                alignment: const Alignment(0.0, -0.35),
+                child: PlayerHudToast(
+                  message: hudMessage,
+                  icon: hudIcon,
+                  isVisible: isHudVisible,
+                ),
+              ),
+            ),
+
             // Center play/pause indicator (when paused or buffering)
             if (!isPlaying && !isBuffering)
               Center(
@@ -219,87 +253,167 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ),
                       ),
 
-                      // Control buttons row
-                      Row(
-                        children: [
-                          // Play / Pause button
-                          IconButton(
-                            tooltip: isPlaying ? 'Pause (Space / k)' : 'Play (Space / k)',
-                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                            icon: Icon(
-                              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 26,
-                            ),
-                            onPressed: onTogglePlay,
-                          ),
-                          const SizedBox(width: 4),
+                      // Control buttons row with responsive layout
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isCompact = constraints.maxWidth < 620;
 
-                          // Mute / Unmute
-                          IconButton(
-                            tooltip: volume == 0 ? 'Unmute' : 'Mute',
-                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                            icon: Icon(
-                              volume == 0
-                                  ? Icons.volume_off_rounded
-                                  : volume < 50
-                                      ? Icons.volume_down_rounded
-                                      : Icons.volume_up_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                            onPressed: onToggleMute,
-                          ),
-
-                          // Volume Slider (constrained width on desktop/tablets)
-                          SizedBox(
-                            width: 90,
-                            child: SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 3,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                                activeTrackColor: const Color(0xFFFF334B),
-                                inactiveTrackColor: Colors.white24,
-                                thumbColor: Colors.white,
+                          return Row(
+                            children: [
+                              // Play / Pause button
+                              IconButton(
+                                tooltip: isPlaying ? 'Pause (Space / k)' : 'Play (Space / k)',
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                icon: Icon(
+                                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                                onPressed: onTogglePlay,
                               ),
-                              child: Slider(
-                                value: volume.clamp(0.0, 100.0),
-                                min: 0.0,
-                                max: 100.0,
-                                onChanged: onVolumeChanged,
+
+                              // Replay / Restart from beginning
+                              if (onRestart != null)
+                                IconButton(
+                                  tooltip: 'Replay (Home / 0)',
+                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                  icon: const Icon(
+                                    Icons.replay_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                  onPressed: onRestart,
+                                ),
+
+                              const SizedBox(width: 2),
+
+                              // Mute / Unmute
+                              IconButton(
+                                tooltip: volume == 0 ? 'Unmute (m)' : 'Mute (m)',
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                icon: Icon(
+                                  volume == 0
+                                      ? Icons.volume_off_rounded
+                                      : volume < 50
+                                          ? Icons.volume_down_rounded
+                                          : Icons.volume_up_rounded,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                                onPressed: onToggleMute,
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
 
-                          // Time Display
-                          Text(
-                            '${_formatDuration(position)} / ${_formatDuration(duration)}',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              fontFeatures: const [FontFeature.tabularFigures()],
-                            ),
-                          ),
+                              // Volume Slider (desktop / tablet only, hidden on compact mobile)
+                              if (!isCompact) ...[
+                                SizedBox(
+                                  width: 80,
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      trackHeight: 3,
+                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                                      activeTrackColor: const Color(0xFFFF334B),
+                                      inactiveTrackColor: Colors.white24,
+                                      thumbColor: Colors.white,
+                                    ),
+                                    child: Slider(
+                                      value: volume.clamp(0.0, 100.0),
+                                      min: 0.0,
+                                      max: 100.0,
+                                      onChanged: onVolumeChanged,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
 
-                          const Spacer(),
+                              // Time Display
+                              Text(
+                                '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontSize: isCompact ? 12 : 13,
+                                  fontWeight: FontWeight.w500,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
 
-                          // Fullscreen toggle
-                          IconButton(
-                            tooltip: isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
-                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                            icon: Icon(
-                              isFullscreen
-                                  ? Icons.fullscreen_exit_rounded
-                                  : Icons.fullscreen_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                            onPressed: onToggleFullscreen,
-                          ),
-                        ],
+                              const Spacer(),
+
+                              // Playback Speed pill button
+                              if (onOpenSpeedSheet != null)
+                                InkWell(
+                                  onTap: onOpenSpeedSheet,
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white12,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: playbackRate != 1.0
+                                            ? const Color(0xFFFF334B)
+                                            : Colors.white24,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${playbackRate.toStringAsFixed(playbackRate.truncateToDouble() == playbackRate ? 0 : 2)}×',
+                                      style: TextStyle(
+                                        color: playbackRate != 1.0
+                                            ? const Color(0xFFFF334B)
+                                            : Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                              // Audio Stream selector button
+                              if (onOpenAudioSheet != null)
+                                IconButton(
+                                  tooltip: 'Audio Tracks',
+                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                  icon: const Icon(
+                                    Icons.audiotrack_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  onPressed: onOpenAudioSheet,
+                                ),
+
+                              // Subtitle selector button
+                              if (onOpenSubtitleSheet != null)
+                                IconButton(
+                                  tooltip: 'Subtitles (c)',
+                                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                  icon: Icon(
+                                    Icons.subtitles_rounded,
+                                    color: hasActiveSubtitles
+                                        ? const Color(0xFFFF334B)
+                                        : Colors.white,
+                                    size: 20,
+                                  ),
+                                  onPressed: onOpenSubtitleSheet,
+                                ),
+
+                              // Fullscreen toggle
+                              IconButton(
+                                tooltip: isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                icon: Icon(
+                                  isFullscreen
+                                      ? Icons.fullscreen_exit_rounded
+                                      : Icons.fullscreen_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                                onPressed: onToggleFullscreen,
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -312,3 +426,4 @@ class PlayerControlsOverlay extends StatelessWidget {
     );
   }
 }
+

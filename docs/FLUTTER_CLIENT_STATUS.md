@@ -16,7 +16,43 @@
 | 3A | Production Player Core Architecture | COMPLETE — committed on `feat/flutter-production-player` |
 | 3B | Android-First Timeline & Live Seek Preview | COMPLETE — committed (`2e95246`) |
 | Android Native | Physical Device Engine (`libmpv.so`) | COMPLETE — Vivo I2217 (Android 16, SDK 36, NDK 28) |
-| 3C | Audio & Subtitle Track Selectors | NEXT |
+| 3C | Audio & Subtitle Track Selectors, Speed & Controls Polish | COMPLETE — verified 58/58 tests, zero analyzer issues |
+| 4 | Library Browsing & Media Ingestion UI | NEXT |
+
+---
+
+## Phase 3C — Audio & Subtitle Track Selectors, Playback Speed, & Controls Polish (DONE)
+
+**Goal:** Deliver Android-first bottom sheets for track selection, variable playback rate, transient HUD action feedback, and Android system navigation handling.
+
+### Key Achievements:
+- **`PlaybackSpeedSheet`:**
+  - Obsidian glass modal bottom sheet supporting `0.5×`, `0.75×`, `1.0× (Normal)`, `1.25×`, `1.5×`, `2.0×`.
+  - Accessible \(\ge 52\)dp touch targets with brand accent highlight and active checkmark.
+- **`AudioTrackSheet` & `SubtitleTrackSheet`:**
+  - `AudioTrackSheet`: Displays channels, audio codec, and language tags; seamlessly switches audio stream in real-time.
+  - `SubtitleTrackSheet`: Supports turning subtitles Off, selecting embedded demuxed tracks, or sidecar WebVTT files discovered via `GET /api/subtitles/<path:filename>`. External sidecar tracks are marked with an `EXT` badge.
+- **In-Player Action HUD (`PlayerHudToast`):**
+  - Translucent floating HUD pill positioned above controls for immediate visual confirmation of player state changes (e.g. `1.25× Speed`, `Subtitles: English`, `Muted`, `+10 sec`).
+- **Android System Back & Lifecycle Handling:**
+  - Wrapped `PlayerScreen` in `PopScope(canPop: false)` with custom back handler.
+  - Gracefully exits native fullscreen, cancels active auto-hide and HUD timers, aborts in-flight network tokens (`_subtitlesCancelToken`, `_previewCancelToken`), stops playback engine, and completes navigation.
+- **Controls Overlay Polish:**
+  - Added Replay `↺` button for quick restart to `0:00`.
+  - Responsive mobile clamping: volume slider automatically hidden on compact widths (< 620dp) where physical hardware volume buttons handle audio, preserving button spacing.
+  - Keyboard shortcuts mapped for desktop: `Home` / `0` (Restart), `C` (Subtitles), `Up` / `Down` (Volume ±5%), `Left` / `Right` / `J` / `L` (±10s Seek), `Space` / `K` (Play/Pause), `M` (Mute), `F` / `Escape` (Fullscreen).
+- **Automated Validation:**
+  - `flutter test`: 58/58 tests passed across unit, widget, and live integration suites.
+  - `flutter analyze lib test`: 0 issues found.
+
+---
+
+## Next Up — Phase 4 (Library Browsing & Media Ingestion UI)
+
+- Home / Library movie browsing grids with cached posters and media metadata badges.
+- Search and sorting filters (Alphabetical, Recently Added, Watch Progress).
+- Movie details sheet / screen with TMDb synopsis, cast rail, and stream options.
+
 
 ---
 

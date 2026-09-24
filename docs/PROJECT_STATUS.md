@@ -16,12 +16,27 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 2 | Video Player POC | ✅ COMPLETE — All 6 stages (2A–2E + 2F Acceptance Report) PASS on LAN & WAN (`f8e8c23`) |
 | 3A | Production Player Architecture | ✅ COMPLETE — Committed on `feat/flutter-production-player` |
 | 3B | Android-First Timeline & Live Seek Preview | ✅ COMPLETE — Committed (`2e95246`) |
-| Android Native | Physical Device Engine (`libmpv.so`) | ✅ COMPLETE — Vivo I2217 (Android 16, SDK 36, NDK 28) |
-| 3C | Audio & Subtitle Track Selectors | ⏳ Next up |
+| 3C | Audio & Subtitle Track Selectors, Speed & Controls Polish | ✅ COMPLETE — 58/58 tests passed, zero analyzer issues |
+| 4 | Library Browsing & Media Ingestion UI | ⏳ Next up |
 
 ---
 
 ## 0. Recent work
+
+### 2026-09-24 — Phase 3C: Audio & Subtitle Track Selectors, Playback Speed, & Controls Polish
+
+- **Android-First Modal Sheets:**
+  - Added `PlaybackSpeedSheet` for variable rate playback (0.5×–2.0×) with \(\ge 52\)dp touch targets.
+  - Added `AudioTrackSheet` for live multi-audio track switching with channels, codec, and language tags.
+  - Added `SubtitleTrackSheet` supporting subtitle disable, demuxed embedded streams, and sidecar WebVTT files via `GET /api/subtitles/<path:filename>` (`EXT` badge indicator).
+- **Controls & HUD Polish:**
+  - Integrated `PlayerHudToast` transient HUD pill for instant state feedback (speed, volume, mute, seek, subtitles).
+  - Replay `↺` button for instant restart to `0:00`.
+  - Responsive mobile clamping: volume slider automatically hidden on compact widths (< 620dp) where hardware buttons govern volume.
+  - System back navigation handled via `PopScope`, exiting native fullscreen, aborting cancel tokens, stopping playback, and preventing timer leaks.
+- **Verification:**
+  - Automated tests: **58 / 58 tests passed** across `flutter test`.
+  - Static analysis: **0 issues found** via `flutter analyze lib test`.
 
 ### 2026-09-24 — Waitress process-inspection optimization (~240x speedup) & Android native media_kit setup
 
