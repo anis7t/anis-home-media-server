@@ -416,11 +416,37 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
               : const Text('Save & Set Active Server'),
         ),
         const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: () {
+            final baseUrl = state.serverUrl.isNotEmpty
+                ? state.serverUrl
+                : 'http://127.0.0.1:8000';
+            const filename =
+                'Batman Knightfall Part 1 2026 1080p WEBRip x264 AAC5 1-[YTS GG - YTS BZ].mp4';
+            final mediaUrl =
+                '$baseUrl/media/${Uri.encodeComponent(filename)}';
+            context.push(
+              AppRoutes.player,
+              extra: {
+                'mediaUrl': mediaUrl,
+                'title': 'Batman Knightfall Part 1 (2026)',
+                'subtitle': 'Direct MP4 • 1080p • AAC 5.1',
+              },
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFF334B),
+            foregroundColor: Colors.white,
+          ),
+          icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
+          label: const Text('Launch Production Video Player (Phase 3A)'),
+        ),
+        const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: () {
             context.push(AppRoutes.playerPoc);
           },
-          icon: const Icon(Icons.movie_outlined, size: 18),
+          icon: const Icon(Icons.science_outlined, size: 18),
           label: const Text('Launch Player POC Test Harness (Phase 2)'),
         ),
       ],

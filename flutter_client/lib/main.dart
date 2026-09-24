@@ -8,10 +8,19 @@ void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   final startAtPoc = args.contains('--player-poc') || args.contains('--poc');
+  final startAtPlayer = args.contains('--player');
+
+  String? initialRoute;
+  if (startAtPoc) {
+    initialRoute = AppRoutes.playerPoc;
+  } else if (startAtPlayer) {
+    initialRoute = AppRoutes.player;
+  }
+
   runApp(
     ProviderScope(
       child: MediaServerApp(
-        initialRoute: startAtPoc ? AppRoutes.playerPoc : null,
+        initialRoute: initialRoute,
       ),
     ),
   );

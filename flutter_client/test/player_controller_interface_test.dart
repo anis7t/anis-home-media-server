@@ -32,6 +32,10 @@ class MockPlayerController implements PlayerControllerInterface {
   double get rate => _rate;
   @override
   double get volume => _volume;
+  @override
+  VideoDimensions get dimensions => const VideoDimensions(1920, 1080);
+  @override
+  PlayerTrackInfo get trackInfo => _trackInfo;
 
   @override
   Stream<Duration> get positionStream => _positionController.stream;
@@ -96,6 +100,19 @@ class MockPlayerController implements PlayerControllerInterface {
     _trackInfo = PlayerTrackInfo(
       subtitleTracks: _trackInfo.subtitleTracks,
       currentSubtitleTrack: track,
+      audioTracks: _trackInfo.audioTracks,
+      currentAudioTrack: _trackInfo.currentAudioTrack,
+    );
+    _tracksController.add(_trackInfo);
+  }
+
+  @override
+  Future<void> setAudioTrack(PlayerAudioTrack track) async {
+    _trackInfo = PlayerTrackInfo(
+      subtitleTracks: _trackInfo.subtitleTracks,
+      currentSubtitleTrack: _trackInfo.currentSubtitleTrack,
+      audioTracks: _trackInfo.audioTracks,
+      currentAudioTrack: track,
     );
     _tracksController.add(_trackInfo);
   }
