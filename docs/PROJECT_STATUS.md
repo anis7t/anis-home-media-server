@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-24
+Last reviewed: 2026-09-25
 Repository: `anis7t/media-server`
 Working branch: `feat/flutter-production-player`
 
@@ -22,6 +22,24 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 ---
 
 ## 0. Recent work
+
+### 2026-09-25 — Player Controls Transparency, Equidistant Timeline Layout, & Direct Intent Routing
+
+- **Controls Transparency & Timeline Layout:**
+  - Removed opaque solid slate container gradient (`Color(0xEE0D111A)`); replaced with subtle translucent gradient (`Colors.black.withValues(alpha: 0.50)` fading to `Colors.transparent`) so video frames and subtitles behind controls remain fully visible.
+  - Symmetrical equidistant vertical spacing: balanced ~6dp clearance above and below the seekbar track.
+  - Dual-time anchors: Elapsed time on the left (`0:00`), total runtime / remaining time on the right (`1:18:37`, tap-to-toggle `-remaining`) via `MainAxisAlignment.spaceBetween`.
+  - Reordered controls row: Replay `↺` button first, followed by Play/Pause `⏸`/`▶`, Mute `🔊`, Speed `1×`, Audio, and Subtitles.
+  - Pure white circular scrubber thumb with elevation shadow matching web player aesthetic.
+- **Direct-to-Player Intent Routing & Live Testing Optimization:**
+  - Added `getInitialRoute()` and `getDartEntrypointArgs()` overrides in `MainActivity.kt` and `--route`, `--server`, and `--media-url` parsers in `lib/main.dart`.
+  - Added dynamic fallback resolution in `PlayerScreen`: when cold-booting directly via intent or CLI without explicit media extra, automatically resolves localhost URLs to the saved server base URL from `SettingsService` or connection state (`http://192.168.1.16:8000`), preventing connection refused errors on physical Android devices.
+  - Enables instant 1-second cold boot directly into live playback (`adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route "/player"`), eliminating slow multi-turn manual navigation.
+  - Added desktop mirror helper `run_scrcpy.bat` for seamless physical phone mirror sessions.
+- **Verification:**
+  - Automated tests: **58 / 58 tests passed** across `flutter test`.
+  - Static analysis: **0 issues found** via `flutter analyze lib test`.
+  - Live hardware verification: validated on physical Vivo I2217 (Android 16) with instant intent routing and live playback.
 
 ### 2026-09-24 — Phase 3C: Audio & Subtitle Track Selectors, Playback Speed, & Controls Polish
 

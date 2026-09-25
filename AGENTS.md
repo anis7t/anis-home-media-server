@@ -78,6 +78,7 @@ The current project includes:
 - **Library Navigation Density & Hierarchy:** Removed redundant A-Z sort dropdown across desktop and mobile, and repositioned System Telemetry HUD to the bottom of the home page (strictly after "All Movies"), prioritizing library browsing.
 - **Mobile Player Controls Expansion & Dedicated Seekbar Spacing:** Restored primary controls (`↺` Restart, `🔊` Mute, `1×` Speed, `CC ⚙` Subtitles/Settings, Aspect Ratio, Rotate Screen, PiP, Nerd Stats) on mobile inside a swipeable non-overflowing rail, cleanly hid redundant desktop-only buttons (`#volume`, `#shortcutsBtn`, and `-10`/`+10` seek buttons), and eliminated vertical gap between `.seek-time-row` and seekbar (`margin-bottom: -9px !important`).
 - **Interactive User Manual & Footer Navigation:** Added in-app User Manual (`/manual`) with full shortcuts cheatsheet, touch gestures, multi-GPU streaming guide, and footer "How to use" link. Authored offline user guide in `docs/MANUAL.md`.
+- **Flutter Client Production Player:** Native Android & mobile Flutter client with translucent gradient controls overlay, symmetrical equidistant seekbar spacing (~6dp), dual-time anchor HUD (elapsed time left, total/remaining time right with tap-to-toggle), canonical web button sequence (`↺` Restart, `⏸`/`▶` Play/Pause, `🔊` Mute, `1×` Speed, Audio, Subtitles), and rapid direct-intent test automation (`--es route "/player"`).
 
 
 ## 4. Known unresolved issues & active roadmap

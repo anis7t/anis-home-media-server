@@ -58,7 +58,7 @@ void main() {
     });
 
     test('HLS Playback: Master playlist returns 200 with valid M3U8 tags', () async {
-      const filename = 'Spider-Man- Brand New Day 2026.1080p.HQ Pre.Multi.AAC 2.0.x264.mkv';
+      const filename = 'Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv';
       final encoded = Uri.encodeComponent(filename);
 
       final response = await dio.get<String>('/hls/$encoded/playlist.m3u8');
@@ -71,8 +71,8 @@ void main() {
     });
 
     test('Sidecar Subtitles: WebVTT route delivers valid VTT file with X-Device-Id', () async {
-      const movieFilename = 'Lust Stories 3 2026.1080p.NF.WEB-DL.Multi.DD+ 5.1.x264-KIN.mkv';
-      const subFilename = 'lust_stories_3_en_1.srt';
+      const movieFilename = 'The End Of Oak Street 2026 1080p WEB-DL HEVC x265 10Bit DDP5.1 Subs KINGDOM_RG/The End Of Oak Street 2026 1080p WEB-DL HEVC x265 10Bit DDP5.1 Subs KINGDOM.mkv';
+      const subFilename = 'the_end_of_oak_street_en_1.srt';
       final encodedMovie = Uri.encodeComponent(movieFilename);
       final encodedSub = Uri.encodeComponent(subFilename);
 

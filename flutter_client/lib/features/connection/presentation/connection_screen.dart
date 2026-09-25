@@ -180,6 +180,31 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                 ref.read(connectionControllerProvider.notifier).updateUrl(val);
               },
             ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _buildPresetChip(
+                  label: 'LAN (192.168.1.16)',
+                  url: 'http://192.168.1.16:8000',
+                  isSelected: state.serverUrl == 'http://192.168.1.16:8000',
+                  icon: Icons.wifi_rounded,
+                ),
+                _buildPresetChip(
+                  label: 'WAN (Cloudflare)',
+                  url: 'https://media.anisparvez.in',
+                  isSelected: state.serverUrl == 'https://media.anisparvez.in',
+                  icon: Icons.cloud_outlined,
+                ),
+                _buildPresetChip(
+                  label: 'Localhost',
+                  url: 'http://127.0.0.1:8000',
+                  isSelected: state.serverUrl == 'http://127.0.0.1:8000',
+                  icon: Icons.computer_rounded,
+                ),
+              ],
+            ),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -512,6 +537,42 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPresetChip({
+    required String label,
+    required String url,
+    required bool isSelected,
+    required IconData icon,
+  }) {
+    return ActionChip(
+      avatar: Icon(
+        icon,
+        size: 14,
+        color: isSelected ? Colors.white : AppColors.textMuted,
+      ),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+          color: isSelected ? Colors.white : AppColors.textSecondary,
+        ),
+      ),
+      backgroundColor: isSelected
+          ? AppColors.brandRed.withValues(alpha: 0.8)
+          : AppColors.surfaceElevated,
+      side: BorderSide(
+        color: isSelected ? AppColors.brandRed : AppColors.borderSubtle,
+        width: 1,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      onPressed: () {
+        _urlController.text = url;
+        ref.read(connectionControllerProvider.notifier).updateUrl(url);
+        ref.read(connectionControllerProvider.notifier).testConnection();
+      },
     );
   }
 }

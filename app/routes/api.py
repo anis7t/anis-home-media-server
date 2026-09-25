@@ -77,6 +77,20 @@ def media_info(filename):
         # Direct play keeps the container duration, because there the browser's timeline comes
         # from the file's own metadata and a different value would desync seeking.
         duration = _source_progress_duration(path) or duration
+
+    db = get_db()
+    row = db.execute(
+        'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename = ?',
+        (filename,)
+    ).fetchone()
+    if not row:
+        row = db.execute(
+            'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename LIKE ?',
+            (f'%{Path(filename).name}%',)
+        ).fetchone()
+    db.close()
+    movie_meta = dict(row) if row else {}
+
     return jsonify(
         container=path.suffix[1:].lower(),
         duration=duration,
@@ -86,6 +100,12 @@ def media_info(filename):
         direct_play=direct_play,
         ffprobe_available=bool(probe),
         transcoding_available=bool(check_which('ffmpeg')),
+        title=movie_meta.get('title'),
+        year=movie_meta.get('year'),
+        overview=movie_meta.get('overview'),
+        genres=movie_meta.get('genres'),
+        rating=movie_meta.get('vote_average'),
+        runtime=movie_meta.get('runtime'),
         reason=(
             'Codec inspection unavailable: install ffprobe for a precise compatibility report.'
             if not probe

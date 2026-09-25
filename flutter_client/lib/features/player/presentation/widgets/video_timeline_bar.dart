@@ -14,6 +14,7 @@ class VideoTimelineBar extends StatefulWidget {
   final SeekPreviewController? seekPreviewController;
   final Map<String, dynamic>? previewMeta;
   final SeekPreviewState? previewStateOverride;
+  final double touchTargetHeight;
 
   const VideoTimelineBar({
     super.key,
@@ -25,6 +26,7 @@ class VideoTimelineBar extends StatefulWidget {
     this.seekPreviewController,
     this.previewMeta,
     this.previewStateOverride,
+    this.touchTargetHeight = 48.0,
   });
 
   @override
@@ -171,12 +173,15 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
         final showPreview = isActive && totalMs > 0;
         final showImage = hasMetadata && (displayedImageUrl != null || (previewState?.isPendingDebounce ?? false));
 
-        final cardWidth = showImage ? 160.0 : 76.0;
+        final cardWidth = showImage ? 112.0 : 64.0;
         final targetX = previewFraction * trackWidth;
         final clampedCardLeft = (targetX - (cardWidth / 2)).clamp(
           4.0,
           (trackWidth - cardWidth - 4.0).clamp(4.0, double.infinity),
         );
+
+        final targetHeight = widget.touchTargetHeight;
+        final previewBottom = (targetHeight / 2) + 8.0;
 
         return Stack(
           clipBehavior: Clip.none,
@@ -185,7 +190,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
             // 1. Floating Seek Preview Card
             if (showPreview)
               Positioned(
-                bottom: 46.0,
+                bottom: previewBottom,
                 left: clampedCardLeft,
                 child: _buildPreviewCard(
                   duration: previewDuration,
@@ -196,7 +201,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
                 ),
               ),
 
-            // 2. Interactive Timeline Bar (minimum 48dp touch hit target)
+            // 2. Interactive Timeline Bar
             MouseRegion(
               cursor: SystemMouseCursors.click,
               onHover: (e) => _onHover(e, trackWidth),
@@ -210,7 +215,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
                 onHorizontalDragEnd: (d) => _onDragEnd(d, trackWidth),
                 onHorizontalDragCancel: _onDragCancel,
                 child: Container(
-                  height: 48.0, // Android minimum touch target
+                  height: targetHeight,
                   alignment: Alignment.center,
                   child: Stack(
                     alignment: Alignment.centerLeft,
@@ -249,20 +254,16 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
 
                       // Scrubber Thumb
                       Positioned(
-                        left: (trackWidth * currentFraction) - (isActive ? 9.0 : 7.0),
+                        left: (trackWidth * currentFraction) - (isActive ? 8.0 : 6.5),
                         child: Container(
-                          width: isActive ? 18.0 : 14.0,
-                          height: isActive ? 18.0 : 14.0,
+                          width: isActive ? 16.0 : 13.0,
+                          height: isActive ? 16.0 : 13.0,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFFF334B),
-                              width: isActive ? 3.0 : 2.0,
-                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.6),
+                                color: Colors.black.withValues(alpha: 0.65),
                                 blurRadius: 4.0,
                                 offset: const Offset(0, 1),
                               ),
@@ -292,7 +293,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
       width: width,
       decoration: BoxDecoration(
         color: const Color(0xF010141E),
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: BorderRadius.circular(6.0),
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.18),
           width: 1.0,
@@ -300,13 +301,13 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.65),
-            blurRadius: 14.0,
-            offset: const Offset(0, 4),
+            blurRadius: 10.0,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(7.0),
+        borderRadius: BorderRadius.circular(5.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -314,7 +315,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
             // Thumbnail Image (if metadata available)
             if (showImage)
               SizedBox(
-                height: 90.0,
+                height: 63.0,
                 width: width,
                 child: Stack(
                   fit: StackFit.expand,
@@ -329,7 +330,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
                             child: Icon(
                               Icons.broken_image_rounded,
                               color: Colors.white38,
-                              size: 28,
+                              size: 22,
                             ),
                           );
                         },
@@ -339,8 +340,8 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
                         color: Colors.black38,
                         child: const Center(
                           child: SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.0,
                               valueColor: AlwaysStoppedAnimation<Color>(
@@ -356,14 +357,14 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
 
             // Timestamp pill
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-              color: Colors.black.withValues(alpha: 0.5),
+              padding: const EdgeInsets.symmetric(vertical: 2.5, horizontal: 6.0),
+              color: Colors.black.withValues(alpha: 0.6),
               alignment: Alignment.center,
               child: Text(
                 _formatDuration(duration),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12.0,
+                  fontSize: 10.5,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.2,
                   fontFeatures: [FontFeature.tabularFigures()],

@@ -9,6 +9,7 @@ class DoubleTapSeekDetector extends StatefulWidget {
   final Widget child;
   final VoidCallback onDoubleTapRewind;
   final VoidCallback onDoubleTapForward;
+  final VoidCallback? onDoubleTapCenter;
   final VoidCallback? onTap;
   final bool enabled;
 
@@ -17,6 +18,7 @@ class DoubleTapSeekDetector extends StatefulWidget {
     required this.child,
     required this.onDoubleTapRewind,
     required this.onDoubleTapForward,
+    this.onDoubleTapCenter,
     this.onTap,
     this.enabled = true,
   });
@@ -102,6 +104,12 @@ class _DoubleTapSeekDetectorState extends State<DoubleTapSeekDetector>
                   _triggerRewind();
                 } else if (xRatio > 0.6) {
                   _triggerForward();
+                } else {
+                  if (widget.onDoubleTapCenter != null) {
+                    widget.onDoubleTapCenter!();
+                  } else {
+                    widget.onTap?.call();
+                  }
                 }
               },
               onDoubleTap: () {},

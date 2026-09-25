@@ -222,8 +222,13 @@ void main() {
       // Controls overlay is present
       expect(find.byType(PlayerControlsOverlay), findsOneWidget);
       expect(find.text('Batman Knightfall Part 1 (2026)'), findsOneWidget);
-      expect(find.text('Direct MP4 • 1080p'), findsOneWidget);
-      expect(find.text('5:00 / 1:30:00'), findsOneWidget);
+      expect(find.text('5:00'), findsOneWidget);
+      expect(find.text('1:30:00'), findsOneWidget);
+
+      // Tap remaining/total toggle
+      await tester.tap(find.text('1:30:00'));
+      await tester.pump();
+      expect(find.text('-1:25:00'), findsOneWidget);
 
       // Toggle play/pause button
       final pauseButton = find.byTooltip('Pause (Space / k)');

@@ -1,6 +1,6 @@
 # Flutter Client — Phase Status & Handoff
 
-> **Last updated:** 2026-09-24
+> **Last updated:** 2026-09-25
 > **Active branch:** `feat/flutter-production-player`
 > **Source conversations:** `8478b150-1239-4291-9a25-9155d6f2ad87` (Phase 1 & 2 work), `995057c0-0007-447a-93e5-ea547828e71c` (Phase 2 fixes, Phase 3A/3B, Android native)
 > **Purpose:** Persistent handoff document. Read this before touching the Flutter client.
@@ -37,13 +37,22 @@
 - **Android System Back & Lifecycle Handling:**
   - Wrapped `PlayerScreen` in `PopScope(canPop: false)` with custom back handler.
   - Gracefully exits native fullscreen, cancels active auto-hide and HUD timers, aborts in-flight network tokens (`_subtitlesCancelToken`, `_previewCancelToken`), stops playback engine, and completes navigation.
-- **Controls Overlay Polish:**
-  - Added Replay `↺` button for quick restart to `0:00`.
+- **Controls Overlay Polish & Transparency:**
+  - Replaced opaque solid gradient with translucent soft gradient (`Colors.black.withValues(alpha: 0.50)` fading to `Colors.transparent`), preserving full visibility of video frames and subtitles behind controls.
+  - Symmetrical equidistant seekbar vertical clearance: balanced vertical gap (~6dp) above and below the timeline track.
+  - Dual-time anchors: Elapsed time anchored on the left, total runtime / remaining time anchored on the right (`MainAxisAlignment.spaceBetween`) with tap-to-toggle remaining time (`-remaining`).
+  - Circular white scrubber thumb with elevation shadow matching web player aesthetic.
+  - Added Replay `↺` button as the first control action, followed by Play/Pause `⏸`/`▶`, Mute `🔊`, Speed `1×`, Audio, and Subtitles.
   - Responsive mobile clamping: volume slider automatically hidden on compact widths (< 620dp) where physical hardware volume buttons handle audio, preserving button spacing.
   - Keyboard shortcuts mapped for desktop: `Home` / `0` (Restart), `C` (Subtitles), `Up` / `Down` (Volume ±5%), `Left` / `Right` / `J` / `L` (±10s Seek), `Space` / `K` (Play/Pause), `M` (Mute), `F` / `Escape` (Fullscreen).
+- **Direct-to-Player Intent Routing & Dynamic Server Resolution:**
+  - Implemented `getInitialRoute()` and `getDartEntrypointArgs()` overrides in `MainActivity.kt` and `--route`, `--server`, and `--media-url` argument parsers in `lib/main.dart`.
+  - Added dynamic fallback resolution in `PlayerScreen`: when cold-booting directly into `/player`, localhost fallback URLs are automatically rewritten to the saved active server URL from `SettingsService` or connection state (`http://192.168.1.16:8000`), resolving connection refused errors on physical devices.
+  - Enables instant 1-second cold boot directly into live video playback (`adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route "/player"`) bypassing intermediate manual connection screens.
 - **Automated Validation:**
   - `flutter test`: 58/58 tests passed across unit, widget, and live integration suites.
   - `flutter analyze lib test`: 0 issues found.
+  - Verified live on physical hardware (Vivo I2217, Android 16) with instant intent routing and live video playback.
 
 ---
 

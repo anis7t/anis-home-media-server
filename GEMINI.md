@@ -250,5 +250,30 @@
   - The System Telemetry HUD (`#systemTelemetryCard`) must appear at the BOTTOM of the home page (`templates/index.html`), positioned strictly after the `#allMoviesSection` ("All Movies" grid), rather than between "Continue watching" and "All Movies".
   - This ensures users immediately see their media library content and continue watching rails upon loading the home page, with technical hardware telemetry placed unobtrusively at the footer.
 
+## 21. Flutter Client Player UI & Rapid Device Testing Invariants
+
+- **Player Controls Transparency & Canvas Visibility**:
+  - The bottom controls overlay container in `player_controls_overlay.dart` must NEVER be opaque (`0xEE...` or solid obsidian blocks).
+  - Use a subtle translucent vignette gradient (`Colors.black.withValues(alpha: 0.50)` fading to `Colors.transparent`) so that video frames, action scenes, and subtitle text behind the controls remain 100% visible during playback.
+
+- **Equidistant Timeline Spacing & Dual-Time Anchors**:
+  - **Symmetrical Vertical Gap**: In `VideoTimelineBar`, vertical clearance above and below the seekbar rail must be balanced equally (~6dp) using compact `touchTargetHeight: isCompact ? 16.0 : 22.0`.
+  - **Dual-Time Anchors**: In the timeline time row, elapsed time is anchored on the LEFT (`0:00`), and total runtime / remaining time is anchored on the RIGHT (`MainAxisAlignment.spaceBetween`).
+  - **Tap-to-Toggle Duration**: Tapping the right-hand duration toggles between total runtime and remaining time (`-remaining`), with generous touch padding for mobile fingers.
+  - **Thumb Styling**: The scrubber thumb must render as a solid white circle (`Colors.white`) with subtle elevation shadow, without competing colored borders.
+
+- **Controls Button Sequence**:
+  - Primary bottom controls must follow the canonical web-aligned sequence: Replay `↺` (Restart to `0:00`) first, followed by Play/Pause (`⏸`/`▶`), Mute (`🔊`), Speed (`1×`), Audio track selector, Subtitles, and Fullscreen.
+
+- **Rapid Physical Device Testing & Intent Routing**:
+  - **Zero Multi-Turn Manual Navigations**: Never use sequential multi-turn conversational tool roundtrips to manually navigate intermediate screens (e.g. Connection -> Test Connection -> Scroll -> Launch Player).
+  - **Direct Intent Routing**: Use direct cold-boot intents via `am start`:
+    ```bash
+    adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route "/player"
+    ```
+    This boots the app directly into the video player in under 1.5 seconds.
+  - **Single-Shot Chained Pipelines**: Execute multi-action ADB commands (launch + wait + screencap) in single chained commands (`am start ... && sleep 1 && screencap ...`) to eliminate turn latency.
+  - **Desktop Screen Mirroring (`run_scrcpy.bat`)**: Windows session isolation prevents background agent subprocesses from rendering GUI windows on the user's interactive desktop. Always preserve and recommend the desktop script `run_scrcpy.bat` for user-facing mirroring.
+
 
 

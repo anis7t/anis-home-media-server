@@ -21,10 +21,12 @@ class PlayerSurface extends StatelessWidget {
       width: double.infinity,
       height: double.infinity,
       child: Center(
-        child: Video(
-          controller: controller,
-          fit: fit,
-          controls: NoVideoControls,
+        child: IgnorePointer(
+          child: Video(
+            controller: controller,
+            fit: fit,
+            controls: NoVideoControls,
+          ),
         ),
       ),
     );
