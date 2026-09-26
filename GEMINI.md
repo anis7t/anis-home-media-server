@@ -275,5 +275,31 @@
   - **Single-Shot Chained Pipelines**: Execute multi-action ADB commands (launch + wait + screencap) in single chained commands (`am start ... && sleep 1 && screencap ...`) to eliminate turn latency.
   - **Desktop Screen Mirroring (`run_scrcpy.bat`)**: Windows session isolation prevents background agent subprocesses from rendering GUI windows on the user's interactive desktop. Always preserve and recommend the desktop script `run_scrcpy.bat` for user-facing mirroring.
 
+## 22. Android Release Manifest Networking & Cleartext Traffic Invariants
+- **Release Manifest Internet Permissions**:
+  - In Flutter, `src/debug/AndroidManifest.xml` (which includes internet debug permissions) is excluded when compiling release builds (`flutter build apk --release`).
+  - `flutter_client/android/app/src/main/AndroidManifest.xml` MUST explicitly declare:
+    ```xml
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    ```
+    Without this, Android blocks all socket creation in release APKs with `Operation not permitted` (`EACCES`).
+- **Cleartext (HTTP) Local Traffic Authorization**:
+  - Modern Android releases (Android 9 / API 28+) strictly forbid unencrypted HTTP traffic by default.
+  - To support LAN media server connections (`http://192.168.x.x:8000`), `<application>` in `src/main/AndroidManifest.xml` MUST specify:
+    ```xml
+    android:usesCleartextTraffic="true"
+    ```
+- **Server Origin Scheme Sanitization**:
+  - Raw user inputs for server addresses often omit URI schemes (e.g. `192.168.1.16:8000`).
+  - All networking layers (`ConnectionController`, `ApiClient`, `SettingsService`, and `LibraryRepository`) must invoke `SettingsService.sanitizeUrl()` to prepend `http://` and strip trailing slashes before issuing HTTP queries.
+
+## 23. Library Action Icon Disambiguation Invariants
+- **Distinct Action & Settings Semantics**:
+  - Screens with multiple utility controls (such as top navigation headers vs search input rows) must NEVER reuse the same icon (e.g. `Icons.tune_rounded`).
+  - **Global / App Settings**: Top frosted navigation header must use `Icons.settings_rounded` (⚙️ gear icon) with tooltip `"Settings & Updates"`, reserved strictly for server origin, device identity, update channel switching, and update checks.
+  - **Catalog Sorting & Filtering**: The search bar row must use `Icons.filter_list_rounded` (☰⌵ filter/list icon), with an active badge indicator (`AppColors.brandRed`) whenever non-default filters or sorts are active.
+
+
 
 
