@@ -20,6 +20,7 @@ BACKDROP_CACHE = CACHE_DIR / "backdrops"
 SUBTITLE_CACHE = CACHE_DIR / "subtitles"
 SUBTITLE_EMBEDDED_CACHE = SUBTITLE_CACHE / "embedded"
 SUBTITLE_ONLINE_CACHE = SUBTITLE_CACHE / "online"
+UPDATES_DIR = Path(os.environ.get("MEDIA_SERVER_UPDATES_DIR", BASE_DIR / "updates")).resolve()
 
 # Supported file extensions
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"}

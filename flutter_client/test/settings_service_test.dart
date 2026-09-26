@@ -39,5 +39,12 @@ void main() {
       final savedUrl = await service.getServerBaseUrl();
       expect(savedUrl, equals('https://media.anisparvez.in'));
     });
+
+    test('sanitizeUrl handles IP:port, trailing slashes, and empty values', () {
+      expect(SettingsService.sanitizeUrl('192.168.1.16:8000'), equals('http://192.168.1.16:8000'));
+      expect(SettingsService.sanitizeUrl('192.168.1.16:8000/'), equals('http://192.168.1.16:8000'));
+      expect(SettingsService.sanitizeUrl('   '), equals(SettingsService.defaultServerUrl));
+      expect(SettingsService.sanitizeUrl('https://media.anisparvez.in//'), equals('https://media.anisparvez.in'));
+    });
   });
 }

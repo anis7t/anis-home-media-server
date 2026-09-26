@@ -38,3 +38,13 @@ Hermes-agent-android-PC-companion-app/
 
 # Scratch notes
 IDEA.md
+
+# Android Signing Secrets
+*.jks
+*.keystore
+key.properties
+
+# App Updates APK storage (version_registry.json is tracked)
+updates/*
+!updates/version_registry.json
+!updates/.gitkeep

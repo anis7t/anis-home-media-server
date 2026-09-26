@@ -48,6 +48,7 @@ _UPLOADS = _BASE / "uploads"
 _UPLOADS_TMP = _BASE / "uploads_tmp"
 _ARCHIVE = _BASE / "archive"
 _DELETED = _BASE / "deleted"
+_UPDATES = _BASE / "updates"
 
 # Environment first: config computes these at import, and recomputes them on reload.
 os.environ["MEDIA_SERVER_DATABASE"] = str(_DB)
@@ -55,6 +56,7 @@ os.environ["MEDIA_SERVER_UPLOAD_TARGET_DIR"] = str(_UPLOADS)
 os.environ["MEDIA_SERVER_UPLOAD_TMP"] = str(_UPLOADS_TMP)
 os.environ["MEDIA_SERVER_ARCHIVE_DIR"] = str(_ARCHIVE)
 os.environ["MEDIA_SERVER_DELETED_DIR"] = str(_DELETED)
+os.environ["MEDIA_SERVER_UPDATES_DIR"] = str(_UPDATES)
 
 for _sub in (
     "cache/hls",
@@ -67,6 +69,9 @@ for _sub in (
     "uploads_tmp",
     "archive",
     "deleted",
+    "updates",
+    "updates/production",
+    "updates/developer",
 ):
     (_BASE / _sub).mkdir(parents=True, exist_ok=True)
 
@@ -81,6 +86,7 @@ _CACHE_ATTRS = {
     "SUBTITLE_CACHE": _CACHE / "subtitles",
     "SUBTITLE_EMBEDDED_CACHE": _CACHE / "subtitles" / "embedded",
     "SUBTITLE_ONLINE_CACHE": _CACHE / "subtitles" / "online",
+    "UPDATES_DIR": _UPDATES,
 }
 
 

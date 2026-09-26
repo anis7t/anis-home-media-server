@@ -442,9 +442,16 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
         ),
         const SizedBox(height: 12),
         ElevatedButton.icon(
-          onPressed: () {
-            final baseUrl = state.serverUrl.isNotEmpty
-                ? state.serverUrl
+          onPressed: () async {
+            if (state.serverUrl.isNotEmpty) {
+              await ref
+                  .read(connectionControllerProvider.notifier)
+                  .saveSettings();
+            }
+            if (!mounted) return;
+            final currentUrl = ref.read(connectionControllerProvider).serverUrl;
+            final baseUrl = currentUrl.isNotEmpty
+                ? currentUrl
                 : 'http://127.0.0.1:8000';
             const filename =
                 'Batman Knightfall Part 1 2026 1080p WEBRip x264 AAC5 1-[YTS GG - YTS BZ].mp4';
@@ -465,6 +472,25 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
           ),
           icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
           label: const Text('Launch Production Video Player (Phase 3A)'),
+        ),
+        const SizedBox(height: 10),
+        ElevatedButton.icon(
+          onPressed: () async {
+            if (state.serverUrl.isNotEmpty) {
+              await ref
+                  .read(connectionControllerProvider.notifier)
+                  .saveSettings();
+            }
+            if (!mounted) return;
+            context.push(AppRoutes.library);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.surfaceElevated,
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: AppColors.borderMedium),
+          ),
+          icon: const Icon(Icons.video_library_rounded, size: 20),
+          label: const Text('Browse Movie Library (Phase 4)'),
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(

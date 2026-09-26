@@ -675,5 +675,183 @@ def storage_archive_media(filename):
         return jsonify({'success': False, 'result': res}), 400
 
 
+# ---------------------------------------------------------------------------
+# Library Browsing & Movie Details Endpoints (Phase 4)
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/api/movies', methods=['GET'])
+def api_movies():
+    """Return JSON list of all discovered library movies and in-progress watch items."""
+    from app.services.media_service import get_movies
+    raw_movies = get_movies()
+    movie_list = []
+    for m in raw_movies:
+        item = dict(m)
+        item.pop('path', None)  # Omit non-serializable Path object
+        # Defensive year normalization (int or None)
+        y = item.get('year')
+        if y is not None and str(y).isdigit():
+            item['year'] = int(y)
+        elif not isinstance(y, int):
+            item['year'] = None
+
+        # Defensive rating normalization (float or None)
+        r = item.get('rating')
+        if r is not None:
+            try:
+                item['rating'] = float(r)
+            except (ValueError, TypeError):
+                item['rating'] = None
+
+        # Defensive runtime normalization (int or None)
+        rt = item.get('runtime')
+        if rt is not None:
+            try:
+                item['runtime'] = int(rt)
+            except (ValueError, TypeError):
+                item['runtime'] = None
+
+        movie_list.append(item)
+
+    watching = sorted(
+        [
+            m for m in movie_list
+            if m.get('position', 0) > 10
+            and (not m.get('duration') or m.get('position', 0) < m.get('duration', 0) - 10)
+        ],
+        key=lambda m: m.get('updated_at') or '',
+        reverse=True
+    )
+
+    return jsonify(
+        movies=movie_list,
+        watching=watching,
+        total=len(movie_list),
+    )
+
+
+@api_bp.route('/api/movie/<path:filename>', methods=['GET'])
+def api_movie_details(filename):
+    """Return comprehensive metadata, tech specs, and extended details for a single movie."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+
+    db = get_db()
+    try:
+        from app.services.media_service import movie, extract_media_technical_specs
+        from app.utils.formatting import format_runtime_display
+        from app.services.transcode_service import get_active_transcodes
+
+        m = movie(path, db)
+        movie_dict = dict(m)
+        movie_dict.pop('path', None)
+
+        y = movie_dict.get('year')
+        if y is not None and str(y).isdigit():
+            movie_dict['year'] = int(y)
+        elif not isinstance(y, int):
+            movie_dict['year'] = None
+
+        r = movie_dict.get('rating')
+        if r is not None:
+            try:
+                movie_dict['rating'] = float(r)
+            except (ValueError, TypeError):
+                movie_dict['rating'] = None
+
+        rt = movie_dict.get('runtime')
+        if rt is not None:
+            try:
+                movie_dict['runtime'] = int(rt)
+            except (ValueError, TypeError):
+                movie_dict['runtime'] = None
+
+        extended = {}
+        if m.get('details_json'):
+            try:
+                extended = json.loads(m['details_json'])
+            except Exception:
+                extended = {}
+
+        specs = extract_media_technical_specs(path, m)
+        formatted_runtime = format_runtime_display(m.get('runtime'))
+
+        active_transcodes = get_active_transcodes()
+        transcode_info = next((t for t in active_transcodes if t.get('filename') == filename), None)
+
+        backdrop_tmdb_id = m['tmdb_id'] if (
+            m.get('tmdb_id') and (
+                m.get('backdrop_path')
+                or (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file()
+            )
+        ) else None
+
+        return jsonify(
+            movie=movie_dict,
+            specs=specs,
+            extended=extended,
+            formatted_runtime=formatted_runtime,
+            backdrop_tmdb_id=backdrop_tmdb_id,
+            transcode_info=transcode_info,
+        )
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Android Multi-Channel Client Update Endpoints
+# ---------------------------------------------------------------------------
+
+@api_bp.route('/api/app/update', methods=['GET'])
+def api_app_update():
+    """Return JSON manifest for requested channel ('production' or 'developer')."""
+    channel = request.args.get('channel', '').strip().lower()
+    if channel not in {'production', 'developer'}:
+        return jsonify(error="Invalid channel. Must be 'production' or 'developer'."), 400
+
+    updates_dir = getattr(config, 'UPDATES_DIR', config.BASE_DIR / 'updates')
+    manifest_file = updates_dir / channel / 'manifest.json'
+
+    if not manifest_file.is_file():
+        return jsonify(error=f"No update manifest found for channel '{channel}'."), 404
+
+    try:
+        manifest_data = json.loads(manifest_file.read_text(encoding='utf-8'))
+    except Exception as e:
+        logger.error("Failed to parse update manifest for channel %s: %s", channel, e)
+        return jsonify(error="Malformed update manifest."), 500
+
+    resp = jsonify(manifest_data)
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
+
+
+@api_bp.route('/api/app/download', methods=['GET'])
+def api_app_download():
+    """Download the latest APK binary for requested channel with range/resume support."""
+    channel = request.args.get('channel', '').strip().lower()
+    if channel not in {'production', 'developer'}:
+        return jsonify(error="Invalid channel. Must be 'production' or 'developer'."), 400
+
+    updates_dir = getattr(config, 'UPDATES_DIR', config.BASE_DIR / 'updates')
+    apk_file = updates_dir / channel / 'media-server-client.apk'
+
+    if not apk_file.is_file():
+        return jsonify(error=f"APK artifact not found for channel '{channel}'."), 404
+
+    from flask import send_file
+    return send_file(
+        apk_file,
+        mimetype='application/vnd.android.package-archive',
+        as_attachment=True,
+        download_name=f'media-server-{channel}.apk',
+        conditional=True
+    )
+
+
+
+
 
 

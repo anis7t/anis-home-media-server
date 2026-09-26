@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../features/connection/presentation/connection_screen.dart';
+import '../features/library/data/models/movie_item.dart';
+import '../features/library/presentation/screens/library_screen.dart';
+import '../features/library/presentation/screens/movie_details_screen.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/player_poc/presentation/player_poc_screen.dart';
 
@@ -8,6 +11,8 @@ class AppRoutes {
   AppRoutes._();
 
   static const String connection = '/';
+  static const String library = '/library';
+  static const String movieDetails = '/movie-details';
   static const String playerPoc = '/player-poc';
   static const String player = '/player';
 
@@ -19,6 +24,23 @@ class AppRoutes {
           path: connection,
           builder: (BuildContext context, GoRouterState state) {
             return const ConnectionScreen();
+          },
+        ),
+        GoRoute(
+          path: library,
+          builder: (BuildContext context, GoRouterState state) {
+            return const LibraryScreen();
+          },
+        ),
+        GoRoute(
+          path: movieDetails,
+          builder: (BuildContext context, GoRouterState state) {
+            final movie = state.extra is MovieItem ? state.extra as MovieItem : null;
+            final filename = state.uri.queryParameters['filename'];
+            return MovieDetailsScreen(
+              initialMovie: movie,
+              filename: filename,
+            );
           },
         ),
         GoRoute(

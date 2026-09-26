@@ -50,7 +50,7 @@ class ApiClient {
   /// Tests connectivity to the media server by querying `/api/system-status`.
   Future<ConnectionTestResult> testConnection({String? overrideUrl}) async {
     final sw = Stopwatch()..start();
-    final targetUrl = overrideUrl ?? dio.options.baseUrl;
+    final targetUrl = SettingsService.sanitizeUrl(overrideUrl ?? dio.options.baseUrl);
 
     try {
       final response = await dio.get(
@@ -111,4 +111,10 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     baseUrl: SettingsService.defaultServerUrl,
     authInterceptor: authInterceptor,
   );
+});
+
+/// Exposes the active server base URL for image/media URL resolution.
+final serverBaseUrlProvider = Provider<String>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return apiClient.dio.options.baseUrl;
 });

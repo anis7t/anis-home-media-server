@@ -17,11 +17,40 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 3A | Production Player Architecture | ✅ COMPLETE — Committed on `feat/flutter-production-player` |
 | 3B | Android-First Timeline & Live Seek Preview | ✅ COMPLETE — Committed (`2e95246`) |
 | 3C | Audio & Subtitle Track Selectors, Speed & Controls Polish | ✅ COMPLETE — 58/58 tests passed, zero analyzer issues |
-| 4 | Library Browsing & Media Ingestion UI | ⏳ Next up |
+| 4.1 | Library Data Layer & API Endpoints | ✅ COMPLETE — API contracts frozen |
+| 4.2 | Library UI, Movie Card Grid, Continue Watching Rail | ✅ COMPLETE — physical device verified |
+| 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
+| 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
+| 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ⏳ Next up |
 
 ---
 
 ## 0. Recent work
+
+### 2026-09-26 — Phase 4 Complete: Library Browsing, Movie Details, & Multi-Channel Update Architecture
+
+- **Phase 4 Library & Movie Details (Milestones 4.1–4.4):**
+  - Added `GET /api/movies` and `GET /api/movie/<filename>` Flask API endpoints for Flutter client consumption.
+  - Built complete Flutter library feature: `LibraryScreen` with responsive poster grid, `MovieDetailsScreen` with TMDb metadata/cast/specs, `ContinueWatchingRail`, search/sort/filter bottom sheet.
+  - All search/sort/filter is client-side (300ms debounced search, A→Z/Year/Rating sort, genre multi-select).
+  - Direct playback handshake: Movie Details → Player → Back navigation chain verified on physical device.
+- **Phase 4.5 Multi-Channel Distribution & In-App Update Architecture:**
+  - Implemented production/developer update channels with single Android package ID (`in.anisparvez.media_server_client`).
+  - Global monotonic versionCode shared across channels (registry: `updates/version_registry.json`).
+  - Fail-closed manifest validation (7 independent gates: channel, packageId, versionCode, SDK, URL, SHA-256, fileSize).
+  - Native APK installation via MethodChannel + FileProvider + `REQUEST_INSTALL_PACKAGES`.
+  - `scripts/publish_update.py` for atomic channel publication with SHA-256 checksums.
+  - Channel switching with downgrade protection persisted via SharedPreferences.
+  - Release signing: external keystore (`~/.android/media_server_release.keystore`), v1+v2, env-var override.
+- **Test Results:**
+  - Flutter tests: **121/121 passed**.
+  - Flutter analyze: **0 issues found**.
+  - Python backend tests: **239/239 passed**.
+  - Player feature directory: **zero changes** (invariant preserved).
+- **Physical Device Verification:**
+  - Full flow verified on Vivo I2217 (Android 16): Library → Details → Player → Back → Settings → Channel Selection.
+  - APK built, signed, installed, and update subsystem tested.
 
 ### 2026-09-25 — Player Controls Transparency, Equidistant Timeline Layout, & Direct Intent Routing
 

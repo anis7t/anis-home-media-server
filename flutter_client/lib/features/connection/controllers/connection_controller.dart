@@ -44,13 +44,15 @@ class ConnectionController extends Notifier<ServerConnectionState> {
   }
 
   Future<void> testConnection() async {
+    final sanitized = SettingsService.sanitizeUrl(state.serverUrl);
     state = state.copyWith(
+      serverUrl: sanitized,
       status: ConnectionStatus.testing,
       errorMessage: null,
     );
 
     final result = await _apiClient.testConnection(
-      overrideUrl: state.serverUrl,
+      overrideUrl: sanitized,
     );
 
     if (result.success) {
@@ -73,9 +75,13 @@ class ConnectionController extends Notifier<ServerConnectionState> {
   Future<bool> saveSettings() async {
     state = state.copyWith(isSaving: true);
     try {
-      await _settingsService.setServerBaseUrl(state.serverUrl);
-      _apiClient.updateBaseUrl(state.serverUrl);
-      state = state.copyWith(isSaving: false);
+      final sanitized = SettingsService.sanitizeUrl(state.serverUrl);
+      await _settingsService.setServerBaseUrl(sanitized);
+      _apiClient.updateBaseUrl(sanitized);
+      state = state.copyWith(
+        serverUrl: sanitized,
+        isSaving: false,
+      );
       return true;
     } catch (e) {
       state = state.copyWith(
