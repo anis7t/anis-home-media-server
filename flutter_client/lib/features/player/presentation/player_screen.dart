@@ -8,7 +8,9 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
+import '../../../core/api/api_client.dart';
 import '../../../core/storage/device_identity_service.dart';
+import '../domain/playback_mode.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../connection/controllers/connection_controller.dart';
 import '../domain/player_controller_interface.dart';
@@ -96,6 +98,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Map<String, dynamic>? _movieMeta;
   CancelToken? _metaCancelToken;
 
+  /// Authoritative playback mode reported by the server's `/api/media-info`
+  /// (`direct_play`). Never derived from the URL, filename, codec or subtitle.
+  PlaybackMode _playbackMode = PlaybackMode.unknown;
+
   // Seek preview & scrubbing state
   late final SeekPreviewController _seekPreviewController;
   PreviewUrlResolver? _previewUrlResolver;
@@ -143,7 +149,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     );
 
     _listenToStreams();
-    _openMedia();
+    _bootstrap();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -197,6 +203,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   String? _effectiveMediaUrl;
   String? _effectiveServerOrigin;
+
+  /// Origin resolved for API calls / HLS URLs once the saved server is known.
+  String? _resolvedApiOrigin;
 
   String? _resolveFilename() {
     if (widget.mediaFilename != null && widget.mediaFilename!.isNotEmpty) {
@@ -301,7 +310,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     try {
       final filename = _resolveFilename();
-      final serverOrigin = _resolveServerOrigin();
+      final serverOrigin = _apiServerOrigin();
       if (filename == null || serverOrigin == null) {
         return;
       }
@@ -312,7 +321,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _previewCancelToken?.cancel();
       _previewCancelToken = CancelToken();
 
-      final dio = widget.customDio ?? Dio();
+      final dio = _apiDio();
       final res = await dio.get(
         url,
         cancelToken: _previewCancelToken,
@@ -357,7 +366,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     try {
       final filename = _resolveFilename();
-      final serverOrigin = _resolveServerOrigin();
+      final serverOrigin = _apiServerOrigin();
       if (filename == null || serverOrigin == null) return;
 
       final encoded = Uri.encodeComponent(filename);
@@ -366,7 +375,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _subtitlesCancelToken?.cancel();
       _subtitlesCancelToken = CancelToken();
 
-      final dio = widget.customDio ?? Dio();
+      final dio = _apiDio();
       final res = await dio.get(
         url,
         cancelToken: _subtitlesCancelToken,
@@ -412,7 +421,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     try {
       final filename = _resolveFilename();
-      final serverOrigin = _resolveServerOrigin();
+      final serverOrigin = _apiServerOrigin();
       if (filename == null || serverOrigin == null) return;
 
       final encoded = Uri.encodeComponent(filename);
@@ -421,7 +430,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _metaCancelToken?.cancel();
       _metaCancelToken = CancelToken();
 
-      final dio = widget.customDio ?? Dio();
+      final dio = _apiDio();
       final res = await dio.get(
         url,
         cancelToken: _metaCancelToken,
@@ -434,6 +443,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       Map<String, dynamic> meta = {};
       if (res.statusCode == 200 && res.data != null && res.data is Map) {
         meta = (res.data as Map).cast<String, dynamic>();
+      }
+
+      debugPrint(
+        '[Player] media-info probe: http=${res.statusCode} '
+        'direct_play=${meta['direct_play']} ($url)',
+      );
+
+      // Authoritative playback mode for this stream.
+      if (mounted) {
+        setState(() {
+          _playbackMode = PlaybackMode.fromDirectPlay(meta['direct_play']);
+        });
       }
 
       // Fallback: If overview is missing or empty, fetch from the /movie/$encoded HTML page
@@ -496,9 +517,120 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _movieMeta = meta;
         });
       }
-    } catch (_) {
-      // Non-fatal metadata fetch
+    } catch (e) {
+      // Non-fatal metadata fetch - but never silent: an unreachable server is
+      // exactly what a "mode unavailable" badge means.
+      debugPrint(
+        '[Player] media-info probe failed for ${_resolveFilename()} '
+        '@ ${_apiServerOrigin()}: $e',
+      );
     }
+  }
+
+  /// Resolves the authoritative playback mode, then opens the stream the way
+  /// the server says it must be served (direct byte-range vs HLS playlist).
+  ///
+  /// The probe is bounded on purpose: a slow or unreachable server must never
+  /// hold playback hostage. On timeout the mode stays [PlaybackMode.unknown],
+  /// the UI claims no mode, and the stream opens with the URL it was given.
+  Future<void> _bootstrap() async {
+    // Resolve the API origin and point the shared client at it before probing:
+    // on a cold start (or a launch without an explicit server) the media URL is
+    // the route's 127.0.0.1 default, so every API call - and the HLS URL - would
+    // otherwise target the phone itself.
+    await _resolveAndSyncApiOrigin();
+    try {
+      await _loadMovieMeta().timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Mode/metadata probe is best-effort - playback must still start.
+    }
+    if (!mounted) return;
+    await _openMedia();
+  }
+
+  /// Origin the player's API calls and HLS URLs must use.
+  ///
+  /// The *saved* server is the app's active origin and wins whenever the origin
+  /// derived from the media URL is loopback (the route's default when the player
+  /// is opened without an explicit `server`). Mirrors `_resolveEffectiveMediaUrl`
+  /// so injected-controller tests never touch the settings plugin.
+  Future<String?> _resolveApiOrigin() async {
+    final candidate = _resolveServerOrigin();
+    final isLoopback = candidate == null ||
+        candidate.contains('127.0.0.1') ||
+        candidate.contains('localhost');
+    if (!isLoopback) return candidate;
+    if (widget.customController != null) return candidate;
+
+    // 1. The connection controller's active server (no plugin call).
+    try {
+      final active = ref.read(connectionControllerProvider).serverUrl;
+      final activeUri = Uri.tryParse(active);
+      if (active.isNotEmpty &&
+          !active.contains('127.0.0.1') &&
+          !active.contains('localhost') &&
+          activeUri != null &&
+          activeUri.hasScheme &&
+          activeUri.hasAuthority) {
+        return activeUri.origin;
+      }
+    } catch (_) {}
+
+    // 2. The persisted server (unavailable in unit tests - non-fatal).
+    try {
+      final saved = await ref.read(settingsServiceProvider).getServerBaseUrl();
+      final savedUri = Uri.tryParse(saved);
+      if (saved.isNotEmpty &&
+          !saved.contains('127.0.0.1') &&
+          !saved.contains('localhost') &&
+          savedUri != null &&
+          savedUri.hasScheme &&
+          savedUri.hasAuthority) {
+        return savedUri.origin;
+      }
+    } catch (_) {}
+
+    return candidate;
+  }
+
+  /// Resolves [ _resolvedApiOrigin] and keeps the shared client in step with it.
+  Future<void> _resolveAndSyncApiOrigin() async {
+    final origin = await _resolveApiOrigin();
+    if (origin == null || origin.isEmpty || !mounted) return;
+    _resolvedApiOrigin = origin;
+    try {
+      final dio = _apiDio();
+      if (dio.options.baseUrl != origin) {
+        dio.options.baseUrl = origin;
+      }
+    } catch (_) {}
+  }
+
+  /// The origin to build API and HLS URLs from (see [ _resolveApiOrigin]).
+  String? _apiServerOrigin() => _resolvedApiOrigin ?? _resolveServerOrigin();
+
+  /// The HTTP client every API call in this screen goes through.
+  ///
+  /// The app's shared client - it carries the device id these routes expect, its
+  /// timeouts, and the active origin. A bare `Dio()` here was the only place in
+  /// the app that bypassed it.
+  Dio _apiDio() => widget.customDio ?? ref.read(apiClientProvider).dio;
+
+  /// Routes the stream exactly the way the server advertises it.
+  ///
+  /// The only input is the authoritative `direct_play` flag: media the server
+  /// marks as HLS-only is opened as its HLS playlist, everything else keeps the
+  /// direct byte-range URL. With no authoritative value the URL is untouched.
+  String _applyAuthoritativeMode(String url) {
+    if (_playbackMode != PlaybackMode.hls) return url;
+
+    final filename = _resolveFilename();
+    if (filename == null || filename.isEmpty) return url;
+
+    final origin = _apiServerOrigin();
+    if (origin == null || origin.isEmpty) return url;
+
+    return '$origin/hls/${Uri.encodeComponent(filename)}/playlist.m3u8';
   }
 
   Future<void> _openMedia() async {
@@ -507,7 +639,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _state = PlayerPlaybackState.opening;
     });
 
-    final effectiveUrl = await _resolveEffectiveMediaUrl();
+    final resolvedUrl = await _resolveEffectiveMediaUrl();
+    final effectiveUrl = _applyAuthoritativeMode(resolvedUrl);
     _effectiveMediaUrl = effectiveUrl;
     final effUri = Uri.tryParse(effectiveUrl);
     if (effUri != null && effUri.hasScheme && effUri.hasAuthority) {
@@ -516,7 +649,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     _loadPreviewMeta();
     _fetchSidecarSubtitles();
-    _loadMovieMeta();
 
     try {
       String deviceId = widget.deviceId ?? 'dev_flutter_client';
@@ -1120,9 +1252,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Widget _buildMediaDetailsSection() {
-    final serverOrigin = _resolveServerOrigin() ?? 'http://127.0.0.1:8000';
+    final serverOrigin = _apiServerOrigin() ?? 'http://127.0.0.1:8000';
     final filename = _resolveFilename() ?? 'Media Stream';
-    final isDirectPlay = widget.subtitle?.toLowerCase().contains('direct') ?? true;
 
     final displayTitle = _movieMeta?['title'] as String? ?? widget.title;
     final year = _movieMeta?['year'];
@@ -1207,7 +1338,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     border: Border.all(color: AppColors.borderSubtle),
                   ),
                   child: Text(
-                    isDirectPlay ? 'DIRECT PLAY' : 'HLS STREAM',
+                    _playbackMode.badgeLabel,
                     style: const TextStyle(
                       color: AppColors.statusSuccess,
                       fontSize: 10,
@@ -1367,7 +1498,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   const SizedBox(height: 10),
                   _buildSpecRow('Source File', filename),
                   const SizedBox(height: 6),
-                  _buildSpecRow('Playback Type', isDirectPlay ? 'Direct Stream (RFC 7233)' : 'HLS Segmented'),
+                  _buildSpecRow('Playback Type', _playbackMode.specLabel),
                   const SizedBox(height: 6),
                   _buildSpecRow('Server Origin', serverOrigin),
                   const SizedBox(height: 6),
