@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'app/app.dart';
 import 'app/routes.dart';
+import 'features/devices/presentation/widgets/device_presence_scope.dart';
 
 void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,8 +56,10 @@ void main(List<String> args) {
 
   runApp(
     ProviderScope(
-      child: MediaServerApp(
-        initialRoute: initialRoute,
+      child: DevicePresenceScope(
+        child: MediaServerApp(
+          initialRoute: initialRoute,
+        ),
       ),
     ),
   );
