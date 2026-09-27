@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/live_server_gate.dart';
+
 void main() {
-  const serverOrigin = 'http://127.0.0.1:8000';
+  final serverOrigin = liveServerOrigin;
   const testDeviceId = 'dev_poc_test_3896e0';
 
   final dio = Dio(
@@ -104,5 +106,5 @@ void main() {
       expect(thumbRes.headers.value('content-type'), contains('image/jpeg'));
       expect(thumbRes.data!.length, greaterThan(100)); // Non-empty JPEG bytes
     });
-  });
+  }, skip: liveServerSkip);
 }

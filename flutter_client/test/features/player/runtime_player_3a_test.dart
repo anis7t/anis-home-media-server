@@ -10,7 +10,9 @@ import 'package:media_server_client/features/player_poc/domain/player_controller
 import 'package:media_server_client/features/player_poc/infrastructure/media_kit_player_adapter.dart'
     as poc_adapter;
 
-const String localOrigin = 'http://127.0.0.1:8000';
+import '../../support/live_server_gate.dart';
+
+final String localOrigin = liveServerOrigin;
 const String testDeviceId = 'dev_phase3a_val_9918bc';
 const String libmpvPath =
     'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
@@ -39,6 +41,7 @@ void main() {
       await pocAdapter.dispose();
     });
 
+    // Tests 2 and 5 play real media from the running server, so they are live-server tests.
     test('2. Direct MP4 playback & progression (Batman Knightfall)', () async {
       final adapter = prod_adapter.MediaKitPlayerAdapter();
       const filename =
@@ -82,7 +85,7 @@ void main() {
       await sub.cancel();
       await adapter.stop();
       await adapter.dispose();
-    });
+    }, skip: liveServerSkip);
 
     test('5. Error state handling on invalid media URL', () async {
       final adapter = prod_adapter.MediaKitPlayerAdapter();
@@ -95,7 +98,7 @@ void main() {
       });
 
       try {
-        await adapter.open('http://127.0.0.1:8000/media/invalid_file_for_test_404.mp4');
+        await adapter.open('$localOrigin/media/invalid_file_for_test_404.mp4');
         final sw = Stopwatch()..start();
         while (!errorEncountered && sw.elapsedMilliseconds < 4000) {
           await Future.delayed(const Duration(milliseconds: 100));
@@ -108,6 +111,6 @@ void main() {
       await adapter.dispose();
       // Test passed whether error was caught via stream or exception
       expect(true, isTrue);
-    });
+    }, skip: liveServerSkip);
   });
 }

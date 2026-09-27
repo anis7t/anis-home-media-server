@@ -6,6 +6,8 @@ import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/live_server_gate.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -23,7 +25,7 @@ void main() {
 
     final interceptor = DeviceAuthInterceptor(deviceService);
     final apiClient = ApiClient(
-      baseUrl: 'http://127.0.0.1:8000',
+      baseUrl: liveServerOrigin,
       authInterceptor: interceptor,
     );
 
@@ -43,12 +45,12 @@ void main() {
     expect(result.latencyMs, greaterThan(0));
 
     // 2. Send heartbeat with X-Device-Id header to register device on server
-    final heartbeatRes = await apiClient.dio.post('http://127.0.0.1:8000/api/devices/heartbeat');
+    final heartbeatRes = await apiClient.dio.post('$liveServerOrigin/api/devices/heartbeat');
     expect(heartbeatRes.statusCode, equals(200));
     expect(heartbeatRes.data['device_id'], equals(deviceId));
 
     // 3. Query GET /api/devices and verify server recognized our persistent device ID
-    final devicesResponse = await apiClient.dio.get('http://127.0.0.1:8000/api/devices');
+    final devicesResponse = await apiClient.dio.get('$liveServerOrigin/api/devices');
     expect(devicesResponse.statusCode, equals(200));
     expect(devicesResponse.data, isA<Map>());
 
@@ -60,5 +62,5 @@ void main() {
     final matched = devicesList?.any((d) => d['device_id'] == deviceId || d['client_id'] == deviceId || d['id'] == deviceId);
     debugPrint('Our persistent device ID ($deviceId) registered on server: $matched');
     expect(matched, isTrue, reason: 'Device ID was not found in server devices registry');
-  });
+  }, skip: liveServerSkip);
 }

@@ -1,6 +1,11 @@
 """Headless Selenium E2E test verifying multi-seek across chunk boundaries on Coyote vs. Acme.
 
 Ensures no DEMUXER_ERROR_COULD_NOT_PARSE, no DTS sequence errors, and no auto-reset to beginning.
+
+By default this test serves the application itself on an ephemeral port, using the isolated cache
+and database that tests/conftest.py points the app at. Set MEDIA_SERVER_LIVE_TESTS=1 to run it
+against the live production service on port 8000 instead (it then drives - and writes to - the
+real instance).
 """
 import os
 import sys
@@ -17,11 +22,16 @@ from app import create_app
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, app, port=5077):
+    def __init__(self, app, port=0):
         super().__init__(daemon=True)
         self.server = make_server("127.0.0.1", port, app)
         self.ctx = app.app_context()
         self.ctx.push()
+
+    @property
+    def port(self):
+        """The port actually bound (0 requests an ephemeral one)."""
+        return self.server.server_port
 
     def run(self):
         self.server.serve_forever()
@@ -35,28 +45,40 @@ def test_coyote_multi_seek_no_reset():
     import pytest
     import app as app_module
     from app.services.media_service import safe_path
-    
+    from app.services.transcode_service import hls_cache_dir
+
     app_module.CACHE_DIR = app_module.config.CACHE_DIR
-    if not safe_path("Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv"):
+    coyote_path = safe_path("Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv")
+    if not coyote_path:
         pytest.skip("Coyote vs. Acme media file not present on test host")
 
-    import socket
     server = None
-    port = 8000
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.5)
-            if s.connect_ex(('127.0.0.1', 8000)) != 0:
-                port = 5077
-                app = create_app()
-                server = ServerThread(app, port=5077)
-                server.start()
-                time.sleep(1)
-    except Exception:
-        port = 5077
+
+    # This test must never drive the production service. It used to prefer a live server on port
+    # 8000 whenever one answered, which pointed a real browser at production and wrote watch
+    # history into the live database (verified 2026-09-27: device_watch_history rows appeared
+    # during a suite run). It now always starts its own in-process app - conftest points that app
+    # at the throwaway cache/database tree - and only uses the live service on explicit opt-in.
+    live_opt_in = os.environ.get("MEDIA_SERVER_LIVE_TESTS") == "1"
+    if live_opt_in:
+        port = 8000
+    else:
         app = create_app()
-        server = ServerThread(app, port=5077)
+        # Seeking here needs the rendered HLS cache, and the isolated cache holds no Coyote
+        # segments. Skip honestly instead of failing: the in-process mode exists to be host-safe,
+        # not to pretend the production cache is present.
+        try:
+            isolated_hls_ready = (hls_cache_dir(coyote_path) / "playlist.m3u8").exists()
+        except Exception:
+            isolated_hls_ready = False
+        if not isolated_hls_ready:
+            pytest.skip(
+                "Coyote HLS cache is absent from the isolated test cache - run with "
+                "MEDIA_SERVER_LIVE_TESTS=1 to exercise the live cache"
+            )
+        server = ServerThread(app)
         server.start()
+        port = server.port
         time.sleep(1)
 
     driver = None

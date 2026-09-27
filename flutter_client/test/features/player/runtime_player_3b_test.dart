@@ -6,7 +6,9 @@ import 'package:media_server_client/features/player/domain/player_controller_int
 import 'package:media_server_client/features/player/domain/seek_preview_controller.dart';
 import 'package:media_server_client/features/player/infrastructure/media_kit_player_adapter.dart';
 
-const String localOrigin = 'http://127.0.0.1:8000';
+import '../../support/live_server_gate.dart';
+
+final String localOrigin = liveServerOrigin;
 const String testDeviceId = 'dev_phase3b_val_104f7c';
 const String libmpvPath =
     'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
@@ -22,6 +24,8 @@ void main() {
     }
   });
 
+  // Both tests fetch media and preview frames from the running server, so the whole group is a
+  // live-server integration check (see test/support/live_server_gate.dart).
   group('Phase 3B Runtime Verification Against Live Server', () {
     test('1. Live seek-preview metadata and thumbnail frame resolution', () async {
       const filename =
@@ -131,5 +135,5 @@ void main() {
       await adapter.stop();
       await adapter.dispose();
     });
-  });
+  }, skip: liveServerSkip);
 }
