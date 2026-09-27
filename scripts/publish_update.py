@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,6 +27,88 @@ DEFAULT_UPDATES_DIR = REPO_ROOT / "updates"
 DEFAULT_REGISTRY_PATH = DEFAULT_UPDATES_DIR / "version_registry.json"
 ALLOWED_CHANNELS = {"production", "developer"}
 PACKAGE_ID = "in.anisparvez.media_server_client"
+AAPT2_ENV_VAR = "MEDIA_SERVER_AAPT2"
+
+
+class ApkIdentityError(RuntimeError):
+    """The APK's own metadata is unreadable, or contradicts the manifest about to be published."""
+
+
+def find_aapt2() -> Path | None:
+    """Locate aapt2: explicit env override, then the Android SDK build-tools (newest), then PATH."""
+    override = os.environ.get(AAPT2_ENV_VAR)
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_file() else None
+
+    sdk_root = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    if sdk_root:
+        build_tools = Path(sdk_root) / "build-tools"
+        if build_tools.is_dir():
+            versions = sorted((d for d in build_tools.iterdir() if d.is_dir()),
+                              key=lambda d: d.name, reverse=True)
+            for version_dir in versions:
+                for binary in ("aapt2.exe", "aapt2"):
+                    candidate = version_dir / binary
+                    if candidate.is_file():
+                        return candidate
+
+    found = shutil.which("aapt2")
+    return Path(found) if found else None
+
+
+def parse_badging(text: str) -> dict:
+    """Parse `aapt2 dump badging` output into the fields the manifest must agree with."""
+    identity = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("package:"):
+            for key, target in (("name", "packageId"), ("versionCode", "versionCode"),
+                                ("versionName", "versionName")):
+                marker = f"{key}='"
+                start = line.find(marker)
+                if start == -1:
+                    continue
+                start += len(marker)
+                end = line.find("'", start)
+                if end > start:
+                    identity[target] = line[start:end]
+        elif line.startswith("minSdkVersion:") or line.startswith("sdkVersion:"):
+            # aapt2 (build-tools 30+) prints `minSdkVersion:`; the legacy aapt printed `sdkVersion:`.
+            identity["minSdk"] = line.split(":", 1)[1].strip().strip("'")
+        elif line.startswith("targetSdkVersion:"):
+            identity["targetSdk"] = line.split(":", 1)[1].strip().strip("'")
+    return identity
+
+
+def read_apk_identity(apk_path: Path) -> dict:
+    """Read the APK's OWN identity: packageId, versionCode, versionName, minSdk, targetSdk.
+
+    This is the anti-drift gate. The published manifest must describe the APK that was really
+    built, so the APK - not the operator's command line - is the source of truth.
+    """
+    aapt2 = find_aapt2()
+    if aapt2 is None:
+        raise ApkIdentityError(
+            "aapt2 not found - point "
+            f"{AAPT2_ENV_VAR} at it, or set ANDROID_HOME so its build-tools can be searched"
+        )
+
+    result = subprocess.run(
+        [str(aapt2), "dump", "badging", str(apk_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ApkIdentityError(
+            f"aapt2 could not read {apk_path.name}: {(result.stderr or result.stdout).strip()[:200]}"
+        )
+
+    identity = parse_badging(result.stdout)
+    missing = sorted({"packageId", "versionCode", "versionName", "minSdk", "targetSdk"} - set(identity))
+    if missing:
+        raise ApkIdentityError(f"aapt2 output for {apk_path.name} is missing {missing}")
+    return identity
 
 
 def calculate_sha256(file_path: Path) -> str:
@@ -66,15 +149,20 @@ def publish_release(
     version: str,
     apk_path: Path,
     notes: str = "",
-    explicit_version_code: int = None,
+    explicit_version_code: int | None = None,
     mandatory: bool = False,
-    min_android_sdk: int = 26,
-    target_android_sdk: int = 36,
-    updates_dir: Path = None,
-    registry_path: Path = None,
-    git_commit: str = None,
+    min_android_sdk: int | None = None,
+    target_android_sdk: int | None = None,
+    min_supported_version_code: int = 1,
+    updates_dir: Path | None = None,
+    registry_path: Path | None = None,
+    git_commit: str | None = None,
 ) -> dict:
     """Publish an APK update atomically to a specified channel.
+
+    The APK is the source of truth: its own packageId, versionCode, versionName, minSdk and
+    targetSdk are read back from the built artifact and must agree with the manifest being
+    written. Anything that disagrees is refused - never published with corrected metadata.
 
     Returns the published manifest dictionary.
     """
@@ -106,10 +194,43 @@ def publish_release(
     else:
         new_version_code = last_code + 1
 
-    # 2. Compute SHA-256
+    # 2. Read the APK's own identity - the manifest must describe THIS artifact
+    identity = read_apk_identity(apk_path)
+
+    if identity["packageId"] != PACKAGE_ID:
+        raise ApkIdentityError(
+            f"APK packageId '{identity['packageId']}' does not match the expected '{PACKAGE_ID}'"
+        )
+
+    apk_version_code = int(identity["versionCode"])
+    if apk_version_code != new_version_code:
+        raise ApkIdentityError(
+            f"APK versionCode {apk_version_code} != allocated versionCode {new_version_code}. "
+            "Rebuild with --build-number set to the allocated code "
+            "(scripts/release_android.py does the allocation, build and publish in one step)."
+        )
+
+    apk_version_name = identity["versionName"]
+    if apk_version_name != version.strip():
+        raise ApkIdentityError(
+            f"APK versionName '{apk_version_name}' != --version '{version.strip()}'. "
+            "Rebuild with --build-name set to the same value."
+        )
+
+    apk_min_sdk = int(identity["minSdk"])
+    apk_target_sdk = int(identity["targetSdk"])
+    for label, requested, actual in (
+        ("min_android_sdk", min_android_sdk, apk_min_sdk),
+        ("target_android_sdk", target_android_sdk, apk_target_sdk),
+    ):
+        if requested is not None and int(requested) != actual:
+            raise ApkIdentityError(f"{label}={requested} contradicts the APK's own value {actual}")
+    min_android_sdk, target_android_sdk = apk_min_sdk, apk_target_sdk
+
+    # 3. Compute SHA-256
     sha256 = calculate_sha256(apk_path)
 
-    # 3. Resolve Git Commit if available
+    # 4. Resolve Git Commit if available
     if not git_commit:
         try:
             import subprocess
@@ -139,12 +260,12 @@ def publish_release(
         "fileSizeBytes": apk_size,
         "releaseNotes": notes.strip(),
         "mandatory": mandatory,
-        "minSupportedVersionCode": 1,
+        "minSupportedVersionCode": int(min_supported_version_code),
     }
     if git_commit:
         manifest["gitCommit"] = git_commit
 
-    # 4. Atomic Publication to updates/<channel>/
+    # 5. Atomic Publication to updates/<channel>/
     channel_dir = updates_dir / channel
     channel_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +279,7 @@ def publish_release(
     temp_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     temp_manifest.replace(manifest_file)
 
-    # 5. Atomically update registry
+    # 6. Atomically update registry
     registry["lastVersionCode"] = new_version_code
     registry.setdefault("channels", {})[channel] = {
         "version": version.strip(),
@@ -179,6 +300,8 @@ def main():
     parser.add_argument("--notes", default="", help="Release notes text")
     parser.add_argument("--version-code", type=int, help="Explicit versionCode (must be > lastVersionCode)")
     parser.add_argument("--mandatory", action="store_true", help="Mark this update as mandatory")
+    parser.add_argument("--min-supported-code", type=int, default=1,
+                        help="versionCode below which the installed client must stop working (default 1 = no floor)")
     parser.add_argument("--updates-dir", help="Custom updates directory")
 
     args = parser.parse_args()
@@ -191,11 +314,14 @@ def main():
             notes=args.notes,
             explicit_version_code=args.version_code,
             mandatory=args.mandatory,
+            min_supported_version_code=args.min_supported_code,
             updates_dir=Path(args.updates_dir) if args.updates_dir else None,
         )
         print("=" * 60)
         print(f"Successfully published {manifest['channel'].upper()} update!")
         print(f"Version:      {manifest['version']} (versionCode: {manifest['versionCode']})")
+        print(f"Min/Target SDK: {manifest['minAndroidSdk']} / {manifest['targetAndroidSdk']} (read from the APK)")
+        print(f"Min supported code: {manifest['minSupportedVersionCode']}")
         print(f"SHA-256:      {manifest['sha256']}")
         print(f"Size:         {manifest['fileSizeBytes']} bytes")
         print(f"APK URL:      {manifest['apkUrl']}")
