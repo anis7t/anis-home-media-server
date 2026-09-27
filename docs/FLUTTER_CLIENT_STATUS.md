@@ -27,21 +27,42 @@
 
 ---
 
-## Current Working Tree State (2026-09-27)
+## Current State (2026-09-27, after the closure + hardening pass)
 
-**Git status:** Uncommitted working tree with cumulative Phase 4 changes on `feat/flutter-production-player`.
-**Last commit:** `1be9904 docs(rules): add Sections 22 and 23 for Android release networking and UI icon disambiguation`
+**Git status:** `feat/flutter-production-player` — the Phase 4 line is committed in focused commits
+(Phase 4.6 closure first, then the hardening fixes; see `docs/PROJECT_STATUS.md` §0).
+**Last commit:** `ed6d579 feat(flutter): complete phase 4 navigation shell`
 
-The working tree contains ALL Phase 4 + Multi-Channel Update + Persistent Bottom Navigation Shell changes as unstaged modifications.
+Everything from Phase 4.1–4.6 is committed, and `lib/features/player/` is untouched by the 4.6 work.
 
 ### Test Results (verified 2026-09-27)
 
 | Suite | Count | Result |
 |-------|-------|--------|
-| Flutter tests | 134 | ✅ All passed |
+| Flutter tests | 128 passed, 10 skipped | ✅ 0 failures (skips are live-server tests, see below) |
 | Flutter analyze (lib + test) | — | ✅ 0 issues |
-| Python backend tests | 239 | ✅ All passed |
+| Python backend tests | 250 passed, 1 skipped | ✅ 0 failures |
+| Production DB across a full suite run | movies / devices / watch history / progress / settings | ✅ byte-identical before vs after |
 | Player invariant (`git diff -- flutter_client/lib/features/player/`) | — | ✅ Zero changes |
+
+### Live-server tests are opt-in (host safety)
+
+Ten Flutter tests and one Python E2E drive a **running** server, and one of them registered a
+device row in the production `devices` table every time the suite ran. They are now skipped unless
+the operator asks for them:
+
+```powershell
+$env:MEDIA_SERVER_LIVE_TESTS = "1"      # opt in (Flutter + Python)
+$env:MEDIA_SERVER_TEST_ORIGIN = "http://127.0.0.1:8000"   # optional, Flutter only
+```
+
+- Gated: `test/live_server_connection_test.dart`, `test/streaming_http_contract_test.dart`,
+  `test/features/player/runtime_player_3a_test.dart` (playback tests only),
+  `test/features/player/runtime_player_3b_test.dart`.
+- The gate lives in `test/support/live_server_gate.dart`.
+- `tests/test_selenium_multi_seek_coyote.py` no longer prefers the live port-8000 service: it
+  serves its own in-process app on an ephemeral port (conftest points that app at the throwaway
+  cache/database) and skips when the isolated cache cannot serve the scenario.
 
 ### Physical Device Verification
 
@@ -175,16 +196,37 @@ Fullscreen Top-Level Destinations (Strictly outside shell):
 ### VersionCode Strategy
 
 - **Global monotonic sequence** shared by both channels
-- Registry at `updates/version_registry.json` (current: `lastVersionCode: 101`)
-- Auto-increment or explicit `--version-code` with strict monotonicity enforcement
-- **Not based on git commit count** — managed explicitly via `publish_update.py`
+- Registry at `updates/version_registry.json` (current: `lastVersionCode: 105`, developer
+  `1.0.5-dev.105` — 104 and 105 were published during the 2026-09-27 device verification)
+- **The APK is the source of truth.** `publish_update.py` reads the built APK's own
+  `packageId`/`versionCode`/`versionName`/`minSdk`/`targetSdk` back with `aapt2` and refuses to
+  publish unless they match the manifest it is about to write — a mismatched pair is rejected
+  loudly, never "corrected".
+- Releases are produced by **`scripts/release_android.py`**, which allocates the next versionCode,
+  builds with `--build-name/--build-number`, re-reads the APK identity, and then publishes. Build
+  and manifest therefore cannot drift apart.
+- `pubspec.yaml` carries `1.0.3+103`: the floor, not the next release. A plain
+  `flutter build apk --release` produces a *lower* versionCode than anything published, and a test
+  (`ReleaseToolingTests.test_pubspec_build_number_cannot_outrun_the_published_registry`) keeps it
+  that way.
+- **Not based on git commit count** — managed explicitly, and gated by the release script.
 
 ### Signing
 
-- External keystore: `~/.android/media_server_release.keystore`
-- Config priority: `key.properties` → env vars (`MEDIA_SERVER_KEYSTORE_*`) → defaults → debug fallback
+- External keystore: `~/.android/media_server_release.keystore` (alias `media_server_key`)
+- Config priority: `key.properties` (git-ignored, lives at `flutter_client/android/key.properties`)
+  → env vars (`MEDIA_SERVER_KEYSTORE_PATH/_PASSWORD`, `MEDIA_SERVER_KEY_ALIAS/_KEY_PASSWORD`)
+  → **fail closed**. No credential is stored in `build.gradle.kts`, and a release build with no
+  keystore fails with a message instead of silently producing a debug-signed APK that can never be
+  installed as an update. `MEDIA_SERVER_ALLOW_DEBUG_SIGNING=1` is the explicit escape hatch for
+  throwaway builds.
 - v1 (JAR) + v2 (APK Signature Scheme) explicitly enabled
-- Keystores, `key.properties` excluded via `.gitignore`
+- Keystores and `key.properties` excluded via `.gitignore` (root, `flutter_client/`, and
+  `flutter_client/android/`)
+- ⚠️ The old password literal is still present in **git history** (it was committed in
+  `build.gradle.kts` before this pass). The keystore file itself was never committed, so it is not
+  exploitable on its own, but treat that password as known: rotate the keystore only if the `.jks`
+  itself is ever suspected of leaking (rotating the key breaks updates for installed builds).
 
 ### Known Limitations (Pre-Adoption)
 
@@ -192,7 +234,9 @@ Fullscreen Top-Level Destinations (Strictly outside shell):
 2. No APK signing certificate pinning (SHA-256 file hash only)
 3. No automatic background update checks (WorkManager)
 4. No download resume on interruption
-5. `minSupportedVersionCode` manifest field not enforced client-side
+5. ~~`minSupportedVersionCode` manifest field not enforced client-side~~ — **now enforced**: an
+   install below the declared floor is treated as a required update (the prompt cannot be
+   dismissed). Publish the floor with `--min-supported-code`.
 
 ---
 
@@ -358,10 +402,25 @@ cd C:\MediaServer
 ```
 
 ### Publishing an Update
+
+The APK must be built with the versionCode that will be published, so build and publish are one
+step:
+
 ```powershell
 cd C:\MediaServer
-.\venv\Scripts\python.exe scripts\publish_update.py --channel developer --version 1.1.0-dev.102 --apk path\to\signed.apk --notes "Release notes here"
+.\venv\Scripts\python.exe scripts\release_android.py --channel developer --version 1.0.5-dev.105 `
+    --notes "What changed"
+# add --dry-run to build and verify without publishing, or
+# --apk <path> to publish an already-built APK (still identity-verified)
 ```
+
+The script allocates the next versionCode from `updates/version_registry.json`, runs
+`flutter build apk --release --build-name=<version> --build-number=<code>`, reads the APK's own
+identity back with `aapt2`, and only then publishes (APK + manifest + registry, atomically).
+
+`scripts/publish_update.py` remains available for a pre-built APK and applies the same
+verification — it refuses any APK whose versionCode/versionName/packageId/minSdk/targetSdk do not
+match the manifest it is about to write.
 
 ---
 

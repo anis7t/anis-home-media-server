@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-27
 Repository: `anis7t/media-server`
 Working branch: `feat/flutter-production-player`
 
@@ -22,11 +22,76 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
 | 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), 134/134 tests |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), device-verified; 128 passed / 10 skipped (live-server tests now opt-in) |
 
 ---
 
 ## 0. Recent work
+
+### 2026-09-27 — Flutter release hardening, test isolation, and end-to-end device verification
+
+**Release integrity (the APK is the source of truth):**
+- `scripts/publish_update.py` now reads `packageId`/`versionCode`/`versionName`/`minSdk`/`targetSdk`
+  back out of the built APK with `aapt2 dump badging` and **refuses to publish** if they disagree
+  with the manifest it is about to write (`ApkIdentityError`, fail-closed). `--min-supported-code`
+  publishes the enforced floor. Build-tools 36 prints `minSdkVersion:` (legacy `sdkVersion:`), both
+  spellings are parsed — a real APK round-trip test caught that.
+- New `scripts/release_android.py` makes build and publish one step: allocate versionCode → build
+  with `--build-name/--build-number` → re-read the APK identity → publish. `pubspec.yaml` is pinned
+  to the `1.0.3+103` floor so a bare `flutter build apk` cannot outrun the registry.
+- Published through that path: **developer `1.0.4-dev.104`** and **developer `1.0.5-dev.105`**
+  (`updates/version_registry.json` → `lastVersionCode: 105`).
+
+**Signing:**
+- The hardcoded keystore password was removed from `build.gradle.kts`. Credentials now come from
+  git-ignored `flutter_client/android/key.properties` → env vars → **fail closed** (no silent
+  debug-signed release). The literal remains in git history; the `.jks` was never committed (see
+  the Signing section of `docs/FLUTTER_CLIENT_STATUS.md`).
+
+**Test isolation (no test may touch the live service or library):**
+- Flutter live-server tests are gated behind `MEDIA_SERVER_LIVE_TESTS=1` + `MEDIA_SERVER_TEST_ORIGIN`
+  (`test/support/live_server_gate.dart`): `live_server_connection_test.dart`,
+  `streaming_http_contract_test.dart`, `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart`.
+  The heartbeat test writes to the production device registry, which is why it must stay opt-in.
+- `tests/test_selenium_multi_seek_coyote.py` no longer drives the live port-8000 service: it starts
+  its own in-process server on port 0 and skips honestly when no Coyote segments exist in the
+  isolated cache.
+- Proof, not assertion: the full suite ran with the production DB snapshotted before/after —
+  `movies` / `devices` / `device_watch_history` / `progress` / `settings` were **byte-identical**.
+- Results: Python **250 passed, 1 skipped** (72.7 s); Flutter **128 passed, 10 skipped**, analyzer
+  clean.
+
+**Update-floor enforcement:**
+- `minSupportedVersionCode` is now enforced client-side (install below the floor ⇒ mandatory update,
+  the prompt cannot be dismissed) and `minAndroidSdk` is taken from the APK (24), not the stale 26.
+
+**Fixture cleanup (via the application's own purge route):**
+- `POST /api/media/delete/...` removed the two leaked test fixtures — a 23-byte
+  `C:\Flicks\Mayday (2026).mkv` stub and the file-less `Moana.2016.mp4` DB row. Library went
+  **14 → 12 rows**; no collateral (the real `Mayday 2026 … BONE.mkv` kept its 1656-segment cache,
+  every other cached title intact). The transcoder had been re-probing that stub every ~30 s
+  (5542 log lines); **zero retries after the purge**.
+
+**Service + device verification:**
+- `MediaServer` restarted (new PID) so the live process serves `/api/app/*`: `/api/app/update?channel=developer`
+  returns the 104→105 manifest (sha256 matches the APK byte-for-byte), `?channel=production` 404s
+  (channel isolation), `/api/app/download` returns 206 + `application/vnd.android.package-archive`.
+- On the physical device (vivo I2217, Android 16): 104 installed over 103 → 4.6 shell verified live
+  (`Home — Tab 1 of 3` / `Library — Tab 2 of 3` / `Settings — Tab 3 of 3`, Continue Watching ×6,
+  Recently Added); the app's **own** update path found 105, downloaded, verified the hash and
+  installed it → the app reports `Version 1.0.5-dev.105 / Build 105` and then
+  `Your application is up to date`; the device id (`dev_e15e113a80629ba6`) survived the update.
+- Playback on the device: direct-play MP4 streamed over `/media/…` byte ranges (position advanced
+  5:31 → 5:54 in 20 s), and the HEVC MKV played via **HLS from its existing cache** (playlist
+  `atime` = 14:37:42, cache untouched, no re-render).
+
+**Newly observed (not fixed — outside this pass's scope):**
+- The Flutter client defines `ApiEndpoints.deviceHeartbeat` but **never calls it**, and only
+  `POST /api/devices/heartbeat` creates a device row — so the phone never appears in the Connected
+  Devices dashboard.
+- `player_screen.dart:1125` derives its DIRECT PLAY / HLS STREAM label from a *subtitle string*
+  heuristic (`contains('direct') ?? true`) instead of the server's `direct_play` flag: the direct-played
+  MP4 was labelled `HLS STREAM`.
 
 ### 2026-09-27 — Phase 4.6 Complete: Persistent Mobile Navigation Shell (Home, Library, Settings)
 
