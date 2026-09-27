@@ -27,23 +27,69 @@
 
 ---
 
-## Current State (2026-09-27, after the closure + hardening pass)
+## Current State (2026-09-27, after the closure + hardening + device-presence pass)
 
 **Git status:** `feat/flutter-production-player` — the Phase 4 line is committed in focused commits
 (Phase 4.6 closure first, then the hardening fixes; see `docs/PROJECT_STATUS.md` §0).
-**Last commit:** `ed6d579 feat(flutter): complete phase 4 navigation shell`
+**Last commit:** `83e553d docs(flutter): release tooling, signing policy, test isolation, device verification`
+plus the device-presence and playback-mode commits that follow it.
 
-Everything from Phase 4.1–4.6 is committed, and `lib/features/player/` is untouched by the 4.6 work.
+Everything from Phase 4.1–4.6 is committed. `lib/features/player/` is now deliberately changed in two
+owner-requested places (authoritative playback-mode label, HLS routing for non-direct-playable
+containers) — see "Authoritative playback mode" below; no other player behaviour was touched.
 
 ### Test Results (verified 2026-09-27)
 
 | Suite | Count | Result |
 |-------|-------|--------|
-| Flutter tests | 128 passed, 10 skipped | ✅ 0 failures (skips are live-server tests, see below) |
+| Flutter tests | 143 passed, 10 skipped | ✅ 0 failures (skips are live-server tests, see below) |
 | Flutter analyze (lib + test) | — | ✅ 0 issues |
 | Python backend tests | 250 passed, 1 skipped | ✅ 0 failures |
 | Production DB across a full suite run | movies / devices / watch history / progress / settings | ✅ byte-identical before vs after |
-| Player invariant (`git diff -- flutter_client/lib/features/player/`) | — | ✅ Zero changes |
+
+### Device presence — the client now registers itself
+
+`DeviceIdentityService` gave every install a stable `dev_…` id and `DeviceAuthInterceptor` sent it as
+`X-Device-Id`, but nothing ever *called* `ApiEndpoints.deviceHeartbeat`, so the phone never appeared
+in the server's Connected Devices dashboard.
+
+- `features/devices/data/repositories/device_repository.dart` — `sendHeartbeat()` (failures swallowed:
+  presence is telemetry and must never disturb playback).
+- `features/devices/presentation/controllers/device_presence_controller.dart` — one registration ping
+  on start, then one every **45 s** (the web client's cadence in `templates/library.html`), paused while
+  the app is backgrounded, immediate ping on resume, no overlapping requests, timer cancelled on dispose.
+- `features/devices/presentation/widgets/device_presence_scope.dart` — mounted once in `main.dart`
+  around `MediaServerApp` and forwards `didChangeAppLifecycleState` (widget tests that build
+  `MediaServerApp` directly therefore never open a heartbeat timer).
+- The server upserts on `X-Device-Id` (`record_device_heartbeat`), so repeated pings refresh one row.
+- The client's User-Agent now carries `Android <ver>; Mobile` on Android: the server's
+  `parse_user_agent` reports a phone only when it sees `Mobile`, otherwise the client was filed as
+  "Android Tablet".
+
+### Authoritative playback mode (was a display-string guess)
+
+The player decided its badge with `subtitle?.toLowerCase().contains('direct')`, where `subtitle` is the
+display string from the details screen (`'2026 • 1h 43m'`) — it can never contain "direct", so every
+stream was labelled HLS. The player already fetches `/api/media-info`, which carries the server's
+`direct_play` flag, so the label and the stream URL are now both derived from it:
+
+- `features/player/domain/playback_mode.dart` — `PlaybackMode.direct | hls | unknown` with
+  `badgeLabel` / `specLabel`; `unknown` is rendered as a neutral `STREAM` badge, never as a claim.
+- `PlayerScreen._bootstrap()` resolves the mode first, then opens the container the way the server says
+  it must be served: direct byte-range `/media/<file>` or the HLS playlist
+  `/hls/<file>/playlist.m3u8` (the designed path for MKV/HEVC, which libmpv can also play directly).
+- Regression tests: `test/features/player/playback_mode_indicator_test.dart` (a subtitle containing
+  "direct" can no longer override the server) and `test/support/recording_player_controller.dart`.
+
+**Cold-start origin (found on the device, not in tests):** the player derived its API/HLS origin from
+the *media* URL, which is the route's `http://127.0.0.1:8000` default whenever the player is opened
+without an explicit `server` — so on a cold start the mode probe, the subtitle/preview calls and the
+HLS URL all targeted the phone itself (`DioException [connection error]: Connection refused`,
+captured in logcat). The badge therefore fell back to `STREAM`. `_resolveApiOrigin()` now mirrors
+`_resolveEffectiveMediaUrl()`: the saved/active server wins over a loopback media origin, and every
+API call and HLS URL goes through that origin (`_apiServerOrigin()`), with the shared
+`apiClientProvider` client instead of a bare `Dio()`. The probe also logs its outcome
+(`[Player] media-info probe: …`) so a future failure is visible in `adb logcat`.
 
 ### Live-server tests are opt-in (host safety)
 
@@ -80,7 +126,7 @@ $env:MEDIA_SERVER_TEST_ORIGIN = "http://127.0.0.1:8000"   # optional, Flutter on
 
 ## Strict Invariants (MUST preserve)
 
-1. **Player feature untouched:** `flutter_client/lib/features/player/` MUST remain functionally unchanged. No modifications unless a concrete integration requirement makes it necessary.
+1. **Player feature is frozen except for owner-approved fixes:** `flutter_client/lib/features/player/` must not be modified without a concrete requirement. Two such requirements have been delivered (authoritative playback-mode label + HLS routing for containers the server does not serve directly); anything else needs a stated reason in `docs/PROJECT_STATUS.md` first.
 2. **Single `<script>` block:** `templates/player.html` has exactly one `<script>` block (production web player).
 3. **API contracts frozen:** `GET /api/movies` and `GET /api/movie/<filename>` response schemas are consumed by the Flutter client and must not change without updating both sides.
 4. **Single App ID:** Android package is `in.anisparvez.media_server_client` — no separate dev/prod package IDs.

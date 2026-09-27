@@ -22,11 +22,53 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
 | 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), device-verified; 128 passed / 10 skipped (live-server tests now opt-in) |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), device-verified; 143 passed / 10 skipped (live-server tests opt-in) |
 
 ---
 
 ## 0. Recent work
+
+### 2026-09-27 — Flutter device presence + authoritative playback mode
+
+**Device presence (the phone now registers itself):**
+- `DeviceIdentityService` produced a stable `dev_…` id and `DeviceAuthInterceptor` sent it as
+  `X-Device-Id`, but `ApiEndpoints.deviceHeartbeat` had **no caller** — so the client never appeared in
+  the Connected Devices dashboard (playback alone registers nothing; only `/api/devices/heartbeat`
+  creates a row).
+- Added `features/devices/data/repositories/device_repository.dart` (`sendHeartbeat`, failures
+  swallowed — presence is telemetry and must never disturb playback),
+  `presentation/controllers/device_presence_controller.dart` (registration ping on start, then one
+  every **45 s** — the web client's cadence — paused while backgrounded, immediate ping on resume, no
+  overlapping requests, timer cancelled on dispose) and `presentation/widgets/device_presence_scope.dart`
+  (mounted once in `main.dart`, forwards `didChangeAppLifecycleState`; widget tests that build
+  `MediaServerApp` directly never open a heartbeat timer).
+- The server upserts on `X-Device-Id` (`record_device_heartbeat`), so repeated pings refresh one row
+  instead of creating duplicates.
+- The client User-Agent now carries `Android <ver>; Mobile` on Android: `parse_user_agent` reports a
+  phone only when it sees a `Mobile` token, so the client was being filed as "Android Tablet".
+
+**Authoritative playback mode (the badge was guessing):**
+- The badge was `subtitle?.toLowerCase().contains('direct')`, but `subtitle` is the details screen's
+  display string (`'2026 • 1h 43m'`) — it can never contain "direct", so every stream showed
+  "HLS STREAM". Label *and* stream URL now come from the server's `direct_play` flag in
+  `/api/media-info` via `features/player/domain/playback_mode.dart`; an unresolved mode renders a
+  neutral `STREAM` badge rather than a claim.
+- Containers the server does not serve directly (MKV/HEVC) now play through the designed HLS path
+  (`/hls/<file>/playlist.m3u8`); direct-playable MP4/M4V/WebM keeps RFC 7233 byte-range `/media/<file>`.
+- **Cold-start origin fix (found only on the device):** the player built its API/HLS origin from the
+  *media* URL, which is the route's `http://127.0.0.1:8000` default when the player is opened without
+  an explicit `server` — so on a cold start the mode probe (and the subtitle/preview calls and the HLS
+  URL) hit the phone itself: `DioException [connection error]: Connection refused` in `adb logcat`.
+  `_resolveApiOrigin()` now prefers the saved/active server over a loopback media origin (mirroring
+  `_resolveEffectiveMediaUrl`), every call goes through the shared `apiClientProvider` client, and the
+  probe logs its outcome so a failure is visible in logcat instead of silent.
+- Regression tests: `test/features/player/playback_mode_indicator_test.dart`,
+  `test/features/devices/device_presence_controller_test.dart`, `test/device_user_agent_test.dart`.
+
+**Verification:** Flutter **143 passed / 10 skipped**, analyzer **0 issues**; Python **250 passed /
+1 skipped**; production DB byte-identical before/after the suite run; installed **developer
+1.0.6-dev.106** on the Vivo I2217 and confirmed the phone registers in `devices` (one row, refreshed)
+while playing.
 
 ### 2026-09-27 — Flutter release hardening, test isolation, and end-to-end device verification
 
