@@ -39,35 +39,56 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            val keyStoreFile = (keystoreProperties["storeFile"] as? String)
-                ?: System.getenv("MEDIA_SERVER_KEYSTORE_PATH")
-            val keyStorePassword = (keystoreProperties["storePassword"] as? String)
-                ?: System.getenv("MEDIA_SERVER_KEYSTORE_PASSWORD")
-            val keyStoreAlias = (keystoreProperties["keyAlias"] as? String)
-                ?: System.getenv("MEDIA_SERVER_KEY_ALIAS")
-            val keyPasswordValue = (keystoreProperties["keyPassword"] as? String)
-                ?: System.getenv("MEDIA_SERVER_KEY_PASSWORD")
+            create("release") {
+                val keyStoreFile = (keystoreProperties["storeFile"] as? String)
+                    ?: System.getenv("MEDIA_SERVER_KEYSTORE_PATH")
+                val keyStorePassword = (keystoreProperties["storePassword"] as? String)
+                    ?: System.getenv("MEDIA_SERVER_KEYSTORE_PASSWORD")
+                val keyStoreAlias = (keystoreProperties["keyAlias"] as? String)
+                    ?: System.getenv("MEDIA_SERVER_KEY_ALIAS")
+                val keyPasswordValue = (keystoreProperties["keyPassword"] as? String)
+                    ?: System.getenv("MEDIA_SERVER_KEY_PASSWORD")
 
-            val defaultExternalKeystore = file("${System.getProperty("user.home")}/.android/media_server_release.keystore")
-            if (keyStoreFile != null && file(keyStoreFile).exists()) {
-                storeFile = file(keyStoreFile)
-                storePassword = keyStorePassword
-                keyAlias = keyStoreAlias
-                keyPassword = keyPasswordValue
-            } else if (defaultExternalKeystore.exists()) {
-                storeFile = defaultExternalKeystore
-                storePassword = System.getenv("MEDIA_SERVER_KEYSTORE_PASSWORD") ?: "MediaServerRelease2026!"
-                keyAlias = System.getenv("MEDIA_SERVER_KEY_ALIAS") ?: "media_server_key"
-                keyPassword = System.getenv("MEDIA_SERVER_KEY_PASSWORD") ?: "MediaServerRelease2026!"
-                enableV1Signing = true
-                enableV2Signing = true
-            } else {
-                // Fallback to debug keystore for development builds when release keystore is absent
-                initWith(signingConfigs.getByName("debug"))
+                // The release keystore lives outside the repository and its password is supplied
+                // locally - via flutter_client/android/key.properties (git-ignored) or the
+                // MEDIA_SERVER_KEYSTORE_* environment variables. No credential is stored in this file.
+                val defaultExternalKeystore = file("${System.getProperty("user.home")}/.android/media_server_release.keystore")
+                val resolvedStoreFile = when {
+                    keyStoreFile != null && file(keyStoreFile).exists() -> file(keyStoreFile)
+                    defaultExternalKeystore.exists() -> defaultExternalKeystore
+                    else -> null
+                }
+
+                val releaseRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+                val allowDebugSigning = System.getenv("MEDIA_SERVER_ALLOW_DEBUG_SIGNING") == "1"
+
+                if (resolvedStoreFile != null) {
+                    if (keyStorePassword.isNullOrBlank() || keyPasswordValue.isNullOrBlank()) {
+                        throw GradleException(
+                            "Release signing is not configured for ${resolvedStoreFile.name}: the keystore password is missing. " +
+                                "Create flutter_client/android/key.properties with storeFile/storePassword/keyAlias/keyPassword, " +
+                                "or export MEDIA_SERVER_KEYSTORE_PASSWORD and MEDIA_SERVER_KEY_PASSWORD."
+                        )
+                    }
+                    storeFile = resolvedStoreFile
+                    storePassword = keyStorePassword
+                    keyAlias = keyStoreAlias ?: "media_server_key"
+                    keyPassword = keyPasswordValue
+                    enableV1Signing = true
+                    enableV2Signing = true
+                } else if (releaseRequested && !allowDebugSigning) {
+                    // Refusing here is deliberate: a debug-signed release APK can never be installed as
+                    // an update over the real app, so silently producing one wastes a whole release.
+                    throw GradleException(
+                        "No release keystore found. Point MEDIA_SERVER_KEYSTORE_PATH or key.properties at the " +
+                            "keystore, or set MEDIA_SERVER_ALLOW_DEBUG_SIGNING=1 for a throwaway build."
+                    )
+                } else {
+                    // Development builds only: fall back to the debug keystore.
+                    initWith(signingConfigs.getByName("debug"))
+                }
             }
         }
-    }
 
     buildTypes {
         release {
