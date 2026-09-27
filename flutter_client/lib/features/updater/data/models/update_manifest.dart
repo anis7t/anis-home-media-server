@@ -33,6 +33,10 @@ class UpdateManifest {
   final String releaseNotes;
   final bool mandatory;
   final int minSupportedVersionCode;
+
+  /// True when this install is older than the manifest's supported floor, i.e. the update is
+  /// mandatory because the channel no longer supports the installed build (derived client-side).
+  final bool belowSupportedFloor;
   final String? gitCommit;
 
   const UpdateManifest({
@@ -49,6 +53,7 @@ class UpdateManifest {
     required this.releaseNotes,
     this.mandatory = false,
     this.minSupportedVersionCode = 1,
+    this.belowSupportedFloor = false,
     this.gitCommit,
   });
 
@@ -141,10 +146,15 @@ class UpdateManifest {
     }
 
     final notes = json['releaseNotes']?.toString() ?? '';
-    final isMandatory = json['mandatory'] == true;
     final minSupp = int.tryParse(json['minSupportedVersionCode']?.toString() ?? '') ?? 1;
     final gitCommit = json['gitCommit']?.toString();
     final releaseDate = json['releaseDate']?.toString() ?? DateTime.now().toUtc().toIso8601String();
+
+    // A manifest that declares this install below its supported floor is not offering an optional
+    // update: the channel no longer supports the build, so the update is forced and the "Later"
+    // affordances in the prompt dialog are hidden (see UpdatePromptDialog's mandatory handling).
+    final belowSupportedFloor = installedVersionCode < minSupp;
+    final isMandatory = json['mandatory'] == true || belowSupportedFloor;
 
     final manifest = UpdateManifest(
       channel: manifestChannel,
@@ -160,6 +170,7 @@ class UpdateManifest {
       releaseNotes: notes,
       mandatory: isMandatory,
       minSupportedVersionCode: minSupp,
+      belowSupportedFloor: belowSupportedFloor,
       gitCommit: gitCommit,
     );
 

@@ -9,7 +9,7 @@ void main() {
       'version': '1.1.0-dev.101',
       'versionCode': 101,
       'releaseDate': '2026-09-26T04:00:00Z',
-      'minAndroidSdk': 26,
+      'minAndroidSdk': 24,
       'targetAndroidSdk': 36,
       'packageId': 'in.anisparvez.media_server_client',
       'apkUrl': '/api/app/download?channel=developer',
@@ -82,11 +82,61 @@ void main() {
         validJson,
         expectedChannel: AppChannel.developer,
         installedVersionCode: 100,
-        currentSdk: 24, // below minSdk 26
+        currentSdk: 23, // below the APK's real floor, minSdk 24
       );
 
       expect(res.isValid, isFalse);
       expect(res.errorMessage, contains('lower than required minimum SDK'));
+    });
+
+    test('accepts a manifest whose minAndroidSdk matches the APK floor of 24', () {
+      final res = UpdateManifest.fromJson(
+        validJson,
+        expectedChannel: AppChannel.developer,
+        installedVersionCode: 100,
+        currentSdk: 24,
+      );
+
+      expect(res.isValid, isTrue, reason: res.errorMessage ?? '');
+    });
+
+    test('forces the update when the install is below minSupportedVersionCode', () {
+      final fl = Map<String, dynamic>.from(validJson)..['minSupportedVersionCode'] = 120;
+      final res = UpdateManifest.fromJson(
+        fl,
+        expectedChannel: AppChannel.developer,
+        installedVersionCode: 100,
+      );
+
+      expect(res.isValid, isTrue, reason: 'the client must still be offered the update it needs');
+      expect(res.manifest!.belowSupportedFloor, isTrue);
+      expect(res.manifest!.mandatory, isTrue,
+          reason: 'below the supported floor the update can no longer be dismissed');
+    });
+
+    test('leaves the update optional when the install is at or above the floor', () {
+      final res = UpdateManifest.fromJson(
+        validJson,
+        expectedChannel: AppChannel.developer,
+        installedVersionCode: 100,
+      );
+
+      expect(res.isValid, isTrue);
+      expect(res.manifest!.belowSupportedFloor, isFalse);
+      expect(res.manifest!.mandatory, isFalse, reason: 'manifest sets mandatory: false');
+    });
+
+    test('keeps a server-declared mandatory update mandatory regardless of the floor', () {
+      final forced = Map<String, dynamic>.from(validJson)..['mandatory'] = true;
+      final res = UpdateManifest.fromJson(
+        forced,
+        expectedChannel: AppChannel.developer,
+        installedVersionCode: 100,
+      );
+
+      expect(res.isValid, isTrue);
+      expect(res.manifest!.mandatory, isTrue);
+      expect(res.manifest!.belowSupportedFloor, isFalse);
     });
 
     test('rejects manifest with invalid or truncated SHA-256', () {
