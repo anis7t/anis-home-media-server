@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../features/connection/presentation/connection_screen.dart';
+import '../features/home/presentation/screens/home_screen.dart';
 import '../features/library/data/models/movie_item.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/library/presentation/screens/movie_details_screen.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/player_poc/presentation/player_poc_screen.dart';
+import '../features/settings/presentation/screens/settings_screen.dart';
+import '../features/shell/presentation/screens/app_shell.dart';
 
 class AppRoutes {
   AppRoutes._();
 
   static const String connection = '/';
+  static const String home = '/home';
   static const String library = '/library';
+  static const String settings = '/settings';
   static const String movieDetails = '/movie-details';
   static const String playerPoc = '/player-poc';
   static const String player = '/player';
@@ -20,22 +26,68 @@ class AppRoutes {
     return GoRouter(
       initialLocation: initialLocation,
       routes: [
+        // Connection & Server Setup (Standalone initial route)
         GoRoute(
           path: connection,
           builder: (BuildContext context, GoRouterState state) {
             return const ConnectionScreen();
           },
         ),
-        GoRoute(
-          path: library,
-          builder: (BuildContext context, GoRouterState state) {
-            return const LibraryScreen();
+
+        // Persistent Mobile Navigation Shell (Home, Library, Settings)
+        StatefulShellRoute.indexedStack(
+          builder: (
+            BuildContext context,
+            GoRouterState state,
+            StatefulNavigationShell navigationShell,
+          ) {
+            return AppShell(navigationShell: navigationShell);
           },
+          branches: [
+            // Branch 0: Home Dashboard
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: home,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const HomeScreen();
+                  },
+                ),
+              ],
+            ),
+
+            // Branch 1: Library Catalog & Browsing
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: library,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const LibraryScreen();
+                  },
+                ),
+              ],
+            ),
+
+            // Branch 2: Settings & In-App Updates
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: settings,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const SettingsScreen();
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
+
+        // Movie Details (Top-level destination outside shell)
         GoRoute(
           path: movieDetails,
           builder: (BuildContext context, GoRouterState state) {
-            final movie = state.extra is MovieItem ? state.extra as MovieItem : null;
+            final movie =
+                state.extra is MovieItem ? state.extra as MovieItem : null;
             final filename = state.uri.queryParameters['filename'];
             return MovieDetailsScreen(
               initialMovie: movie,
@@ -43,12 +95,16 @@ class AppRoutes {
             );
           },
         ),
+
+        // Player POC Harness
         GoRoute(
           path: playerPoc,
           builder: (BuildContext context, GoRouterState state) {
             return const PlayerPocScreen();
           },
         ),
+
+        // Production Video Player (Strictly top-level fullscreen outside shell)
         GoRoute(
           path: player,
           builder: (BuildContext context, GoRouterState state) {

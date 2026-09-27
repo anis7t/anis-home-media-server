@@ -70,8 +70,27 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
   }
 
   Widget _buildHeader() {
+    final canPop = Navigator.canPop(context);
     return Column(
       children: [
+        if (canPop) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
+              label: const Text(
+                'Back to App',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Container(
           width: 64,
           height: 64,
@@ -427,6 +446,9 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                         duration: Duration(seconds: 2),
                       ),
                     );
+                    if (Navigator.canPop(context)) {
+                      Navigator.pop(context);
+                    }
                   }
                 },
           child: state.isSaving
@@ -441,6 +463,43 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
               : const Text('Save & Set Active Server'),
         ),
         const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: () async {
+            if (state.serverUrl.isNotEmpty) {
+              await ref
+                  .read(connectionControllerProvider.notifier)
+                  .saveSettings();
+            }
+            if (!mounted) return;
+            context.go(AppRoutes.home);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.brandRed,
+            foregroundColor: Colors.white,
+          ),
+          icon: const Icon(Icons.home_rounded, size: 20),
+          label: const Text('Enter Media Server (Home)'),
+        ),
+        const SizedBox(height: 10),
+        ElevatedButton.icon(
+          onPressed: () async {
+            if (state.serverUrl.isNotEmpty) {
+              await ref
+                  .read(connectionControllerProvider.notifier)
+                  .saveSettings();
+            }
+            if (!mounted) return;
+            context.go(AppRoutes.library);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.surfaceElevated,
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: AppColors.borderMedium),
+          ),
+          icon: const Icon(Icons.video_library_rounded, size: 20),
+          label: const Text('Browse Movie Library (Phase 4)'),
+        ),
+        const SizedBox(height: 10),
         ElevatedButton.icon(
           onPressed: () async {
             if (state.serverUrl.isNotEmpty) {
@@ -472,25 +531,6 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
           ),
           icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
           label: const Text('Launch Production Video Player (Phase 3A)'),
-        ),
-        const SizedBox(height: 10),
-        ElevatedButton.icon(
-          onPressed: () async {
-            if (state.serverUrl.isNotEmpty) {
-              await ref
-                  .read(connectionControllerProvider.notifier)
-                  .saveSettings();
-            }
-            if (!mounted) return;
-            context.push(AppRoutes.library);
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.surfaceElevated,
-            foregroundColor: Colors.white,
-            side: const BorderSide(color: AppColors.borderMedium),
-          ),
-          icon: const Icon(Icons.video_library_rounded, size: 20),
-          label: const Text('Browse Movie Library (Phase 4)'),
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(

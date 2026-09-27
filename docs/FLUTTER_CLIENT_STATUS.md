@@ -23,22 +23,22 @@
 | 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
 | 4.4 | Movie Details Screen & Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ⏳ NEXT UP (was being planned before session ended) |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), 134/134 tests |
 
 ---
 
-## Current Working Tree State (2026-09-26)
+## Current Working Tree State (2026-09-27)
 
 **Git status:** Uncommitted working tree with cumulative Phase 4 changes on `feat/flutter-production-player`.
-**Last commit:** `2d3d597 feat(player): transparent controls overlay, equidistant seekbar layout, right-aligned duration, and direct intent routing`
+**Last commit:** `1be9904 docs(rules): add Sections 22 and 23 for Android release networking and UI icon disambiguation`
 
-The working tree contains ALL Phase 4 + Multi-Channel Update changes as unstaged modifications. **Nothing has been committed for Phase 4 yet.**
+The working tree contains ALL Phase 4 + Multi-Channel Update + Persistent Bottom Navigation Shell changes as unstaged modifications.
 
-### Test Results (verified 2026-09-26)
+### Test Results (verified 2026-09-27)
 
 | Suite | Count | Result |
 |-------|-------|--------|
-| Flutter tests | 121 | ✅ All passed |
+| Flutter tests | 134 | ✅ All passed |
 | Flutter analyze (lib + test) | — | ✅ 0 issues |
 | Python backend tests | 239 | ✅ All passed |
 | Player invariant (`git diff -- flutter_client/lib/features/player/`) | — | ✅ Zero changes |
@@ -65,6 +65,52 @@ The working tree contains ALL Phase 4 + Multi-Channel Update changes as unstaged
 4. **Single App ID:** Android package is `in.anisparvez.media_server_client` — no separate dev/prod package IDs.
 5. **Same signing key:** All builds (production and developer) use the same release keystore.
 6. **Test isolation:** `tests/conftest.py` redirects cache, database, uploads, updates to throwaway temp dirs. Never bypass this.
+
+---
+
+## Phase 4.6 — Persistent Bottom Navigation Shell (COMPLETE)
+
+### Navigation Architecture
+
+```
+ConnectionScreen (Server Origin & Setup Gate: '/')
+       ↓ (context.go('/home'))
+AppShell (Persistent Bottom Navigation: StatefulShellRoute.indexedStack)
+ ├── Branch 0: HomeScreen ('/home')
+ │     ├── Frosted Obsidian Brand Header + Scan Library Trigger
+ │     ├── Continue Watching Rail (In-progress media with progress bars)
+ │     ├── Browse Full Library Quick Banner
+ │     ├── Recently Added Responsive Grid (Direct navigation to details)
+ │     └── Polished Empty / Error / Loading States with Retry & Scan
+ ├── Branch 1: LibraryScreen ('/library')
+ │     ├── Full Movie Poster Grid
+ │     ├── Instant 300ms Debounced Title/Year/Genre Search
+ │     ├── Multi-criteria Sorting (A→Z, Year, Rating) & Multi-Genre Filters
+ │     └── Pull-to-refresh & Server Ingestion Scan
+ └── Branch 2: SettingsScreen ('/settings')
+       ├── Active Server Origin Configuration ('Change' pushes '/')
+       ├── CSPRNG Persistent Device Identity with 1-tap Clipboard Copy
+       ├── Monotonic Production / Developer Channel Switcher with Downgrade Warnings
+       └── Live Update Checks & Background Download / Install Dialog
+
+Fullscreen Top-Level Destinations (Strictly outside shell):
+ ├── MovieDetailsScreen ('/movie-details') ──→ Pushed over shell; back pops to active tab
+ ├── PlayerScreen ('/player')              ──→ Strictly fullscreen; zero bottom bar; intent routable
+ └── PlayerPocScreen ('/player-poc')        ──→ Phase 2 test harness
+```
+
+### Key Files — Shell & Navigation
+
+| File | Purpose |
+|------|---------|
+| `lib/features/shell/presentation/screens/app_shell.dart` | `AppShell` with Material 3 obsidian `NavigationBar`, `PopScope` back stack |
+| `lib/features/home/presentation/screens/home_screen.dart` | `HomeScreen` dashboard with Continue Watching, Recent Grid, empty states |
+| `lib/features/settings/presentation/screens/settings_screen.dart` | Embedded Settings tab screen with frosted obsidian brand header |
+| `lib/features/updater/presentation/widgets/settings_content.dart` | Reusable settings body shared by `SettingsScreen` and `SettingsSheet` |
+| `lib/app/routes.dart` | `GoRouter` with `StatefulShellRoute.indexedStack` and top-level fullscreen routes |
+| `test/features/shell/app_shell_test.dart` | Full shell integration tests: tabs, back behavior, player isolation |
+| `test/features/home/home_screen_test.dart` | Home screen widget tests: continue watching, recent grid, scan, empty states |
+| `test/features/settings/settings_screen_test.dart` | Settings screen widget tests: server, version, channels, updates |
 
 ---
 

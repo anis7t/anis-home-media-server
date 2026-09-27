@@ -22,11 +22,35 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
 | 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ⏳ Next up |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), 134/134 tests |
 
 ---
 
 ## 0. Recent work
+
+### 2026-09-27 — Phase 4.6 Complete: Persistent Mobile Navigation Shell (Home, Library, Settings)
+
+- **Persistent Bottom Navigation Shell (`AppShell`):**
+  - Integrated GoRouter `StatefulShellRoute.indexedStack` managing three primary branches:
+    1. **Home (`/home`):** Landing dashboard with Continue Watching rail, quick catalog summary card with 1-tap navigation to Library, responsive Recently Added grid, and empty/loading/error states with retry and scan actions.
+    2. **Library (`/library`):** Preserved complete Phase 4 media catalog (responsive movie card grid, 300ms debounced search, A-Z / Year / Rating sort, multi-genre filter, pull-to-refresh, manual server scan).
+    3. **Settings (`/settings`):** Embedded full-tab settings reusing `SettingsContent` with active server configuration, CSPRNG device identity, Production/Developer update channels with downgrade protection, and live update checking/installing.
+  - Symmetrical 64dp Material 3 `NavigationBar` styled to the obsidian theme (`AppColors.surface`, frosted glass aesthetic, brand red highlight indicators).
+  - Android system navigation back-stack handling (`PopScope` returns to Home from Library/Settings before exiting).
+  - Preserved Riverpod caching (`libraryControllerProvider` and `updateControllerProvider` keep in-memory cache without duplicate network hits on tab transitions).
+- **Player & Details Route Isolation:**
+  - `PlayerScreen` (`/player`) and `PlayerPocScreen` (`/player-poc`) remain top-level fullscreen destinations strictly outside the navigation shell (zero bottom bar, zero regressions on Phase 3 invariants).
+  - Direct intent cold-boot routing (`adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route "/player"`) strictly preserved.
+  - `MovieDetailsScreen` (`/movie-details`) pushed over shell; back navigation returns cleanly to the active shell tab.
+- **Connection Screen Flow Hardening:**
+  - `ConnectionScreen` remains the setup gate (`/`) when initial configuration is required.
+  - Added primary `Enter Media Server (Home)` action transitioning cleanly into `AppRoutes.home` (`context.go`).
+  - Added pop-safe back navigation header and auto-pop when pushed from Settings ("Change Server"), eliminating navigation loops.
+- **Testing & Verification:**
+  - Added `app_shell_test.dart`, `home_screen_test.dart`, and `settings_screen_test.dart`.
+  - Flutter tests: **134 / 134 passed** (0 failures).
+  - Flutter analyze: **0 issues found** across `lib/` and `test/`.
+  - Python backend tests: **239 / 239 passed**.
 
 ### 2026-09-26 — Phase 4 Complete: Library Browsing, Movie Details, & Multi-Channel Update Architecture
 
