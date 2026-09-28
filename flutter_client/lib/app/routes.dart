@@ -132,6 +132,7 @@ class AppRoutes {
                   query['subtitle'] ??
                   'Direct MP4 • 1080p • AAC 5.1',
               startPosition: extra?['startPosition'] as Duration?,
+              mediaFilename: extra?['mediaFilename'] as String?,
               externalSubtitleUrl: extra?['externalSubtitleUrl'] as String? ??
                   query['externalSubtitleUrl'],
             );

@@ -106,5 +106,64 @@ void main() {
       expect(thumbRes.headers.value('content-type'), contains('image/jpeg'));
       expect(thumbRes.data!.length, greaterThan(100)); // Non-empty JPEG bytes
     });
+
+    test('Watch Progress: the payload the app sends is persisted and readable back', () async {
+      const filename = 'Batman Knightfall Part 1 2026 1080p WEBRip x264 AAC5 1-[YTS GG - YTS BZ].mp4';
+      final encoded = Uri.encodeComponent(filename);
+      const deviceId = 'dev_live_contract_test';
+
+      // Read the live row first so the operator's real resume point is restored.
+      final before = await dio.get<Map<String, dynamic>>(
+        '/api/progress?filename=$encoded',
+        options: Options(headers: {'X-Device-Id': deviceId}),
+      );
+      expect(before.statusCode, HttpStatus.ok);
+      final originalPosition = (before.data!['position'] as num).toDouble();
+      final originalDuration = (before.data!['duration'] as num).toDouble();
+
+      try {
+        // Exactly what the app's player now posts on pause / every 10s / teardown.
+        final post = await dio.post<Map<String, dynamic>>(
+          '/api/progress',
+          data: <String, dynamic>{
+            'filename': filename,
+            'position': 1234.5,
+            'duration': 7200.0,
+          },
+          options: Options(headers: {'X-Device-Id': deviceId}),
+        );
+        expect(post.statusCode, HttpStatus.ok);
+        expect(post.data!['success'], isTrue);
+
+        final after = await dio.get<Map<String, dynamic>>(
+          '/api/progress?filename=$encoded',
+          options: Options(headers: {'X-Device-Id': deviceId}),
+        );
+        expect((after.data!['position'] as num).toDouble(), closeTo(1234.5, 0.001));
+        expect((after.data!['duration'] as num).toDouble(), closeTo(7200.0, 0.001));
+
+        // The movie list is what the app reads on open - the same row must feed it.
+        final movies = await dio.get<Map<String, dynamic>>(
+          '/api/movies',
+          options: Options(headers: {'X-Device-Id': deviceId}),
+        );
+        expect(movies.statusCode, HttpStatus.ok);
+        final entry = (movies.data!['movies'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .firstWhere((m) => m['filename'] == filename);
+        expect((entry['position'] as num).toDouble(), closeTo(1234.5, 0.001),
+            reason: 'the resume point the app shows must come from this write');
+      } finally {
+        await dio.post<Map<String, dynamic>>(
+          '/api/progress',
+          data: <String, dynamic>{
+            'filename': filename,
+            'position': originalPosition,
+            'duration': originalDuration,
+          },
+          options: Options(headers: {'X-Device-Id': deviceId}),
+        );
+      }
+    });
   }, skip: liveServerSkip);
 }

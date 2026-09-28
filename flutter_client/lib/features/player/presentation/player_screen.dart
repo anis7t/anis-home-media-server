@@ -9,17 +9,22 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/api/api_endpoints.dart';
 import '../../../core/storage/device_identity_service.dart';
+import '../application/playback_progress_reporter.dart';
 import '../domain/playback_mode.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../connection/controllers/connection_controller.dart';
 import '../domain/player_controller_interface.dart';
 import '../domain/seek_preview_controller.dart';
 import '../infrastructure/media_kit_player_adapter.dart';
+import '../infrastructure/screen_brightness_service.dart';
+import '../infrastructure/media_volume_service.dart';
 import 'widgets/double_tap_seek_detector.dart';
 import 'widgets/playback_speed_sheet.dart';
 import 'widgets/player_controls_overlay.dart';
 import 'widgets/player_error_card.dart';
+import 'widgets/player_hud_toast.dart';
 import 'widgets/player_loading_indicator.dart';
 import 'widgets/player_surface.dart';
 import 'widgets/track_selector_sheet.dart';
@@ -39,6 +44,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? mediaFilename;
   final PlayerControllerInterface? customController;
   final Dio? customDio;
+  final ScreenBrightnessService? customBrightness;
+  final MediaVolumeService? customMediaVolume;
 
   const PlayerScreen({
     super.key,
@@ -51,13 +58,15 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.mediaFilename,
     this.customController,
     this.customDio,
+    this.customBrightness,
+    this.customMediaVolume,
   });
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> {
+class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
   late final PlayerControllerInterface _controller;
   late final bool _ownsController;
   VideoController? _videoController;
@@ -70,6 +79,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _isBuffering = false;
   double _volume = 100.0;
   double _lastPreMuteVolume = 100.0;
+
+  // Vertical-swipe gestures: the left half of the surface drives brightness,
+  // the right half volume. Values are captured at drag start so the mapping
+  // stays absolute no matter how many updates arrive.
+  late final ScreenBrightnessService _brightnessService =
+      widget.customBrightness ?? ScreenBrightnessService();
+  late final MediaVolumeService _mediaVolume =
+      widget.customMediaVolume ?? MediaVolumeService();
+  /// Mirror of the system media volume (0-100) - the level the user hears.
+  double _systemVolume = 50.0;
+  double _brightness = 0.5;
+  double _dragStartVolume = 100.0;
+  double _dragStartBrightness = 0.5;
   bool _isFullscreen = false;
   double _rate = 1.0;
 
@@ -97,6 +119,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   // TMDb & media metadata
   Map<String, dynamic>? _movieMeta;
   CancelToken? _metaCancelToken;
+
+  /// Writes the resume point back to the server (`POST /api/progress`).
+  PlaybackProgressReporter? _progress;
 
   /// Authoritative playback mode reported by the server's `/api/media-info`
   /// (`direct_play`). Never derived from the URL, filename, codec or subtitle.
@@ -148,6 +173,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       },
     );
 
+    WidgetsBinding.instance.addObserver(this);
+
+    // Captured now: the reporter's flush also runs from dispose(), where `ref`
+    // is no longer usable.
+    final identity = ref.read(deviceIdentityServiceProvider);
+    // Resolved in the background so no save ever waits on it: the device id only
+    // feeds watch history, and a test's platform channel never answers - awaiting
+    // it there would stall the POST entirely.
+    String? deviceId;
+    identity.getOrCreateDeviceId().then(
+      (id) => deviceId = id,
+      onError: (_) {},
+    );
+
+    // The web player has always persisted progress; the app only read it, so a
+    // resume point never moved when the app was the one playing.
+    _progress = PlaybackProgressReporter(
+      save: (position, duration) async {
+        final filename = _resolveFilename();
+        final origin = _apiServerOrigin();
+        if (filename == null || filename.isEmpty || origin == null) return;
+        // Fire-and-forget from the player's teardown paths: no Dio timeout
+        // timers may outlive the widget ("A Timer is still pending even after
+        // the widget tree was disposed"), and the shared client's connect
+        // timeout cannot be overridden per request. Tests inject customDio.
+        final owned = widget.customDio == null;
+        final client = widget.customDio ??
+            Dio(
+              BaseOptions(
+                connectTimeout: null,
+                receiveTimeout: null,
+                sendTimeout: null,
+              ),
+            );
+        try {
+          await client.post(
+            '$origin${ApiEndpoints.progress}',
+            data: {
+              'filename': filename,
+              'position': position.inMilliseconds / 1000,
+              'duration': duration.inMilliseconds / 1000,
+            },
+            options: Options(
+              headers: deviceId == null ? null : {'X-Device-Id': deviceId},
+              validateStatus: (status) => status != null && status < 500,
+            ),
+          );
+        } catch (_) {
+          // progress is best-effort: a failed save must never disturb playback
+        } finally {
+          if (owned) client.close();
+        }
+      },
+    );
+
     _listenToStreams();
     _bootstrap();
 
@@ -173,12 +253,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         } else if (s == PlayerPlaybackState.paused) {
           _cancelAutoHideTimer();
           _controlsVisible = true;
+          _progress?.onPause();
+        } else if (s == PlayerPlaybackState.completed) {
+          _progress?.onEnded();
         }
       });
     }));
 
     _subscriptions.add(_controller.positionStream.listen((p) {
       if (!mounted) return;
+      _progress?.onPosition(p, _duration);
       // Do not snap back during user scrubbing gestures
       if (!_isScrubbing) {
         setState(() => _position = p);
@@ -816,23 +900,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _showHudToast(label, icon: Icons.aspect_ratio_rounded);
   }
 
-  Future<void> _toggleRotation() async {
-    _onUserInteraction();
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-    if (isLandscape) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
-      _showHudToast('Portrait Mode', icon: Icons.stay_current_portrait_rounded);
-    } else {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      _showHudToast('Landscape Mode', icon: Icons.stay_current_landscape_rounded);
-    }
-  }
-
   Future<void> _seekRelative(int seconds, {bool fromDoubleTap = false}) async {
     if (fromDoubleTap) {
       _doubleTapSeekTimer?.cancel();
@@ -850,6 +917,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         : ((cur + seconds) < 0 ? 0 : (cur + seconds));
     final target = Duration(seconds: targetSec);
     await _controller.seek(target);
+    _progress?.onSeek(target);
     if (mounted) {
       setState(() => _position = target);
       if (!fromDoubleTap) {
@@ -866,6 +934,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _lastPreMuteVolume = val;
     }
     _controller.setVolume(val);
+  }
+
+  /// A vertical drag started: remember what to adjust from.
+  void _onVerticalDragBegin(bool fromLeftHalf) {
+    _dragStartVolume = _systemVolume;
+    _dragStartBrightness = _brightness;
+    // The system volume can also be moved with the phone volume keys; re-read it
+    // so the swipe continues from where the user actually is.
+    if (!fromLeftHalf) {
+      _mediaVolume.getVolume().then((value) {
+        if (value != null) {
+          _dragStartVolume = value.toDouble();
+          _systemVolume = value.toDouble();
+        }
+      });
+    }
+  }
+
+  /// [fraction] is the drag distance as a fraction of the surface height
+  /// (positive = swipe up). Left half = brightness, right half = volume.
+  void _onVerticalDragDelta(double fraction, bool fromLeftHalf) {
+    if (fromLeftHalf) {
+      _setBrightness(_dragStartBrightness + fraction);
+    } else {
+      _setVolumeFromGesture(_dragStartVolume + fraction * 100.0);
+    }
+  }
+
+  void _setBrightness(double value) {
+    final next = value.clamp(0.01, 1.0);
+    setState(() => _brightness = next);
+    _brightnessService.setBrightness(next);
+    _showHudToast(
+      '${(next * 100).round()}% Brightness',
+      icon: Icons.brightness_6_rounded,
+    );
+  }
+
+  /// Right-half swipe: the system media volume, which is the level the user hears.
+  /// The app's own player volume stays at full so this is the single control, and
+  /// the HUD therefore matches what is audible.
+  void _setVolumeFromGesture(double value) {
+    final next = value.clamp(0.0, 100.0);
+    final percent = next.round();
+    _systemVolume = percent.toDouble();
+    _mediaVolume.setVolume(percent);
+    _showHudToast(
+      '$percent% Volume',
+      icon: percent <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+    );
   }
 
   void _toggleMute() {
@@ -896,6 +1014,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _onSeek(Duration target) {
     _onUserInteraction();
     _controller.seek(target);
+    _progress?.onSeek(target);
     setState(() => _position = target);
   }
 
@@ -951,6 +1070,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     _cancelAutoHideTimer();
     _hudTimer?.cancel();
+    // Save the live position BEFORE stopping the controller: stop() resets the
+    // player to 0, and that sample must never be persisted as "watched". The
+    // reporter is sealed right after, so no post-stop sample can overwrite the
+    // real position (observed on device: back press wrote 0.0).
+    _progress?.flush();
+    _progress?.dispose();
     await _controller.stop();
     if (mounted) {
       if (Navigator.of(context).canPop()) {
@@ -964,7 +1089,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Android can kill a backgrounded app with no further callback: persist the
+    // position now, the way the web player does on `pagehide`.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _progress?.flush();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _progress?.dispose();
+    unawaited(_brightnessService.restore());
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     if (_isFullscreen) {
       defaultExitNativeFullscreen();
@@ -1000,6 +1139,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onDoubleTapRewind: () => _seekRelative(-10, fromDoubleTap: true),
             onDoubleTapForward: () => _seekRelative(10, fromDoubleTap: true),
             onTap: _onSurfaceTap,
+            onVerticalDragBegin: _onVerticalDragBegin,
+            onVerticalDragDelta: _onVerticalDragDelta,
             child: _videoController != null
                 ? PlayerSurface(controller: _videoController!, fit: _videoFit)
                 : Container(color: Colors.black),
@@ -1008,11 +1149,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         // 2. Loading indicator
         if (isOpening || _isBuffering)
-          PlayerLoadingIndicator(
-            title: isOpening ? 'Loading Media' : 'Buffering Stream',
-            message: isOpening
-                ? 'Initializing player & stream...'
-                : 'Filling playback buffer...',
+          // Never let the loading/buffering overlay eat the swipe gestures.
+          IgnorePointer(
+            child: PlayerLoadingIndicator(
+              title: isOpening ? 'Loading Media' : 'Buffering Stream',
+              message: isOpening
+                  ? 'Initializing player & stream...'
+                  : 'Filling playback buffer...',
+            ),
           ),
 
         // 3. Error display
@@ -1049,7 +1193,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onOpenSpeedSheet: _openPlaybackSpeedSheet,
             onOpenAudioSheet: _openAudioTrackSheet,
             onOpenSubtitleSheet: _openSubtitleTrackSheet,
-            onToggleRotate: _toggleRotation,
             onToggleAspectRatio: _cycleAspectRatio,
             onSurfaceTap: _onSurfaceTap,
             onDoubleTapRewind: () => _seekRelative(-10, fromDoubleTap: true),
@@ -1057,9 +1200,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             playbackRate: _rate,
             hasActiveSubtitles: hasSubtitles,
             isDoubleTapSeeking: _isDoubleTapSeeking,
-            hudMessage: _hudMessage,
-            hudIcon: _hudIcon,
-            isHudVisible: _isHudVisible,
+          ),
+
+          // Action-feedback HUD (brightness/volume/speed changes). It lives here,
+          // outside PlayerControlsOverlay, because that overlay fades to opacity 0
+          // when the controls auto-hide - which used to hide the readout of a swipe
+          // that had already changed the value. PlayerHudToast wraps itself in
+          // IgnorePointer, so it never blocks the surface gestures.
+          Positioned.fill(
+            child: Align(
+              alignment: const Alignment(0.0, -0.35),
+              child: PlayerHudToast(
+                message: _hudMessage,
+                icon: _hudIcon,
+                isVisible: _isHudVisible,
+              ),
+            ),
           ),
       ],
     );

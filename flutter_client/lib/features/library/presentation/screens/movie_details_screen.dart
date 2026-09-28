@@ -11,6 +11,7 @@ import '../../data/models/movie_extended_details.dart';
 import '../../data/models/movie_item.dart';
 import '../../data/models/movie_specs.dart';
 import '../../data/repositories/library_repository.dart';
+import '../controllers/library_controller.dart';
 
 /// Screen displaying rich metadata, technical specs, and direct playback handshake for a single movie.
 class MovieDetailsScreen extends ConsumerStatefulWidget {
@@ -92,9 +93,14 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
       },
     );
 
-    // Refresh details upon return to synchronize watch position
+    // Refresh details and the shared library lists upon return to synchronize
+    // watch position: the rail and grid resume from their own MovieItem, so a
+    // stale list would replay the old position on the next tap.
     if (mounted) {
       _fetchDetails();
+      await ref
+          .read(libraryControllerProvider.notifier)
+          .loadLibrary(isRefresh: true);
     }
   }
 

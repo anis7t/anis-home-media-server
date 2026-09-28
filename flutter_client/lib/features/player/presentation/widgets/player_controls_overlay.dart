@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/seek_preview_controller.dart';
-import 'player_hud_toast.dart';
 import 'video_timeline_bar.dart';
 
 /// Full-featured controls overlay for Phase 3.
@@ -38,7 +37,6 @@ class PlayerControlsOverlay extends StatefulWidget {
   final VoidCallback? onOpenSpeedSheet;
   final VoidCallback? onOpenAudioSheet;
   final VoidCallback? onOpenSubtitleSheet;
-  final VoidCallback? onToggleRotate;
   final VoidCallback? onToggleAspectRatio;
   final VoidCallback? onSurfaceTap;
   final VoidCallback? onDoubleTapRewind;
@@ -46,9 +44,6 @@ class PlayerControlsOverlay extends StatefulWidget {
   final double playbackRate;
   final bool hasActiveSubtitles;
   final bool isDoubleTapSeeking;
-  final String? hudMessage;
-  final IconData? hudIcon;
-  final bool isHudVisible;
 
   const PlayerControlsOverlay({
     super.key,
@@ -77,7 +72,6 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.onOpenSpeedSheet,
     this.onOpenAudioSheet,
     this.onOpenSubtitleSheet,
-    this.onToggleRotate,
     this.onToggleAspectRatio,
     this.onSurfaceTap,
     this.onDoubleTapRewind,
@@ -85,9 +79,6 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.playbackRate = 1.0,
     this.hasActiveSubtitles = false,
     this.isDoubleTapSeeking = false,
-    this.hudMessage,
-    this.hudIcon,
-    this.isHudVisible = false,
   });
 
   @override
@@ -122,10 +113,13 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
         ignoring: !widget.isVisible,
         child: Stack(
           children: [
-            // Background touch area to toggle/hide controls or double-tap to seek when controls are visible
+            // Background touch area to toggle/hide controls or double-tap to seek when controls are visible.
+            // translucent, not opaque: an opaque detector swallows the pointer for everything
+            // underneath, which killed the brightness/volume swipe gestures while the controls
+            // were on screen. The gesture arena still resolves a tap to a single winner.
             Positioned.fill(
               child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
+                behavior: HitTestBehavior.translucent,
                 onTap: widget.onSurfaceTap,
                 onDoubleTapDown: (details) {
                   final totalWidth = MediaQuery.of(context).size.width;
@@ -209,32 +203,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           ),
                           onPressed: widget.onToggleAspectRatio,
                         ),
-                      if (widget.onToggleRotate != null)
-                        IconButton(
-                          tooltip: 'Rotate Screen',
-                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                          icon: const Icon(
-                            Icons.screen_rotation_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                          onPressed: widget.onToggleRotate,
-                        ),
                     ],
-                  ),
-                ),
-              ),
-            ),
-
-            // In-Player Action Feedback HUD Toast
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: const Alignment(0.0, -0.35),
-                  child: PlayerHudToast(
-                    message: widget.hudMessage,
-                    icon: widget.hudIcon,
-                    isVisible: widget.isHudVisible,
                   ),
                 ),
               ),

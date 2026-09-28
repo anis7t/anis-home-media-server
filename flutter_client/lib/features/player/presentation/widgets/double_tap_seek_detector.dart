@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 /// - Left 40%: Rewind 10 seconds with animated ripple feedback
 /// - Right 40%: Fast-forward 10 seconds with animated ripple feedback
 /// - Center 20%: Ignored for seeking; passes single-tap to toggle controls
+///
+/// Optionally also reports vertical drags: the left half of the surface and
+/// the right half are told apart so the caller can drive brightness and
+/// volume. A drag never satisfies the tap or double-tap recognizers, so the
+/// gestures cannot shadow each other.
 class DoubleTapSeekDetector extends StatefulWidget {
   final Widget child;
   final VoidCallback onDoubleTapRewind;
@@ -12,6 +17,13 @@ class DoubleTapSeekDetector extends StatefulWidget {
   final VoidCallback? onDoubleTapCenter;
   final VoidCallback? onTap;
   final bool enabled;
+
+  /// Drag distance as a fraction of the surface height (positive = swipe up),
+  /// plus whether the gesture began on the left half. Null disables the
+  /// gesture (no drag recognizers are installed).
+  final void Function(double fraction, bool fromLeftHalf)? onVerticalDragDelta;
+  final void Function(bool fromLeftHalf)? onVerticalDragBegin;
+  final VoidCallback? onVerticalDragEnd;
 
   const DoubleTapSeekDetector({
     super.key,
@@ -21,6 +33,9 @@ class DoubleTapSeekDetector extends StatefulWidget {
     this.onDoubleTapCenter,
     this.onTap,
     this.enabled = true,
+    this.onVerticalDragDelta,
+    this.onVerticalDragBegin,
+    this.onVerticalDragEnd,
   });
 
   @override
@@ -36,6 +51,34 @@ class _DoubleTapSeekDetectorState extends State<DoubleTapSeekDetector>
 
   Timer? _leftTimer;
   Timer? _rightTimer;
+
+  bool _dragging = false;
+  /// Y where the drag began, in surface coordinates. The fraction reported to
+  /// callers is measured from here, so it is the whole drag distance rather than
+  /// one frame of it (and it includes the touch-slop distance).
+  double _dragStartY = 0;
+  bool _dragFromLeft = true;
+
+  void _onDragStart(DragStartDetails details, double width) {
+    _dragStartY = details.localPosition.dy;
+    if (!widget.enabled || widget.onVerticalDragDelta == null) return;
+    _dragging = true;
+    _dragFromLeft = width <= 0 || details.localPosition.dx < width / 2;
+    widget.onVerticalDragBegin?.call(_dragFromLeft);
+  }
+
+  void _onDragUpdate(DragUpdateDetails details, double height) {
+    if (!widget.enabled || !_dragging || height <= 0) return;
+    // Up is positive: a full-height swipe covers the whole 0-100 range.
+    final fraction = (_dragStartY - details.localPosition.dy) / height;
+    widget.onVerticalDragDelta?.call(fraction, _dragFromLeft);
+  }
+
+  void _onDragEnd() {
+    if (!_dragging) return;
+    _dragging = false;
+    widget.onVerticalDragEnd?.call();
+  }
 
   void _triggerRewind() {
     if (!widget.enabled) return;
@@ -97,6 +140,17 @@ class _DoubleTapSeekDetectorState extends State<DoubleTapSeekDetector>
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.onTap,
+              onVerticalDragStart: widget.onVerticalDragDelta == null
+                  ? null
+                  : (d) => _onDragStart(d, totalWidth),
+              onVerticalDragUpdate: widget.onVerticalDragDelta == null
+                  ? null
+                  : (d) => _onDragUpdate(d, constraints.maxHeight),
+              onVerticalDragEnd: widget.onVerticalDragDelta == null
+                  ? null
+                  : (_) => _onDragEnd(),
+              onVerticalDragCancel:
+                  widget.onVerticalDragDelta == null ? null : _onDragEnd,
               onDoubleTapDown: (details) {
                 if (totalWidth <= 0) return;
                 final xRatio = details.localPosition.dx / totalWidth;

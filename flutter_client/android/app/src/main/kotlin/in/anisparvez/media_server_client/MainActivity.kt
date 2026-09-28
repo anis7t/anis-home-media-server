@@ -1,6 +1,8 @@
 package `in`.anisparvez.media_server_client
 
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,6 +14,8 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val UPDATER_CHANNEL = "in.anisparvez.media_server_client/app_updater"
+    private val BRIGHTNESS_CHANNEL = "in.anisparvez.media_server_client/screen_brightness"
+    private val VOLUME_CHANNEL = "in.anisparvez.media_server_client/media_volume"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -89,6 +93,70 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("INSTALL_ERROR", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // Player brightness: WindowManager.LayoutParams.screenBrightness overrides
+        // the system level while this window is focused (no permission needed).
+        // A negative value hands control back to the system.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BRIGHTNESS_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setBrightness" -> {
+                    val value = (call.argument<Double>("value") ?: -1.0).toFloat()
+                    runOnUiThread {
+                        try {
+                            val attrs = window.attributes
+                            attrs.screenBrightness =
+                                if (value < 0f) -1f else value.coerceIn(0.01f, 1f)
+                            window.attributes = attrs
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("BRIGHTNESS_ERROR", e.message, null)
+                        }
+                    }
+                }
+                "getBrightness" -> {
+                    val current = window.attributes.screenBrightness
+                    result.success(if (current < 0f) null else current.toDouble())
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // System media volume: the level the user actually hears, so the right-half
+        // swipe matches the phone volume keys (AudioManager.STREAM_MUSIC).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VOLUME_CHANNEL).setMethodCallHandler { call, result ->
+            val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (audio == null) {
+                result.success(if (call.method == "getVolume") 0 else false)
+                return@setMethodCallHandler
+            }
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            when (call.method) {
+                "getVolume" -> {
+                    val current = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    result.success(if (max > 0) current * 100 / max else 0)
+                }
+                "setVolume" -> {
+                    val percent = call.argument<Int>("percent") ?: -1
+                    if (percent < 0 || max <= 0) {
+                        result.success(false)
+                    } else {
+                        runOnUiThread {
+                            try {
+                                audio.setStreamVolume(
+                                    AudioManager.STREAM_MUSIC,
+                                    percent.coerceIn(0, 100) * max / 100,
+                                    0,
+                                )
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("VOLUME_ERROR", e.message, null)
+                            }
+                        }
                     }
                 }
                 else -> result.notImplemented()

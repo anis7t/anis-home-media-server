@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:media_server_client/app/routes.dart';
 import 'package:media_server_client/core/api/api_client.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/errors/app_exception.dart';
@@ -11,6 +13,7 @@ import 'package:media_server_client/features/library/data/models/movie_item.dart
 import 'package:media_server_client/features/library/data/repositories/library_repository.dart';
 import 'package:media_server_client/features/library/presentation/controllers/library_controller.dart';
 import 'package:media_server_client/features/library/presentation/screens/library_screen.dart';
+import 'package:media_server_client/features/library/presentation/widgets/continue_watching_rail.dart';
 
 class MockSecureStorage extends FlutterSecureStorage {
   final Map<String, String> data = {};
@@ -111,7 +114,92 @@ void main() {
     );
   }
 
+  /// Router-based subject: the rail pushes the player route, so the test needs a
+  /// router (the details screen gets its own stub so a mistap cannot explode).
+  Widget createRouterSubject(
+    FakeLibraryRepository repo, {
+    required VoidCallback onPlayerOpened,
+  }) {
+    final router = GoRouter(
+      initialLocation: '/library',
+      routes: [
+        GoRoute(
+          path: '/library',
+          builder: (context, state) => const LibraryScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.player,
+          builder: (context, state) {
+            onPlayerOpened();
+            return const Scaffold(body: Text('Player Screen'));
+          },
+        ),
+        GoRoute(
+          path: AppRoutes.movieDetails,
+          builder: (context, state) =>
+              const Scaffold(body: Text('Details Screen')),
+        ),
+      ],
+    );
+
+    return ProviderScope(
+      overrides: [
+        libraryRepositoryProvider.overrideWithValue(repo),
+        serverBaseUrlProvider.overrideWithValue('http://127.0.0.1:8000'),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    );
+  }
+
   group('LibraryScreen Widget Tests', () {
+    testWidgets(
+      'resuming from the Continue Watching rail reloads the library after playback',
+      (tester) async {
+        var loads = 0;
+        final repo = FakeLibraryRepository(
+          onGetMovies: () async {
+            loads++;
+            return const LibraryResponse(
+              movies: [movieA, movieB],
+              watching: [movieA],
+              total: 2,
+            );
+          },
+        );
+
+        var playerOpened = 0;
+        await tester.pumpWidget(
+          createRouterSubject(repo, onPlayerOpened: () => playerOpened++),
+        );
+        await tester.pumpAndSettle();
+        expect(loads, 1, reason: 'the screen loads the library once on mount');
+
+        // One-tap resume: this rail goes straight into the player, unlike the
+        // grid, which detours through the details screen (that refreshes itself).
+        final rail = find.byType(ContinueWatchingRail);
+        await tester.tap(
+          find.descendant(of: rail, matching: find.text('Batman Knightfall')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          playerOpened,
+          1,
+          reason: 'the rail resumes straight into the player',
+        );
+
+        GoRouter.of(tester.element(find.text('Player Screen'))).pop();
+        await tester.pumpAndSettle();
+
+        expect(
+          loads,
+          greaterThan(1),
+          reason:
+              'the rail resumes from its own MovieItem, so the list must be '
+              'reloaded after playback or the next tap replays the old position',
+        );
+      },
+    );
+
     testWidgets('renders populated library with movies and continue watching', (
       tester,
     ) async {

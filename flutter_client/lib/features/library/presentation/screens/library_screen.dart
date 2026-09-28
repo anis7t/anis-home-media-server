@@ -54,11 +54,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     context.push(AppRoutes.movieDetails, extra: movie);
   }
 
-  void _onResumeWatching(MovieItem movie) {
+  Future<void> _onResumeWatching(MovieItem movie) async {
     final baseUrl = ref.read(serverBaseUrlProvider);
     final mediaUrl = '$baseUrl/media/${Uri.encodeComponent(movie.filename)}';
 
-    context.push(
+    await context.push(
       AppRoutes.player,
       extra: {
         'mediaUrl': mediaUrl,
@@ -69,6 +69,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             : null,
       },
     );
+
+    // The rail resumes from this list's MovieItem, so the list has to be
+    // reloaded after playback - otherwise the next tap replays the position the
+    // list was loaded with. (The details screen refreshes itself on return.)
+    if (mounted) {
+      await ref
+          .read(libraryControllerProvider.notifier)
+          .loadLibrary(isRefresh: true);
+    }
   }
 
   Future<void> _handleScan() async {

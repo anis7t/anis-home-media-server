@@ -8,6 +8,7 @@ import 'package:media_server_client/core/api/api_client.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/errors/app_exception.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
+import 'package:media_server_client/features/library/data/models/library_response.dart';
 import 'package:media_server_client/features/library/data/models/movie_details.dart';
 import 'package:media_server_client/features/library/data/models/movie_extended_details.dart';
 import 'package:media_server_client/features/library/data/models/movie_item.dart';
@@ -45,8 +46,10 @@ class MockSecureStorage extends FlutterSecureStorage {
 
 class FakeDetailsLibraryRepository extends LibraryRepository {
   final Future<MovieDetails> Function(String filename)? onGetMovieDetails;
+  final Future<LibraryResponse> Function()? onGetMovies;
+  int getMoviesCalls = 0;
 
-  FakeDetailsLibraryRepository({this.onGetMovieDetails})
+  FakeDetailsLibraryRepository({this.onGetMovieDetails, this.onGetMovies})
     : super(
         ApiClient(
           baseUrl: 'http://127.0.0.1:8000',
@@ -62,6 +65,13 @@ class FakeDetailsLibraryRepository extends LibraryRepository {
       return onGetMovieDetails!(filename);
     }
     throw const NetworkException('Not implemented in mock');
+  }
+
+  @override
+  Future<LibraryResponse> getMovies() async {
+    getMoviesCalls++;
+    if (onGetMovies != null) return onGetMovies!();
+    return const LibraryResponse(movies: [], watching: [], total: 0);
   }
 }
 
@@ -291,6 +301,56 @@ void main() {
       expect(find.text('Player Screen'), findsOneWidget);
       expect(playerArgs, isNotNull);
       expect(playerArgs!['startPosition'], const Duration(seconds: 1200));
+    },
+  );
+
+  testWidgets(
+    'returning from the player reloads the shared library lists so the next resume uses the new position',
+    (tester) async {
+      const inProgressMovie = MovieItem(
+        filename: 'Sample.Movie.2026.mp4',
+        title: 'Sample Movie',
+        year: 2026,
+        runtime: 110,
+        position: 1200.0,
+        duration: 3600.0,
+        percent: 33.3,
+      );
+      const inProgressDetails = MovieDetails(
+        movie: inProgressMovie,
+        specs: sampleSpecs,
+        extended: sampleExtended,
+        formattedRuntime: '1h 50m',
+      );
+
+      final repo = FakeDetailsLibraryRepository(
+        onGetMovieDetails: (fn) async => inProgressDetails,
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          repo: repo,
+          initialMovie: inProgressMovie,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('resume_play_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Player Screen'), findsOneWidget);
+      expect(repo.getMoviesCalls, 0, reason: 'nothing reloads while playing');
+
+      GoRouter.of(tester.element(find.text('Player Screen'))).pop();
+      await tester.pumpAndSettle();
+
+      expect(
+        repo.getMoviesCalls,
+        greaterThan(0),
+        reason:
+            'the rail and grid resume from their own MovieItem, so the shared '
+            'list must reload after playback or the next tap replays the old '
+            'position',
+      );
     },
   );
 

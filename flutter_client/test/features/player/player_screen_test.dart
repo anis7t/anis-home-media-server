@@ -8,6 +8,9 @@ import 'package:media_server_client/features/player/presentation/player_screen.d
 import 'package:media_server_client/features/player/presentation/widgets/player_controls_overlay.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_error_card.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_loading_indicator.dart';
+import 'package:media_server_client/features/player/presentation/widgets/double_tap_seek_detector.dart';
+import 'package:media_server_client/features/player/infrastructure/screen_brightness_service.dart';
+import 'package:media_server_client/features/player/infrastructure/media_volume_service.dart';
 
 class FakePlayerController implements PlayerControllerInterface {
   Duration _position = Duration.zero;
@@ -237,6 +240,10 @@ void main() {
       await tester.pump();
 
       expect(controller.pauseCalled, isTrue);
+
+      // Pausing persists the resume point now, and that save is a real POST:
+      // drain it so no Dio scheduling timer outlives the test.
+      await tester.pumpAndSettle();
     });
 
     testWidgets('renders PlayerErrorCard on error state with retry action', (tester) async {
@@ -362,6 +369,169 @@ void main() {
       expect(playButton, findsOneWidget);
       final playBottomY = tester.getBottomLeft(playButton).dy;
       expect(playBottomY, lessThanOrEqualTo(800.0 - 34.0));
+    });
+
+    testWidgets('swiping up on the right half raises the system volume', (tester) async {
+      final volumeCalls = <MethodCall>[];
+      const channel =
+          MethodChannel('in.anisparvez.media_server_client/media_volume');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        volumeCalls.add(call);
+        return call.method == 'getVolume' ? 40 : true;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: PlayerScreen(
+              mediaUrl: 'http://127.0.0.1:8000/media/test.mp4',
+              title: 'Batman Knightfall Part 1 (2026)',
+              deviceId: 'dev_test',
+              customController: controller,
+              customMediaVolume: MediaVolumeService(channel: channel),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final detector = tester.widget<DoubleTapSeekDetector>(
+        find.byType(DoubleTapSeekDetector),
+      );
+      expect(
+        detector.onVerticalDragDelta,
+        isNotNull,
+        reason: 'the screen must wire the swipe gesture',
+      );
+      detector.onVerticalDragBegin?.call(false);
+      detector.onVerticalDragDelta?.call(0.15, false);
+      await tester.pump();
+      await tester.pump();
+
+      final sets = volumeCalls.where((c) => c.method == 'setVolume').toList();
+      expect(sets, isNotEmpty,
+          reason: 'the right half must drive the system media volume');
+      final percent = (sets.last.arguments as Map)['percent'] as int;
+      expect(percent, greaterThan(40),
+          reason: 'swiping up from the current level raises it');
+      expect(find.textContaining('% Volume'), findsOneWidget);
+    });
+
+    testWidgets('swiping up on the left half drives the window brightness', (tester) async {
+      final brightnessCalls = <MethodCall>[];
+      const channel =
+          MethodChannel('in.anisparvez.media_server_client/screen_brightness');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        brightnessCalls.add(call);
+        return true;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: PlayerScreen(
+              mediaUrl: 'http://127.0.0.1:8000/media/test.mp4',
+              title: 'Batman Knightfall Part 1 (2026)',
+              deviceId: 'dev_test',
+              customController: controller,
+              customBrightness: ScreenBrightnessService(channel: channel),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final detector = tester.widget<DoubleTapSeekDetector>(
+        find.byType(DoubleTapSeekDetector),
+      );
+      detector.onVerticalDragBegin?.call(true);
+      detector.onVerticalDragDelta?.call(0.15, true);
+      await tester.pump();
+      await tester.pump();
+
+      final sets =
+          brightnessCalls.where((c) => c.method == 'setBrightness').toList();
+      expect(sets, isNotEmpty, reason: 'the left half must drive brightness');
+      final value = (sets.last.arguments as Map)['value'] as double;
+      expect(value, greaterThan(0.5),
+          reason: 'swiping up from the 0.5 default brightens');
+      expect(find.textContaining('% Brightness'), findsOneWidget);
+    });
+
+    testWidgets('the gesture HUD still shows after the controls auto-hide', (tester) async {
+      const channel =
+          MethodChannel('in.anisparvez.media_server_client/screen_brightness');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async => true);
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: PlayerScreen(
+              mediaUrl: 'http://127.0.0.1:8000/media/test.mp4',
+              title: 'Batman Knightfall Part 1 (2026)',
+              deviceId: 'dev_test',
+              customController: controller,
+              customBrightness: ScreenBrightnessService(channel: channel),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // The controls auto-hide only while playback is running, and a tap while they
+      // are visible toggles play/pause instead - so drive the state, then wait out
+      // the 4 s timer.
+      controller.emitState(PlayerPlaybackState.playing);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 5));
+      expect(
+        tester
+            .widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay))
+            .isVisible,
+        isFalse,
+        reason: 'precondition: the controls must have auto-hidden',
+      );
+
+      final detector = tester.widget<DoubleTapSeekDetector>(
+        find.byType(DoubleTapSeekDetector),
+      );
+      detector.onVerticalDragBegin?.call(true);
+      detector.onVerticalDragDelta?.call(0.15, true);
+      await tester.pump();
+
+      final hud = find.textContaining('% Brightness');
+      expect(hud, findsOneWidget, reason: 'the swipe must report its value');
+
+      // The bug: the HUD used to sit inside the controls overlay, so it inherited
+      // that overlay's opacity gate and vanished with the controls.
+      final gates = tester.widgetList<AnimatedOpacity>(
+        find.ancestor(of: hud, matching: find.byType(AnimatedOpacity)),
+      );
+      expect(
+        gates.where((g) => g.opacity < 1.0),
+        isEmpty,
+        reason: 'the HUD must not inherit the controls overlay fade',
+      );
+      expect(
+        find.ancestor(of: hud, matching: find.byType(PlayerControlsOverlay)),
+        findsNothing,
+        reason: 'the HUD must not live inside the fading controls overlay',
+      );
     });
   });
 }

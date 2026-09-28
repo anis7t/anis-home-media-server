@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../storage/settings_service.dart';
 import 'api_endpoints.dart';
@@ -27,6 +28,14 @@ class ConnectionTestResult {
 class ApiClient {
   final Dio dio;
 
+  /// The server the app is currently talking to, as a listenable.
+  ///
+  /// The saved server is applied by the repositories only once one has read it,
+  /// which happens *after* the first frame - so anything resolving URLs
+  /// (artwork, media) must observe this rather than sample `dio.options.baseUrl`
+  /// once, or it pins the compile-time default and every poster 404s.
+  final ValueNotifier<String> baseUrlNotifier;
+
   ApiClient({
     required String baseUrl,
     required DeviceAuthInterceptor authInterceptor,
@@ -39,12 +48,14 @@ class ApiClient {
                 receiveTimeout: const Duration(seconds: 5),
                 sendTimeout: const Duration(seconds: 5),
               ),
-            ) {
+            ),
+       baseUrlNotifier = ValueNotifier<String>(baseUrl) {
     dio.interceptors.add(authInterceptor);
   }
 
   void updateBaseUrl(String newBaseUrl) {
     dio.options.baseUrl = newBaseUrl;
+    baseUrlNotifier.value = newBaseUrl;
   }
 
   /// Tests connectivity to the media server by querying `/api/system-status`.
@@ -114,7 +125,16 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 });
 
 /// Exposes the active server base URL for image/media URL resolution.
+///
+/// Reactive on purpose: repositories call `updateBaseUrl()` only after reading
+/// the saved server, and the first frame renders before that. Sampling
+/// `dio.options.baseUrl` once here pinned artwork to `http://127.0.0.1:8000` -
+/// on a phone, the phone itself - so every poster fell back to a letter avatar
+/// while API calls (made after the update) kept working.
 final serverBaseUrlProvider = Provider<String>((ref) {
   final apiClient = ref.watch(apiClientProvider);
-  return apiClient.dio.options.baseUrl;
+  void onChange() => ref.invalidateSelf();
+  apiClient.baseUrlNotifier.addListener(onChange);
+  ref.onDispose(() => apiClient.baseUrlNotifier.removeListener(onChange));
+  return apiClient.baseUrlNotifier.value;
 });
