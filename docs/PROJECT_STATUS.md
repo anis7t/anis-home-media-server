@@ -28,6 +28,33 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-09-28 — Watch progress is per device (resume no longer bleeds across devices)
+
+**Symptom:** seeking in the laptop's web player moved the phone app's resume point — whichever
+device played last set the position for every device.
+
+**Cause:** reads were global. `/api/progress` POST already wrote the shared `progress` row *and*
+`device_watch_history` (per-device rows were correct all along), but `GET /api/progress` and
+`media_service.movie()` — hence `/api/movies`, the details page and the player page — read only the
+shared row, so every client saw the last writer's position.
+
+**Fix (server-side only; both clients already identify themselves):**
+- `device_service.current_device_id()` — the request's device id, `None` outside a request.
+- `movie(path, db, device_id=None)` / `get_movies(device_id=None)` read the calling device's
+  `device_watch_history` row (relative path or basename), with **no cross-device fallback**: a device
+  that never watched a title starts at 0. Callers without a request (scripts, tools) still read the
+  shared `progress` row.
+- Same scoping in `GET /api/progress`; call sites updated in `/api/movies`, `/api/movie/<filename>`,
+  `pages.home`, `pages.details` and `pages.watch`. Media deletion also purges that title's
+  `device_watch_history` rows.
+- Clients need no change: the app sends `X-Device-Id` on every request (Dio interceptor), and the web
+  receives a persistent `ms_device_id` cookie from `pages.py`.
+
+**Verification:** 2 new tests in `tests/test_movies_api.py`, RED-checked (disabling both read paths
+fails exactly those two: `2 failed, 6 passed`); full pytest **252 passed / 1 skipped**; live DB
+untouched by the suite. Live on the restarted service, same title across four devices:
+1602.000 / 4332.411 / 3543.375 / 0.000 with per-device "continue watching" rails (2 / 1 / 1 / 0).
+
 ### 2026-09-27 — Flutter device presence + authoritative playback mode
 
 **Device presence (the phone now registers itself):**
@@ -333,7 +360,7 @@ is not a heal on its own.
 
 ### Resolved: the disappearances were caused by the test suite, not by the app or the OS
 - **Root cause proven.** `cache/hls` was being deleted by `pytest` runs on this host. Cache isolation was done by rebinding Python attributes at import, and two other modules silently undo that:
-  - `tests/test_app.py::MediaServerTests.tearDownClass` restores the environment and then calls `importlib.reload(app.config)`, so `app.config.CACHE_DIR` becomes the live `C:\MediaServer\cache` again;
+  - `tests/test_app.py::MediaServerTests.tearDownClass` restores the environment and then calls `importlib.reload(app.config)`, so `app.config.CACHE_DIR` becomes the live `E:\MediaServer\cache` again;
   - `tests/test_selenium_multi_seek_coyote.py` then executes `app_module.CACHE_DIR = app_module.config.CACHE_DIR`, rebinding the app back to the live cache and defeating `tests/test_storage_retention.py`'s import-time patch.
   From that point the non-dry-run purge tests in `test_storage_retention.py` walked the **live** cache, treated every directory as orphaned (the "active" set is derived from a temporary `MEDIA_ROOT`), and deleted real transcodes.
 - **Reproduced deterministically**, not inferred: a 1-second cache watchdog caught the suite deleting four real directories at 18:43:48 (`372fdd0e`, `512dd05c`, `71f81790`, `9bf62fc5` gone; `f3ec5869` shrunk 1826 → 262 MB) while test-created directories (`ActiveDualGpuPur…`, `orphan_hls_fakehash…`, `orphan_enum_error`) appeared **inside the live cache**. The service log has no purge line in that window, so the deletions were not the service's.
@@ -517,7 +544,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Windows hosting (Current production workstation)
 - Windows 10/11 or supported Windows Server.
-- Python 3.14.3 in virtual environment `C:\MediaServer\venv`.
+- Python 3.14.3 in virtual environment `E:\MediaServer\venv`.
 - Dual AMD GPUs: Radeon RX 560X (discrete) + Radeon Vega 8 (integrated).
 - FFmpeg 9.0.1 essentials build with AMF & D3D11va support.
 - NSSM (Non-Sucking Service Manager) for persistent WSGI hosting (`MediaServer`).

@@ -4,6 +4,9 @@ import sqlite3
 import pytest
 from app import config, create_app, get_db, init_db
 
+# Watch progress is scoped per device, so the API tests act as this device.
+TEST_DEVICE = "dev_pytest_browser"
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -114,6 +117,16 @@ def client(tmp_path, monkeypatch):
         "INSERT INTO progress (filename, position, duration, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
         ("Movie_One.2026.mp4", 5.0, 7200.0)
     )
+    # The same rows for this device: resume positions are read from
+    # device_watch_history, never from another device's progress.
+    db.execute(
+        "INSERT INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
+        (TEST_DEVICE, "Movie_Three_Watching.2024.mp4", 60.0, 300.0)
+    )
+    db.execute(
+        "INSERT INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
+        (TEST_DEVICE, "Movie_One.2026.mp4", 5.0, 7200.0)
+    )
 
     db.commit()
     db.close()
@@ -126,7 +139,7 @@ def client(tmp_path, monkeypatch):
 
 def test_get_movies_structure(client):
     """GET /api/movies returns 200 with movies list, watching list, and total count."""
-    resp = client.get('/api/movies')
+    resp = client.get('/api/movies', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 200
     data = resp.get_json()
     assert isinstance(data, dict)
@@ -141,7 +154,7 @@ def test_get_movies_structure(client):
 
 def test_get_movies_items_serialization(client):
     """GET /api/movies ensures item dictionaries are properly serialized and normalized."""
-    resp = client.get('/api/movies')
+    resp = client.get('/api/movies', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 200
     data = resp.get_json()
 
@@ -162,7 +175,7 @@ def test_get_movies_items_serialization(client):
 
 def test_get_movies_watching_subset(client):
     """GET /api/movies watching list satisfies the canonical in-progress criteria."""
-    resp = client.get('/api/movies')
+    resp = client.get('/api/movies', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 200
     data = resp.get_json()
 
@@ -180,13 +193,13 @@ def test_get_movies_watching_subset(client):
 
 def test_get_movie_details_404_on_unknown(client):
     """GET /api/movie/<filename> returns 404 for nonexistent files."""
-    resp = client.get('/api/movie/nonexistent_file_definitely_does_not_exist_404.mp4')
+    resp = client.get('/api/movie/nonexistent_file_definitely_does_not_exist_404.mp4', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 404
 
 
 def test_get_movie_details_success_with_full_metadata(client):
     """GET /api/movie/<filename> returns 200 and complete schema for a movie with TMDb metadata."""
-    resp = client.get('/api/movie/Movie_One.2026.mp4')
+    resp = client.get('/api/movie/Movie_One.2026.mp4', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 200
     details = resp.get_json()
 
@@ -221,7 +234,7 @@ def test_get_movie_details_success_with_full_metadata(client):
 
 def test_get_movie_details_defensive_degradation_without_metadata(client):
     """GET /api/movie/<filename> safely returns defaults when metadata/details_json are missing."""
-    resp = client.get('/api/movie/Movie_Two_No_Meta.2025.mkv')
+    resp = client.get('/api/movie/Movie_Two_No_Meta.2025.mkv', headers={'X-Device-Id': TEST_DEVICE})
     assert resp.status_code == 200
     details = resp.get_json()
 
@@ -239,3 +252,59 @@ def test_get_movie_details_defensive_degradation_without_metadata(client):
     specs = details['specs']
     assert specs['container'] == 'MKV'
     assert isinstance(specs['subtitles'], list)
+
+def test_watch_progress_is_scoped_per_device(client):
+    """A device resumes from its own position only - never from another device's."""
+    filename = "Movie_Three_Watching.2024.mp4"
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
+        ('dev_phone', filename, 111.0, 1000.0),
+    )
+    db.execute(
+        "INSERT OR REPLACE INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
+        ('dev_laptop', filename, 222.0, 1000.0),
+    )
+    db.commit()
+    db.close()
+
+    def payload(device):
+        resp = client.get('/api/movies', headers={'X-Device-Id': device})
+        assert resp.status_code == 200
+        return resp.get_json()
+
+    def position(device):
+        return next(m for m in payload(device)['movies'] if m['filename'] == filename)['position']
+
+    # Each device sees its own position...
+    assert position('dev_phone') == pytest.approx(111.0)
+    assert position('dev_laptop') == pytest.approx(222.0)
+    # ...a device that never watched the title starts at zero, NOT at another
+    # device's position and NOT at the shared progress row (60.0 here)...
+    assert position('dev_never_watched') == 0
+    # ...and the continue-watching rail is scoped the same way.
+    rail = lambda device: [w['filename'] for w in payload(device)['watching']]
+    assert filename in rail('dev_phone')
+    assert filename not in rail('dev_never_watched')
+
+
+def test_api_marks_and_resumes_only_the_calling_device(client):
+    """GET /api/progress returns the calling device's row, not the shared one."""
+    filename = "Movie_Three_Watching.2024.mp4"
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
+        ('dev_phone', filename, 42.5, 1000.0),
+    )
+    db.commit()
+    db.close()
+
+    mine = client.get(
+        '/api/progress?filename=' + filename, headers={'X-Device-Id': 'dev_phone'}
+    ).get_json()
+    assert mine['position'] == pytest.approx(42.5)
+
+    other = client.get(
+        '/api/progress?filename=' + filename, headers={'X-Device-Id': 'dev_other'}
+    ).get_json()
+    assert other['position'] == 0

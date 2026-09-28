@@ -9,6 +9,7 @@ from app.services.media_service import (
     get_movies,
     movie,
 )
+from app.services.device_service import current_device_id
 from app.services.subtitles_service import tracks
 from app.services.system_service import get_system_telemetry
 from app.services.transcode_service import get_active_transcodes
@@ -23,7 +24,7 @@ def home():
     """Render home media library page with search, sorting, and transcode status."""
     q = request.args.get('q', '').strip().lower()
     sort = request.args.get('sort', 'title')
-    movies = get_movies()
+    movies = get_movies(device_id=current_device_id())
     if q:
         movies = [m for m in movies if q in (m['title'] + ' ' + str(m['year']) + ' ' + m['genres']).lower()]
     movies.sort(
@@ -58,7 +59,7 @@ def details(filename):
     if not is_video(path):
         abort(404)
     db = get_db()
-    m = movie(path, db)
+    m = movie(path, db, current_device_id())
     backdrop = m['tmdb_id'] if m['tmdb_id'] and (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file() else None
     extended = {}
     if m.get('details_json'):
@@ -89,7 +90,7 @@ def watch(filename):
     if not is_video(path):
         abort(404)
     db = get_db()
-    m = movie(path, db)
+    m = movie(path, db, current_device_id())
     db.close()
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)

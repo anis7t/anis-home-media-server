@@ -94,17 +94,35 @@ def poster_for(path, row):
     return None
 
 
-def movie(path, db):
-    """Build movie metadata dictionary for a video path combining database and filesystem data."""
+def movie(path, db, device_id=None):
+    """Build movie metadata dictionary for a video path combining database and filesystem data.
+
+    Watch progress is per device: with a `device_id`, the position comes from that
+    device's own history, so two devices watching the same title never inherit each
+    other's resume point. Callers outside a request (scripts, tools) still see the
+    shared `progress` row.
+    """
     name = get_rel_path(path)
 
     meta = db.execute("SELECT * FROM movies WHERE filename=?", (name,)).fetchone()
     if not meta and path.name != name:
         meta = db.execute("SELECT * FROM movies WHERE filename=?", (path.name,)).fetchone()
 
-    progress = db.execute("SELECT * FROM progress WHERE filename=?", (name,)).fetchone()
-    if not progress and path.name != name:
-        progress = db.execute("SELECT * FROM progress WHERE filename=?", (path.name,)).fetchone()
+    progress = None
+    if device_id:
+        # Clients may key the history by the relative path or by the basename.
+        for key in (name, path.name):
+            progress = db.execute(
+                "SELECT position,duration,last_watched AS updated_at "
+                "FROM device_watch_history WHERE device_id=? AND filename=?",
+                (device_id, key),
+            ).fetchone()
+            if progress:
+                break
+    else:
+        progress = db.execute("SELECT * FROM progress WHERE filename=?", (name,)).fetchone()
+        if not progress and path.name != name:
+            progress = db.execute("SELECT * FROM progress WHERE filename=?", (path.name,)).fetchone()
 
     pos = value(progress, 'position', 0)
     dur = value(progress, 'duration', 0)
@@ -135,11 +153,15 @@ def movie(path, db):
     )
 
 
-def get_movies():
-    """Retrieve metadata dictionaries for all discovered video files in the library."""
+def get_movies(device_id=None):
+    """Retrieve metadata dictionaries for all discovered video files in the library.
+
+    `device_id` scopes the merged watch progress (and therefore the
+    "continue watching" ordering) to a single device.
+    """
     db = get_db()
     try:
-        return [movie(p, db) for p in video_paths()]
+        return [movie(p, db, device_id) for p in video_paths()]
     finally:
         db.close()
 
@@ -363,10 +385,15 @@ def purge_media(filename):
                 local_ext.unlink(missing_ok=True)
                 purged_posters.append(str(local_ext))
 
-    # 5. Purge database records
-    db.execute("DELETE FROM movies WHERE filename=?", (rel_filename,))
-    db.execute("DELETE FROM progress WHERE filename=?", (rel_filename,))
-    db.commit()
+    # 5. Purge database records (per-device rows key on the same filename, and a
+        #    client may have stored the basename rather than the relative path)
+        db.execute("DELETE FROM movies WHERE filename=?", (rel_filename,))
+        db.execute("DELETE FROM progress WHERE filename=?", (rel_filename,))
+        db.executemany(
+            "DELETE FROM device_watch_history WHERE filename=?",
+            [(k,) for k in {rel_filename, path.name}],
+        )
+        db.commit()
     db.close()
 
     # 6. Delete media file on disk and any upload part files

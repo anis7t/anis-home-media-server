@@ -515,6 +515,22 @@ def get_or_create_device_id(req):
     return f"dev_{hash_prefix}", True
 
 
+def current_device_id():
+    """Device id of the in-flight request, or None outside a request context.
+
+    Read paths use this to scope watch progress per device: two devices watching
+    the same title must never inherit each other's resume point.
+    """
+    from flask import has_request_context, request
+    if not has_request_context():
+        return None
+    try:
+        device_id, _ = get_or_create_device_id(request)
+        return device_id
+    except Exception:
+        return None
+
+
 def register_device_request(req):
     """Process incoming request, register or update device telemetry, and return (device_id, is_new)."""
     device_id, is_new = get_or_create_device_id(req)

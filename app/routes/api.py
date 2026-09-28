@@ -232,7 +232,19 @@ def progress():
         if not is_video(path):
             abort(404)
         db = get_db()
-        row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
+        from app.services.device_service import current_device_id
+        device_id = current_device_id()
+        row = None
+        if device_id:
+            for key in (filename, path.name):
+                row = db.execute(
+                    'SELECT position,duration FROM device_watch_history WHERE device_id=? AND filename=?',
+                    (device_id, key),
+                ).fetchone()
+                if row:
+                    break
+        if row is None and not device_id:
+            row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
         db.close()
         return jsonify(position=value(row, 'position', 0), duration=value(row, 'duration', 0))
 
@@ -683,7 +695,8 @@ def storage_archive_media(filename):
 def api_movies():
     """Return JSON list of all discovered library movies and in-progress watch items."""
     from app.services.media_service import get_movies
-    raw_movies = get_movies()
+    from app.services.device_service import current_device_id
+    raw_movies = get_movies(device_id=current_device_id())
     movie_list = []
     for m in raw_movies:
         item = dict(m)
@@ -742,8 +755,9 @@ def api_movie_details(filename):
         from app.services.media_service import movie, extract_media_technical_specs
         from app.utils.formatting import format_runtime_display
         from app.services.transcode_service import get_active_transcodes
+        from app.services.device_service import current_device_id
 
-        m = movie(path, db)
+        m = movie(path, db, current_device_id())
         movie_dict = dict(m)
         movie_dict.pop('path', None)
 
