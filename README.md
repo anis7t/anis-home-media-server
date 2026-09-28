@@ -202,7 +202,7 @@ Browser / Client (Desktop, Tablet, Mobile)
 
 ### Prerequisites
 - Windows 10/11 or Windows Server.
-- Python 3.14+ (installed to `C:\MediaServer\venv`).
+- Python 3.14+ (installed to `E:\MediaServer\venv`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
 - Cloudflared CLI (`C:\Cloudflared\bin\cloudflared.exe`).
@@ -211,7 +211,7 @@ Browser / Client (Desktop, Tablet, Mobile)
 The server runs persistently as a Windows Service named `MediaServer`:
 ```powershell
 # Run the automated installer as Administrator
-cd C:\MediaServer
+cd E:\MediaServer
 .\scripts\install_service.bat
 ```
 This configures:
@@ -245,13 +245,13 @@ gunicorn -c gunicorn.conf.py "app:create_app()"
 
 # Configuration
 
-Store environment variables in `C:\MediaServer\.env` (never commit this file):
+Store environment variables in `E:\MediaServer\.env` (never commit this file):
 
 ```ini
 TMDB_API_TOKEN=<your_tmdb_bearer_token>  # set locally; do not commit the token
 MEDIA_SERVER_MEDIA_ROOT=C:\Media
-MEDIA_SERVER_DATABASE=C:\MediaServer\media.db
-MEDIA_SERVER_BASE_DIR=C:\MediaServer
+MEDIA_SERVER_DATABASE=E:\MediaServer\media.db
+MEDIA_SERVER_BASE_DIR=E:\MediaServer
 MEDIA_SERVER_LOG_LEVEL=INFO
 MEDIA_SERVER_TRANSCODE_PRESET=superfast
 MEDIA_SERVER_TRANSCODE_CRF=23

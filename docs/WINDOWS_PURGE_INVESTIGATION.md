@@ -20,7 +20,7 @@ Environment:
 
 ```text
 OS:              Windows
-Project:         C:\MediaServer
+Project:         E:\MediaServer
 Media root:      C:\Flicks
 Python:          3.14.3
 FFmpeg:          9.0.1 essentials build with AMF
@@ -37,8 +37,8 @@ The test was deliberately performed from a clean cache state.
 Before adding the movie:
 
 ```powershell
-Get-ChildItem C:\MediaServer\cache\hls -Recurse -File -ErrorAction SilentlyContinue
-Get-ChildItem C:\MediaServer\cache\transcodes -Recurse -File -ErrorAction SilentlyContinue
+Get-ChildItem E:\MediaServer\cache\hls -Recurse -File -ErrorAction SilentlyContinue
+Get-ChildItem E:\MediaServer\cache\transcodes -Recurse -File -ErrorAction SilentlyContinue
 ```
 
 Both returned no files.
@@ -91,7 +91,7 @@ INFO:waitress:Client disconnected while serving /media/...
 WARNING:waitress.queue:Task queue depth is 2
 WARNING:waitress.queue:Task queue depth is 1
 ...
-(venv) PS C:\MediaServer>
+(venv) PS E:\MediaServer>
 ```
 
 There was **no Python traceback** and no explicit Waitress shutdown message.
@@ -121,8 +121,8 @@ Therefore the purge path is the primary suspect. Do not treat this as a generic 
 The cache cleanup portion has also been observed to succeed in at least one purge attempt. After a failed/attempted purge, these commands returned no files:
 
 ```powershell
-Get-ChildItem C:\MediaServer\cache\hls -Recurse -File -ErrorAction SilentlyContinue
-Get-ChildItem C:\MediaServer\cache\transcodes -Recurse -File -ErrorAction SilentlyContinue
+Get-ChildItem E:\MediaServer\cache\hls -Recurse -File -ErrorAction SilentlyContinue
+Get-ChildItem E:\MediaServer\cache\transcodes -Recurse -File -ErrorAction SilentlyContinue
 ```
 
 This means the implementation can successfully remove the HLS/transcode cache in some executions. The unresolved problem is the **failure path and server/process lifecycle**, not simply whether `shutil.rmtree()` can ever delete the directory.

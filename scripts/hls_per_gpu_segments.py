@@ -19,7 +19,7 @@ from pathlib import Path
 _BIN = (r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages"
         r"\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin")
 os.environ["PATH"] = _BIN + os.pathsep + os.environ.get("PATH", "")
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 FFMPEG, FFPROBE = str(Path(_BIN) / "ffmpeg.exe"), str(Path(_BIN) / "ffprobe.exe")
 
 from app.services.gpu_service import get_gpu_workers  # noqa: E402

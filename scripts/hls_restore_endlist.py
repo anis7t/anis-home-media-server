@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 for cand in Path(r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages").glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe"):
     os.environ["PATH"] = str(cand.parent) + os.pathsep + os.environ["PATH"]
 

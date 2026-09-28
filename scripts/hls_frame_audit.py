@@ -19,7 +19,7 @@ _BIN = (r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages"
         r"\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin")
 if Path(_BIN).is_dir():
     os.environ["PATH"] = _BIN + os.pathsep + os.environ.get("PATH", "")
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 FFPROBE = str(Path(_BIN) / "ffprobe.exe")
 
 

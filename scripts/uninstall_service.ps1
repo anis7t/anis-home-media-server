@@ -18,7 +18,7 @@ if (-not $isAdmin) {
 }
 
 $serviceName = "MediaServer"
-$NssmExe = "C:\MediaServer\bin\nssm.exe"
+$NssmExe = "E:\MediaServer\bin\nssm.exe"
 
 Write-Host "Stopping $serviceName service..." -ForegroundColor Yellow
 Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue

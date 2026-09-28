@@ -4,7 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 os.environ["PATH"] = (r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin"
                       + os.pathsep + os.environ.get("PATH", ""))
 

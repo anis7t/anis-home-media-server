@@ -6,7 +6,7 @@ import 'package:media_kit/media_kit.dart';
 const String localOrigin = 'http://127.0.0.1:8000';
 const String wanOrigin = 'https://media.anisparvez.in';
 const String testDeviceId = 'dev_poc_val_7402a1';
-const String libmpvPath = 'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+const String libmpvPath = 'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
 
 void log(String tag, String msg) {
   final now = DateTime.now().toIso8601String().substring(11, 23);

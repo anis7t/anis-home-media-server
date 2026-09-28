@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 
 from app import config  # noqa: E402
 
@@ -27,11 +27,11 @@ for root in roots:
         files += 1
 print(f"  library: {files} files  hash={h.hexdigest()[:16]}")
 
-con = sqlite3.connect(r"C:\MediaServer\media.db")
+con = sqlite3.connect(r"E:\MediaServer\media.db")
 rows = list(con.execute("SELECT filename, title, tmdb_id FROM movies ORDER BY filename"))
 print(f"  prod DB: {len(rows)} movie rows  hash={hashlib.sha256(repr(rows).encode()).hexdigest()[:16]}")
 
-cache = Path(r"C:\MediaServer\cache\hls")
+cache = Path(r"E:\MediaServer\cache\hls")
 dirs = sorted(p.name for p in cache.iterdir() if p.is_dir()) if cache.is_dir() else []
 segs = sum(1 for _ in cache.rglob("*.ts")) if cache.is_dir() else 0
 print(f"  live cache: {len(dirs)} dirs, {segs} segments  hash={hashlib.sha256(repr(dirs).encode()).hexdigest()[:16]}")

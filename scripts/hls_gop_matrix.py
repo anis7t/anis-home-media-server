@@ -21,7 +21,7 @@ from pathlib import Path
 _BIN = (r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages"
         r"\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin")
 os.environ["PATH"] = _BIN + os.pathsep + os.environ.get("PATH", "")
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 
 import app  # noqa: E402
 import app.config as config  # noqa: E402
@@ -179,7 +179,7 @@ for name, encoder, params, gop in CASES:
             f"deficient_chunks={row.get('deficient_chunks')} frames_missing={row.get('frames_missing_s')}s "
             f"understated={row.get('understated_s')}s in {row.get('seconds')}s")
 
-out = Path(r"C:\MediaServer\_gop_matrix_results.json")
+out = Path(r"E:\MediaServer\_gop_matrix_results.json")
 out.write_text(json.dumps(results, indent=2), encoding="utf-8")
 log(f"\nresults -> {out}")
 

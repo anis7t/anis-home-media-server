@@ -19,7 +19,7 @@ from pathlib import Path
 _BIN = (r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages"
         r"\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin")
 os.environ["PATH"] = _BIN + os.pathsep + os.environ.get("PATH", "")
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 FFMPEG, FFPROBE = str(Path(_BIN) / "ffmpeg.exe"), str(Path(_BIN) / "ffprobe.exe")
 
 import app  # noqa: E402
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         print(f"{pos:>4} {len(rows):>9} {mean:>12.1f} {mean / fps:>10.2f}")
     total = sum(c for c in counts.values() if c > 0)
     print(f"\ntotal frames {total} = {total / fps:.1f}s of video (expected {end:.1f}s)")
-    Path(r"C:\MediaServer\_syn_detail.json").write_text(json.dumps(
+    Path(r"E:\MediaServer\_syn_detail.json").write_text(json.dumps(
         {"deficits": deficits, "by_position": {k: len(v) for k, v in by_pos.items()}}, indent=2))
     print("segments with unreadable frame counts:",
           sum(1 for c in counts.values() if c < 0))

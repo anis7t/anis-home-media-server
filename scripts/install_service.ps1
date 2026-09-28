@@ -21,7 +21,7 @@ Write-Host "====================================================" -ForegroundCol
 Write-Host "   Installing MediaServer as a Windows Service      " -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
 
-$BaseDir = "C:\MediaServer"
+$BaseDir = "E:\MediaServer"
 $VenvPython = "$BaseDir\venv\Scripts\python.exe"
 $RunScript = "$BaseDir\run_production.py"
 $BinDir = "$BaseDir\bin"

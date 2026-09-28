@@ -15,7 +15,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 MOVIE = "Spider-Man- Brand New Day 2026.1080p.HQ Pre.Multi.AAC 2.0.x264.mkv"
-OUT = Path(r"C:\MediaServer\_browser_evidence")
+OUT = Path(r"E:\MediaServer\_browser_evidence")
 OUT.mkdir(exist_ok=True)
 url = f"http://127.0.0.1:8000/watch/{urllib.parse.quote(MOVIE)}"
 # boundaries that held the biggest holes before the heal (85 gaps, all at multiples of 60s)

@@ -15,10 +15,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 from app.services import chunk_transcode_service as cts  # noqa: E402
 
-LIVE = Path(r"C:\MediaServer\cache\hls")
+LIVE = Path(r"E:\MediaServer\cache\hls")
 
 
 def snapshot(d: Path):

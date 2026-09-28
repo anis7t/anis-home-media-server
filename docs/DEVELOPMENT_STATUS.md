@@ -14,19 +14,19 @@ Clean Base branch: `feat/storage-retention-cache-purge`
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
 - **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
 - **Integrated GPU:** AMD Radeon Vega 8 Graphics — Task Manager GPU 1 / FFmpeg `dx11:0`
-- **Python:** 3.14.3 (`C:\MediaServer\venv`)
+- **Python:** 3.14.3 (`E:\MediaServer\venv`)
 - **FFmpeg:** 9.0.1 essentials build with AMF & D3D11va
 - **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
 
 ```text
-Project:       C:\MediaServer
+Project:       E:\MediaServer
 Media root:    C:\Flicks
 Upload root:   D:\Flicks\.uploads -> D:\Flicks (215+ GB storage pool on D:)
 Archive root:  D:\Flicks\.archive (215+ GB free storage pool on D:)
-Transcode:     C:\MediaServer\cache\hls (fast NVMe SSD generation & delivery)
-Previews:      C:\MediaServer\cache\previews (seek thumbnail frame cache)
-Database:      C:\MediaServer\media.db
-Venv:          C:\MediaServer\venv
+Transcode:     E:\MediaServer\cache\hls (fast NVMe SSD generation & delivery)
+Previews:      E:\MediaServer\cache\previews (seek thumbnail frame cache)
+Database:      E:\MediaServer\media.db
+Venv:          E:\MediaServer\venv
 ```
 
 ---

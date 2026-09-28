@@ -45,8 +45,8 @@ try {
 
 # 4. Recent Logs
 Write-Host "`n[4/4] Recent Log Tails:" -ForegroundColor Yellow
-$waitressLog = "C:\MediaServer\logs\waitress.log"
-$waitressErr = "C:\MediaServer\logs\waitress_error.log"
+$waitressLog = "E:\MediaServer\logs\waitress.log"
+$waitressErr = "E:\MediaServer\logs\waitress_error.log"
 
 if (Test-Path $waitressLog) {
     Write-Host "--- Last 5 lines of waitress.log ---" -ForegroundColor DarkGray

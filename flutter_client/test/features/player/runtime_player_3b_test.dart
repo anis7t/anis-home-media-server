@@ -11,7 +11,7 @@ import '../../support/live_server_gate.dart';
 final String localOrigin = liveServerOrigin;
 const String testDeviceId = 'dev_phase3b_val_104f7c';
 const String libmpvPath =
-    'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+    'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
 
 void main() {
   setUpAll(() {

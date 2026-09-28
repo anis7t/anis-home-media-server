@@ -24,7 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../updater/update_controller_test.dart';
 
 const String libmpvPath =
-    'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+    'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
 
 class MockSecureStorage extends FlutterSecureStorage {
   final Map<String, String> data = {};

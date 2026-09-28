@@ -7,7 +7,7 @@ import 'package:media_server_client/app/app.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String libmpvPath =
-    'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+    'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

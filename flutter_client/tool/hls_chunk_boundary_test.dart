@@ -4,7 +4,7 @@ import 'package:media_kit/media_kit.dart';
 const String lanOrigin = 'http://127.0.0.1:8000';
 const String testDeviceId = 'dev_hls_boundary_probe';
 const String libmpvPath =
-    'C:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+    'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
 
 void log(String tag, String msg) {
   final now = DateTime.now().toIso8601String().substring(11, 23);

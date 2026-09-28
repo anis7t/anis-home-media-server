@@ -31,8 +31,8 @@ This is a **functional, development-stage personal media server** built with Fla
 
 | File | Size | Purpose | Still Accurate? |
 |---|---|---|---|
-| [`AGENTS.md`](file:///c:/MediaServer/AGENTS.md) | 13.6 KB | Comprehensive agent instructions, invariants, priorities | ✅ Mostly accurate; see discrepancies below |
-| [`GEMINI.md`](file:///c:/MediaServer/GEMINI.md) | 16.2 KB | Detailed technical invariants and implementation rules | ✅ Accurate but contains Linux-specific testing instructions |
+| [`AGENTS.md`](file:///E:/MediaServer/AGENTS.md) | 13.6 KB | Comprehensive agent instructions, invariants, priorities | ✅ Mostly accurate; see discrepancies below |
+| [`GEMINI.md`](file:///E:/MediaServer/GEMINI.md) | 16.2 KB | Detailed technical invariants and implementation rules | ✅ Accurate but contains Linux-specific testing instructions |
 
 ### Key Discrepancies Found
 
@@ -51,7 +51,7 @@ This is a **functional, development-stage personal media server** built with Fla
 ## 3. Repository Structure
 
 ```text
-c:\MediaServer\
+E:\MediaServer\
 ├── app.py                 # 5.7 KB — Lightweight entry point + compatibility exports
 ├── requirements.txt       # 330 B — Flask, requests, dotenv, waitress, gunicorn (non-Win)
 ├── gunicorn.conf.py       # 1.8 KB — Linux Gunicorn config (1 worker, 8 threads)
@@ -409,7 +409,7 @@ PR #6 (`feat/seek-preview-final`) was merged into the main lineage. However, the
 
 ### FFmpeg Command Construction
 
-The HLS transcoding pipeline in [`transcode_service.py`](file:///c:/MediaServer/app/services/transcode_service.py) is well-implemented:
+The HLS transcoding pipeline in [`transcode_service.py`](file:///E:/MediaServer/app/services/transcode_service.py) is well-implemented:
 
 | Parameter | Value |
 |---|---|
@@ -576,12 +576,12 @@ The AMF adapter binding **is implemented** in `transcode_service.py`:
 ### Concerns
 - **No WAL mode**: Default journal mode risks "database is locked" under concurrent thread writes
 - **Default 5s timeout**: May be insufficient for concurrent upload + heartbeat + progress writes
-- **No backup strategy**: SQLite file at `C:\MediaServer\media.db`
+- **No backup strategy**: SQLite file at `E:\MediaServer\media.db`
 
 ### Storage Layout
 - Media: `C:\Flicks` (configured via MEDIA_SERVER_MEDIA_ROOT)
-- Cache: `C:\MediaServer\cache\` (gitignored)
-- Posters/Backdrops: `C:\MediaServer\cache\posters\`, `cache\backdrops\`
+- Cache: `E:\MediaServer\cache\` (gitignored)
+- Posters/Backdrops: `E:\MediaServer\cache\posters\`, `cache\backdrops\`
 - HLS segments: `cache\hls\<sha256>\`
 - Transcodes: `cache\transcodes\`
 
@@ -782,13 +782,13 @@ The AMF adapter binding **is implemented** in `transcode_service.py`:
 
 | Document | Purpose | Classification | Key Findings |
 |---|---|---|---|
-| [`PROJECT_STATUS.md`](file:///c:/MediaServer/docs/PROJECT_STATUS.md) | Primary handoff | PARTIALLY IMPLEMENTED | Omits Issue #7; references `main` branch not current branch |
-| [`DEVELOPMENT_STATUS.md`](file:///c:/MediaServer/docs/DEVELOPMENT_STATUS.md) | Session handoff | PARTIALLY IMPLEMENTED | References `gpu-amf-transcoding` branch; current is different |
-| [`WINDOWS_SETUP.md`](file:///c:/MediaServer/docs/WINDOWS_SETUP.md) | Windows config | PARTIALLY IMPLEMENTED | Accurate hardware info; auto-startup not done |
-| [`WINDOWS_PURGE_INVESTIGATION.md`](file:///c:/MediaServer/docs/WINDOWS_PURGE_INVESTIGATION.md) | Remote purge failure analysis | IMPLEMENTED / REFERENCE | Detailed breakdown of Waitress crash during live FFmpeg purge |
-| [`REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md`](file:///c:/MediaServer/docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md) | Tunnel history | HISTORICAL | Describes Kali setup; tunnel config still valid |
-| [`MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md`](file:///c:/MediaServer/docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md) | Future architecture | PROPOSED / NOT IMPLEMENTED | No code exists; requires benchmarks first |
-| [`LOAD_TESTING.md`](file:///c:/MediaServer/docs/LOAD_TESTING.md) | Benchmark report | HISTORICAL | Kali-specific results; 100 local streams pass |
+| [`PROJECT_STATUS.md`](file:///E:/MediaServer/docs/PROJECT_STATUS.md) | Primary handoff | PARTIALLY IMPLEMENTED | Omits Issue #7; references `main` branch not current branch |
+| [`DEVELOPMENT_STATUS.md`](file:///E:/MediaServer/docs/DEVELOPMENT_STATUS.md) | Session handoff | PARTIALLY IMPLEMENTED | References `gpu-amf-transcoding` branch; current is different |
+| [`WINDOWS_SETUP.md`](file:///E:/MediaServer/docs/WINDOWS_SETUP.md) | Windows config | PARTIALLY IMPLEMENTED | Accurate hardware info; auto-startup not done |
+| [`WINDOWS_PURGE_INVESTIGATION.md`](file:///E:/MediaServer/docs/WINDOWS_PURGE_INVESTIGATION.md) | Remote purge failure analysis | IMPLEMENTED / REFERENCE | Detailed breakdown of Waitress crash during live FFmpeg purge |
+| [`REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md`](file:///E:/MediaServer/docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md) | Tunnel history | HISTORICAL | Describes Kali setup; tunnel config still valid |
+| [`MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md`](file:///E:/MediaServer/docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md) | Future architecture | PROPOSED / NOT IMPLEMENTED | No code exists; requires benchmarks first |
+| [`LOAD_TESTING.md`](file:///E:/MediaServer/docs/LOAD_TESTING.md) | Benchmark report | HISTORICAL | Kali-specific results; 100 local streams pass |
 
 ### Documentation Inconsistencies
 

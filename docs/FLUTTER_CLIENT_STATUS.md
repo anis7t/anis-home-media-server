@@ -417,7 +417,7 @@ This was **NOT** implemented — only discussed. The next coding model should:
 
 ### Android (primary target)
 ```powershell
-cd C:\MediaServer\flutter_client
+cd E:\MediaServer\flutter_client
 # Debug on physical device
 & "D:\src\flutter\bin\flutter.bat" run -d <device-id>
 # Release APK build
@@ -430,20 +430,20 @@ adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route
 
 ### Windows (secondary target)
 ```powershell
-cd C:\MediaServer\flutter_client
+cd E:\MediaServer\flutter_client
 & "D:\src\flutter\bin\flutter.bat" run -d windows --release
 ```
 
 ### Testing
 ```powershell
-cd C:\MediaServer\flutter_client
+cd E:\MediaServer\flutter_client
 & "D:\src\flutter\bin\flutter.bat" test                    # 120 tests
 & "D:\src\flutter\bin\flutter.bat" analyze lib test         # Static analysis
 ```
 
 ### Backend Testing
 ```powershell
-cd C:\MediaServer
+cd E:\MediaServer
 .\venv\Scripts\python.exe -m pytest tests/                  # 239 tests
 ```
 
@@ -453,7 +453,7 @@ The APK must be built with the versionCode that will be published, so build and 
 step:
 
 ```powershell
-cd C:\MediaServer
+cd E:\MediaServer
 .\venv\Scripts\python.exe scripts\release_android.py --channel developer --version 1.0.5-dev.105 `
     --notes "What changed"
 # add --dry-run to build and verify without publishing, or

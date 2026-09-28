@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, r"C:\MediaServer")
+sys.path.insert(0, r"E:\MediaServer")
 
 # The shell's PATH lacks the WinGet shims; ffprobe/ffmpeg must be discoverable.
 _FFDIR = r"C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-essentials_build\bin"
@@ -95,7 +95,7 @@ print("\n=== PART 2: cache-safety + transcode-logic battery ===")
 
 # ---- T0: live-cache invariants (read-only, on the real cache) -------------------------
 def t0():
-    live = Path(r"C:\MediaServer\cache\hls")
+    live = Path(r"E:\MediaServer\cache\hls")
     zero = [str(p) for p in live.rglob("*.ts") if p.is_file() and p.stat().st_size == 0]
     segs = sum(1 for _ in live.rglob("*.ts"))
     return (not zero), f"{segs} live segments, zero-byte segments: {len(zero)}"
@@ -437,5 +437,5 @@ run("T18 media deletion refuses traversal/absolute/outside-library names", t18)
 print("\n=== summary ===")
 passed = sum(1 for r in RESULTS if r["result"] == "PASS")
 print(f"  {passed}/{len(RESULTS)} passed")
-Path(r"C:\MediaServer\_final_battery_results.json").write_text(json.dumps(RESULTS, indent=2), encoding="utf-8")
-print(f"  results -> C:\\MediaServer\\_final_battery_results.json")
+Path(r"E:\MediaServer\_final_battery_results.json").write_text(json.dumps(RESULTS, indent=2), encoding="utf-8")
+print(f"  results -> E:\\MediaServer\\_final_battery_results.json")

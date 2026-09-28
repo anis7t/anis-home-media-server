@@ -6,18 +6,18 @@ This document records the complete Windows development and production environmen
 
 ## 1. Project Layout & Environment
 
-- **Repository Root:** `C:\MediaServer`
+- **Repository Root:** `E:\MediaServer`
 - **Media Library:** `C:\Media`
 - **Archive Storage Pool:** `D:\Flicks\.archive` (215+ GB free storage pool on D:)
-- **SQLite Database:** `C:\MediaServer\media.db`
-- **Environment File:** `C:\MediaServer\.env`
-- **Virtual Environment:** `C:\MediaServer\venv`
+- **SQLite Database:** `E:\MediaServer\media.db`
+- **Environment File:** `E:\MediaServer\.env`
+- **Virtual Environment:** `E:\MediaServer\venv`
 - **Python Version:** 3.14.3
 - **FFmpeg:** 9.0.1 essentials build with AMD AMF & D3D11va
 - **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
 
 ```powershell
-cd C:\MediaServer
+cd E:\MediaServer
 .\venv\Scripts\Activate.ps1
 python --version
 pip install -r requirements.txt
@@ -53,10 +53,10 @@ Registered using NSSM (Non-Sucking Service Manager):
 - **Service Name:** `MediaServer`
 - **Display Name:** `Media Server WSGI (Waitress)`
 - **Startup Type:** `Automatic`
-- **Binary:** `C:\MediaServer\venv\Scripts\python.exe`
+- **Binary:** `E:\MediaServer\venv\Scripts\python.exe`
 - **Arguments:** `run_production.py`
-- **Working Directory:** `C:\MediaServer`
-- **Log Files:** `C:\MediaServer\logs\waitress.log` and `waitress_error.log` (auto-rotated at 10 MB)
+- **Working Directory:** `E:\MediaServer`
+- **Log Files:** `E:\MediaServer\logs\waitress.log` and `waitress_error.log` (auto-rotated at 10 MB)
 - **Environment:** Injected `PATH` containing FFmpeg binaries.
 
 #### Management Scripts:
@@ -89,7 +89,7 @@ cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> your-medi
   - `D:\Flicks`: Main raw video storage repository for completed uploads.
   - `D:\Flicks\.archive`: Cold source retention repository on secondary drive (215+ GB free pool), automatically populated when movies reach 100% verified HLS transcoding or via one-click **📦 Archive** action on `/manage`.
   - `D:\Flicks\.deleted`: **Staging area for deleted source files** (via `delete_source` retention policy). When a transcoded movie's source is deleted, it's moved here instead of truncated to 0 bytes, preserving recoverability until manual cleanup.
-  - `C:\MediaServer\cache\hls`: Scratch shelter for in-progress transcode chunk generation and high-speed SSD playback of 100% verified HLS segments.
+  - `E:\MediaServer\cache\hls`: Scratch shelter for in-progress transcode chunk generation and high-speed SSD playback of 100% verified HLS segments.
   - Python `shutil.move()` ensures safe atomic cross-drive file relocation across Windows filesystem boundaries without `[WinError 17]`.
   - Automated orphaned cache purge cleans unreferenced chunks on startup and every 2 hours via background daemon.
 
