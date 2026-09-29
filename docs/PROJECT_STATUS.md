@@ -28,6 +28,68 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-09-28 — Casting to DLNA TVs and Chromecast (web player + Android app)
+
+**Feature:** a Cast button in the web player and in the app's player that hands the current movie to
+a device on the LAN: DLNA/UPnP renderers and Chromecast (the family's Samsung DU7000 answers both).
+Owner chose both protocols and both surfaces.
+
+**Design:** the **server** drives casting. A phone cannot send SSDP and a web page cannot open mDNS
+sockets; the Google CAF sender additionally requires HTTPS (the LAN origin is plain HTTP). So
+discovery and control live in `app/services/cast_service.py` behind `app/routes/cast.py`:
+`GET /api/cast/devices` (SSDP + mDNS, TTL-cached, `?refresh=1` forces a scan), `POST /api/cast/play`,
+`POST /api/cast/control` (play/pause/stop/seek/volume), `GET /api/cast/status`. Both clients are thin
+remotes, so one implementation serves them, and the media URL is built for the device's own network
+position (`<LAN IP>:<port>/media/<file>`), never for the caller's origin.
+
+**Notes:**
+- A Chromecast cannot play MKV: casting one requires an existing HLS cache, and the API says so
+  instead of letting the TV fail quietly.
+- DLNA volume goes to the **RenderingControl** endpoint; devices without it report that.
+- The load runs off-thread (a TV can take seconds to answer) and failures surface as `last_error` in
+  `/api/cast/status`, so a remote never sits on "starting" forever.
+- The app player only receives `mediaFilename` from the details screen; the cast button now falls back
+  to `_resolveFilename()` (which reads `/media/<name>` and `/hls/<name>/playlist.m3u8`), so a
+  deep-linked player can cast too.
+- The web player route is `/watch/<file>`; the page keeps its single `<script>` invariant (the cast JS
+  is inside the existing block, the picker reuses the `.sub-modal` styles).
+- The cast bar shows the device's live position while playback runs and only falls back to an error when
+  nothing is playing, because this TV refuses every seek (UPnP 701) and the refusal would otherwise hide
+  the position for the whole cast. Its label separator had been double-encoded as `Â·` on the app side -
+  fixed, and a widget test (`player_cast_bar_test.dart`, 3 cases) pins the label rule.
+
+**Verification:** `tests/test_cast_api.py` (44) and `tests/test_cast_dlna_integration.py` (6, driving
+the real SOAP flow against a stub UPnP renderer that mimics the TV's faults); server suite
+**296 passed / 1 skipped**, Flutter **197 passed / 12 skipped**; `node --check` clean on the rendered
+player script. Live discovery found the real TV: `UA43DU7000KLXL` at 192.168.1.8 with AVTransport +
+RenderingControl, announced as a Cast device too.
+
+**Hardware acceptance (real Samsung DU7000):** discover → cast → the TV reports `playing` with its own
+position advancing → pause → play → volume → stop, all with `last_error` empty. Two hardware-only
+defects were found and fixed in the process:
+
+- **SSDP left the wrong interface.** This host is dual-homed (Ethernet 192.168.1.16, Wi-Fi 192.168.1.12
+  plus link-local virtuals) and an unbound multicast socket took the OS default route — the M-SEARCH
+  went out over Wi-Fi and discovery found nothing, even though the TV answered a ping and its DLNA
+  description on the Ethernet address. `discover_dlna()` now sends from every usable IPv4 interface
+  (`_multicast_interfaces()`, loopback/link-local excluded), which finds the TV immediately.
+- **A Seek sent before Play aborted the entire cast.** The renderer answers UPnP **701 (Transition not
+  available)** to a seek while its transport is stopped; the old `SetAVTransportURI → Seek → Play`
+  order therefore 500'd and the load never started, so casting with a resume point silently did
+  nothing. The order is now `SetAVTransportURI → Play → (wait for transport) → Seek`.
+- **This TV refuses Seek altogether** (701 on every form — `REL_TIME`, `ABS_TIME`, `REL_COUNT`; it does
+  not accept `SeekMode` either, answering 402), so a cast on this model starts at the beginning and its
+  own remote is needed to jump. Chromecast handles seek natively, so that path is unaffected. UPnP
+  faults are now translated (`UPNP_FAULTS`) instead of surfacing as a bare "HTTP 500" — 701 reads
+  "This TV does not allow seeking from another app - use its own remote to jump ahead." 
+
+**Live means now:** the /api/cast/* endpoints run against the real TV from the owner's restarted
+service (192.168.1.16:8000) — discovery locates `TV (UA43DU7000KLXL)`, /api/cast/play hands it the
+media and the TV reports `buffering` → `playing` with its own position advancing, /api/cast/stop ends
+it. The app's picker lists the TV, clicking it plays, the cast bar appears (`TV · Starting…` → `TV · 0:01`)
+and its stop button ends the cast; the cast button itself shows `is-casting`. The web player does the
+same on both surfaces, through the live API.
+
 ### 2026-09-28 — Watch progress is per device (resume no longer bleeds across devices)
 
 **Symptom:** seeking in the laptop's web player moved the phone app's resume point — whichever

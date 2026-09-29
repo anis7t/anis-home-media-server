@@ -128,6 +128,34 @@ The current project includes:
 - `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end — a WEBRip whose audio/subtitles outlive the picture otherwise shows an unplayable tail.
 - Do not perform broad player rewrites for narrow playback bugs.
 
+### DLNA rendering (Samsung TVs and other UPnP renderers)
+
+- **Seekability is advertised, not implemented.** A renderer decides whether its own FF/prev buttons
+  are usable from metadata it reads *before* playback: the DIDL `res` `protocolInfo` **4th field** and
+  the `contentFeatures.dlna.org` header on the media response. `cast_service.DLNA_CONTENT_FEATURES`
+  (`DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000`, the minidlna value)
+  is the single source of truth for both; `http-get:*:<mime>:*` means "no DLNA operations" and leaves
+  the Samsung DU7000's FF/prev greyed out even though byte-range serving works. `routes/media.py`
+  imports the constant and adds `transferMode.dlna.org: Streaming` to every `/media` response — DLNA
+  headers are additive, browsers and the app keep using plain bytes.
+- `dlna_load()` sends `size`/`duration` as DIDL `res` attributes (`duration` as `H:MM:SS.mmm`), both
+  best-effort: a failed probe omits the attribute, never the cast.
+- **New DIDL metadata only counts once the renderer re-loads the media** — a TV keeps the capability it
+  saw at `SetAVTransportURI` time, so re-cast after changing the protocolInfo before judging.
+- `/media` answers `TimeSeekRange.dlna.org: npt=SECONDS-` (a *time* range) by converting it to the
+  keyframe byte offset at or before that time (`ffprobe -v error -select_streams v:0
+  -read_intervals <t>%+#1 -show_entries packet=pos,pts_time:format=duration -of json`, memoised by
+  path+mtime+seconds) and serving a 206 through `werkzeug.utils.send_file(path, environ)` with a
+  synthetic `HTTP_RANGE` — flask's `send_file` takes no `environ`. The reply states what was served:
+  `TimeSeekRange.dlna.org: npt=<start>-<duration>/<duration>`. **`Range` always wins**: time seeking
+  engages only when `TimeSeekRange` is present and `Range` is absent.
+- A time seek to ≤0 s resolves to **byte 0**, not the first video packet: a plain MP4 keeps its `moov`
+  box ahead of `mdat`, so a first-packet start hands the renderer an undecodable stream. When neither a
+  keyframe offset nor a duration can be established, answer the plain 200 — a `TimeSeekRange` reply
+  must not guess the range it served.
+- Seek support is per-request, not per-model: the DU7000 applied a resume `Seek` (REL_TIME) on a fresh
+  load (TV reported the resumed position) while the same model answered UPnP 701 to remote seeks.
+
 ### HLS cache integrity (learned the hard way)
 
 - **Segment indices are strided per chunk (`SEGMENTS_PER_CHUNK_STRIDE = 32`), and that is what
@@ -237,25 +265,34 @@ Verify at minimum:
 - Subtitles remain correctly positioned.
 - No mobile horizontal/vertical layout regression.
 
-## 8. Agent fleet, roles and project memory
+## 8. Model routing, verification and project memory
 
-Work on this repository may be performed by a fleet of Hermes bots (Bot Mode profiles). Kanban
-assignee = profile name; `hermes kanban assignees` is the source of truth for dispatch.
+Work on this repository is performed by **one Hermes profile** (`default`); kanban assignee = profile
+name and `hermes kanban assignees` is the source of truth for dispatch. Model diversity replaces
+profile diversity: whoever writes an artefact, a *different* model verifies it.
 
-| Bot | Role | Owns | Must not own |
+| Model | Role | Owns | Must not own |
 | --- | --- | --- | --- |
-| `@deepseek-flash` | Lead Developer / Architect | requirements, architecture, backend, database, APIs, major features, cross-cutting changes, final integration | being the only reviewer of its own work |
-| `@gemini-agy` | Repository Investigator / Integration Engineer | exploring unfamiliar code, tracing flows, investigating bugs, dependencies, logs, running CLI/tests, backend and system integration verification (Gemini 3.8 Flash High via the Antigravity CLI) | UI / visual verification |
-| `@glm-flash` | Frontend Specialist / Independent Reviewer | modern web UI, CSS/UX, responsive design, accessibility, visual refinement, independent review, browser-driven visual verification | owning overall architecture |
+| `deepseek/deepseek-v4.1-flash` (main agent) | Lead Developer / Architect | requirements, architecture, backend, database, APIs, major features, cross-cutting changes, final integration, correctness review | being the only reviewer of its own work |
+| `upstage/solar-pro4:free` (auxiliary slots + subagents, $0) | Reconnaissance / mechanical verification | exploring unfamiliar code, tracing flows, reading logs, running CLI/tests, mechanical diff review, kanban spec fleshing | the correctness gate for transcode/player changes; final architecture decisions |
+| `stepfun/step-3.7-flash:free` (vision, $0) | Visual inspection | UI and telemetry screenshots, visual evidence, OCR of rendered output | source-level verification |
 
 Rules:
 
-- **Verification is done by a bot that did not write the artefact.** A role states the duty; the
-  `media-server` kanban board enforces it by assigning review to a different bot.
+- **Verification is done by a model that did not write the artefact.** A free model's review is a
+  breadth pass, never the gate: route an implementation card and its review card to different models
+  (`hermes kanban create … --model <id> --provider nous`).
+- **Verify delegated work in proportion to blast radius:** always re-check claims of absence or
+  safety ("nothing references X", "unused", "no other caller") and anything about to be acted on,
+  with the cheapest decisive command; spot-check the rest and label each claim verified / inferred /
+  unverified.
 - **Persistent project memory lives in the Obsidian vault** at
   `C:\Users\anis7\Documents\Obsidian Vault\Media Server\` (`OBSIDIAN_VAULT_PATH` is set in every
   Hermes profile). Read `Media Server — Memory Index` and `Gotchas & Pitfalls` before non-trivial
   work, and append dated entries to `Decisions Log` / `Verification Log` afterwards. Append only —
   never rewrite another agent's entry. Code and architecture facts stay in this file and `docs/`.
+- **Routing pins and their rationale live in the vault note `Model Routing & Cost`** — read it before
+  changing any model configuration, and verify a slot's actual model in `~/.hermes/logs/agent.log`
+  or the `session_model_usage` table rather than assuming.
 - Task state, assignment and verification gates live on the kanban board (`media-server`), not in
   chat.

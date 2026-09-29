@@ -38,6 +38,9 @@ class PlayerControlsOverlay extends StatefulWidget {
   final VoidCallback? onOpenAudioSheet;
   final VoidCallback? onOpenSubtitleSheet;
   final VoidCallback? onToggleAspectRatio;
+  final VoidCallback? onOpenCastSheet;
+  /// True while a device is playing this media, so the button shows it.
+  final bool isCasting;
   final VoidCallback? onSurfaceTap;
   final VoidCallback? onDoubleTapRewind;
   final VoidCallback? onDoubleTapForward;
@@ -73,6 +76,8 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.onOpenAudioSheet,
     this.onOpenSubtitleSheet,
     this.onToggleAspectRatio,
+  this.onOpenCastSheet,
+  this.isCasting = false,
     this.onSurfaceTap,
     this.onDoubleTapRewind,
     this.onDoubleTapForward,
@@ -192,6 +197,19 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           ],
                         ),
                       ),
+                      if (widget.onOpenCastSheet != null)
+                        IconButton(
+                          tooltip: widget.isCasting ? 'Casting' : 'Cast to device',
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                          icon: Icon(
+                            widget.isCasting
+                                ? Icons.cast_connected_rounded
+                                : Icons.cast_rounded,
+                            color: widget.isCasting ? const Color(0xFFFF334B) : Colors.white,
+                            size: 22,
+                          ),
+                          onPressed: widget.onOpenCastSheet,
+                        ),
                       if (widget.onToggleAspectRatio != null)
                         IconButton(
                           tooltip: 'Aspect Ratio',

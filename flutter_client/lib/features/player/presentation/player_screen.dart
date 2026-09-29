@@ -12,6 +12,8 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/storage/device_identity_service.dart';
 import '../application/playback_progress_reporter.dart';
+import '../../cast/presentation/controllers/cast_controller.dart';
+import '../../cast/presentation/widgets/cast_device_sheet.dart';
 import '../domain/playback_mode.dart';
 import '../../../core/storage/settings_service.dart';
 import '../../connection/controllers/connection_controller.dart';
@@ -107,6 +109,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   bool _controlsVisible = true;
   Timer? _autoHideTimer;
+  // Casting: the server owns discovery and control, this only polls the state.
+  Timer? _castPollTimer;
   String? _errorMessage;
 
   // Double-tap seek state
@@ -814,6 +818,93 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _showHudToast('Restarted', icon: Icons.replay_rounded);
   }
 
+  /// Device picker. Casting hands the media to a TV, so the phone stops playing it.
+  void _openCastSheet() {
+    _onUserInteraction();
+    CastDeviceSheet.show(
+      context: context,
+      // Deep links can arrive without a filename; _resolveFilename reads it out of
+      // the media URL in that case, so casting works from every entry point.
+      filename: _resolveFilename(),
+      position: _position > Duration.zero ? _position : null,
+      onStarted: (deviceName) {
+        unawaited(_controller.pause());
+        _showHudToast('Casting to $deviceName', icon: Icons.cast_connected_rounded);
+        _startCastPolling();
+      },
+    );
+  }
+
+  /// Keeps the cast bar honest while a device is playing.
+  void _startCastPolling() {
+    _castPollTimer?.cancel();
+    _castPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final cast = ref.read(castControllerProvider);
+      if (!cast.isCasting) {
+        _castPollTimer?.cancel();
+        return;
+      }
+      ref.read(castControllerProvider.notifier).pollStatus();
+    });
+  }
+
+
+  /// Compact remote for the active cast session.
+  Widget _buildCastBar(CastState cast) {
+    final device = cast.activeDevice;
+    if (device == null) return const SizedBox.shrink();
+    final isPlaying = cast.playbackState == 'playing';
+    // A refusal outranks the transport state only while nothing is playing: on a TV
+    // that refuses seeks (UPnP 701) the error would otherwise replace the position
+    // for the whole cast, which is the one thing a viewer wants to see.
+    final activelyPlaying = cast.playbackState == 'playing' || cast.playbackState == 'paused';
+    final label = switch (cast.error != null && !activelyPlaying ? cast.error : cast.playbackState) {
+      'playing' => _formatDuration(cast.position),
+      'paused' => 'Paused · ${_formatDuration(cast.position)}',
+      'buffering' => 'Starting…',
+      'stopped' => 'Stopped',
+      final other => other,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xE6141822),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFFF334B).withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cast_connected_rounded, color: Color(0xFFFF334B), size: 18),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 170),
+            child: Text(
+              '${device.name} · $label',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 12),
+          InkWell(
+            onTap: () => ref
+                .read(castControllerProvider.notifier)
+                .sendControl(isPlaying ? 'pause' : 'play'),
+            child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          InkWell(
+            onTap: () => ref.read(castControllerProvider.notifier).sendControl('stop'),
+            child: const Icon(Icons.stop_rounded, color: Color(0xFFFF334B), size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openPlaybackSpeedSheet() {
     _onUserInteraction();
     PlaybackSpeedSheet.show(
@@ -1130,6 +1221,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     required bool hasError,
     required bool hasSubtitles,
   }) {
+    final castState = ref.watch(castControllerProvider);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1200,6 +1292,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             playbackRate: _rate,
             hasActiveSubtitles: hasSubtitles,
             isDoubleTapSeeking: _isDoubleTapSeeking,
+            onOpenCastSheet: _resolveFilename() == null ? null : _openCastSheet,
+            isCasting: castState.isCasting,
           ),
 
           // Action-feedback HUD (brightness/volume/speed changes). It lives here,
@@ -1217,6 +1311,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               ),
             ),
           ),
+          // Cast bar: under the header so it never fights the timeline, and like
+          // the HUD it stays put when the controls auto-hide.
+          if (castState.isCasting)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 68),
+                  child: Center(child: _buildCastBar(castState)),
+                ),
+              ),
+            ),
       ],
     );
   }

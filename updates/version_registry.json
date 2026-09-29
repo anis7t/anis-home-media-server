@@ -1,5 +1,5 @@
 {
-  "lastVersionCode": 117,
+  "lastVersionCode": 120,
   "channels": {
     "production": {
       "version": "1.0.0",
@@ -7,10 +7,10 @@
       "publishedAt": "2026-09-25T00:00:00Z"
     },
     "developer": {
-      "version": "1.0.9-dev.117",
-      "versionCode": 117,
-      "publishedAt": "2026-09-27T23:58:29.792434+00:00",
-      "sha256": "34dd7d3e14f5d87de25a23babf707353eaab20504f175b0cfd10844f416f2974"
+      "version": "1.0.9-dev.120",
+      "versionCode": 120,
+      "publishedAt": "2026-09-29T07:19:57.599779+00:00",
+      "sha256": "c5831aae96e70b0b9ae55b4221e449e282e4cd0d3e938e8c08fb79927e3a11f8"
     }
   }
 }

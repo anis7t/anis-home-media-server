@@ -8,6 +8,7 @@ from markupsafe import Markup, escape
 
 from app import config
 from app.routes.api import api_bp
+from app.routes.cast import cast_bp
 from app.routes.media import media_bp
 from app.routes.pages import pages_bp
 from app.routes.subtitles import subtitles_bp
@@ -158,6 +159,7 @@ def create_app(test_config=None):
     app_instance.register_blueprint(media_bp)
     app_instance.register_blueprint(subtitles_bp)
     app_instance.register_blueprint(api_bp)
+    app_instance.register_blueprint(cast_bp)
 
     # Alias bare endpoint names so url_for('details'), url_for('poster'), etc. work seamlessly
     for rule in list(app_instance.url_map.iter_rules()):
