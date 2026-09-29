@@ -75,7 +75,9 @@ try:  # optional: casting to Chromecast needs it, DLNA does not
 except Exception as exc:  # noqa: BLE001
     pychromecast = None
     CAST_SDK_AVAILABLE = False
-    CAST_IMPORT_ERROR = _error_text(exc)
+    # str(), not _error_text(): that helper is defined further down, so the import guard
+    # would raise NameError instead of reporting the real reason.
+    CAST_IMPORT_ERROR = str(exc)
 
 
 # --------------------------------------------------------------------------- helpers
@@ -584,6 +586,21 @@ def _cast_module():
     return pychromecast
 
 
+# --- Cast receivers need to be told two things pychromecast does not default to ---
+#
+# 1. A start position belongs in the LOAD message. A receiver has no media session for
+#    seconds after a load, and a Seek sent in that window is rejected ("Failed to execute
+#    seek 180.0" was observed on the Samsung DU7000) - which is how a resume cast
+#    silently started from the beginning.
+# 2. The artifact is BUFFERED, not LIVE (pychromecast's default). A receiver told the
+#    stream is live treats it as unseekable, so both our own Seek commands and a scrub
+#    from the phone did nothing.
+CAST_STREAM_TYPE = 'BUFFERED'
+# How long a control command may wait for a media session to appear before it is sent
+# anyway (a cast that is still opening its stream should not turn a scrub into an error).
+CAST_SESSION_WAIT_SECONDS = 4.0
+
+
 def discover_cast(timeout: float = 5.0) -> list[dict]:
     """mDNS discovery via CastBrowser (``discover_chromecasts`` is deprecated).
 
@@ -637,22 +654,43 @@ def _cast_connect(device: dict, timeout: float = 12.0):
 
 
 def cast_load(device: dict, url: str, title: str, content_type: str, position: float | None = None) -> None:
+    """Hand the media to a Cast receiver, starting at *position* when it is given."""
     cast = _cast_connect(device)
     controller = cast.media_controller
-    controller.play_media(url, content_type, title=title)
-    if position:
-        controller.seek(position)
+    controller.play_media(
+        url,
+        content_type,
+        title=title,
+        stream_type=CAST_STREAM_TYPE,
+        current_time=float(position) if position else None,
+        autoplay=True,
+    )
+
+
+def _wait_for_cast_session(controller) -> None:
+    """Give the receiver time to create its media session before a control command.
+
+    Commands sent into the gap between LOAD and the session being active are rejected by
+    the receiver; the wait is bounded so a device that never starts still answers.
+    """
+    try:
+        controller.block_until_active(timeout=CAST_SESSION_WAIT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - the command itself reports the real failure
+        log.debug('Cast session wait failed: %s', exc)
 
 
 def cast_command(device: dict, action: str, value=None) -> None:
     controller = _cast_connect(device).media_controller
     if action == 'play':
+        _wait_for_cast_session(controller)
         controller.play()
     elif action == 'pause':
+        _wait_for_cast_session(controller)
         controller.pause()
     elif action == 'stop':
         controller.stop()
     elif action == 'seek':
+        _wait_for_cast_session(controller)
         controller.seek(float(value or 0))
     elif action == 'volume':
         _cast_connect(device).set_volume(float(value or 0) / 100.0)
@@ -660,8 +698,26 @@ def cast_command(device: dict, action: str, value=None) -> None:
         raise ValueError(f'unsupported action: {action}')
 
 
+def _refresh_cast_status(controller, timeout: float = 2.0) -> None:
+    """Ask the receiver for its current media status before reading the cached one.
+
+    A Cast receiver pushes MEDIA_STATUS on transitions only - measured minutes apart while
+    playing - so a cached read freezes the phone's cast bar and can make a position from
+    minutes ago look like a command that never landed. The request is fire-and-forget, so
+    bound the wait for its answer; whatever arrives lands in ``controller.status``.
+    """
+    answered = threading.Event()
+    try:
+        controller.update_status(callback_function=lambda _ok, _response: answered.set())
+    except Exception as exc:  # noqa: BLE001 - the cached status is still usable
+        log.debug('Cast status request failed: %s', exc)
+        return
+    answered.wait(timeout)
+
+
 def cast_status(device: dict) -> dict:
     controller = _cast_connect(device).media_controller
+    _refresh_cast_status(controller)
     status = controller.status
     if status is None:
         return {'state': 'unknown', 'position': 0.0, 'duration': 0.0}
@@ -735,6 +791,25 @@ class CastRegistry:
         with self._lock:
             return self._devices.get(device_id)
 
+    def resolve_device(self, device_id: str) -> dict | None:
+        """The discovered device, or a stand-in for a Cast device we are still connected to.
+
+        A scan **replaces** the discovery map, and an mDNS browse window misses the TV now
+        and then (measured: one scan of three). While the phone was visibly casting, that
+        made every control and status call answer "Unknown device - rescan and try again."
+        - remote buttons that appear to do nothing. A live connection proves the device is
+        still there, so keep serving it until the socket drops.
+        """
+        device = self.get_device(device_id)
+        if device is not None:
+            return device
+        cast = self.cast_connection(device_id)
+        if cast is None:
+            return None
+        info = getattr(cast, 'device', None)
+        name = getattr(info, 'friendly_name', None) or getattr(cast, 'name', None) or 'Cast device'
+        return {'id': device_id, 'name': name, 'kind': 'cast', 'model': getattr(info, 'model_name', '')}
+
     # -- cast connections (shared with the module-level helpers)
     def cast_connection(self, device_id: str):
         with self._lock:
@@ -747,7 +822,7 @@ class CastRegistry:
 
     # -- actions
     def play(self, device_id: str, filename: str, position: float | None = None, origin: str | None = None) -> dict:
-        device = self.get_device(device_id)
+        device = self.resolve_device(device_id)
         if device is None:
             return {'ok': False, 'error': 'Unknown device - rescan and try again.'}
 
@@ -800,7 +875,7 @@ class CastRegistry:
         return {'ok': True, 'device': device['name'], 'url': url, 'kind': device['kind']}
 
     def control(self, device_id: str, action: str, value=None) -> dict:
-        device = self.get_device(device_id)
+        device = self.resolve_device(device_id)
         if device is None:
             return {'ok': False, 'error': 'Unknown device - rescan and try again.'}
         try:
@@ -816,7 +891,7 @@ class CastRegistry:
         return {'ok': True}
 
     def status(self, device_id: str) -> dict:
-        device = self.get_device(device_id)
+        device = self.resolve_device(device_id)
         if device is None:
             return {'ok': False, 'error': 'Unknown device - rescan and try again.'}
         try:

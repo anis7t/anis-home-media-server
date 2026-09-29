@@ -156,6 +156,37 @@ The current project includes:
 - Seek support is per-request, not per-model: the DU7000 applied a resume `Seek` (REL_TIME) on a fresh
   load (TV reported the resumed position) while the same model answered UPnP 701 to remote seeks.
 
+### Google Cast (phone casting to a TV)
+
+- **A Cast receiver is a remote, not a mirror: whoever sent LOAD owns playback.** `cast_load()` must put
+  the start position in the LOAD message (`play_media(..., current_time=position)`) and must declare
+  `stream_type='BUFFERED'`. pychromecast defaults `stream_type` to `LIVE`, which tells the receiver the
+  artifact is not seekable, and a `Seek` sent after a load races the receiver's media session — the
+  Samsung DU7000 answered "Failed to execute seek 180.0" and then played from 0. That is the whole of
+  "it always starts from the beginning / the TV ignores seeks".
+- **Control commands wait (bounded) for the media session** (`_wait_for_cast_session`, 4 s): a command
+  sent into the LOAD→session gap is rejected. `stop` never waits — it is the way out of a stuck cast.
+- **While `isCasting`, the phone's transport controls belong to the TV.** The local player is
+  deliberately paused for the whole cast, so a control wired only to it looks broken ("play/pause on the
+  phone does nothing on the casted video"). In `player_screen.dart` the play/pause button, the scrub bar,
+  restart and double-tap skip all forward via `sendControl('play'|'pause'|'seek')`, and the controls read
+  their position/duration/state from the cast — not from the paused local player. `CastController`
+  applies a seek optimistically so the bar tracks the finger between the 5 s status polls.
+- **Read the status on demand; do not trust the cached push.** A receiver sends `MEDIA_STATUS` on
+  transitions only (measured minutes apart while playing), so `cast_status()` calls
+  `update_status(callback_function=…)` and waits ≤2 s for the answer before reading
+  `controller.status` — without it the phone's cast bar froze on a position from minutes ago and a stale
+  read could look like a command that never landed.
+- **A device a scan missed is still controllable while its connection is open.** Discovery *replaces*
+  the registry map and an mDNS browse window misses the DU7000 in roughly one scan of three; every
+  control/status call then answered "Unknown device - rescan and try again." while the phone was visibly
+  casting to that TV. `CastRegistry.resolve_device()` falls back to a cached connection (and `play`,
+  `control`, `status` all use it); a device with neither a scan entry nor a connection is still unknown.
+- **Chromecast takes only direct containers; anything else needs an HLS cache first** — the cast bar's
+  error text is the only sign when it is missing.
+- Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`), so it is
+  the ground truth for "did the TV actually move?" — never infer it from the phone's UI.
+
 ### HLS cache integrity (learned the hard way)
 
 - **Segment indices are strided per chunk (`SEGMENTS_PER_CHUNK_STRIDE = 32`), and that is what

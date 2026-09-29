@@ -121,6 +121,12 @@ class CastController extends Notifier<CastState> {
       await _repository.control(deviceId: device.id, action: action, value: value);
       if (action == 'stop') {
         state = state.copyWith(clearActiveDevice: true, playbackState: 'stopped', position: Duration.zero);
+      } else if (action == 'seek' && value != null) {
+        // Reflect the scrub at once so the phone's bar moves with the finger; the status
+        // poll then corrects any drift the receiver adds of its own accord.
+        state = state.copyWith(position: Duration(milliseconds: (value * 1000).round()));
+      } else if (action == 'play' || action == 'pause') {
+        state = state.copyWith(playbackState: action == 'play' ? 'playing' : 'paused');
       }
     } catch (error) {
       state = state.copyWith(error: _message(error));

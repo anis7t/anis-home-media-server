@@ -5,6 +5,7 @@ pure helpers, and the registry is driven with fake devices, so the suite stays f
 and independent of whether a TV happens to be switched on.
 """
 import json
+from collections.abc import Callable
 
 import pytest
 
@@ -49,6 +50,176 @@ def fake_registry(monkeypatch):
     reg._scanned_at = cs.time.time()
     monkeypatch.setattr(cs, "_REGISTRY", reg)
     return reg
+
+
+# ------------------------------------------------------------- Google Cast channels
+class _FakeStatus:
+    """The fields the status route reads off a receiver's MediaStatus."""
+
+    def __init__(self, player_state='PLAYING', current_time=0.0, duration=0.0):
+        self.player_state = player_state
+        self.current_time = current_time
+        self.duration = duration
+
+
+class _FakeMediaController:
+    """Records the commands the server sends a Cast receiver."""
+
+    def __init__(self):
+        self.calls = []
+        self.session_error: Exception | None = None
+        self.status: _FakeStatus | None = None
+        # What the receiver does when asked for its status: update the value, then answer.
+        self.refresh: Callable[[_FakeMediaController], None] | None = None
+
+    def update_status(self, callback_function=None):
+        self.calls.append(('update_status',))
+        if self.refresh is not None:
+            self.refresh(self)
+            if callback_function:
+                callback_function(True, {})
+
+    def play_media(self, url, content_type, **kwargs):
+        self.calls.append(('play_media', url, content_type, kwargs))
+
+    def block_until_active(self, timeout=None):
+        self.calls.append(('block_until_active', timeout))
+        if self.session_error:
+            raise self.session_error
+
+    def play(self):
+        self.calls.append(('play',))
+
+    def pause(self):
+        self.calls.append(('pause',))
+
+    def stop(self):
+        self.calls.append(('stop',))
+
+    def seek(self, position, timeout=10.0):
+        self.calls.append(('seek', position))
+
+
+class _FakeCast:
+    def __init__(self):
+        self.media_controller = _FakeMediaController()
+
+
+def test_cast_load_puts_the_resume_point_in_the_load_message(monkeypatch):
+    """A Seek sent after a load races the receiver's media session and is refused.
+
+    Live: the Samsung DU7000 rejected it ("Failed to execute seek 180.0") while the media
+    played on from the beginning, and pychromecast's default stream type is LIVE, which
+    tells the receiver the artifact cannot be seeked at all.
+    """
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_load({'id': 'cast:1'}, 'http://host/media/A Movie.mp4', 'A Movie', 'video/mp4', position=180)
+
+    assert fake.media_controller.calls == [
+        (
+            'play_media', 'http://host/media/A Movie.mp4', 'video/mp4',
+            {'title': 'A Movie', 'stream_type': 'BUFFERED', 'current_time': 180.0, 'autoplay': True},
+        ),
+    ]
+
+
+def test_cast_load_without_a_position_leaves_the_start_time_open(monkeypatch):
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_load({'id': 'cast:1'}, 'http://host/media/a.mp4', 'A Movie', 'video/mp4')
+
+    kwargs = fake.media_controller.calls[0][3]
+    assert kwargs['current_time'] is None
+    assert kwargs['stream_type'] == 'BUFFERED'
+
+
+@pytest.mark.parametrize("action,expected", [
+    ('play', ('play',)),
+    ('pause', ('pause',)),
+    ('seek', ('seek', 600.0)),
+])
+def test_cast_controls_wait_for_the_media_session_first(monkeypatch, action, expected):
+    """A command sent before the receiver has a session is rejected, so wait for it."""
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_command({'id': 'cast:1'}, action, 600)
+
+    calls = fake.media_controller.calls
+    assert calls[0][0] == 'block_until_active'
+    assert calls[1] == expected
+
+
+def test_a_receiver_that_never_opens_a_session_still_gets_the_command(monkeypatch):
+    """The wait is bounded: a device that never starts must not turn a scrub into a 500."""
+    fake = _FakeCast()
+    fake.media_controller.session_error = RuntimeError('no session')
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_command({'id': 'cast:1'}, 'seek', 600)
+
+    assert fake.media_controller.calls[-1] == ('seek', 600.0)
+
+
+def test_stop_does_not_wait_on_a_session(monkeypatch):
+    """Stop is the way out of a stuck cast - it must never block behind a session."""
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_command({'id': 'cast:1'}, 'stop')
+
+    assert fake.media_controller.calls == [('stop',)]
+
+
+def test_cast_status_asks_the_receiver_instead_of_reporting_a_stale_push(monkeypatch):
+    """A receiver pushes MEDIA_STATUS on transitions only - measured minutes apart while
+    playing - so a cached read froze the phone's cast bar on an old position."""
+    fake = _FakeCast()
+    fake.media_controller.status = _FakeStatus(current_time=82.279, duration=4717.024)
+    fake.media_controller.refresh = lambda controller: setattr(
+        controller, 'status', _FakeStatus(current_time=255.2, duration=4717.024),
+    )
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    status = cs.cast_status({'id': 'cast:1'})
+
+    assert ('update_status',) in fake.media_controller.calls
+    assert status == {'state': 'playing', 'position': 255.2, 'duration': 4717.024}
+
+
+def test_the_status_refresh_is_bounded_and_falls_back_to_the_cached_value():
+    """A silent receiver must not turn every poll into a hang - the app polls every 5 s."""
+    fake = _FakeCast()  # refresh stays None: the receiver never answers
+    fake.media_controller.status = _FakeStatus(current_time=10.0, duration=100.0)
+
+    started = cs.time.time()
+    cs._refresh_cast_status(fake.media_controller, timeout=0.05)
+
+    assert cs.time.time() - started < 1.0
+    cached = fake.media_controller.status
+    assert cached is not None
+    assert cached.current_time == 10.0
+
+
+def test_a_device_the_scan_missed_is_still_controllable_while_connected(monkeypatch):
+    """A scan replaces the discovery map and an mDNS window misses the TV now and then
+    (one scan of three, measured) - which answered "Unknown device - rescan and try
+    again." for every button while the phone was visibly casting to that TV."""
+    fake = _FakeCast()
+    registry = cs.CastRegistry()
+    registry._devices = {}
+    registry.remember_cast_connection('cast:tv', fake, None)
+    monkeypatch.setattr(cs, '_REGISTRY', registry)
+
+    resolved = registry.resolve_device('cast:tv')
+    assert resolved is not None and resolved['kind'] == 'cast'
+    assert registry.control('cast:tv', 'pause') == {'ok': True}
+    assert ('pause',) in fake.media_controller.calls
+    # a device with neither a scan entry nor a connection is still unknown
+    assert registry.resolve_device('cast:gone') is None
 
 
 # ------------------------------------------------------------------ pure helpers

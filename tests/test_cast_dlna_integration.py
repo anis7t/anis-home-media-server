@@ -167,6 +167,9 @@ def test_play_hands_the_url_and_metadata_to_the_renderer(registry_with_stub, stu
 
     assert result['ok'] is True, result
     assert stub_renderer.wait_for('Play'), stub_renderer.actions()
+    # The hand-over runs off-thread, so the Seek lands after Play is recorded - wait for
+    # it before ordering, otherwise this asserts on a half-finished hand-over.
+    assert stub_renderer.wait_for('Seek'), stub_renderer.actions()
     # Play must come before Seek: a stopped renderer answers 701 to a premature seek
     # (observed on the real TV), which used to abort the whole hand-over.
     actions = stub_renderer.actions()

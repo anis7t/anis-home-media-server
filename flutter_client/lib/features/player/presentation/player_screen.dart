@@ -812,11 +812,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
+  /// While a TV owns playback the phone is a remote: transport actions go to the cast,
+  /// never to the local player (which stays paused for the whole cast).
+  bool get _casting => ref.read(castControllerProvider).isCasting;
+
+  /// The position the controls act on: the TV's while casting, the local player's otherwise.
+  Duration get _transportPosition =>
+      _casting ? ref.read(castControllerProvider).position : _position;
+
+  Duration get _transportDuration {
+    if (!_casting) return _duration;
+    final castDuration = ref.read(castControllerProvider).duration;
+    return castDuration > Duration.zero ? castDuration : _duration;
+  }
+
+  /// Moves the TV to [target]. The cast controller shows it immediately and the status
+  /// poll corrects any drift the receiver adds.
+  void _sendCastSeek(Duration target) {
+    _progress?.onSeek(target);
+    unawaited(
+      ref.read(castControllerProvider.notifier)
+          .sendControl('seek', value: target.inMilliseconds / 1000),
+    );
+    if (mounted) setState(() => _position = target);
+  }
+
   Future<void> _restart() async {
     _onUserInteraction();
+    if (_casting) {
+      _sendCastSeek(Duration.zero);
+      _showHudToast('Restarted on ${_castName()}', icon: Icons.replay_rounded);
+      return;
+    }
     await _controller.seek(Duration.zero);
     _showHudToast('Restarted', icon: Icons.replay_rounded);
   }
+
+  String _castName() => ref.read(castControllerProvider).activeDevice?.name ?? 'the device';
 
   /// Device picker. Casting hands the media to a TV, so the phone stops playing it.
   void _openCastSheet() {
@@ -964,6 +996,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Future<void> _togglePlayPause() async {
     _onUserInteraction();
+    if (_casting) {
+      final cast = ref.read(castControllerProvider);
+      final playing = cast.playbackState == 'playing';
+      await ref.read(castControllerProvider.notifier).sendControl(playing ? 'pause' : 'play');
+      _showHudToast(
+        playing ? 'Paused on ${_castName()}' : 'Playing on ${_castName()}',
+        icon: Icons.cast_connected_rounded,
+      );
+      return;
+    }
     if (_state == PlayerPlaybackState.playing) {
       await _controller.pause();
       _cancelAutoHideTimer();
@@ -1001,12 +1043,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } else {
       _onUserInteraction();
     }
-    final cur = _position.inSeconds;
-    final maxSec = _duration.inSeconds;
+    final cur = _transportPosition.inSeconds;
+    final maxSec = _transportDuration.inSeconds;
     final targetSec = maxSec > 0
         ? (cur + seconds).clamp(0, maxSec)
         : ((cur + seconds) < 0 ? 0 : (cur + seconds));
     final target = Duration(seconds: targetSec);
+    if (_casting) {
+      _sendCastSeek(target);
+      if (!fromDoubleTap) {
+        final sign = seconds >= 0 ? '+$seconds' : '$seconds';
+        _showHudToast('$sign sec', icon: seconds >= 0 ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded);
+      }
+      return;
+    }
     await _controller.seek(target);
     _progress?.onSeek(target);
     if (mounted) {
@@ -1104,6 +1154,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _onSeek(Duration target) {
     _onUserInteraction();
+    if (_casting) {
+      _sendCastSeek(target);
+      return;
+    }
     _controller.seek(target);
     _progress?.onSeek(target);
     setState(() => _position = target);
@@ -1265,10 +1319,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             title: widget.title,
             subtitle: widget.subtitle,
             isVisible: _controlsVisible,
-            isPlaying: _state == PlayerPlaybackState.playing,
-            isBuffering: _isBuffering,
-            position: _position,
-            duration: _duration,
+            // While a TV owns playback the controls _are_ the TV's: the bar shows the
+            // cast's position/duration and the button its play state, so the phone reads
+            // as a remote instead of echoing a deliberately paused local player.
+            isPlaying: castState.isCasting
+                ? castState.playbackState == 'playing'
+                : _state == PlayerPlaybackState.playing,
+            isBuffering: castState.isCasting
+                ? castState.playbackState == 'buffering'
+                : _isBuffering,
+            position: _transportPosition,
+            duration: _transportDuration,
             volume: _volume,
             isFullscreen: _isFullscreen,
             onTogglePlay: _togglePlayPause,
