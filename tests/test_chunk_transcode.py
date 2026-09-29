@@ -1,5 +1,6 @@
 """Tests for multi-GPU chunked transcoding and GPU discovery services."""
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -205,6 +206,29 @@ class TestDualGPUTranscodeJob(unittest.TestCase):
         self.assertIn("#EXT-X-ENDLIST", text_complete)
         prog_complete = progress_file.read_text()
         self.assertIn("progress=end", prog_complete)
+
+    def test_master_playlist_declares_its_longest_segment(self):
+        """RFC 8216: no segment may be longer than the declared target duration.
+
+        The encoders do not keep the planned 4s cadence - real caches were found holding 5.0s
+        segments while declaring 4 - and a player is entitled to trust the declaration.
+        """
+        job = DualGPUTranscodeJob("test.mkv", self.media_path, self.hls_dir, self.playlist)
+        (self.hls_dir / "chunk_0.m3u8").write_text(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n"
+            "#EXTINF:5.000000,\nsegment_000000.ts\n",
+            encoding="utf-8",
+        )
+        (self.hls_dir / "segment_000000.ts").write_bytes(b"TS_DATA_0")
+
+        job._update_master_playlist(is_complete=True)
+
+        playlist = self.playlist.read_text(encoding="utf-8")
+        declared = int(re.search(r"#EXT-X-TARGETDURATION:(\d+)", playlist).group(1))
+        longest = max(float(m) for m in re.findall(r"#EXTINF:([\d.]+)", playlist))
+        self.assertGreaterEqual(declared, longest)
+        self.assertEqual(5, declared)
+
 
     def test_parse_chunk_segment_durations(self):
         job = DualGPUTranscodeJob("test.mkv", self.media_path, self.hls_dir, self.playlist)

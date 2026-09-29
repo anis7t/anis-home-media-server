@@ -184,6 +184,15 @@ The current project includes:
   `control`, `status` all use it); a device with neither a scan entry nor a connection is still unknown.
 - **Chromecast takes only direct containers; anything else needs an HLS cache first** — the cast bar's
   error text is the only sign when it is missing.
+- **Anything a receiver fetches *itself* must be served with CORS.** A receiver is a web runtime (CAF),
+  and its HLS loader fetches the manifest and every segment cross-origin: without
+  `Access-Control-Allow-Origin` on `/hls/*` the TV downloads the playlist, asks for **no segment**, and
+  the session ends at `stopped` with no error this server can see — measured, and the whole of "MP4
+  casts, MKV does not" (a media element is not a CORS request, so direct play never hit it).
+  `routes/media.py` owns `CORS_HEADERS`/`CORS_PATHS` and applies them in an `after_request` to `/media/`
+  and `/hls/` only — `/api/*` is deliberately outside the scope. A loader that sends `Range` preflights
+  (`Range` is not a safelisted header), so OPTIONS is covered; `tests/test_media_cors.py` pins all of it,
+  including that every URL `build_media_url()` hands a receiver lives on a CORS path.
 - Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`), so it is
   the ground truth for "did the TV actually move?" — never infer it from the phone's UI.
 
@@ -219,6 +228,13 @@ The current project includes:
   2.4 s video for the same segment). Rewriting labels from that quantity overstates the video
   timeline and **hides real content loss** - it is how a 99.88 % "repair" once masked 277 s of
   missing frames. Never relabel a playlist from container durations.
+- **`#EXT-X-TARGETDURATION` must cover the longest segment, and it is derived from the labels.**
+  RFC 8216 forbids a segment longer than the declared target, and the AMF encoders never kept the
+  planned 4 s cadence: the eight live caches held 5.0 s segments while declaring 4. `honest_target_duration()`
+  (`transcode_service`) raises the declaration to `ceil(longest #EXTINF)`; the master rebuild, the layout
+  migration and the resume rebuild all call it, and `hls_playlist` corrects what it *serves* — so caches
+  written before the fix are healed on delivery while the file on disk stays as written (its labels are
+  the content record). Same rule as the EXTINF lesson above: labels are honest, container durations not.
 - **Frame accounting is the only trustworthy content measure.** `chunk_content_deficits()`
   counts video packets per chunk and compares with `chunk window x source fps`; a real cache
   measured 100 % by duration while missing **277.2 s of frames across 101 chunks** (independent

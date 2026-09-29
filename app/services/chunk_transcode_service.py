@@ -482,8 +482,8 @@ class DualGPUTranscodeJob:
         if is_complete:
             lines.append("#EXT-X-ENDLIST")
 
-        text = "\n".join(lines) + "\n"
-        from app.services.transcode_service import write_text_atomic
+        from app.services.transcode_service import honest_target_duration, write_text_atomic
+        text = honest_target_duration("\n".join(lines) + "\n")
         with _PLAYLIST_WRITE_LOCK:
             write_text_atomic(self.playlist, text)
             try:
@@ -697,6 +697,7 @@ class DualGPUTranscodeJob:
         destroyed content in Spider-Man's cache) cannot be salvaged this way: the file at that
         index holds only one of the two chunks' content, so it is reported False and re-rendered.
         """
+        from app.services.transcode_service import honest_target_duration, write_text_atomic
         try:
             playlists = sorted(
                 self.hls_dir.glob('chunk_*.m3u8'),
@@ -757,13 +758,15 @@ class DualGPUTranscodeJob:
             for k, (label, _old) in enumerate(pairs):
                 body += f"#EXTINF:{label},\nsegment_{base + k:06d}.ts\n"
             try:
-                pl.write_text(body, encoding='utf-8')
+                # A chunk playlist declares its own longest segment too: the migration rewrites these
+                # from labels the encoder actually produced, which is exactly where the 4s-vs-5s
+                # declaration drift came from.
+                pl.write_text(honest_target_duration(body), encoding='utf-8')
             except OSError as exc:
                 logger.warning("Could not rewrite %s: %s", pl, exc)
                 return False
 
         # the served master playlist references the same files by name
-        from app.services.transcode_service import write_text_atomic
         for name in ('playlist.m3u8', 'playlist.m3u8.bak'):
             path = self.hls_dir / name
             if not path.is_file():

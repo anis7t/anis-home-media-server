@@ -20,12 +20,38 @@ from app.services.transcode_service import (
     compat_transcode_args,
     ensure_hls_transcode,
     hls_cache_dir,
+    honest_target_duration,
     transcode_cache_path,
     transcode_progress_path,
 )
 from app.utils.filesystem import is_video, mimetype, parse_range, safe_path
 
 media_bp = Blueprint('media', __name__)
+
+# A Cast receiver fetches an HLS manifest and its segments *itself*, in CORS mode, and a receiver is
+# a web runtime (CAF) - so without Access-Control-Allow-Origin it downloads the playlist and can read
+# nothing out of it. Measured on the Samsung DU7000: the playlist was fetched, not one segment
+# followed, and the media session ended with no error this server could see. Progressive MP4 never
+# hits this - a media element is not a CORS request - which is why only MKV/HLS casting failed. A
+# receiver loader that sends Range also preflights (Range is not a safelisted header), so OPTIONS is
+# covered too. Deliberately limited to the media paths: /api/* must stay unreadable from another
+# origin.
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Origin, Accept, Content-Type',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+}
+CORS_PATHS = ('/media/', '/hls/')
+
+
+@media_bp.after_request
+def _allow_receiver_cors(response):
+    """Let a cast receiver read the media it fetches itself (see CORS_HEADERS)."""
+    if request.path.startswith(CORS_PATHS):
+        response.headers.update(CORS_HEADERS)
+    return response
 
 # DLNA renderers ask for a *time* range (`TimeSeekRange.dlna.org: npt=…`) and read the
 # feature string (`contentFeatures.dlna.org`) before enabling their own transport
@@ -329,7 +355,15 @@ def hls_playlist(filename):
         reconcile_hls_playlist_discontinuities(directory, path)
     except Exception:
         pass
-    return send_file(playlist, mimetype='application/vnd.apple.mpegurl', max_age=0)
+    # Served from memory with the declaration corrected on the way out: the file itself is left
+    # alone (its labels are the content record), so caches written before the writers learned to
+    # declare their longest segment are healed as they are delivered.
+    try:
+        body = honest_target_duration(playlist.read_text(encoding='utf-8', errors='replace'))
+    except OSError:
+        return send_file(playlist, mimetype='application/vnd.apple.mpegurl', max_age=0)
+    return Response(body, mimetype='application/vnd.apple.mpegurl',
+                    headers={'Cache-Control': 'no-cache, max-age=0'})
 
 
 @media_bp.route('/hls/<path:filename>/<segment>')

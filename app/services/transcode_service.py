@@ -2,6 +2,7 @@
 import glob
 import hashlib
 import logging
+import math
 import os
 import re
 import shutil
@@ -767,7 +768,7 @@ def _hls_resume_point(directory, playlist_path, label=None, source_path=None):
     header = text[:first_extinf] if first_extinf != -1 else "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-INDEPENDENT-SEGMENTS\n"
     header = header.replace('#EXT-X-ENDLIST', '')
     body = "".join(f"#EXTINF:{d:.6f},\n{name}\n" for d, name in valid_segments)
-    clean_pl = header + body
+    clean_pl = honest_target_duration(header + body)
     write_text_atomic(playlist_path, clean_pl)
     try:
         write_text_atomic(bak_path, clean_pl)
@@ -965,6 +966,26 @@ def write_text_atomic(path, text: str) -> bool:
             return True
         except OSError:
             return False
+
+
+def honest_target_duration(text: str) -> str:
+    """Return `text` with `#EXT-X-TARGETDURATION` raised to ceil of its longest segment label.
+
+    RFC 8216 requires every segment to be no longer than the declared target duration, and the AMF
+    encoders do not keep the planned 4s cadence: real caches were found holding 5.0s segments while
+    declaring 4. A player is entitled to trust the declaration. The value is computed from the
+    labels - which are honest - never from container durations, which carry the audio pre-roll.
+    """
+    longest = max(parse_playlist_labels(text).values(), default=0.0)
+    if longest <= 0:
+        return text
+    target = math.ceil(longest)
+    declared = re.search(r'#EXT-X-TARGETDURATION:(\d+)', text)
+    if declared is None:
+        return text.replace('#EXTM3U', f'#EXTM3U\n#EXT-X-TARGETDURATION:{target}', 1)
+    if int(declared.group(1)) >= target:
+        return text
+    return f'{text[:declared.start()]}#EXT-X-TARGETDURATION:{target}{text[declared.end():]}'
 
 
 def parse_playlist_labels(text: str) -> Dict[str, float]:
