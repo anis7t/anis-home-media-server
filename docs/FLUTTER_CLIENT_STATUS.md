@@ -1,6 +1,6 @@
 # Flutter Client — Phase Status & Handoff
 
-> **Last updated:** 2026-09-26
+> **Last updated:** 2026-09-29
 > **Active branch:** `feat/flutter-production-player`
 > **Package ID:** `in.anisparvez.media_server_client`
 > **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates)
@@ -121,6 +121,38 @@ $env:MEDIA_SERVER_TEST_ORIGIN = "http://127.0.0.1:8000"   # optional, Flutter on
   - Published and installed Build 103 (`1.0.3-dev.103`) via `publish_update.py` and `adb install -r`.
   - Library → Movie Details → Resume/Play → Production Player → Back → Details → Library live on LAN.
   - Settings Sheet: server info, device ID, version info, channel selection, update status.
+
+### Player gestures: volume & brightness swipes (2026-09-28, `a0877ce`)
+
+Swiping up/down on the video surface drives the phone's own levels — **left half = brightness, right
+half = system media volume** — with a HUD readout (`N% Brightness` / `N% Volume`). A full-height
+swipe covers the whole range, and the drag fraction is applied as an offset from the value captured
+at drag start, so the mapping stays absolute.
+
+| File | Purpose |
+|------|---------|
+| `lib/features/player/infrastructure/screen_brightness_service.dart` | Channel `…/screen_brightness` → `WindowManager.LayoutParams.screenBrightness` (clamped 0.01-1.0; `-1` restores the system level). Failures swallowed; `supported = false` after `MissingPluginException` |
+| `lib/features/player/infrastructure/media_volume_service.dart` | Channel `…/media_volume` → `AudioManager.STREAM_MUSIC`, 0-100 — the level the phone's volume keys control |
+| `lib/features/player/presentation/widgets/double_tap_seek_detector.dart` | Opt-in vertical drags; reports the cumulative fraction `(dragStartY - currentY) / surfaceHeight` (positive = up); a drag never satisfies the tap/double-tap recognizers |
+| `lib/features/player/presentation/widgets/player_hud_toast.dart` | HUD pill; wraps itself in `IgnorePointer` so it never blocks the surface |
+| `test/features/player/player_gesture_controls_test.dart` | 7 cases — halves, cumulative reporting, gesture coexistence |
+
+Invariants that bite:
+- The gesture HUD must render **outside `PlayerControlsOverlay`** (it fades to opacity 0 on
+  auto-hide, and the readout used to vanish with it). The HUD lives in the player's own stack.
+- Anything overlaying the surface must not eat gestures: the loading/buffering indicator is wrapped
+  in `IgnorePointer` — a full-screen layer above the surface kills swipes silently.
+- The right-half swipe is the **system** volume; the app's own player volume stays at full, so the
+  HUD matches what is audible.
+- A volume drag re-reads the system volume at drag start (the volume keys move it independently).
+- `PlaybackProgressReporter.dispose()` never flushes — a save started during teardown leaves Dio's
+  timer pending in widget tests. The exit save is in `_handleBack`, before `_controller.stop()`.
+
+Also in this pass (`a0877ce`): `PlaybackProgressReporter` (the app now *writes* watch progress —
+10 s delta, pause, debounced seek, end, back path; `onEnded` marks watched only at the true end);
+`serverBaseUrlProvider` is reactive (artwork was pinned to the loopback default on the first frame);
+the Continue Watching rail and grid reload after playback (`loadLibrary(isRefresh: true)`);
+`kotlin.incremental=false` for the USB volume.
 
 ---
 

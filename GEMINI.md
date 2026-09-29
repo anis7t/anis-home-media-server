@@ -265,6 +265,13 @@
 - **Controls Button Sequence**:
   - Primary bottom controls must follow the canonical web-aligned sequence: Replay `↺` (Restart to `0:00`) first, followed by Play/Pause (`⏸`/`▶`), Mute (`🔊`), Speed (`1×`), Audio track selector, Subtitles, and Fullscreen.
 
+- **Vertical-Swipe Volume & Brightness Gestures**:
+  - Swiping up/down on the video surface: **left half = brightness** (`screen_brightness` channel → `WindowManager.LayoutParams.screenBrightness`, clamped `0.01-1.0`; `-1` hands control back to the system), **right half = system media volume** (`media_volume` channel → `AudioManager.STREAM_MUSIC`, 0-100). The app's own player volume stays at full — the swipe drives the stream the volume keys control, so the HUD matches what is audible.
+  - Drags are **opt-in** on `DoubleTapSeekDetector` (`onVerticalDragBegin/Delta/End`) and the reported fraction is **cumulative** — `(dragStartY - currentY) / surfaceHeight`, positive = up — never one frame's movement. A drag must never satisfy the tap or double-tap recognizers (tap toggles the controls, double-tap seeks ±10 s).
+  - The value at drag start is captured and the fraction applied as an offset; a volume drag re-reads the system volume at drag start, because the phone's volume keys move it independently.
+  - The gesture HUD (`PlayerHudToast`) must render **outside `PlayerControlsOverlay`** — that overlay fades to opacity 0 when the controls auto-hide and the readout would vanish with it. Anything overlaying the surface must not swallow gestures: keep `IgnorePointer` on the loading/buffering indicator, and never place an opaque full-screen layer above the surface (it kills swipes silently).
+  - Watch progress writes belong to `PlaybackProgressReporter` (10 s playback delta, pause, debounced seek, end, back path) — `dispose()` never flushes; the exit save lives in `_handleBack`, before `controller.stop()` resets the position.
+
 - **Rapid Physical Device Testing & Intent Routing**:
   - **Zero Multi-Turn Manual Navigations**: Never use sequential multi-turn conversational tool roundtrips to manually navigate intermediate screens (e.g. Connection -> Test Connection -> Scroll -> Launch Player).
   - **Direct Intent Routing**: Use direct cold-boot intents via `am start`:

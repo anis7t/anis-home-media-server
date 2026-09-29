@@ -90,6 +90,63 @@ it. The app's picker lists the TV, clicking it plays, the cast bar appears (`TV 
 and its stop button ends the cast; the cast button itself shows `is-casting`. The web player does the
 same on both surfaces, through the live API.
 
+### 2026-09-28 — Player swipe controls (volume & brightness) + progress persistence (`a0877ce`)
+
+**Gestures:** swiping up/down on the video surface drives the phone's own levels — **left half =
+brightness, right half = system media volume** — with a HUD readout (`N% Brightness` / `N% Volume`).
+A full-height swipe covers the whole range; the value at drag start is captured and the drag
+fraction is applied as an offset, so the mapping stays absolute however many events arrive.
+
+- Vertical drags are **opt-in** on `DoubleTapSeekDetector` (`onVerticalDragBegin/Delta/End`): a drag
+  never satisfies the tap (toggle controls) or double-tap (seek ±10 s) recognizers, and the detector
+  reports the cumulative fraction `(dragStartY - currentY) / surfaceHeight` (positive = up), not one
+  frame of movement.
+- Two new MethodChannels in `MainActivity.kt`, no permissions needed: `…/screen_brightness` →
+  `WindowManager.LayoutParams.screenBrightness` (clamped 0.01-1.0; `-1` hands brightness back to the
+  system when the player goes away) and `…/media_volume` → `AudioManager.STREAM_MUSIC` — the level
+  the volume keys control and the level actually heard. The app's own player volume stays at full so
+  the HUD matches what is audible. Both services swallow every failure (a desktop host or a widget
+  test has no plugin): a gesture must never break playback.
+- A volume drag re-reads the system volume at drag start, so it continues from where the phone's
+  volume keys left it instead of from a stale mirror.
+- The gesture HUD renders **outside `PlayerControlsOverlay`** — that overlay fades to opacity 0 when
+  the controls auto-hide, which used to hide the readout of a swipe that had already changed the
+  value. `PlayerHudToast` wraps itself in `IgnorePointer`, and the loading/buffering indicator now
+  does too (it used to swallow swipes while the stream probed). The rotate button is gone.
+
+**Progress persistence (leaving the player wrote 0):** the app read the resume point but never wrote
+it, and the back path flushed *after* `stop()` had already reset the position. New
+`PlaybackProgressReporter` (`lib/features/player/application/`) mirrors the web player's cadence —
+autosave on a 10 s playback delta, on pause, on seek (2 s debounce so scrubbing writes once), on end,
+and on leaving the player; positions under 1 s are never persisted, and `onEnded()` marks *watched*
+(0) only when the position really is at the end (media_kit reports `completed` for torn-down streams
+too). `dispose()` deliberately does not flush — a save started during teardown leaves Dio's
+scheduling timer pending ("A Timer is still pending…" in widget tests); the exit save belongs to
+`_handleBack`, before the controller is stopped.
+
+**Reactive `serverBaseUrlProvider`:** repositories call `updateBaseUrl()` only after reading the
+saved server, and the first frame renders before that — sampling `dio.options.baseUrl` once pinned
+artwork to the loopback default (the phone itself), so every poster fell back to a letter avatar
+while API calls kept working. The provider now listens to the client's `baseUrlNotifier` and
+invalidates itself on change.
+
+**Continue Watching rail refresh:** the rail and grid resume from their own `MovieItem`, so after
+playback the library list is reloaded (`loadLibrary(isRefresh: true)`) on return from the player —
+otherwise the next tap replays the position the list was loaded with.
+
+**Also:** `kotlin.incremental=false` in `flutter_client/android/gradle.properties` — Kotlin's
+memory-mapped incremental caches fail on the USB volume (`Could not close incremental caches …`),
+and neither clearing the cache nor `flutter clean` helps.
+
+**Verification:** new `test/features/player/player_gesture_controls_test.dart` (7 cases: left/right
+half, cumulative fraction, negative on swipe down, a drag never fires tap/double-tap, tap and
+double-tap still work with drags enabled, inert without a callback), plus
+`playback_progress_reporter_test.dart`, `playback_progress_persistence_test.dart`,
+`player_screen_test.dart`, `server_base_url_provider_test.dart`, `library_screen_test.dart` and
+`movie_details_screen_test.dart`; `flutter analyze lib test` 0 issues. On the Vivo I2217 a
+right-half swipe moves the system media volume (`dumpsys audio` → `VOLUME GROUP AUDIO_STREAM_MUSIC`),
+and leaving the player persists the position the web player then resumes from.
+
 ### 2026-09-28 — Watch progress is per device (resume no longer bleeds across devices)
 
 **Symptom:** seeking in the laptop's web player moved the phone app's resume point — whichever
