@@ -38,12 +38,7 @@ them. An earlier cut rendered a script-stripped snapshot of the library into a s
 owner rejected that ("it reveals the app itself ready to use"), and the snapshot file and its builder
 were deleted.
 
-**Not applied:** no application file was changed for this work. The overlay is served over the app by a
-read-only injection proxy whose `?intro=off` mode returns the app's own response byte-for-byte. Making it
-permanent is one include — `{% include 'intro-overlay.html' %}` as the last thing in the page — plus an
-optional `sessionStorage` gate. The artifacts live outside the checkout in
-`C:\Users\anis7\Documents\Anis-Media-Server-Intro\`; full detail, modes and integration recipe in
-[`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+**Opening sequence (intro animation):** delivered and wired into the app. A 3.00-second branded opening (build-up → logo impact → two-note motif → wordmark → curtain parts onto the app itself) with an original synthesized score. The overlay is included as the last thing in `templates/library.html` and gated once per browser session via `sessionStorage`. **Not a library snapshot** — the curtain opens onto the real, live, interactive app page. Artifacts in `docs/opening-sequence/` inside this repository: scripts (`serve_with_intro.py`, `cdp_local.py`, `capture_overlay_frames.py`, `encode_videos.py`, `render_intro_theme.py`, `verify_overlay.py`, `verify_app_integration.py`, `convert_to_overlay.py`), the score (`assets/intro-theme.wav`), rendered videos (`assets/intro-demo.mp4`, `assets/intro-demo-portrait.mp4`), captured frames (`frames/`, `frames-portrait/`), keystills (`assets/stills/`), pre-overlay source (`source/intro.html`), and a copy of the overlay layer (`source/intro-overlay.html`); the canonical overlay is `templates/intro-overlay.html`. The read-only proxy (`python docs/opening-sequence/scripts/serve_with_intro.py --port 8001 --app http://127.0.0.1:8000`) lets you see it over the running app without touching the app at all; `?intro=off` returns the app's own response byte-for-byte. Full detail, modes and integration recipe in [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
 
 **Verification:** `verify_overlay.py` — 12 behavioural checks against the running server, all pass: the
 app's DOM is present under the layer (12 cards, 11 posters), the AudioContext reaches `running` on a real

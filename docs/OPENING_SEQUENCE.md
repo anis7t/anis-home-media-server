@@ -1,8 +1,10 @@
 # Opening Sequence — Brand Sting for Anis' Home Media Server
 
 Last reviewed: 2026-09-30
-Status: **delivered standalone — not wired into the application**
-Artifacts: `C:\Users\anis7\Documents\Anis-Media-Server-Intro\` (deliberately outside this repository)
+Status: **delivered and wired into the application** (template include + per-session gate)
+Artifacts: `docs/opening-sequence/` inside this repository — scripts, the score, the videos, the captured
+frames and stills in one bundle. The overlay layer itself lives at `templates/intro-overlay.html` and is
+included by the library page.
 
 ---
 
@@ -22,26 +24,27 @@ its builder were deleted.
 
 ## 2. Where the artifacts live
 
-Nothing in this document has been applied to the app: no application file was changed for it, and
-the overlay is served over the app by a read-only proxy. Everything is in
-`C:\Users\anis7\Documents\Anis-Media-Server-Intro\`:
+Everything for this work lives inside the repository in `docs/opening-sequence/`:
 
-| File | What it is |
+| Path | What it is |
 |---|---|
-| `intro-overlay.html` | **the deliverable** — the overlay layer to inject (42,859 bytes, self-contained) |
-| `serve_with_intro.py` | read-only injection proxy — forwards every request, rewrites only `text/html` |
-| `cdp_local.py` | headless-Edge CDP driver (launch, attach, evaluate, real clicks, clipped captures) |
-| `capture_overlay_frames.py` | 90-frame capture per orientation, resumable, with a duplicate-run audit |
-| `encode_videos.py` | normalises rasters and encodes both cuts with the score |
-| `render_intro_theme.py` | the score's source (standard library only) |
-| `verify_overlay.py` | 12 behavioural checks against the running server |
-| `convert_to_overlay.py` | asserted, reproducible record of the standalone→overlay conversion |
-| `intro.html` | pre-overlay source, kept as the conversion's input |
-| `intro-theme.wav` | score master — 3.070 s, 44.1 kHz stereo, peak −1.01 dBFS |
-| `intro-demo.mp4` | 1920×1080, 30 fps, 90 frames, 3.000 s, H.264 CRF 17 + AAC 192 kbps |
-| `intro-demo-portrait.mp4` | 1080×1920, same encoding — for the Flutter client |
-| `README.md` | full specs, integration notes, capture realities, verification table |
-| `frames/`, `frames-portrait/` | 90 PNGs each, captured over the live app (regenerable) |
+| `docs/opening-sequence/scripts/serve_with_intro.py` | read-only injection proxy — forwards every request, rewrites only `text/html` |
+| `docs/opening-sequence/scripts/cdp_local.py` | headless-Edge CDP driver (launch, attach, evaluate, real clicks, clipped captures) |
+| `docs/opening-sequence/scripts/capture_overlay_frames.py` | 90-frame capture per orientation, resumable, with a duplicate-run audit |
+| `docs/opening-sequence/scripts/encode_videos.py` | normalises rasters and encodes both cuts with the score |
+| `docs/opening-sequence/scripts/render_intro_theme.py` | the score's source (standard library only) |
+| `docs/opening-sequence/scripts/verify_overlay.py` | 12 behavioural checks against the running server |
+| `docs/opening-sequence/scripts/verify_app_integration.py` | live-service verifier — drives the real app, all checks pass |
+| `docs/opening-sequence/scripts/convert_to_overlay.py` | asserted, reproducible record of the standalone→overlay conversion |
+| `docs/opening-sequence/source/intro.html` | pre-overlay source, kept as the conversion's input |
+| `docs/opening-sequence/source/intro-overlay.html` | copy of the overlay layer (canonical copy is `templates/intro-overlay.html`) |
+| `docs/opening-sequence/assets/intro-theme.wav` | score master — 3.070 s, 44.1 kHz stereo, peak −1.01 dBFS |
+| `docs/opening-sequence/assets/intro-demo.mp4` | 1920×1080, 30 fps, 90 frames, 3.000 s, H.264 CRF 17 + AAC 192 kbps |
+| `docs/opening-sequence/assets/intro-demo-portrait.mp4` | 1080×1920, same encoding — for the Flutter client |
+| `docs/opening-sequence/assets/stills/` | keystills from the encoded videos |
+| `docs/opening-sequence/frames/` | 90 PNGs landscape, captured over the live app (regenerable) |
+| `docs/opening-sequence/frames-portrait/` | 90 PNGs portrait |
+| `docs/opening-sequence/README.md` | full specs, integration notes, capture realities, verification table |
 
 ## 3. The sequence
 
@@ -85,25 +88,17 @@ the overlay is served over the app by a read-only proxy. Everything is in
 The gate exists because browsers refuse to start audio without a gesture; a real trusted click is what
 makes the score audible (verified: the AudioContext reads `running`).
 
-## 5. Wiring it in (not done)
+## 5. How it is wired into the app
 
-```bash
-# see it over the running app without changing anything
-python serve_with_intro.py --port 8001 --app http://127.0.0.1:8000
-# http://127.0.0.1:8001/          the app wearing the intro
-# http://127.0.0.1:8001/?intro=off  the app bare, for comparison
-```
-
-To make it permanent, copy `intro-overlay.html` into `templates/` and include it as the **last** thing
-in the page, so the app's own scripts have already run and what the curtain opens onto is a fully
-initialised page:
+The overlay is included as the **last** thing in `templates/library.html`, so the app's own scripts have
+already run and what the curtain opens onto is a fully initialised page:
 
 ```jinja
 {# templates/library.html — at the very end of the file #}
 {% include 'intro-overlay.html' %}
 ```
 
-Gate it per session if it should not play on every load:
+It is gated **once per browser session** so it does not play on every load:
 
 ```js
 if (!sessionStorage.getItem('introSeen')) {
@@ -114,8 +109,17 @@ if (!sessionStorage.getItem('introSeen')) {
 
 `window.INTRO` exposes `play()`, `skip()`, `replay()`, `finish()`, `renderAt(t)`, `pageMode()`,
 `playback()`, `audio`, `timeline`, `duration`. The overlay needs no build step, no assets and no
-network of its own; for the Flutter client, `intro-demo-portrait.mp4` is a finished 1080×1920 asset and
-native playback has no autoplay restriction.
+network of its own; for the Flutter client, `docs/opening-sequence/assets/intro-demo-portrait.mp4` is
+a finished 1080×1920 asset and native playback has no autoplay restriction.
+
+To see it over the running app **without touching the app at all** (the read-only proxy, useful for
+re-verification after re-rendering):
+
+```bash
+python docs/opening-sequence/scripts/serve_with_intro.py --port 8001 --app http://127.0.0.1:8000
+# http://127.0.0.1:8001/          the app wearing the intro
+# http://127.0.0.1:8001/?intro=off  the app bare, for comparison
+```
 
 ## 6. Re-rendering the videos
 
@@ -123,12 +127,12 @@ Captured with **local headless Edge over CDP** — same origin as the app, real 
 URLs and no cloud session to drop (Edge is on every Windows host, so no new dependency is needed).
 
 ```bash
-python serve_with_intro.py --port 8001 &        # the app wearing the intro
-python capture_overlay_frames.py landscape      # -> frames/           (resumable)
-python capture_overlay_frames.py portrait       # -> frames-portrait/
-python render_intro_theme.py                    # -> intro-theme.wav
-python encode_videos.py                         # -> both MP4s
-python verify_overlay.py                        # 12 behavioural checks
+python docs/opening-sequence/scripts/serve_with_intro.py --port 8001 &        # the app wearing the intro
+python docs/opening-sequence/scripts/capture_overlay_frames.py landscape      # -> frames/           (resumable)
+python docs/opening-sequence/scripts/capture_overlay_frames.py portrait       # -> frames-portrait/
+python docs/opening-sequence/scripts/render_intro_theme.py                    # -> assets/intro-theme.wav
+python docs/opening-sequence/scripts/encode_videos.py                         # -> both MP4s
+python docs/opening-sequence/scripts/verify_overlay.py                        # 12 behavioural checks
 ```
 
 `capture_overlay_frames.py` sets the layout viewport with `Emulation.setDeviceMetricsOverride`, so the
@@ -190,4 +194,5 @@ telemetry (Memory Bank 65.3 %, Storage Pool 88.9 %) — with no curtain or overl
   placeholder. That is the app being accurate, not a capture defect.
 - The videos show the library **as it stood at capture time**; re-run the capture + encode after
   library changes.
-- Nothing was committed for this work, and no application behaviour depends on it.
+- The rendered artifacts (`frames/`, `frames-portrait/`, the MP4s and the WAV) are regenerable from
+  the scripts and the live app; they are kept here as the delivered deliverables and for re-verification.

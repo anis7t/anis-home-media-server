@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090b10">
+<title>Anis' Home Media Server — Opening Sequence</title>
+<!--
+  Opening title sequence for Anis' Home Media Server. 3.00 seconds.
+  ---------------------------------------------------------------------------
+  · Original brand animation in the spirit of a streaming-service ident:
+    build-up -> logo impact -> two-note motif -> wordmark -> handoff into the UI.
+  · All sound is synthesized live with the Web Audio API (no audio files, no
+    licensed material). intro-theme.wav is the offline render of the same design.
+  · The entire animation is ONE deterministic function of time, renderAt(t),
+    so it can be scrubbed, screenshotted frame-by-frame (?capture=1) or driven
+    by requestAnimationFrame for live playback.
+  This file is standalone: open it directly in any modern browser. No network.
+-->
+<style>
+  /* ===================== base ===================== */
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    background:#05060a;color:#f7f7f8;
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;user-select:none;-webkit-user-select:none;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  }
+  button{font:inherit;cursor:pointer}
+
+  /* ===================== stage layers ===================== */
+  #stage{position:fixed;inset:0;z-index:1;overflow:hidden}
+
+  @keyframes ambientDrift{
+    0%{transform:scale(1);filter:brightness(1)}
+    100%{transform:scale(1.045);filter:brightness(1.06)}
+  }
+
+  #fx{position:absolute;inset:0;z-index:4;display:block}
+
+  #vignette{
+    position:absolute;inset:0;z-index:5;pointer-events:none;
+    background:radial-gradient(ellipse 78% 70% at 50% 50%,transparent 42%,rgba(0,0,0,.55) 82%,rgba(0,0,0,.85) 100%);
+  }
+  #grain{
+    position:absolute;inset:0;z-index:6;pointer-events:none;opacity:.05;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 .6 0 0 0 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+    background-size:180px 180px;
+  }
+
+  /* ===================== the lockup ===================== */
+  #lockup{
+    position:absolute;left:50%;top:50%;z-index:7;
+    display:flex;align-items:center;gap:clamp(10px,calc(var(--u,1vmin) * 3),34px);
+    transform:translate(-50%,-50%);
+    transform-origin:50% 50%;will-change:transform,opacity;
+    pointer-events:none;
+  }
+  #iconWrap{position:relative;flex:0 0 auto;line-height:0}
+  #iconGlow{
+    position:absolute;left:50%;top:50%;width:280%;height:280%;
+    transform:translate(-50%,-50%);opacity:0;pointer-events:none;
+    background:radial-gradient(circle,rgba(255,42,75,.55) 0%,rgba(229,9,20,.28) 34%,transparent 70%);
+    filter:blur(10px);
+  }
+  #brandIcon{position:relative;display:block;width:clamp(64px,calc(var(--u,1vmin) * 10.5),118px);height:clamp(64px,calc(var(--u,1vmin) * 10.5),118px);
+    border-radius:26%;will-change:transform,opacity}
+  #wordCol{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(3px,calc(var(--u,1vmin) * .7),7px);min-width:0}
+  .word{
+    font-weight:800;letter-spacing:-.022em;line-height:1.02;white-space:nowrap;
+    will-change:transform,opacity,filter;
+  }
+  #w1{font-size:clamp(30px,calc(var(--u,1vmin) * 5.7),66px)}
+  #w2{font-size:clamp(30px,calc(var(--u,1vmin) * 5.7),66px)}
+  .lt{
+    display:inline-block;will-change:transform,opacity;
+    background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  }
+  #w1 .lt{background-image:linear-gradient(180deg,#ffffff 36%,#cbd5e1 100%)}
+  #w2 .lt{background-image:linear-gradient(180deg,#ff5f70 24%,#e50914 100%)}
+  #sub{
+    font-size:clamp(8.5px,calc(var(--u,1vmin) * 1.3),13px);font-weight:800;text-transform:uppercase;
+    color:#94a3b8;letter-spacing:.14em;white-space:nowrap;will-change:letter-spacing,opacity,filter;
+  }
+  #rule{
+    width:100%;height:2px;border-radius:99px;transform-origin:50% 50%;transform:scaleX(0);
+    background:linear-gradient(90deg,transparent 0%,#ff2a4b 22%,#e50914 50%,#ff2a4b 78%,transparent 100%);
+    box-shadow:0 0 12px rgba(229,9,20,.55);
+  }
+
+  /* ===================== the app (handoff target) ===================== */
+  /* portrait: the lockup stacks and centres, matching the app's mobile header */
+  #lockup.portrait{flex-direction:column;align-items:center;gap:clamp(9px,calc(var(--u,1vmin) * 1.5),20px)}
+  #lockup.portrait #wordCol{align-items:center}
+  #lockup.portrait .word{text-align:center}
+
+  /* ===================== the library underneath =====================
+     The curtain opens onto the REAL library page. It is loaded live from the
+     same origin when the intro is served by the app, and from
+     library-snapshot.html (a real, script-free copy of the page) otherwise.
+     It renders inside an iframe so the app's own CSS cannot reach this document. */
+  #library{position:absolute;inset:0;z-index:1;overflow:hidden;background:#090b10}
+  #libFrame{position:absolute;left:0;top:0;width:100%;height:100%;border:0;
+    transform-origin:50% 50%;will-change:transform;background:#090b10}
+  #libFallback{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+    background:radial-gradient(ellipse 70% 58% at 50% 44%,rgba(229,9,20,.10) 0%,transparent 70%),#090b10;
+    color:#5d6b80;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;line-height:2.1}
+
+  /* ===================== the curtain =====================
+     Two halves of one backdrop. At rest their backgrounds line up into a single
+     image (background-size:200% with opposite positions, plus a 1px overlap at
+     the centre), so the opening frames are identical to one unbroken veil; the
+     inner edges only feather once the halves part. */
+  .veil{position:absolute;top:0;bottom:0;width:calc(50% + 1px);z-index:2;will-change:transform}
+  #veilL{left:0;transform-origin:100% 50%}
+  #veilR{right:0;transform-origin:0 50%}
+  .veil-inner{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 42%,rgba(229,9,20,.10) 0%,transparent 68%),
+      radial-gradient(ellipse 55% 45% at 78% 84%,rgba(56,189,248,.05) 0%,transparent 62%),
+      radial-gradient(ellipse 45% 40% at 16% 18%,rgba(168,85,247,.045) 0%,transparent 60%),
+      #05060a;
+    background-size:200% 100%;
+    animation:ambientDrift 14s ease-in-out infinite alternate;
+  }
+  #veilL .veil-inner{background-position:0 0}
+  #veilR .veil-inner{background-position:100% 0}
+
+  /* warm light spilling through the opening as the halves part */
+  #seam{position:absolute;left:50%;top:0;bottom:0;width:38%;z-index:3;pointer-events:none;
+    transform:translateX(-50%);opacity:0;filter:blur(16px);
+    background:radial-gradient(ellipse 46% 78% at 50% 48%,rgba(255,240,242,.62) 0%,rgba(255,120,140,.24) 40%,transparent 74%)}
+
+  /* ===================== HUD ===================== */
+  #hud{position:absolute;right:max(1rem,env(safe-area-inset-right));bottom:max(1rem,env(safe-area-inset-bottom));
+    z-index:8;display:flex;align-items:center;gap:.5rem;opacity:0;transition:opacity .25s ease}
+  #hud.show{opacity:1}
+  #hud button{
+    display:inline-flex;align-items:center;gap:.4rem;height:34px;padding:0 .9rem;border-radius:9999px;
+    background:rgba(22,31,46,.85);border:1px solid #2b3545;color:#e2e8f0;font-size:.8rem;font-weight:650;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:background .16s ease,transform .16s ease
+  }
+  #hud button:hover{background:#202b3f;transform:translateY(-1px)}
+  #hudNote{font-size:.72rem;color:#64748b;font-weight:600;padding:0 .3rem}
+
+  /* ===================== gate ===================== */
+  #gate{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#05060a;
+    transition:opacity .3s ease}
+  #gate.off{opacity:0;pointer-events:none}
+  .gate-card{display:flex;flex-direction:column;align-items:center;gap:.85rem;padding:2rem;text-align:center}
+  .gate-card svg{width:76px;height:76px;border-radius:26%;filter:drop-shadow(0 4px 24px rgba(229,9,20,.5))}
+  .gate-card h1{margin:.2rem 0 0;font-size:1.5rem;font-weight:800;letter-spacing:-.4px;
+    background:linear-gradient(135deg,#fff 40%,#cbd5e1);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .gate-card h1 b{color:#ff2a4b;-webkit-text-fill-color:#ff2a4b;font-weight:800}
+  .gate-sub{margin:0;color:#94a3b8;font-size:.86rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+  #playBtn{
+    margin-top:.6rem;display:inline-flex;align-items:center;gap:.6rem;height:52px;padding:0 1.7rem;border-radius:9999px;
+    background:linear-gradient(135deg,#ff2a4b 0%,#e50914 100%);border:1px solid rgba(255,255,255,.22);color:#fff;
+    font-size:1rem;font-weight:750;box-shadow:0 10px 34px rgba(229,9,20,.45);transition:transform .16s ease,box-shadow .16s ease
+  }
+  #playBtn:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(229,9,20,.6)}
+  #playBtn:active{transform:translateY(0)}
+  #playBtn:focus-visible{outline:2px solid #fff;outline-offset:3px}
+  .gate-hint{margin:.4rem 0 0;color:#64748b;font-size:.76rem;max-width:22rem;line-height:1.5}
+  .gate-hint kbd{background:#161f2e;border:1px solid #2b3545;border-radius:5px;padding:1px 5px;font-size:.72rem;color:#cbd5e1}
+
+  /* capture mode: no CSS-driven motion, no chrome, and a true 16:9 stage box
+     (the frame is cropped to this box, so the composition is exact) */
+  body.capture .veil-inner{animation:none}
+  body.capture #hud,body.capture #gate{display:none!important}
+  body.capture *{animation:none!important;transition:none!important}
+  body.capture #stage{
+    inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(100vw,calc(100vh * 16 / 9));
+    height:min(100vh,calc(100vw * 9 / 16));
+    box-shadow:0 0 0 1px rgba(255,255,255,.08);
+  }
+  body.capture.capture-portrait #stage{
+    width:min(100vw,calc(100vh * 9 / 16));
+    height:min(100vh,calc(100vw * 16 / 9));
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <!-- what the curtain opens onto: the real library page, in an inert iframe
+       (loaded live from the app's origin when served, else the snapshot) -->
+  <div id="library" aria-hidden="true">
+    <div id="libFallback">Library layer unavailable<br>
+      <span style="letter-spacing:.02em;text-transform:none;font-weight:600">serve this folder over http:// so the curtain can open onto the real library</span></div>
+    <iframe id="libFrame" title="Library" sandbox="" style="display:none"></iframe>
+  </div>
+
+  <!-- the curtain: two halves of one backdrop -->
+  <div class="veil" id="veilL"><div class="veil-inner"></div></div>
+  <div class="veil" id="veilR"><div class="veil-inner"></div></div>
+  <div id="seam"></div>
+
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div id="vignette"></div>
+  <div id="grain"></div>
+
+  <!-- the brand lockup, dismissed gently as the curtain opens -->
+  <div id="lockup" aria-hidden="true">
+    <div id="iconWrap">
+      <div id="iconGlow"></div>
+      <span id="brandIcon"></span>
+    </div>
+    <div id="wordCol">
+      <div class="word" id="w1">Anis'</div>
+      <div class="word" id="w2">Home Media Server</div>
+      <div id="sub">PLAY &#8226; ORGANIZE &#8226; ENJOY</div>
+      <div id="rule"></div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <span id="hudNote">3.0 s &#183; original theme</span>
+    <button id="skipBtn" type="button">Skip &#9193;</button>
+    <button id="replayBtn" type="button" style="display:none">&#8635; Replay</button>
+    <button id="muteBtn" type="button" aria-pressed="false">&#128266; Sound</button>
+  </div>
+</div>
+
+<div id="gate">
+  <div class="gate-card">
+    <span id="gateIcon"></span>
+    <h1>Anis' <b>Home Media Server</b></h1>
+    <p class="gate-sub">Opening sequence &#183; 3 seconds</p>
+    <button id="playBtn" type="button">&#9654; Play with sound</button>
+    <p class="gate-hint">Original synthesized theme. Browsers require a click before audio can play, so press play &#8212; <kbd>space</kbd> skips, <kbd>m</kbd> mutes.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================ 0. small math */
+var clamp=function(v,a,b){return v<a?a:(v>b?b:v)};
+var lerp=function(a,b,t){return a+(b-a)*t};
+var eOutCubic=function(t){return 1-Math.pow(1-t,3)};
+var eOutQuint=function(t){return 1-Math.pow(1-t,5)};
+var eInOutCubic=function(t){return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+var eOutBack=function(t){var c1=1.9,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)};
+function seg(t,a,b){return b<=a?(t>=b?1:0):clamp((t-a)/(b-a),0,1)}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+/* ======================================================== 1. the timeline ===
+   The whole sequence: 3.00 s, cut to a streaming-ident rhythm.
+    0.00  black + room tone
+    0.12  build-up: light beams, particles converge, riser
+    0.62  IMPACT 1 "ta"  - logo lands, flash, shockwave, camera shake
+    0.74  specular sheen sweeps across the mark
+    0.80  wordmark "Anis'" rises, letter by letter
+    0.92  wordmark "Home Media Server" rises
+    1.12  IMPACT 2 "dum" - a fifth up, bell layer, pad swells
+    1.24  subtitle "PLAY / ORGANIZE / ENJOY" letterspaces in
+    1.42  the red rule draws
+    1.58  sparkle dust settles
+    1.95  the curtain parts -- the intro dismisses itself + chime
+    2.75  fully open: the real library is welcomed in
+    3.00  sequence complete: the library holds, score rings out
+   ========================================================================= */
+var T={streak:0.12,impact:0.62,sheen:0.74,w1:0.80,w2:0.92,sub:1.24,rule:1.42,
+       settle:1.58,curtain:1.95,curtainEnd:2.75};
+var DURATION=3.0;
+
+/* ================================================= 2. brand art (from repo) */
+function brandSVG(id){
+  return '<svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">'
+  +'<defs>'
+  +'<linearGradient id="pg'+id+'" x1="0%" y1="0%" x2="100%" y2="100%">'
+  +'<stop offset="0%" stop-color="#ff334b"/><stop offset="45%" stop-color="#e50914"/><stop offset="100%" stop-color="#990014"/></linearGradient>'
+  +'<linearGradient id="ph'+id+'" x1="0%" y1="0%" x2="0%" y2="100%">'
+  +'<stop offset="0%" stop-color="#ffffff" stop-opacity=".35"/><stop offset="100%" stop-color="#ffffff" stop-opacity=".02"/></linearGradient>'
+  +'<filter id="ps'+id+'" x="-20%" y="-20%" width="140%" height="140%">'
+  +'<feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#e50914" flood-opacity=".4"/></filter>'
+  +'</defs>'
+  +'<rect width="36" height="36" rx="9" fill="#141822"/>'
+  +'<rect x=".5" y=".5" width="35" height="35" rx="8.5" stroke="rgba(255,255,255,.08)"/>'
+  +'<path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" fill="url(#pg'+id+')" filter="url(#ps'+id+')"/>'
+  +'<path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v8.5l14.2-1.4L12 9.2z" fill="url(#ph'+id+')"/>'
+  +'<path d="M12 9.2C10.7 8.4 9 9.3 9 10.9v14.2c0 1.6 1.7 2.5 3 1.7l13.5-7.1c1.3-.8 1.3-2.6 0-3.4L12 9.2z" stroke="rgba(255,255,255,.18)" stroke-width=".75"/>'
+  +'</svg>';
+}
+document.getElementById('brandIcon').innerHTML=brandSVG('lk');
+document.getElementById('gateIcon').innerHTML=brandSVG('gt');
+/* ======================================= 3. the library layer (the reveal)
+   The curtain opens onto the REAL library page -- nothing about it is faked.
+   Served by the app, it is fetched live from the same origin, so the reveal
+   always shows whatever the library holds at that moment; opened from disk it
+   comes from library-snapshot.html, a real script-free copy of the page.
+   Either way the markup is script-stripped before it enters the sandboxed
+   iframe, so the library cannot poll, animate, or reach this document. */
+function loadLibrary(){
+  var f=el.libFrame,fb=el.libFallback;
+  function strip(h){
+    /* scripts out, and motion frozen: the library layer is a still copy, so
+       nothing inside it may animate while the curtain reveals it (the real
+       page underneath the overlay is untouched and stays live) */
+    return h.replace(/<script\b[\s\S]*?<\/script>/gi,'').replace(/<script\b[^>]*\/>/gi,'')
+      + '<style>*,*::before,*::after{animation:none!important;transition:none!important}</style>';
+  }
+  function use(h){
+    /* the app's page is a fragment -- no <html>/<body> tags, the parser infers
+       them -- so validate by shape: a style block plus the header */
+    if(!h||h.length<200||!/<style/i.test(h)||!/<header/i.test(h))return false;
+    f.srcdoc=strip(h);f.style.display='block';
+    if(fb)fb.style.display='none';
+    return true;
+  }
+  /* a file:// document cannot fetch a sibling file, but it can frame one --
+     and only there: a data: URL cannot resolve a relative frame either, and
+     Chrome fires `load` on its error page, which would reveal a blank box */
+  function fromFile(){
+    if(location.protocol!=='file:')return;
+    f.onload=function(){f.style.display='block';if(fb)fb.style.display='none'};
+    f.src='library-snapshot.html';
+  }
+  function fromSnapshot(){
+    return fetch('library-snapshot.html',{cache:'no-store'})
+      .then(function(r){return r.ok?r.text():''})
+      .then(function(h){if(!use(h))fromFile()})
+      .catch(fromFile);
+  }
+  /* an inlined snapshot (capture harness) wins outright: a data: URL has no
+     origin, and its fetch() throws before a promise even exists */
+  if(window.__LIB_SNAPSHOT__&&use(window.__LIB_SNAPSHOT__))return;
+  try{
+    fetch('/',{cache:'no-store'})
+      .then(function(r){return r.ok?r.text():''})
+      .then(function(h){if(!use(h))fromSnapshot()})
+      .catch(fromSnapshot);
+  }catch(e){fromSnapshot()}
+}
+
+/* ================================================== 4. DOM refs + splitting */
+var el={
+  stage:document.getElementById('stage'),
+  lockup:document.getElementById('lockup'),icon:document.getElementById('brandIcon'),
+  iconGlow:document.getElementById('iconGlow'),w1:document.getElementById('w1'),
+  w2:document.getElementById('w2'),sub:document.getElementById('sub'),
+  rule:document.getElementById('rule'),
+  library:document.getElementById('library'),libFrame:document.getElementById('libFrame'),
+  libFallback:document.getElementById('libFallback'),
+  veilL:document.getElementById('veilL'),veilR:document.getElementById('veilR'),
+  seam:document.getElementById('seam'),vignette:document.getElementById('vignette'),
+  grain:document.getElementById('grain'),hud:document.getElementById('hud'),
+  gate:document.getElementById('gate'),skipBtn:document.getElementById('skipBtn'),
+  replayBtn:document.getElementById('replayBtn'),muteBtn:document.getElementById('muteBtn'),
+  playBtn:document.getElementById('playBtn')
+};
+function splitLetters(node){
+  var text=node.textContent,out=[],i,sp;
+  node.textContent='';
+  for(i=0;i<text.length;i++){
+    sp=document.createElement('span');
+    sp.className='lt';
+    sp.textContent=text[i]===' '?'\u00A0':text[i];
+    node.appendChild(sp);out.push(sp);
+  }
+  return out;
+}
+var L1=splitLetters(el.w1),L2=splitLetters(el.w2);
+var REDUCED=false;
+try{REDUCED=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+
+/* cheap style writer: skip identical writes */
+function st(node,key,val){if(node['_'+key]!==val){node['_'+key]=val;node.style[key]=val}}
+
+/* ======================================================== 5. canvas effects */
+var cv=document.getElementById('fx'),ctx=cv.getContext('2d');
+var W=0,H=0,DPR=1,SOX=0,SOY=0;
+var CONV=[],EMB=[];
+(function seed(){
+  var i,r;
+  for(i=0;i<170;i++){r=mulberry32(i*2654435761+7);
+    CONV.push({a:r()*Math.PI*2,r0:0.42+0.72*r(),s:0.7+2.1*r(),sp:0.55+0.9*r(),c:pickColor(r())})}
+  for(i=0;i<64;i++){r=mulberry32(i*97531+13);
+    EMB.push({x:r(),y:r(),s:0.5+1.6*r(),c:pickColor(r()),sp:5+16*r(),ph:r()*6.283,f:0.5+1.7*r(),dx:0.3+0.7*r()})}
+  function pickColor(v){return v<0.66?[255,255,255]:(v<0.90?[255,64,84]:[120,190,255])}
+})();
+function rgba(c,a){return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')'}
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var r=el.stage.getBoundingClientRect();
+  SOX=r.left;SOY=r.top;
+  W=Math.round(r.width);H=Math.round(r.height);
+  var portrait=FORCE_ORIENT?(FORCE_ORIENT==='portrait'):(H>W);
+  /* the whole composition is expressed relative to the stage box, so a capture
+     at any window size produces the identical frame (only the raster differs) */
+  el.stage.style.setProperty('--u',(Math.min(W,H)/100)+'px');
+  el.stage.classList.toggle('portrait',portrait);
+  el.lockup.classList.toggle('portrait',portrait);
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+}
+window.addEventListener('resize',resize);
+resize();
+
+function fxOrigin(){
+  var r=el.icon.getBoundingClientRect();
+  if(r.width>0)return{x:r.left-SOX+r.width/2,y:r.top-SOY+r.height/2};
+  return{x:W/2,y:H/2};
+}
+function drawFX(t){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  var diag=Math.sqrt(W*W+H*H),o=fxOrigin(),cx=o.x,cy=o.y,i,p,q,e,x,y,a;
+
+  /* build-up light beams */
+  p=seg(t,T.streak,T.impact);
+  if(p>0&&p<1){
+    for(i=0;i<3;i++){
+      var ph=i/3,px=lerp(-W*0.35,W*0.35,((p+ph)%1)),w=W*0.09;
+      ctx.save();ctx.translate(W/2+px,H/2);ctx.rotate(-0.22);
+      var g=ctx.createLinearGradient(-w,0,w,0);
+      g.addColorStop(0,'rgba(255,255,255,0)');
+      g.addColorStop(0.5,i===1?'rgba(255,90,110,0.5)':'rgba(255,255,255,0.38)');
+      g.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=g;ctx.globalAlpha=0.30*Math.sin(p*Math.PI);
+      ctx.fillRect(-w,-diag*0.8,w*2,diag*1.6);
+      ctx.restore();ctx.globalAlpha=1;
+    }
+  }
+
+  /* particles converging on the mark */
+  p=seg(t,T.streak,T.impact);
+  if(p>0&&p<1){
+    var R0=diag*0.62,e1=eOutCubic(p),e2=eOutCubic(Math.max(0,p-0.07));
+    for(i=0;i<CONV.length;i++){
+      var c=CONV[i],r1=lerp(c.r0*R0,diag*0.008,e1),r2=lerp(c.r0*R0,diag*0.008,e2);
+      x=cx+Math.cos(c.a)*r1;y=cy+Math.sin(c.a)*r1;
+      ctx.strokeStyle=rgba(c.c,clamp(0.10+0.55*e1,0,1)*c.sp);
+      ctx.lineWidth=c.s*(0.5+0.9*e1);
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(c.a)*r2,cy+Math.sin(c.a)*r2);
+      ctx.lineTo(x,y);ctx.stroke();
+    }
+  }
+
+  /* impact burst */
+  q=seg(t,T.impact,T.impact+0.42);
+  if(q>0&&q<1&&!REDUCED){
+    var eb=eOutQuint(q);
+    for(i=0;i<CONV.length;i++){
+      var cb=CONV[i],rb=diag*0.008+eb*(cb.r0*diag*0.30+150);
+      x=cx+Math.cos(cb.a)*rb;y=cy+Math.sin(cb.a)*rb;
+      a=(1-q)*(1-q)*0.85*cb.sp;
+      ctx.fillStyle=rgba(cb.c,a);
+      ctx.beginPath();ctx.arc(x,y,cb.s*1.7*(1-q*0.45),0,6.283);ctx.fill();
+    }
+  }
+
+  /* shockwave rings */
+  for(i=0;i<2;i++){
+    q=seg(t,T.impact+i*0.07,T.impact+0.80+i*0.07);
+    if(q>0&&q<1){
+      var rr=eOutQuint(q)*diag*0.44;
+      ctx.beginPath();ctx.arc(cx,cy,rr,0,6.283);
+      ctx.lineWidth=1+7*(1-q);
+      ctx.strokeStyle=i?'rgba(255,42,75,'+(Math.pow(1-q,1.6)*0.75).toFixed(3)+')'
+                      :'rgba(255,255,255,'+(Math.pow(1-q,1.8)*0.7).toFixed(3)+')';
+      ctx.stroke();
+    }
+  }
+
+  /* impact flash */
+  q=seg(t,T.impact-0.05,T.impact+0.34);
+  if(q>0&&q<1){
+    a=(q<0.09?q/0.09:Math.pow(1-(q-0.09)/0.91,2.2))*0.72;
+    var fg=ctx.createRadialGradient(cx,cy,0,cx,cy,diag*0.55);
+    fg.addColorStop(0,'rgba(255,255,255,'+a.toFixed(3)+')');
+    fg.addColorStop(0.22,'rgba(255,140,155,'+(a*0.55).toFixed(3)+')');
+    fg.addColorStop(0.6,'rgba(229,9,20,'+(a*0.22).toFixed(3)+')');
+    fg.addColorStop(1,'rgba(229,9,20,0)');
+    ctx.fillStyle=fg;ctx.fillRect(0,0,W,H);
+  }
+
+  /* standing brand glow */
+  p=seg(t,T.impact,T.curtain);
+  if(p>0){
+    var gp=1-seg(t,T.curtain,T.curtain+0.30);
+    a=(0.16+0.05*Math.sin(t*7.0))*p*gp;
+    var gg=ctx.createRadialGradient(cx,cy,0,cx,cy,diag*0.30);
+    gg.addColorStop(0,'rgba(255,60,80,'+a.toFixed(3)+')');
+    gg.addColorStop(0.45,'rgba(229,9,20,'+(a*0.42).toFixed(3)+')');
+    gg.addColorStop(1,'rgba(229,9,20,0)');
+    ctx.fillStyle=gg;ctx.fillRect(0,0,W,H);
+  }
+
+  /* settling embers */
+  var q2=seg(t,T.settle-0.35,T.settle+0.7);
+  if(q2>0){
+    var fadeOut=1-seg(t,T.curtain+0.10,T.curtainEnd+0.05);
+    for(i=0;i<EMB.length;i++){
+      var em=EMB[i],tt=t-1.2;
+      var yn=((em.y-tt*em.sp/H)%1.4+1.4)%1.4-0.2;
+      x=(em.x+Math.sin(tt*em.f+em.ph)*0.02*em.dx)*W;
+      y=yn*H;
+      a=q2*fadeOut*(0.35+0.4*Math.abs(Math.sin(t*em.f*2+em.ph)))*0.8;
+      ctx.fillStyle=rgba(em.c,a);
+      ctx.beginPath();ctx.arc(x,y,em.s,0,6.283);ctx.fill();
+    }
+  }
+
+  /* specular sheen sweeping the lockup */
+  q=seg(t,T.sheen,T.sheen+0.50);
+  if(q>0&&q<1){
+    var lr=el.lockup.getBoundingClientRect();
+    if(lr.width>0){
+      ctx.save();
+      ctx.translate(lr.left-SOX+lr.width*lerp(-0.25,1.25,eInOutCubic(q)),lr.top-SOY+lr.height/2);
+      ctx.rotate(-0.30);
+      var sw=lr.width*0.30,sh=lr.height*2.2;
+      var sg=ctx.createLinearGradient(-sw,0,sw,0);
+      sg.addColorStop(0,'rgba(255,255,255,0)');
+      sg.addColorStop(0.5,'rgba(255,255,255,0.55)');
+      sg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=sg;ctx.globalAlpha=Math.sin(q*Math.PI)*0.85;
+      ctx.fillRect(-sw,-sh/2,sw*2,sh);
+      ctx.restore();ctx.globalAlpha=1;
+    }
+  }
+  ctx.globalCompositeOperation='source-over';
+}
+
+/* ===================================================== 6. renderAt(t) ======
+   The single source of truth for the whole sequence. Pure function of t.
+   ========================================================================= */
+var shakeX=0,shakeY=0;
+function renderAt(t){
+  drawFX(t);
+  var i,p;
+
+  /* --- the mark lands ---------------------------------------------------- */
+  p=seg(t,T.impact-0.10,T.impact+0.26);
+  var ic=eOutBack(clamp(p,0,1));
+  var rot=REDUCED?0:lerp(-7,0,ic);
+  var sc=REDUCED?1:lerp(1.55,1,ic);
+  st(el.icon,'transform','scale('+sc.toFixed(4)+') rotate('+rot.toFixed(2)+'deg)');
+  st(el.icon,'opacity',p>0?String(clamp(ic*1.4,0,1)):'0');
+  var glow=seg(t,T.impact-0.04,T.impact+0.30);
+  st(el.iconGlow,'opacity',p<=0?'0':String((1-glow)*0.95+0.16));
+
+  /* --- wordmarks, letter by letter --------------------------------------- */
+  p=seg(t,T.w1,T.w1+0.40);
+  var w1blur=lerp(7,0,eOutCubic(p));
+  st(el.w1,'filter',w1blur>0.05?'blur('+w1blur.toFixed(2)+'px)':'none');
+  for(i=0;i<L1.length;i++){
+    var d1=i*0.014,pp1=seg(t,T.w1+d1,T.w1+d1+0.34),e1=eOutQuint(pp1);
+    st(L1[i],'transform','translateY('+lerp(0.55,0,e1).toFixed(3)+'em)');
+    st(L1[i],'opacity',e1.toFixed(3));
+  }
+  p=seg(t,T.w2,T.w2+0.42);
+  var w2blur=lerp(7,0,eOutCubic(p));
+  st(el.w2,'filter',w2blur>0.05?'blur('+w2blur.toFixed(2)+'px)':'none');
+  for(i=0;i<L2.length;i++){
+    var d2=i*0.014,pp2=seg(t,T.w2+d2,T.w2+d2+0.34),e2=eOutQuint(pp2);
+    st(L2[i],'transform','translateY('+lerp(0.55,0,e2).toFixed(3)+'em)');
+    st(L2[i],'opacity',e2.toFixed(3));
+  }
+
+  /* --- subtitle + rule --------------------------------------------------- */
+  p=seg(t,T.sub,T.sub+0.46);
+  var e3=eOutCubic(p);
+  st(el.sub,'letter-spacing',lerp(0.62,0.14,e3).toFixed(3)+'em');
+  st(el.sub,'opacity',e3.toFixed(3));
+  st(el.sub,'filter',lerp(5,0,e3)>0.05?'blur('+lerp(5,0,e3).toFixed(2)+'px)':'none');
+  p=seg(t,T.rule,T.rule+0.36);
+  st(el.rule,'transform','scaleX('+eInOutCubic(p).toFixed(4)+')');
+
+  /* --- camera shake on impact -------------------------------------------- */
+  if(!REDUCED&&t>=T.impact&&t<T.impact+0.42){
+    var sq=1-seg(t,T.impact,T.impact+0.42),amp=9*sq*sq;
+    shakeX=(Math.random()*2-1)*amp;shakeY=(Math.random()*2-1)*amp;
+  }else{shakeX=0;shakeY=0}
+
+  /* --- the curtain: the intro dismisses itself onto the real library ------ */
+  var U=Math.min(W,H)/100;
+  var pk=clamp(seg(t,T.curtain,T.curtainEnd),0,1),pke=eInOutCubic(pk);
+  st(el.veilL,'transform','translate3d('+(-pke*100).toFixed(3)+'%,0,0)');
+  st(el.veilR,'transform','translate3d('+(pke*100).toFixed(3)+'%,0,0)');
+  /* the inner edges only feather once the halves are actually parting, so the
+     opening frames remain one unbroken backdrop */
+  var fe=pk<=0?0:(4+11*pk);
+  var mL='linear-gradient(90deg,#000 '+(100-fe).toFixed(2)+'%,transparent 100%)';
+  var mR='linear-gradient(270deg,#000 '+(100-fe).toFixed(2)+'%,transparent 100%)';
+  st(el.veilL,'webkitMaskImage',mL);st(el.veilL,'maskImage',mL);
+  st(el.veilR,'webkitMaskImage',mR);st(el.veilR,'maskImage',mR);
+  /* light spilling through the opening: in fast, out slow */
+  st(el.seam,'opacity',(pk<=0?0:Math.pow(Math.sin(Math.min(1,pk*1.06)*Math.PI),1.25)*0.9).toFixed(3));
+  /* the real library eases in behind the parting halves */
+  st(el.library,'transform','scale('+lerp(1.055,1,eOutCubic(pk)).toFixed(5)+')');
+  /* the cinematic dressing lifts as the real UI arrives */
+  st(el.vignette,'opacity',(1-pke).toFixed(3));
+  st(el.grain,'opacity',(0.05*(1-pke)).toFixed(4));
+  /* the lockup is dismissed gently: it lifts and fades as the light comes in */
+  var pl=eInOutCubic(clamp(seg(t,T.curtain,T.curtain+0.62),0,1));
+  st(el.lockup,'transform','translate(-50%,-50%) translate('+shakeX.toFixed(2)+'px,'
+    +(shakeY-pl*U*2.4).toFixed(2)+'px) scale('+lerp(1,0.94,pl).toFixed(4)+')');
+  st(el.lockup,'opacity',(1-pl).toFixed(3));
+}
+
+/* ======================================================== 7. the audio =====
+   Fully synthesized (Web Audio). Mirrors render_intro_theme.py 1:1:
+   room tone -> riser -> HIT1 (A minor) -> sheen -> HIT2 (E major) + bell
+   -> pad -> sparkle -> handoff chime, with a master fade at 3.00 s.
+   ========================================================================= */
+var Audio=(function(){
+  var ctx=null,master=null,seqBus=null,verbIn=null,muted=false,nodes=[],bufCache={};
+  var RAMP=0.12;
+
+  function init(){
+    if(ctx)return true;
+    var AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return false;
+    ctx=new AC();
+    master=ctx.createGain();master.gain.value=muted?0.0001:1;
+    var comp=ctx.createDynamicsCompressor();
+    comp.threshold.value=-14;comp.knee.value=10;comp.ratio.value=3.2;
+    comp.attack.value=0.004;comp.release.value=0.25;
+    master.connect(comp);comp.connect(ctx.destination);
+    seqBus=ctx.createGain();seqBus.gain.value=1;seqBus.connect(master);
+    verbIn=ctx.createGain();verbIn.gain.value=1;
+    var conv=ctx.createConvolver();conv.buffer=makeIR(1.5,2.6);
+    var wet=ctx.createGain();wet.gain.value=0.30;
+    verbIn.connect(conv);conv.connect(wet);wet.connect(master);
+    return true;
+  }
+  function makeIR(dur,decay){
+    var n=Math.floor(ctx.sampleRate*dur),b=ctx.createBuffer(2,n,ctx.sampleRate),ch,i,lp,t;
+    for(ch=0;ch<2;ch++){
+      var d=b.getChannelData(ch);lp=0;
+      for(i=0;i<n;i++){t=i/n;lp=lp*0.72+(Math.random()*2-1)*0.28;d[i]=lp*Math.pow(1-t,decay)}
+    }
+    return b;
+  }
+  function noiseBuf(dur){
+    var k=dur.toFixed(3);
+    if(bufCache[k])return bufCache[k];
+    var n=Math.max(1,Math.floor(ctx.sampleRate*dur)),b=ctx.createBuffer(2,n,ctx.sampleRate),ch,i;
+    for(ch=0;ch<2;ch++){var d=b.getChannelData(ch);for(i=0;i<n;i++)d[i]=Math.random()*2-1}
+    bufCache[k]=b;return b;
+  }
+  function keep(n){nodes.push(n);return n}
+  function out(node,panv,verb){
+    var p=ctx.createStereoPanner();p.pan.value=panv||0;
+    node.connect(p);p.connect(seqBus);
+    if(verb){var s=ctx.createGain();s.gain.value=verb;p.connect(s);s.connect(verbIn)}
+    return node;
+  }
+  function osc(type,f0,f1,rampDur,when,stopAt){
+    var o=ctx.createOscillator();o.type=type;o.frequency.setValueAtTime(f0,when);
+    if(f1&&f1!==f0)o.frequency.exponentialRampToValueAtTime(f1,when+(rampDur||0.5));
+    o.start(when);o.stop(stopAt);keep(o);return o;
+  }
+  function envPerc(when,attack,peak,decay){
+    var g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,when);
+    g.gain.exponentialRampToValueAtTime(peak,when+attack);
+    g.gain.exponentialRampToValueAtTime(0.0001,when+attack+decay);
+    return g;
+  }
+  function envAD(when,attack,peak,until){
+    var g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,when);
+    g.gain.exponentialRampToValueAtTime(peak,when+attack);
+    g.gain.exponentialRampToValueAtTime(0.0001,when+until);
+    return g;
+  }
+  function envPad(when,attack,peak,holdAt,rel){
+    var g=ctx.createGain();
+    g.gain.setValueAtTime(0.0001,when);
+    g.gain.exponentialRampToValueAtTime(peak,when+attack);
+    g.gain.setValueAtTime(peak,when+holdAt);
+    g.gain.exponentialRampToValueAtTime(0.0001,when+holdAt+rel);
+    return g;
+  }
+  function noise(dur,when,stopAt){
+    var s=ctx.createBufferSource();s.buffer=noiseBuf(dur);s.start(when);s.stop(stopAt);keep(s);return s;
+  }
+  function filt(type,freq,q){
+    var f=ctx.createBiquadFilter();f.type=type;f.frequency.value=freq;if(q)f.Q.value=q;return f;
+  }
+  function sub(when,f0,f1,dur,peak,panv,drive){
+    var o=osc('sine',f0,f1,dur*0.8,when,when+dur+0.05);
+    var w=ctx.createWaveShaper();
+    var n=1024,c=new Float32Array(n),i,x;
+    for(i=0;i<n;i++){x=i/(n-1)*2-1;c[i]=Math.tanh(x*(drive||1.5))}
+    w.curve=c;
+    o.connect(w);w.connect(envPerc(when,0.006,peak,dur));
+    out(w,panv||0,0.05);
+  }
+  function chord(when,freqs,dur,peak,lp,type,spread){
+    var g=envAD(when,0.008,peak,when+dur),f=filt('lowpass',lp,0.9),i;
+    f.connect(g);out(g,0,0.16);
+    for(i=0;i<freqs.length;i++){
+      var o=osc(type,freqs[i],0,0,when,when+dur+0.05);
+      var gg=ctx.createGain();gg.gain.value=1/freqs.length;
+      var p=ctx.createStereoPanner();p.pan.value=((i%2?1:-1)*(spread||0.1));
+      o.connect(gg);gg.connect(p);p.connect(f);
+    }
+  }
+  function bell(when,freq,dur,peak,panv,ratio,index,decay){
+    ratio=ratio||2.0;index=index||3.2;decay=decay||3.2;
+    var car=ctx.createOscillator();car.type='sine';car.frequency.value=freq;
+    var mod=ctx.createOscillator();mod.type='sine';mod.frequency.value=freq*ratio;
+    var mg=ctx.createGain();
+    mg.gain.setValueAtTime(freq*index,when);
+    mg.gain.exponentialRampToValueAtTime(freq*0.02,when+dur*0.85);
+    mod.connect(mg);mg.connect(car.frequency);
+    var g=envPerc(when,0.004,peak,dur);
+    car.connect(g);out(g,panv||0,0.34);
+    car.start(when);car.stop(when+dur+0.06);
+    mod.start(when);mod.stop(when+dur+0.06);
+    keep(car);keep(mod);
+  }
+  function noiseVoice(when,dur,f0,f1,type,q,peak,panv,hp,attack,decay){
+    var s=noise(dur,when,when+dur+0.05),f=filt(type,f0,q),i;
+    f.frequency.setValueAtTime(f0,when);
+    if(f1&&f1!==f0)f.frequency.exponentialRampToValueAtTime(f1,when+dur*0.9);
+    var chain=s;
+    if(hp){var h=filt('highpass',hp,0.7);chain.connect(h);chain=h}
+    chain.connect(f);
+    var g=decay?envPerc(when,attack||0.01,peak,decay):envAD(when,attack||0.05,peak,when+dur);
+    f.connect(g);out(g,panv||0,0.2);
+  }
+
+  /* ---- the score ---- */
+  function build(t0){
+    var i,freqs;
+    /* room tone */
+    var rt=noise(3.0,t0,t0+3.05),rtf=filt('lowpass',420,0.6),rth=filt('highpass',60,0.7);
+    var rtg=ctx.createGain();
+    rtg.gain.setValueAtTime(0.0001,t0);
+    rtg.gain.linearRampToValueAtTime(0.030,t0+0.25);
+    rtg.gain.setValueAtTime(0.030,t0+2.55);
+    rtg.gain.linearRampToValueAtTime(0.0001,t0+3.00);
+    rt.connect(rth);rth.connect(rtf);rtf.connect(rtg);out(rtg,0,0);
+
+    /* riser */
+    var ris=noise(0.56,t0+0.12,t0+0.70),rf=filt('bandpass',200,1.5);
+    rf.frequency.setValueAtTime(200,t0+0.12);
+    rf.frequency.exponentialRampToValueAtTime(6200,t0+0.60);
+    var rg=envAD(t0+0.12,0.30,0.150,t0+0.66);
+    ris.connect(rf);rf.connect(rg);out(rg,0.30,0.12);
+    var gl=osc('sine',90,260,0.50,t0+0.12,t0+0.70);
+    gl.connect(envAD(t0+0.12,0.28,0.085,t0+0.66));out(gl,-0.15,0.1);
+
+    /* HIT 1 */
+    sub(t0+0.62,58,38,0.38,0.500,0,1.5);
+    chord(t0+0.62,[55,82.4069,110,130.8128],0.52,0.150,900,'sawtooth',0.14);
+    var s1=osc('sine',110,0,0,t0+0.62,t0+1.15);
+    s1.connect(envPerc(t0+0.62,0.006,0.20,0.52));out(s1,0,0.15);
+    noiseVoice(t0+0.62,0.030,300,240,'lowpass',0.7,0.30,0,40,0.002,0.030);
+    noiseVoice(t0+0.62,0.07,7000,5000,'lowpass',0.7,0.055,0.2,3000,0.004,0.045);
+    var wh=osc('sine',46,40,0.70,t0+0.62,t0+1.42);
+    wh.connect(envPerc(t0+0.62,0.02,0.115,0.78));out(wh,0,0.2);
+
+    /* sheen */
+    noiseVoice(t0+0.74,0.42,2200,9000,'bandpass',1.0,0.085,-0.25,800,0.10,0.34);
+
+    /* ticks */
+    noiseVoice(t0+0.80,0.012,2600,2200,'lowpass',0.8,0.030,0.12,600,0.001,0.010);
+    noiseVoice(t0+1.24,0.012,2600,2200,'lowpass',0.8,0.026,-0.12,600,0.001,0.010);
+    noiseVoice(t0+1.42,0.012,2600,2200,'lowpass',0.8,0.022,0.10,600,0.001,0.010);
+
+    /* HIT 2 */
+    sub(t0+1.12,84,55,0.90,0.460,0,1.4);
+    chord(t0+1.12,[82.4069,123.4711,164.8138,207.6523],1.35,0.150,1500,'sawtooth',0.12);
+    var s2=osc('sine',164.8138,0,0,t0+1.12,t0+2.50);
+    s2.connect(envPerc(t0+1.12,0.006,0.17,1.35));out(s2,0,0.2);
+    var s3=osc('sine',123.4711,0,0,t0+1.12,t0+2.50);
+    s3.connect(envPerc(t0+1.12,0.006,0.11,1.35));out(s3,0.4,0.2);
+    bell(t0+1.12,659.2551,1.20,0.150,-0.18,2.0,3.2,4.6);
+    bell(t0+1.12,987.7666,0.95,0.085,0.22,2.0,3.2,5.2);
+    noiseVoice(t0+1.12,0.07,8000,6000,'lowpass',0.7,0.045,-0.2,4000,0.004,0.03);
+
+    /* pad */
+    var holdAt=t0+2.55,rel=0.45;
+    var pg=envPad(t0+1.12,0.50,0.075,holdAt,rel),pf=filt('lowpass',700,0.8);
+    pf.connect(pg);out(pg,0,0.5);
+    var padF=[110,164.8138,220,261.6256],det=[0,-7,6,-5];
+    for(i=0;i<padF.length;i++){
+      var po=osc('sawtooth',padF[i]*Math.pow(2,det[i]/1200),0,0,t0+1.12,t0+holdAt+rel+0.05);
+      var pgg=ctx.createGain();pgg.gain.value=0.25;
+      po.connect(pgg);pgg.connect(pf);
+    }
+    var pa=noise(1.93,t0+1.12,t0+holdAt+rel+0.05),paf=filt('bandpass',1100,0.8);
+    var pag=envPad(t0+1.12,0.50,0.030,holdAt,rel);
+    pa.connect(paf);paf.connect(pag);out(pag,0,0.3);
+
+    /* sparkle */
+    bell(t0+1.58,1318.5102,0.55,0.045,0.35,2.0,3.0,5.0);
+    bell(t0+1.66,1975.5332,0.50,0.034,-0.40,2.0,3.0,5.4);
+    bell(t0+1.74,2637.0205,0.45,0.026,0.10,2.0,3.0,5.8);
+
+    /* handoff chime */
+    bell(t0+2.00,659.2551,1.05,0.130,0,2.0,3.0,4.2);
+    bell(t0+2.02,987.7666,0.95,0.090,0.25,2.0,3.0,4.6);
+    noiseVoice(t0+2.00,0.70,3000,6500,'bandpass',0.8,0.048,0,1200,0.10,0.42);
+
+    /* master fade to silence as the UI takes over */
+    seqBus.gain.cancelScheduledValues(t0);
+    seqBus.gain.setValueAtTime(1,t0);
+    seqBus.gain.setValueAtTime(1,t0+2.75);
+    seqBus.gain.linearRampToValueAtTime(0.0001,t0+3.00);
+  }
+
+  function play(){
+    if(!init())return false;
+    if(ctx.state==='suspended'){try{ctx.resume()}catch(e){}}
+    stop(0.02);
+    build(ctx.currentTime+RAMP);
+    return true;
+  }
+  function stop(fade){
+    if(!ctx)return;
+    var now=ctx.currentTime,f=fade==null?0.06:fade;
+    try{
+      seqBus.gain.cancelScheduledValues(now);
+      seqBus.gain.setValueAtTime(seqBus.gain.value,now);
+      seqBus.gain.linearRampToValueAtTime(0.0001,now+f);
+    }catch(e){}
+    for(var i=0;i<nodes.length;i++){try{nodes[i].stop(now+f+0.02)}catch(e){}}
+    nodes=[];
+    window.setTimeout(function(){try{if(seqBus)seqBus.gain.value=1}catch(e){}},f*1000+120);
+  }
+  function setMuted(m){
+    muted=m;
+    if(ctx)try{master.gain.setTargetAtTime(m?0.0001:1,ctx.currentTime,0.02)}catch(e){}
+  }
+  return {play:play,stop:stop,setMuted:setMuted,
+          isMuted:function(){return muted},state:function(){return ctx?ctx.state:'none'}};
+})();
+
+/* ======================================================= 8. playback driver */
+var mode='gate',t0=0,raf=0;
+/* Orientation: by default the composition follows the stage shape. Set
+   <body data-orient="portrait"> (or "landscape") to force it, which is what the
+   portrait render uses; #capture=1&portrait=1 does the same from the URL. */
+var FORCE_ORIENT=(document.body.getAttribute('data-orient')||'').toLowerCase();
+var CAPTURE=/[?&#]capture=1/.test(location.search+location.hash);
+var CAP_PORTRAIT=/[?&#]portrait=1/.test(location.search+location.hash)||FORCE_ORIENT==='portrait';
+if(CAPTURE){
+  document.body.classList.add('capture');
+  if(CAP_PORTRAIT)document.body.classList.add('capture-portrait');
+  resize();
+}
+
+/* the library layer loads once, up front, so the curtain always opens onto a
+   fully painted page rather than a blank iframe */
+loadLibrary();
+
+function updateHud(){
+  var playing=mode==='playing';
+  el.skipBtn.style.display=playing?'inline-flex':'none';
+  el.replayBtn.style.display=playing?'none':'inline-flex';
+  el.hud.classList.toggle('show',mode!=='gate');
+}
+function loop(now){
+  raf=window.requestAnimationFrame(loop);
+  var t=(now-t0)/1000;
+  renderAt(clamp(t,0,4));
+  if(mode==='playing'&&t>=DURATION){mode='done';updateHud()}
+  if(t>3.35){window.cancelAnimationFrame(raf);raf=0}
+}
+function startLoop(){if(!raf)raf=window.requestAnimationFrame(loop)}
+function play(){
+  if(mode==='playing')return;
+  Audio.play();
+  t0=window.performance.now()+120;
+  mode='playing';
+  el.gate.classList.add('off');
+  window.setTimeout(function(){if(mode!=='gate')el.gate.style.display='none'},320);
+  updateHud();startLoop();
+}
+function skip(){
+  if(mode==='gate'){play();return}
+  Audio.stop(0.10);
+  mode='done';updateHud();
+  if(raf){window.cancelAnimationFrame(raf);raf=0}
+  renderAt(DURATION);
+}
+function replay(){
+  mode='gate';
+  Audio.stop(0.05);
+  Audio.play();
+  t0=window.performance.now()+120;
+  mode='playing';
+  updateHud();startLoop();
+}
+
+el.playBtn.addEventListener('click',play);
+el.skipBtn.addEventListener('click',skip);
+el.replayBtn.addEventListener('click',replay);
+el.muteBtn.addEventListener('click',function(){
+  var m=!Audio.isMuted();
+  Audio.setMuted(m);
+  el.muteBtn.textContent=m?'\uD83D\uDD07 Muted':'\uD83D\uDD0A Sound';
+  el.muteBtn.setAttribute('aria-pressed',m?'true':'false');
+});
+el.stage.addEventListener('click',function(e){
+  if(mode==='playing'&&e.target===el.stage)skip();
+});
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'||e.key===' '){
+    e.preventDefault();
+    if(mode==='gate')play();else if(mode==='playing')skip();else replay();
+  }else if(e.key==='m'||e.key==='M'){
+    el.muteBtn.click();
+  }
+});
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){if(raf){window.cancelAnimationFrame(raf);raf=0}}
+  else if(mode==='playing'||mode==='done'){startLoop()}
+});
+
+/* ================================================== 9. capture / debug API */
+window.INTRO={
+  timeline:T,duration:DURATION,renderAt:renderAt,play:play,skip:skip,replay:replay,
+  audio:Audio,reduced:REDUCED,reloadLibrary:loadLibrary,
+  version:'1.1.0'
+};
+/* paint the first frame so nothing flashes before playback starts */
+renderAt(0);
+updateHud();
+})();
+</script>
+</body>
+</html>

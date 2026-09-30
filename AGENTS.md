@@ -9,7 +9,7 @@
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
 - `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in `app/services/chunk_transcode_service.py` and `app/services/gpu_service.py`.
-- `docs/OPENING_SEQUENCE.md` documents the standalone opening-sequence overlay (brand sting, original score, frame-capture pipeline). It is **delivered but not wired into the app**; the artifacts live outside this repository.
+- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay (brand sting, original score, frame-capture pipeline). It is **delivered and wired into the app** via `{% include 'intro-overlay.html' %}` in `templates/library.html`, gated once per browser session; the artifacts live in `docs/opening-sequence/` inside this repository.
 
 ## 2. Current architecture
 
