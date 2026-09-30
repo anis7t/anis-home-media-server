@@ -22,7 +22,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({
-      'server_base_url': 'http://127.0.0.1:8000',
+      'server_base_url': 'https://media.anisparvez.in',
       'device_id': 'test-device-uuid-1234',
       'update_channel': 'production',
     });
@@ -68,7 +68,7 @@ void main() {
 
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('SERVER & CONNECTION'), findsOneWidget);
-    expect(find.text('http://127.0.0.1:8000'), findsOneWidget);
+    expect(find.text('https://media.anisparvez.in'), findsOneWidget);
     expect(find.text('APPLICATION VERSION'), findsOneWidget);
     expect(find.text('Version 1.0.0'), findsOneWidget);
     expect(find.text('Build 100'), findsOneWidget);

@@ -14,19 +14,19 @@ import '../features/shell/presentation/screens/app_shell.dart';
 class AppRoutes {
   AppRoutes._();
 
-  static const String connection = '/';
   static const String home = '/home';
   static const String library = '/library';
   static const String settings = '/settings';
+  static const String connection = '/connection';
   static const String movieDetails = '/movie-details';
   static const String playerPoc = '/player-poc';
   static const String player = '/player';
 
-  static GoRouter createRouter({String initialLocation = connection}) {
+  static GoRouter createRouter({String initialLocation = home}) {
     return GoRouter(
       initialLocation: initialLocation,
       routes: [
-        // Connection & Server Setup (Standalone initial route)
+        // Connection & Server Setup (Standalone route)
         GoRoute(
           path: connection,
           builder: (BuildContext context, GoRouterState state) {
@@ -119,7 +119,7 @@ class AppRoutes {
                 'Batman%20Knightfall%20Part%201%202026%201080p%20WEBRip%20x264%20AAC5%201-%5BYTS%20GG%20-%20YTS%20BZ%5D.mp4';
             final defaultUrl = (serverParam != null && serverParam.isNotEmpty)
                 ? '${serverParam.endsWith('/') ? serverParam.substring(0, serverParam.length - 1) : serverParam}/media/$filename'
-                : 'http://127.0.0.1:8000/media/$filename';
+                : 'https://media.anisparvez.in/media/$filename';
 
             return PlayerScreen(
               mediaUrl: (providedUrl != null && providedUrl.isNotEmpty)

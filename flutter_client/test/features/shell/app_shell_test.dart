@@ -154,7 +154,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({
-      'server_base_url': 'http://127.0.0.1:8000',
+      'server_base_url': 'https://media.anisparvez.in',
       'device_id': 'test-device-uuid-9999',
       'update_channel': 'production',
     });
@@ -175,7 +175,7 @@ void main() {
         appInstallerBridgeProvider.overrideWithValue(mockBridge),
         updateRepositoryProvider.overrideWithValue(fakeUpdateRepo),
         libraryRepositoryProvider.overrideWithValue(fakeLibRepo),
-        serverBaseUrlProvider.overrideWithValue('http://127.0.0.1:8000'),
+        serverBaseUrlProvider.overrideWithValue('https://media.anisparvez.in'),
       ],
       child: MediaServerApp(
         initialRoute: initialLocation,
@@ -329,7 +329,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('SERVER & CONNECTION'), findsOneWidget);
-        expect(find.text('http://127.0.0.1:8000'), findsOneWidget);
+        expect(find.text('https://media.anisparvez.in'), findsOneWidget);
         expect(find.text('UPDATE CHANNEL'), findsOneWidget);
         expect(find.textContaining('Production (Stable)'), findsOneWidget);
         expect(find.text('Developer'), findsWidgets);

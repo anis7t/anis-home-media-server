@@ -20,9 +20,9 @@ class MediaServerApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       routerConfig: routerConfig ??
-          (initialRoute != null && initialRoute != AppRoutes.connection
+          (initialRoute != null
               ? AppRoutes.createRouter(initialLocation: initialRoute!)
-              : AppRoutes.createRouter()),
+              : AppRoutes.createRouter(initialLocation: AppRoutes.home)),
     );
   }
 }

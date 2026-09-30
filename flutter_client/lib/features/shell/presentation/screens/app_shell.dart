@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../../../intro/presentation/controllers/intro_controller.dart';
+import '../../../intro/presentation/widgets/brand_intro_overlay.dart';
 
 /// Persistent mobile application shell hosting bottom navigation bar
 /// across Home, Library, and Settings branches.
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
+  final bool autoFinishIntroOnError;
 
   const AppShell({
     super.key,
     required this.navigationShell,
+    this.autoFinishIntroOnError = true,
   });
 
   void _onDestinationSelected(int index) {
@@ -21,18 +26,27 @@ class AppShell extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final introState = ref.watch(introControllerProvider);
+
     return PopScope(
-      canPop: navigationShell.currentIndex == 0,
+      canPop: navigationShell.currentIndex == 0 && !introState.isPlaying,
       onPopInvokedWithResult: (didPop, result) {
+        if (introState.isPlaying) {
+          ref.read(introControllerProvider.notifier).markFinished();
+          return;
+        }
         if (!didPop && navigationShell.currentIndex != 0) {
           // Navigating back from Library or Settings returns to the Home tab
           navigationShell.goBranch(0);
         }
       },
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: navigationShell,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Scaffold(
+            backgroundColor: AppColors.background,
+            body: navigationShell,
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(
             color: AppColors.surface,
@@ -104,6 +118,14 @@ class AppShell extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+      if (introState.isPlaying)
+        BrandIntroOverlay(
+          autoFinishOnError: autoFinishIntroOnError,
+          onFinished: () =>
+              ref.read(introControllerProvider.notifier).markFinished(),
+        ),
+    ],
+  ),
+);
+}
 }

@@ -138,8 +138,9 @@
   #hudNote{font-size:.72rem;color:#64748b;font-weight:600;padding:0 .3rem}
 
   /* ===================== gate ===================== */
-  #gate{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#05060a;
+  #gate{position:fixed;inset:0;z-index:10;display:none;place-items:center;background:#05060a;
     transition:opacity .3s ease}
+  body.gate-mode #gate{display:grid}
   #gate.off{opacity:0;pointer-events:none}
   .gate-card{display:flex;flex-direction:column;align-items:center;gap:.85rem;padding:2rem;text-align:center}
   .gate-card svg{width:76px;height:76px;border-radius:26%;filter:drop-shadow(0 4px 24px rgba(229,9,20,.5))}
@@ -182,7 +183,8 @@
 body.intro-mode #stage{position:fixed!important;inset:0!important;left:0!important;top:0!important;
   width:auto!important;height:auto!important;margin:0!important;border:0!important;
   border-radius:0!important;background:transparent!important;z-index:2147483000!important}
-body.intro-mode #gate{position:fixed!important;inset:0!important;z-index:2147483001!important}
+body.intro-mode.gate-mode #gate{position:fixed!important;inset:0!important;z-index:2147483001!important;display:grid!important}
+body.intro-mode:not(.gate-mode) #gate{display:none!important}
 body.intro-mode #hud{display:none!important}
 /* the app is clickable again the instant it is fully visible */
 body.intro-mode #stage.handover{pointer-events:none!important}
@@ -796,7 +798,11 @@ var Audio=(function(){
     muted=m;
     if(ctx)try{master.gain.setTargetAtTime(m?0.0001:1,ctx.currentTime,0.02)}catch(e){}
   }
-  return {play:play,stop:stop,setMuted:setMuted,
+  function resume(){
+    if(!ctx)return;
+    if(ctx.state==='suspended'){try{ctx.resume()}catch(e){}}
+  }
+  return {play:play,stop:stop,resume:resume,setMuted:setMuted,
           isMuted:function(){return muted},state:function(){return ctx?ctx.state:'none'}};
 })();
 
@@ -842,8 +848,10 @@ function play(){
   Audio.play();
   t0=window.performance.now()+120;
   mode='playing';
-  el.gate.classList.add('off');
-  window.setTimeout(function(){if(mode!=='gate')el.gate.style.display='none'},320);
+  if(el.gate){
+    el.gate.classList.add('off');
+    window.setTimeout(function(){if(mode!=='gate')el.gate.style.display='none'},320);
+  }
   updateHud();startLoop();
 }
 function skip(){
@@ -852,9 +860,10 @@ function skip(){
   mode='done';updateHud();
   if(raf){window.cancelAnimationFrame(raf);raf=0}
   renderAt(DURATION);
+  finish();
 }
 function replay(){
-  mode='gate';
+  mode='playing';
   /* a finished outro has cleared this layer away; put it back before playing */
   if(typeof root!=='undefined'&&root&&finished){
     st(root,'display','block');finished=false;
@@ -863,7 +872,6 @@ function replay(){
   Audio.stop(0.05);
   Audio.play();
   t0=window.performance.now()+120;
-  mode='playing';
   updateHud();startLoop();
 }
 
@@ -897,16 +905,25 @@ document.addEventListener('visibilitychange',function(){
    is finished -- it must not let the app be touched while it is still drawing,
    must hand the app back the moment it is visible, and must then clear out so
    nothing of it is left in the page.  Modes come from the query string:
-     gate     (default) the click-to-start card, so the theme plays with sound
-     auto     straight in, silent until the page is first touched
+     auto     (default) runs automatically without prompts; audio plays if allowed
+     gate     the click-to-start card, for manual testing / explicit gesture
      capture  still page: the capture harness drives renderAt() itself
+     off      completely bypassed
    ========================================================================= */
 var root=el.stage;
-var qs='gate';
+var qs='auto';
 var qm=location.search.match(/[?&]intro=([a-z]+)/);
 if(qm)qs=qm[1];
-if(qs!=='gate'&&qs!=='auto'&&qs!=='capture')qs='gate';
+if(qs!=='gate'&&qs!=='auto'&&qs!=='capture'&&qs!=='off')qs='auto';
+
+if(qs==='off'){
+  if(root)root.style.display='none';
+  if(el.gate)el.gate.style.display='none';
+  return;
+}
+
 document.body.classList.add('intro-mode');
+if(qs==='gate')document.body.classList.add('gate-mode');
 var CAPTURE=(qs==='capture');
 if(CAPTURE)document.body.classList.add('intro-capture');
 /* the layer is the real thing now, so the demo HUD (skip/replay/mute chrome)
@@ -919,7 +936,8 @@ function finish(){
   if(el.gate)st(el.gate,'display','none');  /* and the start card goes with it */
   root.classList.remove('handover');
   document.body.classList.remove('intro-capture');
-  if(Audio.suspend){try{Audio.suspend()}catch(e){}}
+  document.body.classList.remove('gate-mode');
+  try{Audio.stop(0.02);}catch(e){}
 }
 
 /* ================================================== 9. capture / debug API */
@@ -929,11 +947,38 @@ window.INTRO={
   pageMode:function(){return qs},playback:function(){return mode},
   version:'1.2.0'
 };
+
+/* Unlock audio on first user gesture if browser suspended AudioContext */
+function unlockAudio(){
+  if(Audio && Audio.resume){
+    try{Audio.resume()}catch(e){}
+  }
+  window.removeEventListener('pointerdown',unlockAudio,true);
+  window.removeEventListener('keydown',unlockAudio,true);
+  window.removeEventListener('touchstart',unlockAudio,true);
+}
+window.addEventListener('pointerdown',unlockAudio,true);
+window.addEventListener('keydown',unlockAudio,true);
+window.addEventListener('touchstart',unlockAudio,true);
+
 /* paint the first frame so nothing flashes before playback starts */
 renderAt(0);
 updateHud();
-/* gate is the default because browsers refuse to start audio without a gesture */
-if(qs==='auto')play();
+
+/* Gate mode waits for user click; Auto mode starts immediately */
+if(qs==='gate'){
+  /* in gate mode, wait for user click on #playBtn */
+}else if(qs==='auto'){
+  var alreadySeen=false;
+  try{
+    alreadySeen=!!sessionStorage.getItem('introSeen');
+  }catch(e){}
+  if(alreadySeen && !/[?&]intro=(auto|replay|force)/.test(location.search)){
+    finish();
+  }else{
+    play();
+  }
+}
 })();
 </script>
 </body>

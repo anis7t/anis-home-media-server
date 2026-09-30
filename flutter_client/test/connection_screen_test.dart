@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_server_client/app/app.dart';
+import 'package:media_server_client/app/routes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String libmpvPath =
@@ -24,12 +25,39 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('ConnectionScreen renders branding, server input, and device identity', (
+  testWidgets('Default app launch route is AppRoutes.home', (
     WidgetTester tester,
   ) async {
+    tester.view.physicalSize = const Size(1400, 1440);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.pumpWidget(
       const ProviderScope(
         child: MediaServerApp(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Home tab destination in bottom navigation bar is rendered
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+  });
+
+  testWidgets('ConnectionScreen renders branding, server input, and device identity without dev options', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1440);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MediaServerApp(
+          initialRoute: AppRoutes.connection,
+        ),
       ),
     );
 
@@ -45,21 +73,24 @@ void main() {
     expect(find.text('Server Origin'), findsOneWidget);
     expect(find.text('Test Connection'), findsOneWidget);
 
+    // Verify WAN preset chip is available
+    expect(find.text('WAN (Cloudflare)'), findsOneWidget);
+
     // Verify Client Device Identity card
     expect(find.text('Client Device Identity'), findsOneWidget);
     expect(find.text('CSPRNG Verified'), findsOneWidget);
 
-    // Verify Save & Set Active Server button
+    // Verify Save & Set Active Server and Enter Media Server buttons
     expect(find.text('Save & Set Active Server'), findsOneWidget);
+    expect(find.text('Enter Media Server (Home)'), findsOneWidget);
 
-    // Verify Launch Production Player (Phase 3A) button
-    expect(find.text('Launch Production Video Player (Phase 3A)'), findsOneWidget);
-
-    // Verify Launch Player POC (Phase 2) button
-    expect(find.text('Launch Player POC Test Harness (Phase 2)'), findsOneWidget);
+    // Verify dev options are completely absent
+    expect(find.text('Launch Production Video Player (Phase 3A)'), findsNothing);
+    expect(find.text('Launch Player POC Test Harness (Phase 2)'), findsNothing);
+    expect(find.text('Browse Movie Library (Phase 4)'), findsNothing);
   });
 
-  testWidgets('Launch Production Video Player navigates to PlayerScreen', (
+  testWidgets('Enter Media Server navigates to HomeScreen in AppShell', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 1440);
@@ -68,43 +99,20 @@ void main() {
 
     await tester.pumpWidget(
       const ProviderScope(
-        child: MediaServerApp(),
+        child: MediaServerApp(
+          initialRoute: AppRoutes.connection,
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final btn = find.text('Launch Production Video Player (Phase 3A)');
-    expect(btn, findsOneWidget);
-    await tester.tap(btn);
-    // Use fixed pump to allow transition without timing out on spinner animation
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    // Verify PlayerScreen shell is rendered with its title
-    expect(find.text('Batman Knightfall Part 1 (2026)'), findsOneWidget);
-  });
-
-  testWidgets('Launch Player POC navigates to PlayerPocScreen', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(2560, 1440);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-
-    await tester.pumpWidget(
-      const ProviderScope(
-        child: MediaServerApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final btn = find.text('Launch Player POC Test Harness (Phase 2)');
+    final btn = find.text('Enter Media Server (Home)');
     expect(btn, findsOneWidget);
     await tester.tap(btn);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Verify PlayerPocScreen header is rendered
-    expect(find.text('Player POC Test Harness (Phase 2)'), findsWidgets);
+    // Verify navigation into Home tab in shell
+    expect(find.text('Home'), findsOneWidget);
   });
 }

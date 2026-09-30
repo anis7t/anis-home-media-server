@@ -35,5 +35,6 @@
   "terminal.integrated.environmentChangesRelaunch": true,
   "python.terminal.shellIntegration.enabled": false,
   "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
-  "python.useEnvironmentsExtension": false
+  "python.useEnvironmentsExtension": false,
+  "bloc.languageServer.enabled": false
 }

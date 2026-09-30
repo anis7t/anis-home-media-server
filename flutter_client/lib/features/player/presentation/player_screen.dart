@@ -365,6 +365,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_effectiveServerOrigin != null && _effectiveServerOrigin!.isNotEmpty) {
       return _effectiveServerOrigin;
     }
+    final uri = Uri.tryParse(_effectiveMediaUrl ?? widget.mediaUrl);
+    if (uri != null &&
+        uri.hasScheme &&
+        uri.hasAuthority &&
+        uri.host != '127.0.0.1' &&
+        uri.host != 'localhost') {
+      return uri.origin;
+    }
     try {
       final connState = ref.read(connectionControllerProvider);
       final active = connState.serverUrl;
@@ -380,7 +388,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
     } catch (_) {}
 
-    final uri = Uri.tryParse(_effectiveMediaUrl ?? widget.mediaUrl);
     if (uri != null && uri.hasScheme && uri.hasAuthority) {
       return uri.origin;
     }
@@ -1228,7 +1235,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       } else if (context.canPop()) {
         context.pop();
       } else {
-        context.go(AppRoutes.connection);
+        context.go(AppRoutes.home);
       }
     }
   }

@@ -28,17 +28,17 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
-### 2026-09-30 — Opening sequence (brand sting): delivered standalone, not wired in
+### 2026-09-30 — Opening sequence (brand sting): delivered, wired, and prompt-free autoplay
 
 **Deliverable:** a 3.00-second branded opening — build-up → logo impact → two-note motif → wordmark →
 curtain — for the server, with an original synthesized score (no samples, nothing licensed). The outro
 is an **overlay over the running app**: when the curtain parts what is revealed is the app's own page,
 already loaded and already interactive — its header, its posters and its live telemetry, not a copy of
-them. An earlier cut rendered a script-stripped snapshot of the library into a sandboxed iframe; the
-owner rejected that ("it reveals the app itself ready to use"), and the snapshot file and its builder
-were deleted.
+them.
 
-**Opening sequence (intro animation):** delivered and wired into the app. A 3.00-second branded opening (build-up → logo impact → two-note motif → wordmark → curtain parts onto the app itself) with an original synthesized score. The overlay is included as the last thing in `templates/library.html` and gated once per browser session via `sessionStorage`. **Not a library snapshot** — the curtain opens onto the real, live, interactive app page. Artifacts in `docs/opening-sequence/` inside this repository: scripts (`serve_with_intro.py`, `cdp_local.py`, `capture_overlay_frames.py`, `encode_videos.py`, `render_intro_theme.py`, `verify_overlay.py`, `verify_app_integration.py`, `convert_to_overlay.py`), the score (`assets/intro-theme.wav`), rendered videos (`assets/intro-demo.mp4`, `assets/intro-demo-portrait.mp4`), captured frames (`frames/`, `frames-portrait/`), keystills (`assets/stills/`), pre-overlay source (`source/intro.html`), and a copy of the overlay layer (`source/intro-overlay.html`); the canonical overlay is `templates/intro-overlay.html`. The read-only proxy (`python docs/opening-sequence/scripts/serve_with_intro.py --port 8001 --app http://127.0.0.1:8000`) lets you see it over the running app without touching the app at all; `?intro=off` returns the app's own response byte-for-byte. Full detail, modes and integration recipe in [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+**Prompt-Free Autoplay & In-App Integration:** Delivered and wired into the app. The click-to-start `#gate` prompt card ("Play with sound") was eliminated so the animation runs fully and automatically upon entry without requiring user clicks (`mode = 'auto'`). `#gate` is hidden by default and preserved solely for explicit manual testing (`?intro=gate`). Web Audio API playback starts immediately with transparent one-time interaction listeners (`pointerdown`, `keydown`, `touchstart`) to resume suspended audio contexts without delaying visual playback. The overlay is gated once per browser session via `sessionStorage` in `templates/library.html`, and `?intro=off` cleanly omits all overlay DOM nodes in Jinja. Artifacts reside in `docs/opening-sequence/`. Full detail in [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+
+**Android Mobile Client Opening Sequence (Flutter):** Delivered to the Android Flutter client (`flutter_client/`). Bundled the synthesized 1080×1920 portrait MP4 ident (`assets/videos/intro-demo-portrait.mp4`), implemented Riverpod `IntroController` (`IntroState` session gating once per app launch), edge-to-edge `BrandIntroOverlay` with `media_kit` hardware video & audio decode, tap-anywhere / skip pill dismissal with 300ms fadeout, and unconstrained underlying `AppShell` mount. Added "Replay Brand Intro" control in Settings (`SettingsContent`). Passed full test suite (210/210 passed, 0 analyzer issues), compiled `v1.2.2+122`, and installed & launched on connected Vivo I2217 (Android 16).
 
 **Verification:** `verify_overlay.py` — 12 behavioural checks against the running server, all pass: the
 app's DOM is present under the layer (12 cards, 11 posters), the AudioContext reaches `running` on a real

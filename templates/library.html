@@ -451,11 +451,16 @@ window.addEventListener('pagehide', () => {
    later loads in the same session skip straight to the library. Both this script
    and the layer's own run in the same parse task, so a repeat load never paints
    the layer at all. #}
+{% if request.args.get('intro') != 'off' %}
 {% include 'intro-overlay.html' %}
 <script>
   try {
-    if (sessionStorage.getItem('introSeen')) INTRO.finish();   /* already watched */
-    else sessionStorage.setItem('introSeen', '1');
+    if (sessionStorage.getItem('introSeen') && !/[?&]intro=(auto|replay|force)/.test(location.search)) {
+      INTRO.finish();   /* already watched */
+    } else {
+      sessionStorage.setItem('introSeen', '1');
+    }
   } catch (e) { /* storage blocked (private mode): just show it */ }
 </script>
+{% endif %}
 

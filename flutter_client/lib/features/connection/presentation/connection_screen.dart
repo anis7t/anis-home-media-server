@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_typography.dart';
+import '../../../core/storage/settings_service.dart';
 import '../controllers/connection_controller.dart';
 import '../models/connection_state.dart';
 
@@ -177,7 +178,7 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
             TextField(
               controller: _urlController,
               decoration: InputDecoration(
-                hintText: 'http://127.0.0.1:8000',
+                hintText: SettingsService.defaultServerUrl,
                 prefixIcon: const Icon(
                   Icons.link,
                   color: AppColors.textMuted,
@@ -187,10 +188,10 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                   icon: const Icon(Icons.refresh, size: 20),
                   tooltip: 'Reset to default',
                   onPressed: () {
-                    _urlController.text = 'http://127.0.0.1:8000';
+                    _urlController.text = SettingsService.defaultServerUrl;
                     ref
                         .read(connectionControllerProvider.notifier)
-                        .updateUrl('http://127.0.0.1:8000');
+                        .updateUrl(SettingsService.defaultServerUrl);
                   },
                 ),
               ),
@@ -205,16 +206,16 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
               runSpacing: 6,
               children: [
                 _buildPresetChip(
-                  label: 'LAN (192.168.1.16)',
-                  url: 'http://192.168.1.16:8000',
-                  isSelected: state.serverUrl == 'http://192.168.1.16:8000',
-                  icon: Icons.wifi_rounded,
-                ),
-                _buildPresetChip(
                   label: 'WAN (Cloudflare)',
                   url: 'https://media.anisparvez.in',
                   isSelected: state.serverUrl == 'https://media.anisparvez.in',
                   icon: Icons.cloud_outlined,
+                ),
+                _buildPresetChip(
+                  label: 'LAN (192.168.1.16)',
+                  url: 'http://192.168.1.16:8000',
+                  isSelected: state.serverUrl == 'http://192.168.1.16:8000',
+                  icon: Icons.wifi_rounded,
                 ),
                 _buildPresetChip(
                   label: 'Localhost',
@@ -448,6 +449,8 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                     );
                     if (Navigator.canPop(context)) {
                       Navigator.pop(context);
+                    } else {
+                      context.go(AppRoutes.home);
                     }
                   }
                 },
@@ -471,7 +474,11 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
                   .saveSettings();
             }
             if (!mounted) return;
-            context.go(AppRoutes.home);
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              context.go(AppRoutes.home);
+            }
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.brandRed,
@@ -479,66 +486,6 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
           ),
           icon: const Icon(Icons.home_rounded, size: 20),
           label: const Text('Enter Media Server (Home)'),
-        ),
-        const SizedBox(height: 10),
-        ElevatedButton.icon(
-          onPressed: () async {
-            if (state.serverUrl.isNotEmpty) {
-              await ref
-                  .read(connectionControllerProvider.notifier)
-                  .saveSettings();
-            }
-            if (!mounted) return;
-            context.go(AppRoutes.library);
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.surfaceElevated,
-            foregroundColor: Colors.white,
-            side: const BorderSide(color: AppColors.borderMedium),
-          ),
-          icon: const Icon(Icons.video_library_rounded, size: 20),
-          label: const Text('Browse Movie Library (Phase 4)'),
-        ),
-        const SizedBox(height: 10),
-        ElevatedButton.icon(
-          onPressed: () async {
-            if (state.serverUrl.isNotEmpty) {
-              await ref
-                  .read(connectionControllerProvider.notifier)
-                  .saveSettings();
-            }
-            if (!mounted) return;
-            final currentUrl = ref.read(connectionControllerProvider).serverUrl;
-            final baseUrl = currentUrl.isNotEmpty
-                ? currentUrl
-                : 'http://127.0.0.1:8000';
-            const filename =
-                'Batman Knightfall Part 1 2026 1080p WEBRip x264 AAC5 1-[YTS GG - YTS BZ].mp4';
-            final mediaUrl =
-                '$baseUrl/media/${Uri.encodeComponent(filename)}';
-            context.push(
-              AppRoutes.player,
-              extra: {
-                'mediaUrl': mediaUrl,
-                'title': 'Batman Knightfall Part 1 (2026)',
-                'subtitle': 'Direct MP4 • 1080p • AAC 5.1',
-              },
-            );
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFF334B),
-            foregroundColor: Colors.white,
-          ),
-          icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
-          label: const Text('Launch Production Video Player (Phase 3A)'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: () {
-            context.push(AppRoutes.playerPoc);
-          },
-          icon: const Icon(Icons.science_outlined, size: 18),
-          label: const Text('Launch Player POC Test Harness (Phase 2)'),
         ),
       ],
     );

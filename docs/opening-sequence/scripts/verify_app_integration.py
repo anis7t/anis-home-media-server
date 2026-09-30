@@ -30,20 +30,26 @@ def check(label, cond, detail=""):
 br = Chromium().start()
 try:
     # ---------------------------------------------------------------- 1. first visit
-    print("1. first visit: the layer is over the app, and the app keeps its own styling")
+    print("1. first visit: the layer is over the app, and the sequence starts automatically")
+    br.navigate(APP)
+    br.eval("sessionStorage.clear()")
     br.navigate(APP)
     first = br.eval("""(()=>{const g=document.getElementById('gate'),s=document.getElementById('stage');
       const cs=e=>e?getComputedStyle(e):null;
-      return {pageMode:INTRO.pageMode(),title:document.title,
+      const el=document.elementFromPoint(innerWidth/2,innerHeight/2);
+      return {pageMode:INTRO.pageMode(),playback:INTRO.playback(),title:document.title,
       cards:document.querySelectorAll('.card').length,posters:document.querySelectorAll('.art img').length,
       stagePos:cs(s)?cs(s).position:'(none)',stageZ:cs(s)?+cs(s).zIndex:0,
       gateShown:!!g&&cs(g).display!=='none'&&cs(g).opacity!=='0',
       bodyBg:getComputedStyle(document.body).backgroundColor,
-      bodyOverflow:getComputedStyle(document.body).overflow};})()""")
+      bodyOverflow:getComputedStyle(document.body).overflow,
+      hitInside:!!(el&&el.closest('#stage,#gate'))};})()""")
     print("   ", first)
-    check("the overlay is on the page", first["pageMode"] == "gate" and first["stagePos"] == "fixed")
+    check("the overlay is on the page", first["pageMode"] == "auto" and first["stagePos"] == "fixed")
     check("it sits above the app's stack", first["stageZ"] >= 2147483000)
-    check("the start card is up", first["gateShown"])
+    check("the start card is not shown (prompt removed)", not first["gateShown"])
+    check("the sequence is playing automatically", first["playback"] == "playing")
+    check("clicks land on the layer while drawing", first["hitInside"])
     check("the app's own page is beneath it", first["cards"] >= 10 and first["posters"] >= 10,
           "%d cards, %d posters" % (first["cards"], first["posters"]))
     check("the layer does not skin the page", first["bodyBg"] != "rgb(5, 6, 10)", first["bodyBg"])
@@ -53,26 +59,9 @@ try:
     check("the page still scrolls", scrolled and scrolled > 0, "scrollY=%s" % scrolled)
     br.eval("window.scrollTo(0,0)")
 
-    # while it draws, the layer takes the clicks rather than the app
-    hits = br.eval("""(()=>{const el=document.elementFromPoint(innerWidth/2,innerHeight/2);
-      return el?{id:el.id,insideLayer:!!el.closest('#stage,#gate')}:{id:'(none)',insideLayer:false};})()""")
-    print("    centre hit-test:", hits)
-    check("clicks land on the layer, not the app", hits["insideLayer"])
-
-    # --------------------------------------------------- 2. a real click runs it
-    print("2. a real click on the start card runs the sequence with sound")
-    br.eval("""window.__ac=null;(function(){var O=window.AudioContext||window.webkitAudioContext;
-      window.AudioContext=window.webkitAudioContext=function(){var c=new O();window.__ac=c;return c};})()""")
-    br.click_sel("#playBtn")
-    time.sleep(1.3)
-    mid = br.eval("""(()=>{const cs=e=>getComputedStyle(document.getElementById(e));
-      return {playback:INTRO.playback(),audioState:window.__ac?window.__ac.state:'none'};})()""")
-    check("the sequence is playing", mid["playback"] == "playing", str(mid))
-    check("audio is really running", mid["audioState"] == "running", mid["audioState"])
-
-    # ------------------------------------------- 3. afterwards the layer is gone
-    print("3. afterwards nothing of the layer is left, and the app is usable")
-    time.sleep(2.8)
+    # ------------------------------------------- 2. afterwards the layer is gone
+    print("2. afterwards nothing of the layer is left, and the app is usable")
+    time.sleep(3.2)
     end = br.eval("""(()=>{const cs=e=>{const n=document.getElementById(e);return n?getComputedStyle(n).display:'(none)'};
       return {playback:INTRO.playback(),stage:cs('stage'),gate:cs('gate')};})()""")
     print("   ", end)

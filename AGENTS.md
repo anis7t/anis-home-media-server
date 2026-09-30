@@ -11,6 +11,14 @@
 - `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in `app/services/chunk_transcode_service.py` and `app/services/gpu_service.py`.
 - `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay (brand sting, original score, frame-capture pipeline). It is **delivered and wired into the app** via `{% include 'intro-overlay.html' %}` in `templates/library.html`, gated once per browser session; the artifacts live in `docs/opening-sequence/` inside this repository.
 
+### Brand Opening Sequence (Intro Overlay) Invariants
+
+- **Prompt-Free Autoplay by Default:** The brand intro overlay must auto-start immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` must have `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
+- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API must never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
+- **Container-Controlled Session Gating:** `intro-overlay.html` must not set `sessionStorage.setItem('introSeen')` prior to the enclosing template's evaluation. Setting it prematurely causes container checks (e.g. in `library.html`) to falsely identify the current visit as already watched, calling `INTRO.finish()` and destroying the layer on frame 1.
+- **Clean Jinja Query Bypass (`?intro=off`):** Always wrap the overlay include in `{% if request.args.get('intro') != 'off' %}` so that control requests render zero intro DOM nodes (`#stage`, `#gate`), ensuring test proxies and control checks receive clean, untouched HTML responses byte-for-byte.
+- **Mobile Client Opening Sequence (Flutter):** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated.
+
 ## 2. Current architecture
 
 ```text

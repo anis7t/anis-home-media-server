@@ -111,6 +111,9 @@
   loadPreviewMeta();
 
   const duration = () => {
+    if (typeof window.castGetDuration === 'function' && window.isCasting?.()) {
+      return window.castGetDuration();
+    }
     const d = Number(window.timelineDuration?.() ?? video.duration);
     return Number.isFinite(d) && d > 0 ? d : 0;
   };
@@ -297,6 +300,10 @@
     if (!d) return;
     const p = pointerPercent(event.clientX);
     const target = (p / 100) * d;
+    if (typeof window.castSeek === 'function' && window.isCasting?.()) {
+      window.castSeek(target);
+      return;
+    }
     video.currentTime = target;
     if (typeof window.checkPreparing === 'function') window.checkPreparing(target);
   };
@@ -321,7 +328,7 @@
     window.isScrubbing = false;
     wrapper.classList.remove('is-scrubbing');
     if (event.pointerId) wrapper.releasePointerCapture?.(event.pointerId);
-    if (wasPlaying || !video.paused) video.play().catch(() => { });
+    if (!window.isCasting?.() && (wasPlaying || !video.paused)) video.play().catch(() => { });
     clearHover();
   };
 
@@ -404,8 +411,14 @@
   const sync = () => {
     if (scrubbing || window.isScrubbing || video.seeking) return;
     const d = duration();
-    setPlayed(d ? (video.currentTime / d) * 100 : 0);
+    const pos = (typeof window.castGetPosition === 'function' && window.isCasting?.())
+      ? window.castGetPosition()
+      : video.currentTime;
+    setPlayed(d ? (pos / d) * 100 : 0);
   };
+
+  window.syncSeekbar = sync;
+  window.setPlayed = setPlayed;
 
   ['loadedmetadata', 'durationchange', 'progress', 'loadeddata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'emptied'].forEach((eventName) => {
     video.addEventListener(eventName, () => {

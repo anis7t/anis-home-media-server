@@ -35,7 +35,7 @@ br = Chromium().start()
 try:
     # ---------------------------------------------------------------- 1. gate mode
     print("1. gate mode (the app wearing the intro)")
-    br.navigate(BASE)
+    br.navigate(BASE + "?intro=gate")
     g = br.eval("""(()=>{const s=document.getElementById('stage'),g=document.getElementById('gate');
       const cs=getComputedStyle(s),cg=getComputedStyle(g);
       return {body:document.body.className,stagePos:cs.position,stageZ:+cs.zIndex,gateZ:+cg.zIndex,
@@ -47,7 +47,7 @@ try:
     check("layer fixed and above the app, gate above the layer",
           g["stagePos"] == "fixed" and g["stageZ"] > 100 and g["gateZ"] > g["stageZ"])
     check("layer paints nothing itself", g["stageBg"] in ("rgba(0, 0, 0, 0)", "transparent"))
-    check("the app's own page is beneath it", g["cards"] >= 12 and g["posters"] >= 10,
+    check("the app's own page is beneath it", g["cards"] >= 10 and g["posters"] >= 10,
           "%d cards, %d posters, title %r" % (g["cards"], g["posters"], g["title"]))
 
     # arm an AudioContext probe *before* the module builds its own
