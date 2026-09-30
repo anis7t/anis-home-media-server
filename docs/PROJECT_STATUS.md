@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-27
+Last reviewed: 2026-09-30
 Repository: `anis7t/media-server`
 Working branch: `feat/flutter-production-player`
 
@@ -27,6 +27,35 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 ---
 
 ## 0. Recent work
+
+### 2026-09-30 — Opening sequence (brand sting): delivered standalone, not wired in
+
+**Deliverable:** a 3.00-second branded opening — build-up → logo impact → two-note motif → wordmark →
+curtain — for the server, with an original synthesized score (no samples, nothing licensed). The outro
+is an **overlay over the running app**: when the curtain parts what is revealed is the app's own page,
+already loaded and already interactive — its header, its posters and its live telemetry, not a copy of
+them. An earlier cut rendered a script-stripped snapshot of the library into a sandboxed iframe; the
+owner rejected that ("it reveals the app itself ready to use"), and the snapshot file and its builder
+were deleted.
+
+**Not applied:** no application file was changed for this work. The overlay is served over the app by a
+read-only injection proxy whose `?intro=off` mode returns the app's own response byte-for-byte. Making it
+permanent is one include — `{% include 'intro-overlay.html' %}` as the last thing in the page — plus an
+optional `sessionStorage` gate. The artifacts live outside the checkout in
+`C:\Users\anis7\Documents\Anis-Media-Server-Intro\`; full detail, modes and integration recipe in
+[`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+
+**Verification:** `verify_overlay.py` — 12 behavioural checks against the running server, all pass: the
+app's DOM is present under the layer (12 cards, 11 posters), the AudioContext reaches `running` on a real
+click, the veils cover the app at 1.35 s, the layer removes itself by 3.2 s, **a real click afterwards
+reaches the app's own search field**, capture mode stops the app's clock, and the 0.25 s tail hold is
+byte-identical while the sequence itself is not. Both rendered videos `ffprobe` at 90 frames and
+`duration 3.000000` with a real AAC track (RMS −18.88 dB, peak −3.08 dB).
+
+**Three defects found and fixed while rebuilding:** the capture mode was filming the click-to-start gate
+instead of the sequence (90 identical frames); the layer's `html,body` CSS was overriding the app's body
+background and stopping its scrolling; and `Emulation.*` needs a page session before it can set a
+viewport. The capture/render lessons that generalise are recorded in §8 of the doc.
 
 ### 2026-09-28 — Casting to DLNA TVs and Chromecast (web player + Android app)
 
