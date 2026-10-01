@@ -307,6 +307,24 @@
   - **Global / App Settings**: Top frosted navigation header must use `Icons.settings_rounded` (⚙️ gear icon) with tooltip `"Settings & Updates"`, reserved strictly for server origin, device identity, update channel switching, and update checks.
   - **Catalog Sorting & Filtering**: The search bar row must use `Icons.filter_list_rounded` (☰⌵ filter/list icon), with an active badge indicator (`AppColors.brandRed`) whenever non-default filters or sorts are active.
 
-
-
-
+## 24. Universal Android APK, TV Remote Navigation & Player Modularization Invariants
+- **Universal Single-APK Architecture & TV Mode Isolation**:
+  - The Android client compiles to a single universal APK (`in.anisparvez.media_server_client`) serving both mobile touch devices and 10-foot TV displays (Amazon Fire TV Stick 4K, Android TV) without flavor divergence.
+  - In `PlayerScreen`, `isTvModeProvider` (`isTv`) automatically forces 100% borderless fullscreen, completely omitting mobile portrait split-view headers, synopsis cards, and bottom navigation.
+  - Redundant mobile actions (such as Cast sheet button and Fullscreen toggle button) MUST remain hidden on TV (`isTv == true`).
+- **10-Foot TV D-Pad Remote Transport (2-Zone Focus Model)**:
+  - Transport navigation is divided into 2 discrete zones: **Zone 1** (Timeline seekbar scrubber) and **Zone 2** (Playback controls row).
+  - On TV remotes, audio volume is managed exclusively via hardware HDMI-CEC or dedicated TV remote buttons. D-pad Up and Down MUST strictly navigate between Zone 1 and Zone 2, and must NEVER manipulate software volume levels.
+  - Back key unwinds the multi-tier state machine hierarchically: Zone 2 (controls) → Zone 1 (timeline) → dismiss overlay (hide controls) → exit player (`_handleBack`).
+- **TV Remote Exit Debouncing & Focus Trapping**:
+  - Hardware Fire TV remotes frequently emit duplicate back events (key down + activity pop dispatch).
+  - In `AppShell._handleBack()`, back events must be timestamp-debounced (`_lastBackTime`, 350ms) to prevent exit dialog flicker.
+  - `TvExitDialog` must enforce `barrierDismissible: false` with a 350ms dismissal gate (`_canDismissOnBack`). The initial focus must be locked to "Cancel" in obsidian glass with brand red glow; D-pad Right navigates to "Exit".
+- **Directional Traversal Bridge (`TvDirectionalFocusAction`)**:
+  - Wrap content area in `DirectionalFocusAction` in `AppShell`. Pressing D-pad Left from the leftmost card of any horizontal rail or grid collapses content focus and smoothly transfers focus to the active `TvSideNavigationRail` item.
+  - Navigating D-pad Right from an expanded rail item collapses the rail back to 68dp and restores focus cleanly to the first visible content card without losing scroll position.
+- **Player Screen Segregation & Backward Compatibility Invariants**:
+  - `player_screen.dart` exports `TvPlayerFocusZone` from `domain/tv_player_focus.dart` to preserve existing test imports without requiring path rewrites.
+  - **Non-GoRouter Context Navigation Guard**: In `_handleBack()`, ALWAYS test `Navigator.of(context).canPop()` before evaluating `context.canPop()`. In tests or non-GoRouter widget contexts, calling `context.canPop()` throws `No GoRouter found in context`.
+  - **Injected Controller URL Resolution Guard**: In `_resolveEffectiveMediaUrl()`, check `widget.customController != null` at the immediate start of the function and return `widget.mediaUrl` immediately. Never await `settingsServiceProvider.getServerBaseUrl()` when an injected controller is present, as SharedPreferences asynchronous access in unit tests stalls widget pump cycles.
+  - **Playback Progress Sealing**: In `_handleBack()`, invoke `_progress?.flush()` followed immediately by `_progress?.dispose()` prior to `await _controller.stop()`. This prevents media engines (such as media_kit/libmpv) from resetting position to 0 and overwriting the saved resume point.
