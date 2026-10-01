@@ -28,25 +28,25 @@
 
 ---
 
-## Current State (2026-09-27, after the closure + hardening + device-presence pass)
+## Current State (2026-10-01, after TV Pass 2 + PlayerScreen Modularization)
 
-**Git status:** `feat/flutter-production-player` — the Phase 4 line is committed in focused commits
-(Phase 4.6 closure first, then the hardening fixes; see `docs/PROJECT_STATUS.md` §0).
-**Last commit:** `83e553d docs(flutter): release tooling, signing policy, test isolation, device verification`
-plus the device-presence and playback-mode commits that follow it.
+**Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements and `PlayerScreen` modularization.
+**Test Results (verified 2026-10-01):**
+- Flutter unit & widget tests: **204 passed, 5 skipped** (0 failures).
+- Flutter static analysis (`flutter analyze`): **0 issues found**.
 
-Everything from Phase 4.1–4.6 is committed. `lib/features/player/` is now deliberately changed in two
-owner-requested places (authoritative playback-mode label, HLS routing for non-direct-playable
-containers) — see "Authoritative playback mode" below; no other player behaviour was touched.
+### PlayerScreen Modularization & Architecture Segregation (2,283 → 1,232 lines)
 
-### Test Results (verified 2026-09-27)
+`PlayerScreen` previously grew beyond 2,280 lines into a monolithic class managing playback lifecycle, gesture detectors, 10-foot TV D-pad navigation, Chromecast / DLNA remote polling, metadata fetching, and mobile portrait layout.
 
-| Suite | Count | Result |
-|-------|-------|--------|
-| Flutter tests | 143 passed, 10 skipped | ✅ 0 failures (skips are live-server tests, see below) |
-| Flutter analyze (lib + test) | — | ✅ 0 issues |
-| Python backend tests | 250 passed, 1 skipped | ✅ 0 failures |
-| Production DB across a full suite run | movies / devices / watch history / progress / settings | ✅ byte-identical before vs after |
+The screen has been segregated into 5 modular, focused components:
+- **`domain/tv_player_focus.dart`:** Defines `TvPlayerFocusZone` enum (`none`, `timeline`, `controls`) for 10-foot remote focus management. Exported directly from `player_screen.dart` for backward compatibility.
+- **`presentation/widgets/player_cast_bar.dart`:** `PlayerCastBar` widget encapsulating Chromecast / DLNA session progress and remote status.
+- **`presentation/widgets/player_details_panel.dart`:** `PlayerBrandHeader` and `PlayerDetailsPanel` managing portrait mobile split-view details, synopsis, stream specifications, and server connection modal.
+- **`presentation/widgets/player_key_dispatcher.dart`:** `PlayerKeyDispatcher` static helper managing universal media keys, 2-zone TV remote D-pad state machine, and desktop physical keyboard shortcuts.
+- **`infrastructure/player_media_resolver.dart`:** `PlayerMediaResolver` isolating filename extraction, effective URL mapping, API server origin detection, seek-preview frame metadata probing, WebVTT sidecar discovery, and `/api/media-info` metadata probing.
+
+Result: `player_screen.dart` reduced from 2,283 lines to 1,232 lines (-1,051 lines, ~46% reduction). All 86 player tests and 118 shell/feature tests pass with zero analyzer warnings.
 
 ### Device presence — the client now registers itself
 

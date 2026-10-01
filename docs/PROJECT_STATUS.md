@@ -29,6 +29,22 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-01 — PlayerScreen Architecture Segregation & Modularization (2,283 → 1,232 lines)
+
+**Deliverable:** Modularized the monolithic `player_screen.dart` (which exceeded 2,280 lines) into dedicated, highly focused domain, infrastructure, and presentation components. Extracted 5 decoupled modules, reducing `player_screen.dart` by over 1,050 lines (~46% line reduction) while preserving 100% backward compatibility, mobile portrait split-view, and 10-foot Fire TV / Android TV borderless fullscreen cinema invariants.
+
+**Segregated Architecture:**
+1. **`tv_player_focus.dart` (`domain/`):** Dedicated domain enum `TvPlayerFocusZone` (`none`, `timeline`, `controls`), exported cleanly from `player_screen.dart`.
+2. **`player_cast_bar.dart` (`presentation/widgets/`):** Encapsulated `PlayerCastBar` widget for active Chromecast / DLNA casting sessions, showing device name, live progress bar, and status badges.
+3. **`player_details_panel.dart` (`presentation/widgets/`):** Self-contained `PlayerBrandHeader` and `PlayerDetailsPanel` handling the portrait mobile split-view layout, synopsis, metadata pills, stream specifications, and server connection modal.
+4. **`player_key_dispatcher.dart` (`presentation/widgets/`):** Extracted `PlayerKeyDispatcher` static helper encapsulating all universal media keys (`mediaPlayPause`, `mediaRewind`, `mediaFastForward`), 2-zone 10-foot TV D-pad remote navigation (Zone 1 Timeline, Zone 2 Controls), and desktop keyboard shortcuts (`Space`, `K`, `J`, `L`, `M`, `F`, etc.).
+5. **`player_media_resolver.dart` (`infrastructure/`):** Isolated media resolver service handling filename recovery (`/media/`, `/hls/`, path segments), effective media URL mapping, API server origin resolution, seek-preview frame metadata probing (`/api/seek-preview-meta/`), WebVTT sidecar subtitle discovery (`/api/subtitles/`), and `/api/media-info` metadata probing.
+
+**Verification & Quality:**
+- All 86 player unit & widget tests passed (`flutter test test/features/player/`).
+- All 118 shell, library, cast, home, intro, settings, devices, updater tests passed (`flutter test ...`).
+- `flutter analyze`: 0 issues found across all Dart packages.
+
 ### 2026-10-01 — Fire TV Stick 4K & Android TV (Pass 2 Refinements: Focus Traversal, Debounced Exit & 10-Foot Leanback UI)
 
 **Deliverable:** A polished second-pass leanback experience on the universal Android APK (`in.anisparvez.media_server_client`), hardening D-pad remote navigation, edge-to-rail focus transitions, exit confirmation debouncing, and TV Settings UI on physical Amazon Fire TV Stick 4K (`AFTMM`) connected to a 4K TV.

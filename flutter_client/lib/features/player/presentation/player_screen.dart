@@ -1,36 +1,41 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../core/storage/device_identity_service.dart';
-import '../application/playback_progress_reporter.dart';
+import '../../../core/storage/settings_service.dart';
 import '../../cast/presentation/controllers/cast_controller.dart';
 import '../../cast/presentation/widgets/cast_device_sheet.dart';
-import '../domain/playback_mode.dart';
-import '../../../core/storage/settings_service.dart';
 import '../../connection/controllers/connection_controller.dart';
+import '../application/playback_progress_reporter.dart';
+import '../domain/playback_mode.dart';
 import '../domain/player_controller_interface.dart';
 import '../domain/seek_preview_controller.dart';
+import '../domain/tv_player_focus.dart';
 import '../infrastructure/media_kit_player_adapter.dart';
-import '../infrastructure/screen_brightness_service.dart';
 import '../infrastructure/media_volume_service.dart';
+import '../infrastructure/player_media_resolver.dart';
+import '../infrastructure/screen_brightness_service.dart';
 import 'widgets/double_tap_seek_detector.dart';
 import 'widgets/playback_speed_sheet.dart';
+import 'widgets/player_cast_bar.dart';
 import 'widgets/player_controls_overlay.dart';
+import 'widgets/player_details_panel.dart';
 import 'widgets/player_error_card.dart';
 import 'widgets/player_hud_toast.dart';
+import 'widgets/player_key_dispatcher.dart';
 import 'widgets/player_loading_indicator.dart';
 import 'widgets/player_surface.dart';
 import 'widgets/track_selector_sheet.dart';
+
+export '../domain/tv_player_focus.dart';
 
 /// Production player screen for Phase 3.
 ///
@@ -67,13 +72,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
-}
-
-/// 10-foot TV player focus zone hierarchy
-enum TvPlayerFocusZone {
-  none,
-  timeline,
-  controls,
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
@@ -308,360 +306,147 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   /// Origin resolved for API calls / HLS URLs once the saved server is known.
   String? _resolvedApiOrigin;
 
-  String? _resolveFilename() {
-    if (widget.mediaFilename != null && widget.mediaFilename!.isNotEmpty) {
-      return widget.mediaFilename;
-    }
-    final uri = Uri.tryParse(_effectiveMediaUrl ?? widget.mediaUrl);
-    if (uri == null) return null;
-
-    final path = uri.path;
-    if (path.startsWith('/media/')) {
-      return Uri.decodeComponent(path.substring('/media/'.length));
-    } else if (path.startsWith('/hls/')) {
-      const prefix = '/hls/';
-      var rest = path.substring(prefix.length);
-      if (rest.endsWith('/playlist.m3u8')) {
-        rest = rest.substring(0, rest.length - '/playlist.m3u8'.length);
-      }
-      return Uri.decodeComponent(rest);
-    }
-    return null;
-  }
+  String? _resolveFilename() =>
+      PlayerMediaResolver.resolveFilename(_effectiveMediaUrl ?? widget.mediaUrl, widget.mediaFilename);
 
   Future<String> _resolveEffectiveMediaUrl() async {
-    final raw = widget.mediaUrl;
     if (widget.customController != null) {
-      return raw;
+      return widget.mediaUrl;
     }
-    final parsed = Uri.tryParse(raw);
-    final isLocalhost = parsed == null ||
-        !parsed.hasScheme ||
-        parsed.host == '127.0.0.1' ||
-        parsed.host == 'localhost';
-
-    if (isLocalhost) {
-      try {
-        final active = ref.read(connectionControllerProvider).serverUrl;
-        if (active.isNotEmpty &&
-            !active.contains('127.0.0.1') &&
-            !active.contains('localhost')) {
-          final server = active.endsWith('/')
-              ? active.substring(0, active.length - 1)
-              : active;
-          final path = (parsed != null && parsed.hasScheme)
-              ? (parsed.hasQuery ? '${parsed.path}?${parsed.query}' : parsed.path)
-              : (raw.startsWith('/') ? raw : '/$raw');
-          return '$server$path';
-        }
-      } catch (_) {}
-      try {
-        final settings = ref.read(settingsServiceProvider);
-        final saved = await settings.getServerBaseUrl();
-        if (saved.isNotEmpty &&
-            !saved.contains('127.0.0.1') &&
-            !saved.contains('localhost')) {
-          final server = saved.endsWith('/')
-              ? saved.substring(0, saved.length - 1)
-              : saved;
-          final path = (parsed != null && parsed.hasScheme)
-              ? (parsed.hasQuery ? '${parsed.path}?${parsed.query}' : parsed.path)
-              : (raw.startsWith('/') ? raw : '/$raw');
-          return '$server$path';
-        }
-      } catch (_) {}
-    }
-    return raw;
+    String? activeUrl;
+    try {
+      activeUrl = ref.read(connectionControllerProvider).serverUrl;
+    } catch (_) {}
+    String? savedUrl;
+    try {
+      savedUrl = await ref.read(settingsServiceProvider).getServerBaseUrl();
+    } catch (_) {}
+    return PlayerMediaResolver.resolveEffectiveMediaUrl(
+      rawMediaUrl: widget.mediaUrl,
+      hasCustomController: false,
+      activeConnectionServerUrl: activeUrl,
+      savedSettingsServerUrl: savedUrl,
+    );
   }
 
   String? _resolveServerOrigin() {
-    if (_effectiveServerOrigin != null && _effectiveServerOrigin!.isNotEmpty) {
-      return _effectiveServerOrigin;
-    }
-    final uri = Uri.tryParse(_effectiveMediaUrl ?? widget.mediaUrl);
-    if (uri != null &&
-        uri.hasScheme &&
-        uri.hasAuthority &&
-        uri.host != '127.0.0.1' &&
-        uri.host != 'localhost') {
-      return uri.origin;
-    }
+    String? activeUrl;
     try {
-      final connState = ref.read(connectionControllerProvider);
-      final active = connState.serverUrl;
-      if (active.isNotEmpty &&
-          !active.contains('127.0.0.1') &&
-          !active.contains('localhost')) {
-        final activeUri = Uri.tryParse(active);
-        if (activeUri != null &&
-            activeUri.hasScheme &&
-            activeUri.hasAuthority) {
-          return activeUri.origin;
-        }
-      }
+      activeUrl = ref.read(connectionControllerProvider).serverUrl;
     } catch (_) {}
-
-    if (uri != null && uri.hasScheme && uri.hasAuthority) {
-      return uri.origin;
-    }
-    return null;
+    return PlayerMediaResolver.resolveServerOrigin(
+      effectiveServerOrigin: _effectiveServerOrigin,
+      effectiveMediaUrl: _effectiveMediaUrl,
+      rawMediaUrl: widget.mediaUrl,
+      activeConnectionServerUrl: activeUrl,
+    );
   }
 
   Future<void> _loadPreviewMeta() async {
-    setState(() {
-      _previewMeta = null;
-    });
-
-    if (widget.customController != null && widget.customDio == null) {
-      return;
-    }
-
+    setState(() => _previewMeta = null);
+    if (widget.customController != null && widget.customDio == null) return;
     try {
       final filename = _resolveFilename();
       final serverOrigin = _apiServerOrigin();
-      if (filename == null || serverOrigin == null) {
-        return;
-      }
-
-      final encoded = Uri.encodeComponent(filename);
-      final url = '$serverOrigin/api/seek-preview-meta/$encoded';
+      if (filename == null || serverOrigin == null) return;
 
       _previewCancelToken?.cancel();
       _previewCancelToken = CancelToken();
 
-      final dio = _apiDio();
-      final res = await dio.get(
-        url,
+      final data = await PlayerMediaResolver.loadPreviewMeta(
+        dio: _apiDio(),
+        serverOrigin: serverOrigin,
+        filename: filename,
         cancelToken: _previewCancelToken,
-        options: Options(
-          responseType: ResponseType.json,
-          validateStatus: (status) => status != null && status < 500,
-        ),
       );
-
       if (!mounted) return;
-
-      if (res.statusCode == 200 && res.data != null) {
-        final data = res.data is Map<String, dynamic>
-            ? res.data as Map<String, dynamic>
-            : (res.data as Map).cast<String, dynamic>();
-
+      if (data != null) {
         setState(() {
           _previewMeta = data;
-        });
-
-        _previewUrlResolver = (int frameIndex, int sequenceId) async {
-          final thumbStr = frameIndex.toString().padLeft(5, '0');
-          return '$serverOrigin/seek-preview/$encoded/thumb_$thumbStr.jpg?req=$sequenceId';
-        };
-      } else {
-        setState(() {
-          _previewMeta = null;
+          final template = data['url_template'] as String?;
+          if (template != null) {
+            _previewUrlResolver = (frameIndex, sequenceId) async {
+              return '$serverOrigin${template.replaceAll('{frame}', frameIndex.toString()).replaceAll('{seq}', sequenceId.toString())}';
+            };
+          }
         });
       }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _previewMeta = null;
-        });
-      }
-    }
+    } catch (_) {}
   }
 
   Future<void> _fetchSidecarSubtitles() async {
-    if (widget.customController != null && widget.customDio == null) {
-      return;
-    }
+    if (widget.customController != null && widget.customDio == null) return;
     try {
       final filename = _resolveFilename();
       final serverOrigin = _apiServerOrigin();
       if (filename == null || serverOrigin == null) return;
-
-      final encoded = Uri.encodeComponent(filename);
-      final url = '$serverOrigin/api/subtitles/$encoded';
 
       _subtitlesCancelToken?.cancel();
       _subtitlesCancelToken = CancelToken();
 
-      final dio = _apiDio();
-      final res = await dio.get(
-        url,
+      final sidecars = await PlayerMediaResolver.fetchSidecarSubtitles(
+        dio: _apiDio(),
+        serverOrigin: serverOrigin,
+        filename: filename,
         cancelToken: _subtitlesCancelToken,
-        options: Options(
-          responseType: ResponseType.json,
-          validateStatus: (status) => status != null && status < 500,
-        ),
       );
-
       if (!mounted) return;
-
-      if (res.statusCode == 200 && res.data != null && res.data['tracks'] is List) {
-        final rawTracks = res.data['tracks'] as List;
-        final sidecars = <PlayerSubtitleTrack>[];
-        for (final item in rawTracks) {
-          if (item is Map) {
-            final src = item['src'] as String? ?? '';
-            final label = item['label'] as String? ?? item['name'] as String? ?? 'Subtitle';
-            final lang = item['lang'] as String?;
-            final isDefault = item['default'] == true;
-            final fullUrl = src.startsWith('http') ? src : '$serverOrigin$src';
-            sidecars.add(PlayerSubtitleTrack(
-              id: fullUrl,
-              title: label,
-              language: lang,
-              isExternal: true,
-              isDefault: isDefault,
-            ));
-          }
-        }
-        setState(() {
-          _sidecarSubtitles = sidecars;
-        });
-      }
-    } catch (_) {
-      // Subtitle discovery is non-fatal
-    }
+      setState(() => _sidecarSubtitles = sidecars);
+    } catch (_) {}
   }
 
   Future<void> _loadMovieMeta() async {
-    if (widget.customController != null && widget.customDio == null) {
-      return;
-    }
+    if (widget.customController != null && widget.customDio == null) return;
     try {
       final filename = _resolveFilename();
       final serverOrigin = _apiServerOrigin();
       if (filename == null || serverOrigin == null) return;
 
-      final encoded = Uri.encodeComponent(filename);
-      final url = '$serverOrigin/api/media-info/$encoded';
-
       _metaCancelToken?.cancel();
       _metaCancelToken = CancelToken();
 
-      final dio = _apiDio();
-      final res = await dio.get(
-        url,
+      final meta = await PlayerMediaResolver.loadMovieMeta(
+        dio: _apiDio(),
+        serverOrigin: serverOrigin,
+        filename: filename,
         cancelToken: _metaCancelToken,
-        options: Options(
-          responseType: ResponseType.json,
-          validateStatus: (status) => status != null && status < 500,
-        ),
+        onModeResolved: (mode) {
+          if (mounted) setState(() => _playbackMode = mode);
+        },
+        onOverviewResolved: (meta) {
+          if (mounted) setState(() => _movieMeta = meta);
+        },
       );
-
-      Map<String, dynamic> meta = {};
-      if (res.statusCode == 200 && res.data != null && res.data is Map) {
-        meta = (res.data as Map).cast<String, dynamic>();
-      }
 
       debugPrint(
-        '[Player] media-info probe: http=${res.statusCode} '
-        'direct_play=${meta['direct_play']} ($url)',
+        '[Player] media-info probe: http=200 direct_play=${meta['direct_play']} ($serverOrigin/api/media-info/$filename)',
       );
 
-      // Authoritative playback mode for this stream.
       if (mounted) {
         setState(() {
           _playbackMode = PlaybackMode.fromDirectPlay(meta['direct_play']);
-        });
-      }
-
-      // Fallback: If overview is missing or empty, fetch from the /movie/$encoded HTML page
-      if (meta['overview'] == null || meta['overview'].toString().trim().isEmpty) {
-        try {
-          final pageUrl = '$serverOrigin/movie/$encoded';
-          final pageRes = await dio.get(
-            pageUrl,
-            cancelToken: _metaCancelToken,
-            options: Options(
-              responseType: ResponseType.plain,
-              validateStatus: (status) => status != null && status < 500,
-            ),
-          );
-          if (pageRes.statusCode == 200 && pageRes.data != null) {
-            final html = pageRes.data.toString();
-            final synMatch = RegExp(r'class="synopsis-text">\s*(.*?)\s*</p>', dotAll: true).firstMatch(html);
-            if (synMatch != null && synMatch.group(1) != null) {
-              var syn = synMatch.group(1)!.trim();
-              syn = syn
-                  .replaceAll('&amp;', '&')
-                  .replaceAll('&quot;', '"')
-                  .replaceAll('&#39;', "'")
-                  .replaceAll('&lt;', '<')
-                  .replaceAll('&gt;', '>');
-              if (syn.isNotEmpty && !syn.toLowerCase().contains('no synopsis')) {
-                meta['overview'] = syn;
-              }
-            }
-
-            final titleMatch = RegExp(r'<h1 class="movie-title">\s*(.*?)\s*</h1>').firstMatch(html);
-            if (titleMatch != null && titleMatch.group(1) != null && meta['title'] == null) {
-              meta['title'] = titleMatch.group(1)!.trim();
-            }
-
-            final yearMatch = RegExp(r'<span class="meta-pill">(\d{4})</span>').firstMatch(html);
-            if (yearMatch != null && yearMatch.group(1) != null && meta['year'] == null) {
-              meta['year'] = yearMatch.group(1)!.trim();
-            }
-
-            final ratingMatch = RegExp(r'<span class="badge-score">★\s*([\d\.]+)').firstMatch(html);
-            if (ratingMatch != null && ratingMatch.group(1) != null && meta['rating'] == null) {
-              meta['rating'] = double.tryParse(ratingMatch.group(1)!.trim());
-            }
-
-            final genreBlock = RegExp(r'<div class="genre-chips">(.*?)</div>', dotAll: true).firstMatch(html)?.group(1);
-            if (genreBlock != null && meta['genres'] == null) {
-              final genres = RegExp(r'<span>([^<]+)</span>').allMatches(genreBlock).map((m) => m.group(1)!.trim()).toList();
-              if (genres.isNotEmpty) {
-                meta['genres'] = genres.join(', ');
-              }
-            }
+          if (meta.isNotEmpty) {
+            _movieMeta = meta;
           }
-        } catch (_) {}
-      }
-
-      if (!mounted) return;
-      if (meta.isNotEmpty) {
-        setState(() {
-          _movieMeta = meta;
         });
       }
     } catch (e) {
-      // Non-fatal metadata fetch - but never silent: an unreachable server is
-      // exactly what a "mode unavailable" badge means.
       debugPrint(
-        '[Player] media-info probe failed for ${_resolveFilename()} '
-        '@ ${_apiServerOrigin()}: $e',
+        '[Player] media-info probe failed for ${_resolveFilename()} @ ${_apiServerOrigin()}: $e',
       );
     }
   }
 
-  /// Resolves the authoritative playback mode, then opens the stream the way
-  /// the server says it must be served (direct byte-range vs HLS playlist).
-  ///
-  /// The probe is bounded on purpose: a slow or unreachable server must never
-  /// hold playback hostage. On timeout the mode stays [PlaybackMode.unknown],
-  /// the UI claims no mode, and the stream opens with the URL it was given.
   Future<void> _bootstrap() async {
-    // Resolve the API origin and point the shared client at it before probing:
-    // on a cold start (or a launch without an explicit server) the media URL is
-    // the route's 127.0.0.1 default, so every API call - and the HLS URL - would
-    // otherwise target the phone itself.
     await _resolveAndSyncApiOrigin();
+    if (!mounted) return;
     try {
       await _loadMovieMeta().timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Mode/metadata probe is best-effort - playback must still start.
-    }
+    } catch (_) {}
     if (!mounted) return;
     await _openMedia();
   }
 
-  /// Origin the player's API calls and HLS URLs must use.
-  ///
-  /// The *saved* server is the app's active origin and wins whenever the origin
-  /// derived from the media URL is loopback (the route's default when the player
-  /// is opened without an explicit `server`). Mirrors `_resolveEffectiveMediaUrl`
-  /// so injected-controller tests never touch the settings plugin.
   Future<String?> _resolveApiOrigin() async {
     final candidate = _resolveServerOrigin();
     final isLoopback = candidate == null ||
@@ -670,7 +455,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (!isLoopback) return candidate;
     if (widget.customController != null) return candidate;
 
-    // 1. The connection controller's active server (no plugin call).
     try {
       final active = ref.read(connectionControllerProvider).serverUrl;
       final activeUri = Uri.tryParse(active);
@@ -684,7 +468,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
     } catch (_) {}
 
-    // 2. The persisted server (unavailable in unit tests - non-fatal).
     try {
       final saved = await ref.read(settingsServiceProvider).getServerBaseUrl();
       final savedUri = Uri.tryParse(saved);
@@ -701,7 +484,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     return candidate;
   }
 
-  /// Resolves [ _resolvedApiOrigin] and keeps the shared client in step with it.
   Future<void> _resolveAndSyncApiOrigin() async {
     final origin = await _resolveApiOrigin();
     if (origin == null || origin.isEmpty || !mounted) return;
@@ -714,30 +496,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } catch (_) {}
   }
 
-  /// The origin to build API and HLS URLs from (see [ _resolveApiOrigin]).
   String? _apiServerOrigin() => _resolvedApiOrigin ?? _resolveServerOrigin();
 
-  /// The HTTP client every API call in this screen goes through.
-  ///
-  /// The app's shared client - it carries the device id these routes expect, its
-  /// timeouts, and the active origin. A bare `Dio()` here was the only place in
-  /// the app that bypassed it.
   Dio _apiDio() => widget.customDio ?? ref.read(apiClientProvider).dio;
 
-  /// Routes the stream exactly the way the server advertises it.
-  ///
-  /// The only input is the authoritative `direct_play` flag: media the server
-  /// marks as HLS-only is opened as its HLS playlist, everything else keeps the
-  /// direct byte-range URL. With no authoritative value the URL is untouched.
   String _applyAuthoritativeMode(String url) {
     if (_playbackMode != PlaybackMode.hls) return url;
-
     final filename = _resolveFilename();
     if (filename == null || filename.isEmpty) return url;
-
     final origin = _apiServerOrigin();
     if (origin == null || origin.isEmpty) return url;
-
     return '$origin/hls/${Uri.encodeComponent(filename)}/playlist.m3u8';
   }
 
@@ -832,11 +600,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
-  /// While a TV owns playback the phone is a remote: transport actions go to the cast,
-  /// never to the local player (which stays paused for the whole cast).
   bool get _casting => ref.read(castControllerProvider).isCasting;
 
-  /// The position the controls act on: the TV's while casting, the local player's otherwise.
   Duration get _transportPosition =>
       _casting ? ref.read(castControllerProvider).position : _position;
 
@@ -846,8 +611,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     return castDuration > Duration.zero ? castDuration : _duration;
   }
 
-  /// Moves the TV to [target]. The cast controller shows it immediately and the status
-  /// poll corrects any drift the receiver adds.
   void _sendCastSeek(Duration target) {
     _progress?.onSeek(target);
     unawaited(
@@ -870,13 +633,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   String _castName() => ref.read(castControllerProvider).activeDevice?.name ?? 'the device';
 
-  /// Device picker. Casting hands the media to a TV, so the phone stops playing it.
   void _openCastSheet() {
     _onUserInteraction();
     CastDeviceSheet.show(
       context: context,
-      // Deep links can arrive without a filename; _resolveFilename reads it out of
-      // the media URL in that case, so casting works from every entry point.
       filename: _resolveFilename(),
       position: _position > Duration.zero ? _position : null,
       onStarted: (deviceName) {
@@ -887,7 +647,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
   }
 
-  /// Keeps the cast bar honest while a device is playing.
   void _startCastPolling() {
     _castPollTimer?.cancel();
     _castPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -899,62 +658,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       }
       ref.read(castControllerProvider.notifier).pollStatus();
     });
-  }
-
-
-  /// Compact remote for the active cast session.
-  Widget _buildCastBar(CastState cast) {
-    final device = cast.activeDevice;
-    if (device == null) return const SizedBox.shrink();
-    final isPlaying = cast.playbackState == 'playing';
-    // A refusal outranks the transport state only while nothing is playing: on a TV
-    // that refuses seeks (UPnP 701) the error would otherwise replace the position
-    // for the whole cast, which is the one thing a viewer wants to see.
-    final activelyPlaying = cast.playbackState == 'playing' || cast.playbackState == 'paused';
-    final label = switch (cast.error != null && !activelyPlaying ? cast.error : cast.playbackState) {
-      'playing' => _formatDuration(cast.position),
-      'paused' => 'Paused · ${_formatDuration(cast.position)}',
-      'buffering' => 'Starting…',
-      'stopped' => 'Stopped',
-      final other => other,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xE6141822),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFFF334B).withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cast_connected_rounded, color: Color(0xFFFF334B), size: 18),
-          const SizedBox(width: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 170),
-            child: Text(
-              '${device.name} · $label',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 12),
-          InkWell(
-            onTap: () => ref
-                .read(castControllerProvider.notifier)
-                .sendControl(isPlaying ? 'pause' : 'play'),
-            child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
-          InkWell(
-            onTap: () => ref.read(castControllerProvider.notifier).sendControl('stop'),
-            child: const Icon(Icons.stop_rounded, color: Color(0xFFFF334B), size: 20),
-          ),
-        ],
-      ),
-    );
   }
 
   void _openPlaybackSpeedSheet() {
@@ -1097,12 +800,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _controller.setVolume(val);
   }
 
-  /// A vertical drag started: remember what to adjust from.
   void _onVerticalDragBegin(bool fromLeftHalf) {
     _dragStartVolume = _systemVolume;
     _dragStartBrightness = _brightness;
-    // The system volume can also be moved with the phone volume keys; re-read it
-    // so the swipe continues from where the user actually is.
     if (!fromLeftHalf) {
       _mediaVolume.getVolume().then((value) {
         if (value != null) {
@@ -1113,8 +813,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  /// [fraction] is the drag distance as a fraction of the surface height
-  /// (positive = swipe up). Left half = brightness, right half = volume.
   void _onVerticalDragDelta(double fraction, bool fromLeftHalf) {
     if (fromLeftHalf) {
       _setBrightness(_dragStartBrightness + fraction);
@@ -1133,9 +831,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
   }
 
-  /// Right-half swipe: the system media volume, which is the level the user hears.
-  /// The app's own player volume stays at full so this is the single control, and
-  /// the HUD therefore matches what is audible.
   void _setVolumeFromGesture(double value) {
     final next = value.clamp(0.0, 100.0);
     final percent = next.round();
@@ -1222,280 +917,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   bool _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) return false;
-
-    final key = event.logicalKey;
     final isTv = ref.read(isTvModeProvider);
-
-    // 1. Media keys (Universal across TV remote, media keys & keyboard)
-    if (key == LogicalKeyboardKey.mediaPlayPause) {
-      _togglePlayPause();
-      return true;
-    } else if (key == LogicalKeyboardKey.mediaPlay) {
-      if (_state != PlayerPlaybackState.playing) {
-        _togglePlayPause();
-      }
-      return true;
-    } else if (key == LogicalKeyboardKey.mediaPause) {
-      if (_state == PlayerPlaybackState.playing) {
-        _togglePlayPause();
-      }
-      return true;
-    } else if (key == LogicalKeyboardKey.mediaRewind ||
-        key == LogicalKeyboardKey.mediaTrackPrevious) {
-      _seekRelative(-15);
-      return true;
-    } else if (key == LogicalKeyboardKey.mediaFastForward ||
-        key == LogicalKeyboardKey.mediaTrackNext) {
-      _seekRelative(15);
-      return true;
-    }
-
-    if (isTv) {
-      // -------------------------------------------------------------
-      // 10-FOOT TV D-PAD NAVIGATION MODEL
-      // Dedicated volume buttons on remote manage TV audio volume.
-      // D-pad Up/Down navigates between Timeline (Zone 1) & Controls (Zone 2).
-      // -------------------------------------------------------------
-
-      // If controls are hidden: any D-pad input reveals controls
-      if (!_controlsVisible) {
-        if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
-          _onUserInteraction();
-          _seekRelative(-10);
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.timeline;
-          });
-          return true;
-        } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
-          _onUserInteraction();
-          _seekRelative(10);
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.timeline;
-          });
-          return true;
-        } else if (key == LogicalKeyboardKey.select ||
-            key == LogicalKeyboardKey.enter ||
-            key == LogicalKeyboardKey.numpadEnter ||
-            key == LogicalKeyboardKey.space ||
-            key == LogicalKeyboardKey.keyK) {
-          _onUserInteraction();
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.controls;
-            _tvFocusedControlIndex = 1; // Default to Play/Pause
-          });
-          return true;
-        } else if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown) {
-          _onUserInteraction();
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.timeline;
-          });
-          return true;
-        } else if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-          _handleBack(forceExit: true);
-          return true;
-        }
-        return false;
-      }
-
-      // Controls ARE currently visible:
-      _onUserInteraction(); // Resets auto-hide timer
-
-      // D-Pad UP: Move from controls into timeline
-      if (key == LogicalKeyboardKey.arrowUp) {
-        if (_tvFocusZone == TvPlayerFocusZone.controls) {
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.timeline;
-          });
-          return true;
-        }
-        return true;
-      }
-
-      // D-Pad DOWN: Move from timeline into controls
-      if (key == LogicalKeyboardKey.arrowDown) {
-        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.controls;
-          });
-          return true;
-        }
-        return true;
-      }
-
-      // D-Pad LEFT
-      if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
-        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
-          _seekRelative(-10);
-          return true;
-        } else {
-          setState(() {
-            if (_tvFocusedControlIndex > 0) {
-              _tvFocusedControlIndex--;
-            }
-          });
-          return true;
-        }
-      }
-
-      // D-Pad RIGHT
-      if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
-        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
-          _seekRelative(10);
-          return true;
-        } else {
-          setState(() {
-            if (_tvFocusedControlIndex < _tvControlCount - 1) {
-              _tvFocusedControlIndex++;
-            }
-          });
-          return true;
-        }
-      }
-
-      // CENTER / SELECT / ENTER / SPACE
-      if (key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.numpadEnter ||
-          key == LogicalKeyboardKey.space ||
-          key == LogicalKeyboardKey.keyK) {
-        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
-          _togglePlayPause();
-          return true;
-        } else {
-          _triggerTvControlAction(_tvFocusedControlIndex);
-          return true;
-        }
-      }
-
-      // Remote shortcut keys
-      if (key == LogicalKeyboardKey.contextMenu ||
-          key == LogicalKeyboardKey.info ||
-          key == LogicalKeyboardKey.keyC) {
-        _openSubtitleTrackSheet();
-        return true;
-      }
-      if (key == LogicalKeyboardKey.keyA) {
-        _openAudioTrackSheet();
-        return true;
-      }
-      if (key == LogicalKeyboardKey.keyM) {
-        _toggleMute();
-        return true;
-      }
-      if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.digit0) {
-        _restart();
-        return true;
-      }
-
-      // BACK KEY on TV (Unwind navigation state machine)
-      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-        if (_tvFocusZone == TvPlayerFocusZone.controls) {
-          setState(() {
-            _tvFocusZone = TvPlayerFocusZone.timeline;
-          });
-          return true;
-        }
-        if (_controlsVisible) {
-          setState(() {
-            _controlsVisible = false;
-          });
-          return true;
-        }
-        _handleBack(forceExit: true);
-        return true;
-      }
-
-      return false;
-    }
-
-    // -------------------------------------------------------------
-    // NON-TV (MOBILE / TABLET / DESKTOP) INTERACTION MODEL
-    // -------------------------------------------------------------
-    if (key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.keyK) {
-      _togglePlayPause();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.select ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter) {
-      if (!_controlsVisible) {
-        _onUserInteraction();
-      } else {
-        _togglePlayPause();
-      }
-      return true;
-    }
-    if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
-      _seekRelative(-10);
-      return true;
-    } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
-      _seekRelative(10);
-      return true;
-    }
-    if (key == LogicalKeyboardKey.arrowUp) {
-      if (!_controlsVisible) {
-        _onUserInteraction();
-      } else {
-        final next = (_volume + 5.0).clamp(0.0, 100.0);
-        _onVolumeChanged(next);
-        _showHudToast('${next.round()}% Volume', icon: Icons.volume_up_rounded);
-      }
-      return true;
-    } else if (key == LogicalKeyboardKey.arrowDown) {
-      if (!_controlsVisible) {
-        _onUserInteraction();
-      } else {
-        final next = (_volume - 5.0).clamp(0.0, 100.0);
-        _onVolumeChanged(next);
-        _showHudToast('${next.round()}% Volume', icon: Icons.volume_down_rounded);
-      }
-      return true;
-    }
-    if (key == LogicalKeyboardKey.contextMenu ||
-        key == LogicalKeyboardKey.info ||
-        key == LogicalKeyboardKey.keyC) {
-      _openSubtitleTrackSheet();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.keyA) {
-      _openAudioTrackSheet();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.keyM) {
-      _toggleMute();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.keyF) {
-      _toggleFullscreen();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.digit0) {
-      _restart();
-      return true;
-    }
-    if (key == LogicalKeyboardKey.escape) {
-      if (_isFullscreen) {
-        _toggleFullscreen();
-        return true;
-      }
-    } else if (key == LogicalKeyboardKey.goBack) {
-      if (_controlsVisible) {
-        setState(() => _controlsVisible = false);
-        return true;
-      }
-      if (_isFullscreen) {
-        _toggleFullscreen();
-        return true;
-      }
-      _handleBack();
-      return true;
-    }
-
-    return false;
+    return PlayerKeyDispatcher.handleKeyEvent(
+      event: event,
+      context: context,
+      isTv: isTv,
+      controlsVisible: _controlsVisible,
+      isFullscreen: _isFullscreen,
+      state: _state,
+      volume: _volume,
+      tvFocusZone: _tvFocusZone,
+      tvFocusedControlIndex: _tvFocusedControlIndex,
+      tvControlCount: _tvControlCount,
+      onTogglePlayPause: _togglePlayPause,
+      onSeekRelative: (s) => _seekRelative(s),
+      onUserInteraction: _onUserInteraction,
+      onSetTvFocusZone: (zone) => setState(() => _tvFocusZone = zone),
+      onSetTvFocusedControlIndex: (idx) => setState(() => _tvFocusedControlIndex = idx),
+      onTriggerTvControlAction: _triggerTvControlAction,
+      onOpenSubtitleTrackSheet: _openSubtitleTrackSheet,
+      onOpenAudioTrackSheet: _openAudioTrackSheet,
+      onToggleMute: _toggleMute,
+      onRestart: _restart,
+      onHandleBack: ({required bool forceExit}) => _handleBack(forceExit: forceExit),
+      onHideControls: () => setState(() => _controlsVisible = false),
+      onVolumeChanged: _onVolumeChanged,
+      onShowHudToast: (msg, {icon}) => _showHudToast(msg, icon: icon),
+      onToggleFullscreen: _toggleFullscreen,
+    );
   }
 
   Future<void> _handleBack({bool forceExit = false}) async {
@@ -1504,7 +953,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       setState(() => _tvFocusZone = TvPlayerFocusZone.timeline);
       return;
     }
-    if (isTv && _controlsVisible) {
+    if (isTv && _controlsVisible && !forceExit) {
       setState(() => _controlsVisible = false);
       return;
     }
@@ -1512,15 +961,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       await _toggleFullscreen();
       return;
     }
+
     _cancelAutoHideTimer();
+    _castPollTimer?.cancel();
     _hudTimer?.cancel();
-    // Save the live position BEFORE stopping the controller: stop() resets the
-    // player to 0, and that sample must never be persisted as "watched". The
-    // reporter is sealed right after, so no post-stop sample can overwrite the
-    // real position (observed on device: back press wrote 0.0).
+    _doubleTapSeekTimer?.cancel();
+
     _progress?.flush();
     _progress?.dispose();
-    await _controller.stop();
+
+    try {
+      await _controller.stop();
+    } catch (_) {}
+
     if (mounted) {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -1529,7 +982,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           if (context.canPop()) {
             context.pop();
           } else {
-            context.go(AppRoutes.home);
+            context.go('/library');
           }
         } catch (_) {}
       }
@@ -1538,35 +991,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Android can kill a backgrounded app with no further callback: persist the
-    // position now, the way the web player does on `pagehide`.
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
-      _progress?.flush();
+    if (state == AppLifecycleState.paused) {
+      _controller.pause();
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _progress?.dispose();
-    unawaited(_brightnessService.restore());
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    if (_isFullscreen) {
-      defaultExitNativeFullscreen();
-    }
-    _autoHideTimer?.cancel();
-    _hudTimer?.cancel();
-    _doubleTapSeekTimer?.cancel();
-    _previewCancelToken?.cancel();
-    _subtitlesCancelToken?.cancel();
-    _metaCancelToken?.cancel();
-    _seekPreviewController.dispose();
-    _keyboardFocusNode.dispose();
     for (final s in _subscriptions) {
       s.cancel();
     }
+    _cancelAutoHideTimer();
+    _castPollTimer?.cancel();
+    _hudTimer?.cancel();
+    _doubleTapSeekTimer?.cancel();
+    _metaCancelToken?.cancel();
+    _previewCancelToken?.cancel();
+    _subtitlesCancelToken?.cancel();
+    _seekPreviewController.dispose();
+    _keyboardFocusNode.dispose();
+    _progress?.dispose();
     if (_ownsController) {
       _controller.dispose();
     }
@@ -1599,7 +1044,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
         // 2. Loading indicator
         if (isOpening || _isBuffering)
-          // Never let the loading/buffering overlay eat the swipe gestures.
           IgnorePointer(
             child: PlayerLoadingIndicator(
               title: isOpening ? 'Loading Media' : 'Buffering Stream',
@@ -1623,9 +1067,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             title: widget.title,
             subtitle: widget.subtitle,
             isVisible: _controlsVisible,
-            // While a TV owns playback the controls _are_ the TV's: the bar shows the
-            // cast's position/duration and the button its play state, so the phone reads
-            // as a remote instead of echoing a deliberately paused local player.
             isPlaying: castState.isCasting
                 ? castState.playbackState == 'playing'
                 : _state == PlayerPlaybackState.playing,
@@ -1666,545 +1107,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 : -1,
           ),
 
-          // Action-feedback HUD (brightness/volume/speed changes). It lives here,
-          // outside PlayerControlsOverlay, because that overlay fades to opacity 0
-          // when the controls auto-hide - which used to hide the readout of a swipe
-          // that had already changed the value. PlayerHudToast wraps itself in
-          // IgnorePointer, so it never blocks the surface gestures.
-          Positioned.fill(
-            child: Align(
-              alignment: const Alignment(0.0, -0.35),
-              child: PlayerHudToast(
-                message: _hudMessage,
-                icon: _hudIcon,
-                isVisible: _isHudVisible,
+        // 5. Action-feedback HUD
+        Positioned.fill(
+          child: Align(
+            alignment: const Alignment(0.0, -0.35),
+            child: PlayerHudToast(
+              message: _hudMessage,
+              icon: _hudIcon,
+              isVisible: _isHudVisible,
+            ),
+          ),
+        ),
+
+        // 6. Cast Bar overlay
+        if (castState.isCasting)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 68),
+                child: Center(child: PlayerCastBar(cast: castState)),
               ),
             ),
           ),
-          // Cast bar: under the header so it never fights the timeline, and like
-          // the HUD it stays put when the controls auto-hide.
-          if (castState.isCasting)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 68),
-                  child: Center(child: _buildCastBar(castState)),
-                ),
-              ),
-            ),
       ],
     );
-  }
-
-  void _showServerUrlBottomSheet(String currentOrigin) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      isScrollControlled: true,
-      builder: (ctx) {
-        final textCtrl = TextEditingController(text: currentOrigin);
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.dns_rounded, color: AppColors.brandRedLight, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Server Connection',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
-                    onPressed: () => Navigator.of(ctx).pop(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: textCtrl,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Active Server URL',
-                  labelStyle: const TextStyle(color: AppColors.textSecondary),
-                  prefixIcon: const Icon(Icons.link, color: AppColors.textMuted, size: 18),
-                  filled: true,
-                  fillColor: AppColors.surfaceElevated,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.borderSubtle),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Quick Presets:',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  _buildPresetChip('LAN (192.168.1.16)', 'http://192.168.1.16:8000', textCtrl),
-                  _buildPresetChip('WAN (Cloudflare)', 'https://media.anisparvez.in', textCtrl),
-                  _buildPresetChip('Localhost', 'http://127.0.0.1:8000', textCtrl),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final newUrl = textCtrl.text.trim();
-                  if (newUrl.isNotEmpty) {
-                    await SettingsService().setServerBaseUrl(newUrl);
-                    if (mounted) {
-                      _showHudToast('Server Saved: $newUrl', icon: Icons.check_circle_rounded);
-                    }
-                  }
-                  if (ctx.mounted) Navigator.of(ctx).pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.brandRed,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.save_rounded, size: 18),
-                label: const Text('Save Active Server'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPresetChip(String label, String url, TextEditingController ctrl) {
-    return ActionChip(
-      backgroundColor: AppColors.surfaceElevated,
-      side: const BorderSide(color: AppColors.borderSubtle),
-      label: Text(label, style: const TextStyle(color: AppColors.textPrimary, fontSize: 12)),
-      onPressed: () {
-        ctrl.text = url;
-      },
-    );
-  }
-
-  Widget _buildBrandHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(
-          bottom: BorderSide(color: AppColors.borderSubtle, width: 1),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF2E080E), Color(0xFF141822)],
-              ),
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: AppColors.brandRed.withValues(alpha: 0.5)),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.play_arrow_rounded,
-                color: AppColors.brandRed,
-                size: 17,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          RichText(
-            text: const TextSpan(
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.3,
-              ),
-              children: [
-                TextSpan(text: "Anis' "),
-                TextSpan(
-                  text: "Home Media Server",
-                  style: TextStyle(color: AppColors.brandRedLight),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.borderSubtle),
-            ),
-            child: const Text(
-              'PLAY • ORGANIZE • ENJOY',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 8.5,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.7,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMediaDetailsSection() {
-    final serverOrigin = _apiServerOrigin() ?? 'http://127.0.0.1:8000';
-    final filename = _resolveFilename() ?? 'Media Stream';
-
-    final displayTitle = _movieMeta?['title'] as String? ?? widget.title;
-    final year = _movieMeta?['year'];
-    final genres = _movieMeta?['genres'] as String?;
-    final rating = _movieMeta?['rating'];
-    final overview = _movieMeta?['overview'] as String?;
-
-    return Container(
-      color: AppColors.background,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            RichText(
-              text: TextSpan(
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.2,
-                ),
-                children: [
-                  TextSpan(text: displayTitle),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            // Metadata Badges & Server URL Chip
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                // Server URL Chip (Interactive)
-                InkWell(
-                  onTap: () => _showServerUrlBottomSheet(serverOrigin),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.brandRed.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: AppColors.statusSuccess,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          serverOrigin,
-                          style: const TextStyle(
-                            color: AppColors.brandRedLight,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.edit_outlined, size: 12, color: AppColors.textMuted),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Quality Badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.borderSubtle),
-                  ),
-                  child: Text(
-                    _playbackMode.badgeLabel,
-                    style: const TextStyle(
-                      color: AppColors.statusSuccess,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-
-                // Year Badge
-                if (year != null && year.toString().isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.borderSubtle),
-                    ),
-                    child: Text(
-                      year.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-
-                // Rating Badge
-                if (rating != null && rating > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0x33FFB800),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0x66FFB800)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.star_rounded, color: Color(0xFFFFB800), size: 12),
-                        const SizedBox(width: 3),
-                        Text(
-                          rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: Color(0xFFFFD54F),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Genres Badge
-                if (genres != null && genres.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.borderSubtle),
-                    ),
-                    child: Text(
-                      genres,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-
-                // Subtitle details badge
-                if (widget.subtitle != null && widget.subtitle!.isNotEmpty)
-                  RichText(
-                    text: TextSpan(
-                      text: widget.subtitle!,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Synopsis Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderSubtle),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded, color: AppColors.brandRedLight, size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        'Synopsis',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    (overview != null && overview.trim().isNotEmpty)
-                        ? overview.trim()
-                        : 'No synopsis available for this title in the local library.',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.82),
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Technical Stream Specs Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderSubtle),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.analytics_outlined, color: AppColors.brandRedLight, size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        'Stream Specifications',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _buildSpecRow('Source File', filename),
-                  const SizedBox(height: 6),
-                  _buildSpecRow('Playback Type', _playbackMode.specLabel),
-                  const SizedBox(height: 6),
-                  _buildSpecRow('Server Origin', serverOrigin),
-                  const SizedBox(height: 6),
-                  _buildSpecRow(
-                    'Position',
-                    '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Return to Library Button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _handleBack,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.borderMedium),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                icon: const Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white),
-                label: const Text('Back to Connection / Library', style: TextStyle(color: Colors.white)),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSpecRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 105,
-          child: RichText(
-            text: TextSpan(
-              text: label,
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-            ),
-          ),
-        ),
-        Expanded(
-          child: RichText(
-            text: TextSpan(
-              text: value,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatDuration(Duration d) {
-    final s = d.inSeconds;
-    final hours = s ~/ 3600;
-    final minutes = (s % 3600) ~/ 60;
-    final seconds = s % 60;
-    if (hours > 0) {
-      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    }
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -2259,7 +1189,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                     onHover: (_) => _onUserInteraction(),
                     child: Column(
                       children: [
-                        _buildBrandHeader(),
+                        const PlayerBrandHeader(),
                         const SizedBox(height: 8),
                         AspectRatio(
                           aspectRatio: 16 / 10.5,
@@ -2269,7 +1199,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                           ),
                         ),
                         Expanded(
-                          child: _buildMediaDetailsSection(),
+                          child: PlayerDetailsPanel(
+                            title: widget.title,
+                            subtitle: widget.subtitle,
+                            serverOrigin: _apiServerOrigin() ?? 'http://127.0.0.1:8000',
+                            filename: _resolveFilename() ?? 'Media Stream',
+                            playbackMode: _playbackMode,
+                            movieMeta: _movieMeta,
+                            position: _position,
+                            duration: _duration,
+                            onBack: _handleBack,
+                            onServerUrlChanged: (newUrl) async {
+                              await SettingsService().setServerBaseUrl(newUrl);
+                              if (mounted) {
+                                _showHudToast(
+                                  'Server Saved: $newUrl',
+                                  icon: Icons.check_circle_rounded,
+                                );
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),
