@@ -47,6 +47,7 @@ class PlayerControlsOverlay extends StatefulWidget {
   final double playbackRate;
   final bool hasActiveSubtitles;
   final bool isDoubleTapSeeking;
+  final bool isOverlayActive;
 
   final bool isTv;
   final bool isTimelineFocused;
@@ -88,6 +89,7 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.playbackRate = 1.0,
     this.hasActiveSubtitles = false,
     this.isDoubleTapSeeking = false,
+    this.isOverlayActive = false,
     this.isTv = false,
     this.isTimelineFocused = false,
     this.tvFocusedControlIndex = -1,
@@ -276,9 +278,9 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
             ),
 
             // Center play/pause indicator (prominent circle when paused or playing with controls visible)
-            // Suppressed during active double-tap seeking gestures and positioned slightly above center
+            // Suppressed during active seeking/buffering/toast overlays and positioned slightly above center
             // to completely prevent vertical collision with the timeline scrubber bar.
-            if (!widget.isBuffering && !widget.isDoubleTapSeeking)
+            if (!widget.isBuffering && !widget.isDoubleTapSeeking && !widget.isOverlayActive)
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isCompact = constraints.maxWidth < 620;

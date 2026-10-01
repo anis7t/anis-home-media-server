@@ -29,6 +29,16 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-02 — Playback Overlay State Management (Phase 4 Complete)
+
+**Deliverable:** Resolved clashing, stacked, and lingering playback status overlays on the video canvas (Issue 3). Unified independent boolean layers (`isOpening`, `_isBuffering`, `_isHudVisible`, Center Play/Pause) into a single, mutually exclusive state model:
+1. **`PlaybackOverlayStatus` & `PlaybackOverlayType`:** Created a dedicated domain model (`none`, `opening`, `buffering`, `seeking`, `toast`) with deterministic priority ordering: user-initiated actions (`seeking` / `toast`) take precedence over background stream states (`opening` / `buffering`).
+2. **Buffering Suppression During Seeking:** While the user is actively seeking (remote D-pad Left/Right, media keys Rewind/Fast-Forward), the "Buffering Stream" loading indicator is suppressed, displaying only the seek feedback pill and eliminating stacked cards. If buffering persists after the 1000ms seek settle window, it transitions smoothly to "Buffering Stream".
+3. **Accumulated Seek Delta:** Rapid successive seek inputs accumulate delta (`+10 sec` → `+20 sec` → `+30 sec`) and refresh the settle timer in a single unified HUD toast.
+4. **Center Play/Pause Suppression:** Passed `isOverlayActive: overlayStatus.isVisible` to `PlayerControlsOverlay`, preventing center play/pause collision with active toasts or seek indicators.
+5. **Timeline Scrubbing Protection:** Suppressed buffering indicator while user is actively scrubbing the timeline scrubber.
+6. **Automated Verification:** Added 13 unit and widget tests in `test/features/player/player_overlay_state_test.dart`. All 102 player tests and 261 total client tests pass with 0 static analysis issues.
+
 ### 2026-10-02 — Android TV & Fire TV Player Back Behaviour (Phase 3 Complete)
 
 **Deliverable:** Resolved the TV Back button regression during video playback where pressing Back immediately terminated playback and exited to library/details. Re-established the intuitive 2-step TV remote transport model:

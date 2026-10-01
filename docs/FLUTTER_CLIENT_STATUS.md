@@ -28,12 +28,31 @@
 
 ---
 
-## Current State (2026-10-02, after UX Bug Fixes: Phase 2 Spatial Focus & Phase 3 Player Back)
+## Current State (2026-10-02, after UX Bug Fixes: Phase 2 Spatial Focus, Phase 3 Player Back & Phase 4 Overlay State)
 
-**Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements, `PlayerScreen` modularization, 2D weighted spatial focus traversal, and 2-step player Back navigation.
+**Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements, `PlayerScreen` modularization, 2D weighted spatial focus traversal, 2-step player Back navigation, and coordinated playback overlay state management.
 **Test Results (verified 2026-10-02):**
-- Flutter unit & widget tests: **248 passed, 12 skipped** (0 failures).
+- Flutter unit & widget tests: **261 passed, 12 skipped** (0 failures).
 - Flutter static analysis (`flutter analyze`): **0 issues found**.
+
+### Coordinated Playback Overlay State Management (Phase 4 Complete)
+
+- **Issue:** Independent overlay states rendered simultaneously (e.g. "Buffering Stream" loading card + "+10 sec" seek HUD pill + Center Play/Pause button stacked together in the viewport center), transient HUD toasts lingered after stream states changed, and rapid D-pad seeking caused jarring buffer flashes.
+- **Root Causes:**
+  1. `isOpening || _isBuffering`, `_isHudVisible`, and Center Play/Pause (`!widget.isBuffering && !widget.isDoubleTapSeeking`) evaluated disconnected boolean flags, creating competing center overlays.
+  2. Relative seeking (`_seekRelative`) called `_showHudToast` and `_controller.seek()`, triggering immediate backend buffering that displayed both `PlayerLoadingIndicator` and `PlayerHudToast` simultaneously.
+  3. `_hudTimer` fired asynchronously without awareness of seek settle or buffering transitions.
+  4. Rapid seeks did not accumulate delta (+10s -> +20s -> +30s), repeatedly restarting uncoordinated timers.
+- **Implemented Fix (Coordinated State Model):**
+  - **`PlaybackOverlayStatus` & `PlaybackOverlayType` Enum:** Added clean domain model (`lib/features/player/domain/player_overlay_status.dart`) enforcing mutual exclusivity across `none`, `opening`, `buffering`, `seeking`, and `toast`.
+  - **Single Coordinated Overlay Slot:** Unified center canvas rendering in `PlayerScreen`:
+    - Priority 1: User-initiated transient actions (`seeking` with accumulated delta `+10s` -> `+20s`, `toast` for volume/speed/aspect/track).
+    - Priority 2: Cold start loading (`opening`).
+    - Priority 3: Stream underrun (`buffering`), automatically suppressed during active relative seek settle windows (1000ms) and timeline scrubbing gestures.
+    - Priority 4: Normal playback (`none`).
+  - **Center Play/Pause Suppression:** Passed `isOverlayActive: overlayStatus.isVisible` to `PlayerControlsOverlay`, suppressing center play/pause whenever any transient overlay is active.
+  - **Immediate Buffering Dismissal:** Clears buffering indicator instantaneously upon `bufferingStream` emitting `false`.
+  - **Comprehensive Verification:** 13 new dedicated widget and domain tests in `test/features/player/player_overlay_state_test.dart`. All 102 player tests and 261 total tests pass.
 
 ### TV Remote Player Back Key Behaviour (Phase 3 Complete)
 

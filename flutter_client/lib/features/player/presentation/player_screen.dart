@@ -17,6 +17,7 @@ import '../../connection/controllers/connection_controller.dart';
 import '../application/playback_progress_reporter.dart';
 import '../domain/playback_mode.dart';
 import '../domain/player_controller_interface.dart';
+import '../domain/player_overlay_status.dart';
 import '../domain/seek_preview_controller.dart';
 import '../domain/tv_player_focus.dart';
 import '../infrastructure/media_kit_player_adapter.dart';
@@ -35,6 +36,7 @@ import 'widgets/player_loading_indicator.dart';
 import 'widgets/player_surface.dart';
 import 'widgets/track_selector_sheet.dart';
 
+export '../domain/player_overlay_status.dart';
 export '../domain/tv_player_focus.dart';
 
 /// Production player screen for Phase 3.
@@ -107,11 +109,52 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   PlayerTrackInfo _trackInfo = const PlayerTrackInfo();
   List<PlayerSubtitleTrack> _sidecarSubtitles = [];
 
-  // In-player HUD toast feedback
+  // In-player coordinated overlay status
+  PlaybackOverlayType _overlayType = PlaybackOverlayType.none;
   String? _hudMessage;
   IconData? _hudIcon;
-  bool _isHudVisible = false;
   Timer? _hudTimer;
+  Timer? _seekSettleTimer;
+  int _accumulatedSeekSeconds = 0;
+
+  PlaybackOverlayStatus get _currentOverlayStatus {
+    if (_overlayType == PlaybackOverlayType.seeking) {
+      final sign = _accumulatedSeekSeconds >= 0
+          ? '+$_accumulatedSeekSeconds'
+          : '$_accumulatedSeekSeconds';
+      return PlaybackOverlayStatus(
+        type: PlaybackOverlayType.seeking,
+        message: '$sign sec',
+        icon: _accumulatedSeekSeconds >= 0
+            ? Icons.fast_forward_rounded
+            : Icons.fast_rewind_rounded,
+      );
+    }
+    if (_overlayType == PlaybackOverlayType.toast && _hudMessage != null) {
+      return PlaybackOverlayStatus(
+        type: PlaybackOverlayType.toast,
+        message: _hudMessage,
+        icon: _hudIcon,
+      );
+    }
+    final isOpening = _state == PlayerPlaybackState.opening ||
+        (_state == PlayerPlaybackState.idle && _errorMessage == null);
+    if (isOpening) {
+      return const PlaybackOverlayStatus(
+        type: PlaybackOverlayType.opening,
+        message: 'Loading Media',
+        subMessage: 'Initializing player & stream...',
+      );
+    }
+    if (_isBuffering && !_isScrubbing && !_isDoubleTapSeeking) {
+      return const PlaybackOverlayStatus(
+        type: PlaybackOverlayType.buffering,
+        message: 'Buffering Stream',
+        subMessage: 'Filling playback buffer...',
+      );
+    }
+    return PlaybackOverlayStatus.none;
+  }
 
   bool _controlsVisible = true;
   Timer? _autoHideTimer;
@@ -588,14 +631,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   void _showHudToast(String message, {IconData? icon}) {
     _hudTimer?.cancel();
+    _seekSettleTimer?.cancel();
+    _accumulatedSeekSeconds = 0;
     setState(() {
       _hudMessage = message;
       _hudIcon = icon;
-      _isHudVisible = true;
+      _overlayType = PlaybackOverlayType.toast;
     });
     _hudTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted) {
-        setState(() => _isHudVisible = false);
+        setState(() {
+          if (_overlayType == PlaybackOverlayType.toast) {
+            _overlayType = PlaybackOverlayType.none;
+          }
+        });
       }
     });
   }
@@ -757,37 +806,66 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   Future<void> _seekRelative(int seconds, {bool fromDoubleTap = false}) async {
+    _onUserInteraction();
+    _hudTimer?.cancel();
+    _seekSettleTimer?.cancel();
+
     if (fromDoubleTap) {
       _doubleTapSeekTimer?.cancel();
-      setState(() => _isDoubleTapSeeking = true);
+      setState(() {
+        _isDoubleTapSeeking = true;
+        _accumulatedSeekSeconds = 0;
+        if (_overlayType == PlaybackOverlayType.seeking) {
+          _overlayType = PlaybackOverlayType.none;
+        }
+      });
       _doubleTapSeekTimer = Timer(const Duration(milliseconds: 1000), () {
         if (mounted) setState(() => _isDoubleTapSeeking = false);
       });
     } else {
-      _onUserInteraction();
+      if (_overlayType == PlaybackOverlayType.seeking) {
+        if ((_accumulatedSeekSeconds >= 0 && seconds >= 0) ||
+            (_accumulatedSeekSeconds <= 0 && seconds <= 0)) {
+          _accumulatedSeekSeconds += seconds;
+        } else {
+          _accumulatedSeekSeconds = seconds;
+        }
+      } else {
+        _accumulatedSeekSeconds = seconds;
+      }
+      setState(() {
+        _overlayType = PlaybackOverlayType.seeking;
+      });
     }
+
     final cur = _transportPosition.inSeconds;
     final maxSec = _transportDuration.inSeconds;
     final targetSec = maxSec > 0
         ? (cur + seconds).clamp(0, maxSec)
         : ((cur + seconds) < 0 ? 0 : (cur + seconds));
     final target = Duration(seconds: targetSec);
+
     if (_casting) {
       _sendCastSeek(target);
-      if (!fromDoubleTap) {
-        final sign = seconds >= 0 ? '+$seconds' : '$seconds';
-        _showHudToast('$sign sec', icon: seconds >= 0 ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded);
+    } else {
+      await _controller.seek(target);
+      _progress?.onSeek(target);
+      if (mounted) {
+        setState(() => _position = target);
       }
-      return;
     }
-    await _controller.seek(target);
-    _progress?.onSeek(target);
-    if (mounted) {
-      setState(() => _position = target);
-      if (!fromDoubleTap) {
-        final sign = seconds >= 0 ? '+$seconds' : '$seconds';
-        _showHudToast('$sign sec', icon: seconds >= 0 ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded);
-      }
+
+    if (!fromDoubleTap) {
+      _seekSettleTimer = Timer(const Duration(milliseconds: 1000), () {
+        if (mounted) {
+          setState(() {
+            _accumulatedSeekSeconds = 0;
+            if (_overlayType == PlaybackOverlayType.seeking) {
+              _overlayType = PlaybackOverlayType.none;
+            }
+          });
+        }
+      });
     }
   }
 
@@ -966,6 +1044,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _cancelAutoHideTimer();
     _castPollTimer?.cancel();
     _hudTimer?.cancel();
+    _seekSettleTimer?.cancel();
     _doubleTapSeekTimer?.cancel();
 
     _progress?.flush();
@@ -1006,6 +1085,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _cancelAutoHideTimer();
     _castPollTimer?.cancel();
     _hudTimer?.cancel();
+    _seekSettleTimer?.cancel();
     _doubleTapSeekTimer?.cancel();
     _metaCancelToken?.cancel();
     _previewCancelToken?.cancel();
@@ -1026,6 +1106,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }) {
     final castState = ref.watch(castControllerProvider);
     final isTv = ref.watch(isTvModeProvider);
+    final overlayStatus = _currentOverlayStatus;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1043,14 +1124,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           ),
         ),
 
-        // 2. Loading indicator
-        if (isOpening || _isBuffering)
+        // 2. Loading / Buffering indicator (rendered exclusively when status is opening or buffering)
+        if (overlayStatus.isOpening || overlayStatus.isBuffering)
           IgnorePointer(
             child: PlayerLoadingIndicator(
-              title: isOpening ? 'Loading Media' : 'Buffering Stream',
-              message: isOpening
-                  ? 'Initializing player & stream...'
-                  : 'Filling playback buffer...',
+              title: overlayStatus.message ??
+                  (overlayStatus.isOpening ? 'Loading Media' : 'Buffering Stream'),
+              message: overlayStatus.subMessage ??
+                  (overlayStatus.isOpening
+                      ? 'Initializing player & stream...'
+                      : 'Filling playback buffer...'),
             ),
           ),
 
@@ -1073,7 +1156,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 : _state == PlayerPlaybackState.playing,
             isBuffering: castState.isCasting
                 ? castState.playbackState == 'buffering'
-                : _isBuffering,
+                : overlayStatus.isBuffering,
             position: _transportPosition,
             duration: _transportDuration,
             volume: _volume,
@@ -1099,6 +1182,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             playbackRate: _rate,
             hasActiveSubtitles: hasSubtitles,
             isDoubleTapSeeking: _isDoubleTapSeeking,
+            isOverlayActive: overlayStatus.isVisible,
             onOpenCastSheet: isTv || _resolveFilename() == null ? null : _openCastSheet,
             isCasting: castState.isCasting,
             isTv: isTv,
@@ -1108,14 +1192,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                 : -1,
           ),
 
-        // 5. Action-feedback HUD
+        // 5. Action-feedback HUD / Seek feedback (rendered exclusively when status is seeking or toast)
         Positioned.fill(
           child: Align(
             alignment: const Alignment(0.0, -0.35),
             child: PlayerHudToast(
-              message: _hudMessage,
-              icon: _hudIcon,
-              isVisible: _isHudVisible,
+              message: (overlayStatus.isSeeking || overlayStatus.isToast)
+                  ? overlayStatus.message
+                  : null,
+              icon: (overlayStatus.isSeeking || overlayStatus.isToast)
+                  ? overlayStatus.icon
+                  : null,
+              isVisible: overlayStatus.isSeeking || overlayStatus.isToast,
             ),
           ),
         ),

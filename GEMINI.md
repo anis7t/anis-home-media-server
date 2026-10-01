@@ -350,3 +350,19 @@
   - It sets `(player.platform as dynamic).setProperty('hwdec', 'no')` (libavcodec CPU decoding) and triggers a position seek to flush decoder pipeline buffers cleanly without terminating playback or resetting audio.
 - **Expanded Decoder Error Matching**:
   - The stream error listener must catch and trigger fallback on keywords: `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface`.
+
+## 26. Coordinated Playback Overlay State Management Invariants
+- **Mutually Exclusive Domain State Model (`PlaybackOverlayStatus`)**:
+  - Center canvas status overlays (`PlayerLoadingIndicator`, `PlayerHudToast`, and center Play/Pause) MUST NOT evaluate independent disconnected boolean flags that cause stacking collisions (e.g. `Buffering Stream` + `+10 sec` + Center Play/Pause rendering simultaneously).
+  - All transient visual states are coordinated via `PlaybackOverlayStatus` with discrete types (`PlaybackOverlayType`: `none`, `opening`, `buffering`, `seeking`, `toast`).
+- **Deterministic Overlay Priority Ordering**:
+  - Priority 1: User-initiated transient actions (`seeking` with accumulated delta, `toast` for volume/brightness/speed/aspect/track changes).
+  - Priority 2: Cold start loading (`opening` / `idle`).
+  - Priority 3: Stream underrun (`buffering`), automatically suppressed during active relative seek settle windows (1000ms) and timeline scrubbing gestures (`_isScrubbing`).
+  - Priority 4: Normal playback (`none`).
+- **Center Play/Pause Suppression**:
+  - In `PlayerControlsOverlay`, the prominent center Play/Pause button is strictly suppressed whenever an overlay is active (`!widget.isBuffering && !widget.isDoubleTapSeeking && !widget.isOverlayActive`), eliminating vertical overlap and visual noise over seek/toast indicators.
+- **Rapid Seek Delta Accumulation**:
+  - Relative seek commands (D-pad Left/Right, Media Rewind/Fast-Forward) accumulate delta in real time (`+10 sec` → `+20 sec` → `+30 sec`) and refresh a 1000ms settle timer in a single unified HUD toast, eliminating timer races and buffer flashes.
+- **Immediate Buffering Dismissal**:
+  - Buffering indicators dismiss immediately when `bufferingStream` emits `false`, leaving zero lingering loading spinners on the viewport once video frames resume.
