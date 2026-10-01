@@ -23,10 +23,35 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 | 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
 | 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), device-verified; 143 passed / 10 skipped (live-server tests opt-in) |
+| 4.7 | Fire TV & Android TV 10-Foot Experience (Universal APK) | ✅ COMPLETE — Single universal APK (`in.anisparvez.media_server_client`) for Mobile & TV. Runtime capability detection, collapsible obsidian side rail (`TvSideNavigationRail`), borderless fullscreen TV player, autofocus action triggers, D-pad remote navigation, physical Fire TV Stick 4K (`AFTMM`) & Vivo mobile verified |
 
 ---
 
 ## 0. Recent work
+
+### 2026-10-01 — Fire TV Stick 4K & Android TV (Pass 2 Refinements: Focus Traversal, Debounced Exit & 10-Foot Leanback UI)
+
+**Deliverable:** A polished second-pass leanback experience on the universal Android APK (`in.anisparvez.media_server_client`), hardening D-pad remote navigation, edge-to-rail focus transitions, exit confirmation debouncing, and TV Settings UI on physical Amazon Fire TV Stick 4K (`AFTMM`) connected to a 4K TV.
+
+**Key Architecture & Invariants:**
+1. **Debounced Double-Back & Root Exit Focus Trap:** Converted `TvExitDialog` to a stateful dialog with an internal `_isShowing` static guard, `barrierDismissible: false`, and a 350ms dismissal gate (`_canDismissOnBack`). In `AppShell._handleBack()`, implemented a 350ms timestamp debounce (`_lastBackTime`), resolving twin-event dispatch from physical TV remotes (key down + activity pop route). Default focus is locked to "Cancel" in obsidian glass with red glow; D-pad Right navigates to "Exit". Back press while dialog is open safely cancels without quitting.
+2. **Directional Traversal Bridge (`TvDirectionalFocusAction`):** Content area in `AppShell` is wrapped in a custom `DirectionalFocusAction`. When pressing D-pad Left at the leftmost column of any content screen (e.g., column 0 of "Continue Watching", "All Movies" grid, or Settings), the action intercepts the boundary traversal, collapses any in-flight content focus, shifts focus directly to the active rail item (`tvRailFocusNodesProvider[currentIndex]`), and expands `TvSideNavigationRail` smoothly.
+3. **Rail-to-Content D-pad Right Restoration:** Navigating D-pad Right from an expanded rail item collapses the rail back to 68dp and restores focus cleanly to the first visible content card without losing scroll position. Removed `escape` and `goBack` overrides from rail items so physical Back keys bubble unconditionally to `AppShell`.
+4. **TV Settings 10-Foot Architecture:** Stripped redundant top logo/subtitle on TV (`!isTv`), displaying a single clean "Settings" heading. Transformed Server Connection, Device ID, and Update Channel into full-width focusable cards with glowing borders. Wrapped `Switch.adaptive` in `ExcludeFocus` to prevent trapped focus on non-interactive toggle controls.
+5. **TV Remote Player Polish:** Bound 2-zone remote transport model; D-pad Up/Down volume manipulation was eliminated to avoid conflicting with TV hardware CEC volume and vertical navigation.
+6. **Automated Verification:** 99/99 shell and player tests passed, 47/47 library tests passed, 0 analyzer issues across `flutter_client`.
+
+### 2026-09-30 — Fire TV Stick 4K & Universal Android APK (10-Foot Leanback UI)
+
+**Deliverable:** A single universal APK (`in.anisparvez.media_server_client`) operating seamlessly across both Android mobile phones (touch UI + persistent bottom navigation + portrait player) and Amazon Fire TV Stick 4K / Android TV (10-foot D-pad remote UI + collapsible obsidian side rail + borderless fullscreen cinema player). Zero separate APKs, zero Android product flavors.
+
+**Key Architecture & Invariants:**
+1. **Device Capability Model:** Runtime detection via native platform channel (`in.anisparvez.media_server_client/device_mode`) in `MainActivity.kt` inspecting `android.software.leanback`, Amazon Fire TV model signatures (`Build.MODEL.startsWith("AFT")`), UI mode type (`Configuration.UI_MODE_TYPE_TELEVISION`), and absence of touch screen. Exposes `deviceCapabilitiesProvider`, `isTvModeProvider`, and `isFireTvProvider`. Includes a debug "Force TV UI Mode" switch in Settings for phone/tablet testing.
+2. **TV Navigation Shell:** Collapsible obsidian left rail (`TvSideNavigationRail`, 68dp collapsed / 220dp expanded) with brand-red glowing focus pill and D-pad navigation. Replaces mobile bottom navigation completely on TV (`isTv == true`).
+3. **10-Foot Cinema Details:** Two-column 16:9 layout on TV with poster/specs pills on left and title/synopsis/cast on right. Primary action ("▶ Resume" or "▶ Play Movie") is autofocus-highlighted in brand red (`autofocus: true`), enabling instant one-click playback upon opening any movie details.
+4. **TV Fullscreen Player & Remote Transport:** Video player automatically enforces 100% borderless fullscreen on TV, eliminating portrait split view. Redundant Cast and Fullscreen buttons are completely hidden on TV. Back key state machine dismisses controls overlay first if visible; otherwise flushes progress and returns to Movie Details. D-pad Center, Up/Down (volume), Left/Right (seek ±10s), Play/Pause, Rewind/Fast Forward keys mapped for remote responsiveness.
+5. **Physical Device Verification:** Built release APK (97.3 MB) and installed on physical Amazon Fire TV Stick 4K (`AFTMM` on `192.168.1.70:5555`) connected to a 4K Samsung TV. Tested D-pad navigation, card focus, details autofocus, and fullscreen playback of *Batman: Knightfall*. Installed identical APK on physical Vivo phone (`192.168.1.13:38595`), confirming 100% preservation of mobile touch UI and bottom bar.
+6. **Automated Verification:** 233/233 tests passed, 0 analyzer issues across entire repository.
 
 ### 2026-09-30 — Opening sequence (brand sting): delivered, wired, and prompt-free autoplay
 

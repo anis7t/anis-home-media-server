@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/app_colors.dart';
 
@@ -116,9 +117,18 @@ class _BrandIntroOverlayState extends State<BrandIntroOverlay>
       curve: Curves.easeOutCubic,
       child: Material(
         color: Colors.transparent,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleFinish(),
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent) {
+              _handleFinish();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _handleFinish(),
           child: AnimatedBuilder(
             animation: _ctrl,
             builder: (context, _) {
@@ -276,8 +286,9 @@ class _BrandIntroOverlayState extends State<BrandIntroOverlay>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 // ============================================================================

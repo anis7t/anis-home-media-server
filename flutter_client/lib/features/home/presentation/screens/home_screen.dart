@@ -6,6 +6,8 @@ import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
+import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/widgets/tv_focusable.dart';
 import '../../../library/data/models/movie_item.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../../../library/presentation/widgets/continue_watching_rail.dart';
@@ -63,13 +65,14 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(libraryControllerProvider);
     final baseUrl = ref.watch(serverBaseUrlProvider);
+    final isTv = ref.watch(isTvModeProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _buildFrostedHeader(context, ref, state),
+            _buildFrostedHeader(context, ref, state, isTv),
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.brandRed,
@@ -77,7 +80,7 @@ class HomeScreen extends ConsumerWidget {
                 onRefresh: () => ref
                     .read(libraryControllerProvider.notifier)
                     .loadLibrary(isRefresh: true),
-                child: _buildBody(context, ref, state, baseUrl),
+                child: _buildBody(context, ref, state, baseUrl, isTv),
               ),
             ),
           ],
@@ -90,7 +93,70 @@ class HomeScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     LibraryState state,
+    bool isTv,
   ) {
+    if (isTv) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'Home',
+              style: AppTypography.titleLarge.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onPressed: state.isScanning ? null : () => _handleScan(context, ref),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    state.isScanning
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.brandRed,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.sync_rounded,
+                            color: AppColors.textSecondary,
+                            size: 18,
+                          ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Scan Library',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: const BoxDecoration(
@@ -189,6 +255,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     LibraryState state,
     String baseUrl,
+    bool isTv,
   ) {
     if (state.status == LibraryStatus.loading && state.movies.isEmpty) {
       return const Center(
@@ -355,63 +422,89 @@ class HomeScreen extends ConsumerWidget {
         // Quick Library Banner / Shortcut
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: InkWell(
-            onTap: () => _navigateToLibrary(context),
+          child: TvFocusable(
             borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.borderSubtle),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.borderMedium),
-                    ),
-                    child: const Icon(
-                      Icons.video_library_rounded,
-                      color: AppColors.brandRedLight,
-                      size: 20,
-                    ),
+            onPressed: () => _navigateToLibrary(context),
+            builder: (context, isFocused, _) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isFocused
+                      ? AppColors.surfaceHighlight
+                      : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
+                    width: isFocused ? 2.5 : 1.0,
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Browse Full Library',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14.5,
+                  boxShadow: isFocused
+                      ? [
+                          BoxShadow(
+                            color: AppColors.brandRedGlow.withValues(alpha: 0.65),
+                            blurRadius: 18,
+                            spreadRadius: 2,
                           ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isFocused
+                            ? AppColors.brandRed.withValues(alpha: 0.22)
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isFocused
+                              ? AppColors.brandRed
+                              : AppColors.borderMedium,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${state.movies.length} movies available with instant search & filters',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
+                      ),
+                      child: const Icon(
+                        Icons.video_library_rounded,
+                        color: AppColors.brandRedLight,
+                        size: 20,
+                      ),
                     ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: AppColors.textMuted,
-                    size: 16,
-                  ),
-                ],
-              ),
-            ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Browse Full Library',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${state.movies.length} movies available with instant search & filters',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isFocused
+                                  ? AppColors.textSecondary
+                                  : AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: isFocused
+                          ? AppColors.brandRedLight
+                          : AppColors.textMuted,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
 
@@ -443,33 +536,59 @@ class HomeScreen extends ConsumerWidget {
                 style: AppTypography.titleLarge,
               ),
               const Spacer(),
-              TextButton(
+              TvFocusable(
+                borderRadius: BorderRadius.circular(8),
                 onPressed: () => _navigateToLibrary(context),
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'View All (${state.movies.length})',
-                      style: const TextStyle(
-                        color: AppColors.brandRedLight,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                builder: (context, isFocused, _) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isFocused
+                          ? AppColors.brandRed.withValues(alpha: 0.22)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isFocused
+                            ? AppColors.brandRed
+                            : Colors.transparent,
+                        width: isFocused ? 2.0 : 1.0,
                       ),
+                      boxShadow: isFocused
+                          ? [
+                              BoxShadow(
+                                color: AppColors.brandRedGlow.withValues(alpha: 0.6),
+                                blurRadius: 12,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : null,
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.arrow_forward_rounded,
-                      color: AppColors.brandRedLight,
-                      size: 14,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'View All (${state.movies.length})',
+                          style: TextStyle(
+                            color: isFocused
+                                ? AppColors.brandRedLight
+                                : AppColors.brandRedLight,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: AppColors.brandRedLight,
+                          size: 14,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ),
@@ -516,27 +635,67 @@ class HomeScreen extends ConsumerWidget {
 
         // Bottom explore CTA
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: isTv ? 14 : 0,
+          ),
           child: SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.textPrimary,
-                side: const BorderSide(color: AppColors.borderMedium),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 13),
-              ),
+            child: TvFocusable(
+              borderRadius: BorderRadius.circular(10),
               onPressed: () => _navigateToLibrary(context),
-              icon: const Icon(Icons.explore_outlined, size: 18),
-              label: Text(
-                'Explore All ${state.movies.length} Movies in Catalog',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
+              builder: (context, isFocused, _) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: isFocused
+                        ? AppColors.surfaceHighlight
+                        : AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isFocused
+                          ? AppColors.brandRed
+                          : AppColors.borderMedium,
+                      width: isFocused ? 2.5 : 1.0,
+                    ),
+                    boxShadow: isFocused
+                        ? [
+                            BoxShadow(
+                              color: AppColors.brandRedGlow.withValues(alpha: 0.6),
+                              blurRadius: 16,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.explore_outlined,
+                        size: 18,
+                        color: isFocused
+                            ? AppColors.brandRedLight
+                            : AppColors.textPrimary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Explore All ${state.movies.length} Movies in Catalog',
+                        style: TextStyle(
+                          color: isFocused
+                              ? AppColors.textPrimary
+                              : AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
+        if (isTv) const SizedBox(height: 64),
       ],
     );
   }

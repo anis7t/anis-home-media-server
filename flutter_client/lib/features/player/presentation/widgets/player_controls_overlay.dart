@@ -23,7 +23,7 @@ class PlayerControlsOverlay extends StatefulWidget {
   final VoidCallback onTogglePlay;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onToggleMute;
-  final VoidCallback onToggleFullscreen;
+  final VoidCallback? onToggleFullscreen;
   final VoidCallback onBack;
   final VoidCallback onUserInteraction;
   final ValueChanged<Duration> onSeek;
@@ -48,6 +48,10 @@ class PlayerControlsOverlay extends StatefulWidget {
   final bool hasActiveSubtitles;
   final bool isDoubleTapSeeking;
 
+  final bool isTv;
+  final bool isTimelineFocused;
+  final int tvFocusedControlIndex;
+
   const PlayerControlsOverlay({
     super.key,
     required this.title,
@@ -63,7 +67,7 @@ class PlayerControlsOverlay extends StatefulWidget {
     required this.onTogglePlay,
     required this.onVolumeChanged,
     required this.onToggleMute,
-    required this.onToggleFullscreen,
+    this.onToggleFullscreen,
     required this.onBack,
     required this.onUserInteraction,
     required this.onSeek,
@@ -76,14 +80,17 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.onOpenAudioSheet,
     this.onOpenSubtitleSheet,
     this.onToggleAspectRatio,
-  this.onOpenCastSheet,
-  this.isCasting = false,
+    this.onOpenCastSheet,
+    this.isCasting = false,
     this.onSurfaceTap,
     this.onDoubleTapRewind,
     this.onDoubleTapForward,
     this.playbackRate = 1.0,
     this.hasActiveSubtitles = false,
     this.isDoubleTapSeeking = false,
+    this.isTv = false,
+    this.isTimelineFocused = false,
+    this.tvFocusedControlIndex = -1,
   });
 
   @override
@@ -102,6 +109,47 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
       return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+  Widget _buildButtonWrapper({
+    required int index,
+    required Widget child,
+    BorderRadius? borderRadius,
+  }) {
+    if (!widget.isTv) return child;
+    final isFocused = widget.tvFocusedControlIndex == index;
+    final radius = borderRadius ?? BorderRadius.circular(24);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: AnimatedScale(
+        scale: isFocused ? 1.15 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: isFocused
+                ? const Color(0x44FF334B)
+                : Colors.black26,
+            borderRadius: radius,
+            border: Border.all(
+              color: isFocused ? const Color(0xFFFF334B) : Colors.transparent,
+              width: isFocused ? 2.5 : 1.0,
+            ),
+            boxShadow: isFocused
+                ? const [
+                    BoxShadow(
+                      color: Color(0x99FF334B),
+                      blurRadius: 16.0,
+                      spreadRadius: 2.0,
+                    ),
+                  ]
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
   }
 
   @override
@@ -197,7 +245,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           ],
                         ),
                       ),
-                      if (widget.onOpenCastSheet != null)
+                      if (!widget.isTv && widget.onOpenCastSheet != null)
                         IconButton(
                           tooltip: widget.isCasting ? 'Casting' : 'Cast to device',
                           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -210,7 +258,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           ),
                           onPressed: widget.onOpenCastSheet,
                         ),
-                      if (widget.onToggleAspectRatio != null)
+                      if (!widget.isTv && widget.onToggleAspectRatio != null)
                         IconButton(
                           tooltip: 'Aspect Ratio',
                           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -356,6 +404,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           previewMeta: widget.previewMeta,
                           previewStateOverride: widget.previewStateOverride,
                           touchTargetHeight: MediaQuery.of(context).size.width < 620 ? 16.0 : 22.0,
+                          isFocused: widget.isTv && widget.isTimelineFocused,
                         ),
                       ),
 
@@ -373,55 +422,64 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                             children: [
                               // Replay / Restart from beginning (first button matching reference screenshot)
                               if (widget.onRestart != null)
-                                IconButton(
-                                  tooltip: 'Replay (Home / 0)',
+                                _buildButtonWrapper(
+                                  index: 0,
+                                  child: IconButton(
+                                    tooltip: 'Replay (Home / 0)',
+                                    constraints: btnConstraints,
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: Icon(
+                                      Icons.replay_rounded,
+                                      color: Colors.white,
+                                      size: isCompact ? 19 : 22,
+                                    ),
+                                    onPressed: widget.onRestart,
+                                  ),
+                                ),
+
+                              // Play / Pause button
+                              _buildButtonWrapper(
+                                index: 1,
+                                child: IconButton(
+                                  tooltip: widget.isPlaying ? 'Pause (Space / k)' : 'Play (Space / k)',
                                   constraints: btnConstraints,
                                   padding: EdgeInsets.zero,
                                   visualDensity: VisualDensity.compact,
                                   icon: Icon(
-                                    Icons.replay_rounded,
+                                    widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                    color: Colors.white,
+                                    size: isCompact ? 22 : 26,
+                                  ),
+                                  onPressed: widget.onTogglePlay,
+                                ),
+                              ),
+
+                              if (!isCompact && !widget.isTv) const SizedBox(width: 2),
+
+                              // Mute / Unmute
+                              _buildButtonWrapper(
+                                index: 2,
+                                child: IconButton(
+                                  tooltip: widget.volume == 0 ? 'Unmute (m)' : 'Mute (m)',
+                                  constraints: btnConstraints,
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    widget.volume == 0
+                                        ? Icons.volume_off_rounded
+                                        : widget.volume < 50
+                                            ? Icons.volume_down_rounded
+                                            : Icons.volume_up_rounded,
                                     color: Colors.white,
                                     size: isCompact ? 19 : 22,
                                   ),
-                                  onPressed: widget.onRestart,
+                                  onPressed: widget.onToggleMute,
                                 ),
-
-                              // Play / Pause button
-                              IconButton(
-                                tooltip: widget.isPlaying ? 'Pause (Space / k)' : 'Play (Space / k)',
-                                constraints: btnConstraints,
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                icon: Icon(
-                                  widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                  color: Colors.white,
-                                  size: isCompact ? 22 : 26,
-                                ),
-                                onPressed: widget.onTogglePlay,
                               ),
 
-                              if (!isCompact) const SizedBox(width: 2),
-
-                              // Mute / Unmute
-                              IconButton(
-                                tooltip: widget.volume == 0 ? 'Unmute (m)' : 'Mute (m)',
-                                constraints: btnConstraints,
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                icon: Icon(
-                                  widget.volume == 0
-                                      ? Icons.volume_off_rounded
-                                      : widget.volume < 50
-                                          ? Icons.volume_down_rounded
-                                          : Icons.volume_up_rounded,
-                                  color: Colors.white,
-                                  size: isCompact ? 19 : 22,
-                                ),
-                                onPressed: widget.onToggleMute,
-                              ),
-
-                              // Volume Slider (desktop / tablet only, hidden on compact mobile)
-                              if (!isCompact) ...[
+                              // Volume Slider (desktop / tablet only, hidden on compact mobile and TV)
+                              if (!isCompact && !widget.isTv) ...[
                                 SizedBox(
                                   width: 80,
                                   child: SliderTheme(
@@ -448,32 +506,36 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
 
                               // Playback Speed pill button
                               if (widget.onOpenSpeedSheet != null)
-                                InkWell(
-                                  onTap: widget.onOpenSpeedSheet,
+                                _buildButtonWrapper(
+                                  index: 3,
                                   borderRadius: BorderRadius.circular(14),
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: isCompact ? 5 : 8,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: widget.playbackRate != 1.0
-                                            ? const Color(0xFFFF334B)
-                                            : Colors.white24,
-                                        width: 1,
+                                  child: InkWell(
+                                    onTap: widget.onOpenSpeedSheet,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isCompact ? 5 : 8,
+                                        vertical: 3,
                                       ),
-                                    ),
-                                    child: Text(
-                                      '${widget.playbackRate.toStringAsFixed(widget.playbackRate.truncateToDouble() == widget.playbackRate ? 0 : 2)}×',
-                                      style: TextStyle(
-                                        color: widget.playbackRate != 1.0
-                                            ? const Color(0xFFFF334B)
-                                            : Colors.white,
-                                        fontSize: isCompact ? 10 : 12,
-                                        fontWeight: FontWeight.bold,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white12,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: widget.playbackRate != 1.0
+                                              ? const Color(0xFFFF334B)
+                                              : Colors.white24,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${widget.playbackRate.toStringAsFixed(widget.playbackRate.truncateToDouble() == widget.playbackRate ? 0 : 2)}×',
+                                        style: TextStyle(
+                                          color: widget.playbackRate != 1.0
+                                              ? const Color(0xFFFF334B)
+                                              : Colors.white,
+                                          fontSize: isCompact ? 10 : 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -481,51 +543,76 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
 
                               // Audio Stream selector button
                               if (widget.onOpenAudioSheet != null)
-                                IconButton(
-                                  tooltip: 'Audio Tracks',
-                                  constraints: btnConstraints,
-                                  padding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                  icon: Icon(
-                                    Icons.audiotrack_rounded,
-                                    color: Colors.white,
-                                    size: isCompact ? 18 : 20,
+                                _buildButtonWrapper(
+                                  index: 4,
+                                  child: IconButton(
+                                    tooltip: 'Audio Tracks',
+                                    constraints: btnConstraints,
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: Icon(
+                                      Icons.audiotrack_rounded,
+                                      color: Colors.white,
+                                      size: isCompact ? 18 : 20,
+                                    ),
+                                    onPressed: widget.onOpenAudioSheet,
                                   ),
-                                  onPressed: widget.onOpenAudioSheet,
                                 ),
 
                               // Subtitle selector button
                               if (widget.onOpenSubtitleSheet != null)
+                                _buildButtonWrapper(
+                                  index: 5,
+                                  child: IconButton(
+                                    tooltip: 'Subtitles (c)',
+                                    constraints: btnConstraints,
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: Icon(
+                                      Icons.subtitles_rounded,
+                                      color: widget.hasActiveSubtitles
+                                          ? const Color(0xFFFF334B)
+                                          : Colors.white,
+                                      size: isCompact ? 18 : 20,
+                                    ),
+                                    onPressed: widget.onOpenSubtitleSheet,
+                                  ),
+                                ),
+
+                              // Aspect Ratio toggle (on TV, moved into controls row so it's D-pad focusable)
+                              if (widget.isTv && widget.onToggleAspectRatio != null)
+                                _buildButtonWrapper(
+                                  index: 6,
+                                  child: IconButton(
+                                    tooltip: 'Aspect Ratio',
+                                    constraints: btnConstraints,
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(
+                                      Icons.aspect_ratio_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    onPressed: widget.onToggleAspectRatio,
+                                  ),
+                                ),
+
+                              // Fullscreen toggle (mobile/desktop only, TV is borderless fullscreen)
+                              if (!widget.isTv && widget.onToggleFullscreen != null)
                                 IconButton(
-                                  tooltip: 'Subtitles (c)',
+                                  tooltip: widget.isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
                                   constraints: btnConstraints,
                                   padding: EdgeInsets.zero,
                                   visualDensity: VisualDensity.compact,
                                   icon: Icon(
-                                    Icons.subtitles_rounded,
-                                    color: widget.hasActiveSubtitles
-                                        ? const Color(0xFFFF334B)
-                                        : Colors.white,
-                                    size: isCompact ? 18 : 20,
+                                    widget.isFullscreen
+                                        ? Icons.fullscreen_exit_rounded
+                                        : Icons.fullscreen_rounded,
+                                    color: Colors.white,
+                                    size: isCompact ? 20 : 24,
                                   ),
-                                  onPressed: widget.onOpenSubtitleSheet,
+                                  onPressed: widget.onToggleFullscreen,
                                 ),
-
-                              // Fullscreen toggle
-                              IconButton(
-                                tooltip: widget.isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)',
-                                constraints: btnConstraints,
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                icon: Icon(
-                                  widget.isFullscreen
-                                      ? Icons.fullscreen_exit_rounded
-                                      : Icons.fullscreen_rounded,
-                                  color: Colors.white,
-                                  size: isCompact ? 20 : 24,
-                                ),
-                                onPressed: widget.onToggleFullscreen,
-                              ),
                             ],
                           );
                         },

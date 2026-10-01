@@ -6,6 +6,8 @@ import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
+import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/widgets/tv_focusable.dart';
 import '../../data/models/movie_details.dart';
 import '../../data/models/movie_extended_details.dart';
 import '../../data/models/movie_item.dart';
@@ -186,6 +188,20 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
     final specs = _details?.specs;
     final extended = _details?.extended;
     final transcode = _details?.transcodeInfo;
+    final isTv = ref.watch(isTvModeProvider);
+
+    if (isTv) {
+      return _buildTvContent(
+        context,
+        baseUrl,
+        movie,
+        posterUrl,
+        backdropUrl,
+        specs,
+        extended,
+        transcode,
+      );
+    }
 
     return Stack(
       children: [
@@ -316,6 +332,198 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTvContent(
+    BuildContext context,
+    String baseUrl,
+    MovieItem movie,
+    String? posterUrl,
+    String? backdropUrl,
+    MovieSpecs? specs,
+    MovieExtendedDetails? extended,
+    dynamic transcode,
+  ) {
+    return Stack(
+      children: [
+        if (backdropUrl != null)
+          Positioned.fill(
+            child: Image.network(
+              backdropUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ),
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.background.withValues(alpha: 0.88),
+                  AppColors.background.withValues(alpha: 0.96),
+                ],
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    TvFocusable(
+                      borderRadius: BorderRadius.circular(10),
+                      onPressed: () => context.pop(),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.borderSubtle),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_rounded,
+                          key: ValueKey('tv_details_back_btn'),
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Text(
+                      'Movie Details',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 240,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  width: 240,
+                                  height: 360,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.borderSubtle),
+                                  ),
+                                  child: posterUrl != null
+                                      ? Image.network(
+                                          posterUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => _buildFallbackPoster(movie),
+                                        )
+                                      : _buildFallbackPoster(movie),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  if (specs?.resolution != null)
+                                    _buildPillBadge(specs!.resolution),
+                                  if (specs?.videoCodec != null)
+                                    _buildPillBadge(specs!.videoCodec.toUpperCase()),
+                                  if (specs?.audioChannels != null)
+                                    _buildPillBadge(specs!.audioChannels),
+                                  if (movie.year != null)
+                                    _buildPillBadge('${movie.year}'),
+                                  if (movie.duration > 0)
+                                    _buildPillBadge(movie.formattedRuntime),
+                                  if (movie.rating != null && movie.rating! > 0)
+                                    _buildPillBadge('★ ${movie.rating!.toStringAsFixed(1)}', isAccent: true),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 32),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                movie.title,
+                                style: AppTypography.displayMedium.copyWith(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.15,
+                                ),
+                              ),
+                              if (extended?.tagline != null && extended!.tagline.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  '“${extended.tagline}”',
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                    color: AppColors.textSecondary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              _buildPlaybackActions(movie),
+                              const SizedBox(height: 20),
+                              if (movie.overview.isNotEmpty) ...[
+                                const Text(
+                                  'SYNOPSIS',
+                                  style: TextStyle(
+                                    color: AppColors.brandRedLight,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  movie.overview,
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    color: AppColors.textPrimary.withValues(alpha: 0.9),
+                                    fontSize: 15,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+                              if (extended != null && extended.cast.isNotEmpty) ...[
+                                _buildCastRail(extended.cast),
+                                const SizedBox(height: 20),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -508,6 +716,7 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
 
   Widget _buildPlaybackActions(MovieItem movie) {
     final hasProgress = movie.position > 10;
+    final isTv = ref.watch(isTvModeProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -559,6 +768,7 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                   height: 48,
                   child: ElevatedButton.icon(
                     key: const ValueKey('resume_play_button'),
+                    autofocus: isTv,
                     onPressed: () => _launchPlayer(
                       startPosition: Duration(seconds: movie.position.toInt()),
                     ),
@@ -623,6 +833,7 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
             height: 48,
             child: ElevatedButton.icon(
               key: const ValueKey('primary_play_button'),
+              autofocus: isTv,
               onPressed: () => _launchPlayer(startPosition: Duration.zero),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.brandRed,

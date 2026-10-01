@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:media_server_client/app/theme/app_colors.dart';
 import 'package:media_server_client/features/library/data/models/movie_item.dart';
 import 'package:media_server_client/features/library/presentation/widgets/movie_card.dart';
 
@@ -117,6 +118,47 @@ void main() {
 
       await tester.tap(find.text('Tap Movie'));
       expect(tapped, isTrue);
+    });
+
+    testWidgets('scales up and updates border on D-pad focus', (tester) async {
+      const movie = MovieItem(
+        filename: 'focus.mp4',
+        title: 'Focus Movie',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 160,
+              height: 260,
+              child: MovieCard(
+                movie: movie,
+                baseUrl: 'http://127.0.0.1:8000',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Initially scale is 1.0
+      var animatedScale =
+          tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+      expect(animatedScale.scale, 1.0);
+
+      // Focus the InkWell
+      final inkWellFinder = find.byType(InkWell);
+      final inkWell = tester.widget<InkWell>(inkWellFinder);
+      inkWell.onFocusChange?.call(true);
+      await tester.pumpAndSettle();
+
+      animatedScale = tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+      expect(animatedScale.scale, 1.05);
+
+      final animatedContainer =
+          tester.widget<AnimatedContainer>(find.byType(AnimatedContainer));
+      final decoration = animatedContainer.decoration as BoxDecoration;
+      expect((decoration.border as Border).top.color, AppColors.brandRed);
     });
   });
 }

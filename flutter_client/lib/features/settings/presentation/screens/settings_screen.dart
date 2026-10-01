@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
+import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../updater/presentation/widgets/settings_content.dart';
 
 /// Full-screen Settings tab embedded in the persistent bottom navigation shell.
@@ -12,12 +13,14 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isTv = ref.watch(isTvModeProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _buildFrostedHeader(),
+            _buildFrostedHeader(isTv),
             const Expanded(
               child: SettingsContent(
                 isModal: false,
@@ -29,7 +32,27 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildFrostedHeader() {
+  Widget _buildFrostedHeader(bool isTv) {
+    if (isTv) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'Settings',
+              style: AppTypography.titleLarge.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: const BoxDecoration(

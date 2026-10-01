@@ -10,6 +10,7 @@ import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import '../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../core/storage/device_identity_service.dart';
 import '../application/playback_progress_reporter.dart';
 import '../../cast/presentation/controllers/cast_controller.dart';
@@ -66,6 +67,13 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+/// 10-foot TV player focus zone hierarchy
+enum TvPlayerFocusZone {
+  none,
+  timeline,
+  controls,
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
@@ -140,6 +148,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   bool _isScrubbing = false;
 
   final FocusNode _keyboardFocusNode = FocusNode();
+
+  // 10-foot TV navigation state
+  TvPlayerFocusZone _tvFocusZone = TvPlayerFocusZone.timeline;
+  int _tvFocusedControlIndex = 1; // Default to Play/Pause
+  static const int _tvControlCount = 7;
 
   @override
   void initState() {
@@ -1182,41 +1195,320 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
-  void _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.keyK) {
-      _togglePlayPause();
-    } else if (key == LogicalKeyboardKey.keyM) {
-      _toggleMute();
-    } else if (key == LogicalKeyboardKey.keyF) {
-      _toggleFullscreen();
-    } else if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
-      _seekRelative(-10);
-    } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
-      _seekRelative(10);
-    } else if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.digit0) {
-      _restart();
-    } else if (key == LogicalKeyboardKey.keyC) {
-      _openSubtitleTrackSheet();
-    } else if (key == LogicalKeyboardKey.arrowUp) {
-      final next = (_volume + 5.0).clamp(0.0, 100.0);
-      _onVolumeChanged(next);
-      _showHudToast('${next.round()}% Volume', icon: Icons.volume_up_rounded);
-    } else if (key == LogicalKeyboardKey.arrowDown) {
-      final next = (_volume - 5.0).clamp(0.0, 100.0);
-      _onVolumeChanged(next);
-      _showHudToast('${next.round()}% Volume', icon: Icons.volume_down_rounded);
-    } else if (key == LogicalKeyboardKey.escape) {
-      if (_isFullscreen) {
-        _toggleFullscreen();
-      }
+  void _triggerTvControlAction(int index) {
+    switch (index) {
+      case 0:
+        _restart();
+        break;
+      case 1:
+        _togglePlayPause();
+        break;
+      case 2:
+        _toggleMute();
+        break;
+      case 3:
+        _openPlaybackSpeedSheet();
+        break;
+      case 4:
+        _openAudioTrackSheet();
+        break;
+      case 5:
+        _openSubtitleTrackSheet();
+        break;
+      case 6:
+        _cycleAspectRatio();
+        break;
     }
   }
 
-  Future<void> _handleBack() async {
-    if (_isFullscreen) {
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+
+    final key = event.logicalKey;
+    final isTv = ref.read(isTvModeProvider);
+
+    // 1. Media keys (Universal across TV remote, media keys & keyboard)
+    if (key == LogicalKeyboardKey.mediaPlayPause) {
+      _togglePlayPause();
+      return true;
+    } else if (key == LogicalKeyboardKey.mediaPlay) {
+      if (_state != PlayerPlaybackState.playing) {
+        _togglePlayPause();
+      }
+      return true;
+    } else if (key == LogicalKeyboardKey.mediaPause) {
+      if (_state == PlayerPlaybackState.playing) {
+        _togglePlayPause();
+      }
+      return true;
+    } else if (key == LogicalKeyboardKey.mediaRewind ||
+        key == LogicalKeyboardKey.mediaTrackPrevious) {
+      _seekRelative(-15);
+      return true;
+    } else if (key == LogicalKeyboardKey.mediaFastForward ||
+        key == LogicalKeyboardKey.mediaTrackNext) {
+      _seekRelative(15);
+      return true;
+    }
+
+    if (isTv) {
+      // -------------------------------------------------------------
+      // 10-FOOT TV D-PAD NAVIGATION MODEL
+      // Dedicated volume buttons on remote manage TV audio volume.
+      // D-pad Up/Down navigates between Timeline (Zone 1) & Controls (Zone 2).
+      // -------------------------------------------------------------
+
+      // If controls are hidden: any D-pad input reveals controls
+      if (!_controlsVisible) {
+        if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
+          _onUserInteraction();
+          _seekRelative(-10);
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.timeline;
+          });
+          return true;
+        } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
+          _onUserInteraction();
+          _seekRelative(10);
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.timeline;
+          });
+          return true;
+        } else if (key == LogicalKeyboardKey.select ||
+            key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter ||
+            key == LogicalKeyboardKey.space ||
+            key == LogicalKeyboardKey.keyK) {
+          _onUserInteraction();
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.controls;
+            _tvFocusedControlIndex = 1; // Default to Play/Pause
+          });
+          return true;
+        } else if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown) {
+          _onUserInteraction();
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.timeline;
+          });
+          return true;
+        } else if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
+          _handleBack(forceExit: true);
+          return true;
+        }
+        return false;
+      }
+
+      // Controls ARE currently visible:
+      _onUserInteraction(); // Resets auto-hide timer
+
+      // D-Pad UP: Move from controls into timeline
+      if (key == LogicalKeyboardKey.arrowUp) {
+        if (_tvFocusZone == TvPlayerFocusZone.controls) {
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.timeline;
+          });
+          return true;
+        }
+        return true;
+      }
+
+      // D-Pad DOWN: Move from timeline into controls
+      if (key == LogicalKeyboardKey.arrowDown) {
+        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.controls;
+          });
+          return true;
+        }
+        return true;
+      }
+
+      // D-Pad LEFT
+      if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
+        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
+          _seekRelative(-10);
+          return true;
+        } else {
+          setState(() {
+            if (_tvFocusedControlIndex > 0) {
+              _tvFocusedControlIndex--;
+            }
+          });
+          return true;
+        }
+      }
+
+      // D-Pad RIGHT
+      if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
+        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
+          _seekRelative(10);
+          return true;
+        } else {
+          setState(() {
+            if (_tvFocusedControlIndex < _tvControlCount - 1) {
+              _tvFocusedControlIndex++;
+            }
+          });
+          return true;
+        }
+      }
+
+      // CENTER / SELECT / ENTER / SPACE
+      if (key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.numpadEnter ||
+          key == LogicalKeyboardKey.space ||
+          key == LogicalKeyboardKey.keyK) {
+        if (_tvFocusZone == TvPlayerFocusZone.timeline) {
+          _togglePlayPause();
+          return true;
+        } else {
+          _triggerTvControlAction(_tvFocusedControlIndex);
+          return true;
+        }
+      }
+
+      // Remote shortcut keys
+      if (key == LogicalKeyboardKey.contextMenu ||
+          key == LogicalKeyboardKey.info ||
+          key == LogicalKeyboardKey.keyC) {
+        _openSubtitleTrackSheet();
+        return true;
+      }
+      if (key == LogicalKeyboardKey.keyA) {
+        _openAudioTrackSheet();
+        return true;
+      }
+      if (key == LogicalKeyboardKey.keyM) {
+        _toggleMute();
+        return true;
+      }
+      if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.digit0) {
+        _restart();
+        return true;
+      }
+
+      // BACK KEY on TV (Unwind navigation state machine)
+      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
+        if (_tvFocusZone == TvPlayerFocusZone.controls) {
+          setState(() {
+            _tvFocusZone = TvPlayerFocusZone.timeline;
+          });
+          return true;
+        }
+        if (_controlsVisible) {
+          setState(() {
+            _controlsVisible = false;
+          });
+          return true;
+        }
+        _handleBack(forceExit: true);
+        return true;
+      }
+
+      return false;
+    }
+
+    // -------------------------------------------------------------
+    // NON-TV (MOBILE / TABLET / DESKTOP) INTERACTION MODEL
+    // -------------------------------------------------------------
+    if (key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.keyK) {
+      _togglePlayPause();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      if (!_controlsVisible) {
+        _onUserInteraction();
+      } else {
+        _togglePlayPause();
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
+      _seekRelative(-10);
+      return true;
+    } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
+      _seekRelative(10);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      if (!_controlsVisible) {
+        _onUserInteraction();
+      } else {
+        final next = (_volume + 5.0).clamp(0.0, 100.0);
+        _onVolumeChanged(next);
+        _showHudToast('${next.round()}% Volume', icon: Icons.volume_up_rounded);
+      }
+      return true;
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      if (!_controlsVisible) {
+        _onUserInteraction();
+      } else {
+        final next = (_volume - 5.0).clamp(0.0, 100.0);
+        _onVolumeChanged(next);
+        _showHudToast('${next.round()}% Volume', icon: Icons.volume_down_rounded);
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.contextMenu ||
+        key == LogicalKeyboardKey.info ||
+        key == LogicalKeyboardKey.keyC) {
+      _openSubtitleTrackSheet();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyA) {
+      _openAudioTrackSheet();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyM) {
+      _toggleMute();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyF) {
+      _toggleFullscreen();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.digit0) {
+      _restart();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      if (_isFullscreen) {
+        _toggleFullscreen();
+        return true;
+      }
+    } else if (key == LogicalKeyboardKey.goBack) {
+      if (_controlsVisible) {
+        setState(() => _controlsVisible = false);
+        return true;
+      }
+      if (_isFullscreen) {
+        _toggleFullscreen();
+        return true;
+      }
+      _handleBack();
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<void> _handleBack({bool forceExit = false}) async {
+    final isTv = ref.read(isTvModeProvider);
+    if (isTv && _tvFocusZone == TvPlayerFocusZone.controls) {
+      setState(() => _tvFocusZone = TvPlayerFocusZone.timeline);
+      return;
+    }
+    if (isTv && _controlsVisible) {
+      setState(() => _controlsVisible = false);
+      return;
+    }
+    if (!isTv && !forceExit && _isFullscreen) {
       await _toggleFullscreen();
       return;
     }
@@ -1232,10 +1524,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (mounted) {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
-      } else if (context.canPop()) {
-        context.pop();
       } else {
-        context.go(AppRoutes.home);
+        try {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go(AppRoutes.home);
+          }
+        } catch (_) {}
       }
     }
   }
@@ -1283,6 +1579,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     required bool hasSubtitles,
   }) {
     final castState = ref.watch(castControllerProvider);
+    final isTv = ref.watch(isTvModeProvider);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1338,12 +1635,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             position: _transportPosition,
             duration: _transportDuration,
             volume: _volume,
-            isFullscreen: _isFullscreen,
+            isFullscreen: isTv || _isFullscreen,
             onTogglePlay: _togglePlayPause,
             onVolumeChanged: _onVolumeChanged,
             onToggleMute: _toggleMute,
-            onToggleFullscreen: _toggleFullscreen,
-            onBack: _handleBack,
+            onToggleFullscreen: isTv ? null : () => _toggleFullscreen(),
+            onBack: () => _handleBack(forceExit: isTv),
             onUserInteraction: _onUserInteraction,
             onSeek: _onSeek,
             onScrubbingChanged: _onScrubbingChanged,
@@ -1360,8 +1657,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             playbackRate: _rate,
             hasActiveSubtitles: hasSubtitles,
             isDoubleTapSeeking: _isDoubleTapSeeking,
-            onOpenCastSheet: _resolveFilename() == null ? null : _openCastSheet,
+            onOpenCastSheet: isTv || _resolveFilename() == null ? null : _openCastSheet,
             isCasting: castState.isCasting,
+            isTv: isTv,
+            isTimelineFocused: isTv && _tvFocusZone == TvPlayerFocusZone.timeline,
+            tvFocusedControlIndex: (isTv && _tvFocusZone == TvPlayerFocusZone.controls)
+                ? _tvFocusedControlIndex
+                : -1,
           ),
 
           // Action-feedback HUD (brightness/volume/speed changes). It lives here,
@@ -1907,6 +2209,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
+    final isTv = ref.watch(isTvModeProvider);
+    final showFullscreen = isTv || _isFullscreen;
+
     final isOpening = _state == PlayerPlaybackState.opening ||
         (_state == PlayerPlaybackState.idle && _errorMessage == null);
     final hasError = _state == PlayerPlaybackState.error || _errorMessage != null;
@@ -1924,17 +2229,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await _handleBack();
+        await _handleBack(forceExit: isTv);
       },
       child: Scaffold(
-        backgroundColor: _isFullscreen ? Colors.black : AppColors.background,
-        body: _isFullscreen
+        backgroundColor: showFullscreen ? Colors.black : AppColors.background,
+        body: showFullscreen
             ? Focus(
                 focusNode: _keyboardFocusNode,
                 autofocus: true,
                 onKeyEvent: (node, event) {
-                  _handleKeyEvent(event);
-                  return KeyEventResult.ignored;
+                  final handled = _handleKeyEvent(event);
+                  return handled ? KeyEventResult.handled : KeyEventResult.ignored;
                 },
                 child: MouseRegion(
                   onHover: (_) => _onUserInteraction(),
@@ -1947,8 +2252,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                   focusNode: _keyboardFocusNode,
                   autofocus: true,
                   onKeyEvent: (node, event) {
-                    _handleKeyEvent(event);
-                    return KeyEventResult.ignored;
+                    final handled = _handleKeyEvent(event);
+                    return handled ? KeyEventResult.handled : KeyEventResult.ignored;
                   },
                   child: MouseRegion(
                     onHover: (_) => _onUserInteraction(),

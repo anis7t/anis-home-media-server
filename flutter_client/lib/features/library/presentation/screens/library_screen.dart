@@ -8,6 +8,8 @@ import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
+import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/widgets/tv_focusable.dart';
 import '../../data/models/movie_item.dart';
 import '../controllers/library_controller.dart';
 import '../widgets/continue_watching_rail.dart';
@@ -114,13 +116,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(libraryControllerProvider);
     final baseUrl = ref.watch(serverBaseUrlProvider);
+    final isTv = ref.watch(isTvModeProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _buildFrostedHeader(state),
+            _buildFrostedHeader(state, isTv),
             _buildSearchAndFilterRow(state),
             Expanded(
               child: RefreshIndicator(
@@ -138,7 +141,69 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  Widget _buildFrostedHeader(LibraryState state) {
+  Widget _buildFrostedHeader(LibraryState state, bool isTv) {
+    if (isTv) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'Library Catalog',
+              style: AppTypography.titleLarge.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onPressed: state.isScanning ? null : _handleScan,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    state.isScanning
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.brandRed,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.sync_rounded,
+                            color: AppColors.textSecondary,
+                            size: 18,
+                          ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Scan Library',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: const BoxDecoration(

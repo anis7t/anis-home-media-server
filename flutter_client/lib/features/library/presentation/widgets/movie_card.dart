@@ -4,7 +4,8 @@ import '../../../../app/theme/app_typography.dart';
 import '../../data/models/movie_item.dart';
 
 /// Reusable obsidian movie card displaying poster artwork, playback progress, and metadata.
-class MovieCard extends StatelessWidget {
+/// Includes high-contrast focus state and subtle scaling for TV remote / D-pad navigation.
+class MovieCard extends StatefulWidget {
   final MovieItem movie;
   final String baseUrl;
   final VoidCallback? onTap;
@@ -23,30 +24,71 @@ class MovieCard extends StatelessWidget {
   });
 
   @override
+  State<MovieCard> createState() => _MovieCardState();
+}
+
+class _MovieCardState extends State<MovieCard> {
+  bool _isFocused = false;
+
+  @override
   Widget build(BuildContext context) {
+    final movie = widget.movie;
+    final baseUrl = widget.baseUrl;
     final posterUrl = movie.posterUrl(baseUrl);
-    final hasProgress = showProgress && movie.percent > 0 && movie.percent <= 100;
+    final hasProgress = widget.showProgress && movie.percent > 0 && movie.percent <= 100;
 
     return Semantics(
       label: '${movie.title}${movie.year != null ? ', ${movie.year}' : ''}',
       button: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          splashColor: AppColors.brandRedGlow,
-          highlightColor: AppColors.borderSubtle,
-          child: Container(
-            width: width,
-            height: height,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.borderSubtle),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
+      child: AnimatedScale(
+        scale: _isFocused ? 1.05 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            onFocusChange: (focused) {
+              setState(() => _isFocused = focused);
+              if (focused) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    Scrollable.ensureVisible(
+                      context,
+                      alignment: 0.5,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                    );
+                  }
+                });
+              }
+            },
+            borderRadius: BorderRadius.circular(10),
+            splashColor: AppColors.brandRedGlow,
+            highlightColor: AppColors.borderSubtle,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: widget.width,
+              height: widget.height,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _isFocused ? AppColors.brandRed : AppColors.borderSubtle,
+                  width: _isFocused ? 2.5 : 1.0,
+                ),
+                boxShadow: _isFocused
+                    ? [
+                        BoxShadow(
+                          color: AppColors.brandRedGlow.withValues(alpha: 0.6),
+                          blurRadius: 18,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -218,12 +260,13 @@ class MovieCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildArtworkFallback() {
-    final initials = movie.title.isNotEmpty
-        ? movie.title.trim().characters.first.toUpperCase()
+    final initials = widget.movie.title.isNotEmpty
+        ? widget.movie.title.trim().characters.first.toUpperCase()
         : '🎬';
 
     return Container(

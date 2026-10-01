@@ -3,11 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'app/app.dart';
 import 'app/routes.dart';
+import 'core/device/domain/device_capabilities.dart';
+import 'core/device/infrastructure/device_capability_service.dart';
 import 'features/devices/presentation/widgets/device_presence_scope.dart';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
+  final hasTvArg = args.contains('--tv') || args.contains('--tv-mode');
+  final capabilities = hasTvArg
+      ? DeviceCapabilities.tvDefault
+      : await DeviceCapabilityService.detect();
 
   final hasRouteArg = args.any((a) => a.startsWith('--route='));
   final routeArg = hasRouteArg
@@ -56,6 +63,11 @@ void main(List<String> args) {
 
   runApp(
     ProviderScope(
+      overrides: [
+        deviceCapabilitiesOverrideProvider.overrideWith(
+          () => DeviceCapabilitiesOverrideNotifier(capabilities),
+        ),
+      ],
       child: DevicePresenceScope(
         child: MediaServerApp(
           initialRoute: initialRoute,

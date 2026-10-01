@@ -1,7 +1,10 @@
 package `in`.anisparvez.media_server_client
 
+import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -16,9 +19,39 @@ class MainActivity : FlutterActivity() {
     private val UPDATER_CHANNEL = "in.anisparvez.media_server_client/app_updater"
     private val BRIGHTNESS_CHANNEL = "in.anisparvez.media_server_client/screen_brightness"
     private val VOLUME_CHANNEL = "in.anisparvez.media_server_client/media_volume"
+    private val DEVICE_MODE_CHANNEL = "in.anisparvez.media_server_client/device_mode"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_MODE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getDeviceCapabilities" -> {
+                    try {
+                        val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+                        val isTelevision = uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+                        val hasLeanback = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+                                          packageManager.hasSystemFeature("android.hardware.type.television")
+                        val isFireTv = Build.MODEL.startsWith("AFT", ignoreCase = true) || 
+                                       Build.MANUFACTURER.contains("Amazon", ignoreCase = true)
+                        val hasTouch = packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+
+                        val isTv = isTelevision || hasLeanback || isFireTv
+
+                        result.success(mapOf(
+                            "isTv" to isTv,
+                            "isFireTv" to isFireTv,
+                            "hasLeanback" to hasLeanback,
+                            "hasTouchscreen" to hasTouch,
+                            "model" to Build.MODEL,
+                            "manufacturer" to Build.MANUFACTURER
+                        ))
+                    } catch (e: Exception) {
+                        result.error("DEVICE_CAPABILITIES_ERROR", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATER_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getAppInfo" -> {

@@ -1,9 +1,9 @@
 # Flutter Client — Phase Status & Handoff
 
-> **Last updated:** 2026-09-29
+> **Last updated:** 2026-10-01
 > **Active branch:** `feat/flutter-production-player`
 > **Package ID:** `in.anisparvez.media_server_client`
-> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates)
+> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2)
 > **Purpose:** Persistent handoff document. **Read this before touching the Flutter client.**
 
 ---
@@ -23,7 +23,8 @@
 | 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
 | 4.4 | Movie Details Screen & Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
 | 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), 134/134 tests |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), 143 passed / 10 skipped |
+| 4.7 | Fire TV & Android TV 10-Foot Experience (Universal APK) | ✅ COMPLETE — Single universal APK (`in.anisparvez.media_server_client`) for Mobile & TV, collapsible obsidian rail (`TvSideNavigationRail`), borderless fullscreen player, D-pad remote transport, edge traversal bridge, debounced exit dialog, Pass 2 leanback UI, 240+ tests |
 
 ---
 
@@ -428,20 +429,22 @@ ConnectionScreen → LibraryScreen → MovieDetailsScreen → PlayerScreen (prod
 
 ---
 
-## What Was Being Planned Next (Milestone 4.6)
+## Phase 4.6 & 4.7 Completed Status
 
-Before this session ended, the user had expressed intent to continue with **Milestone 4.5** (which was relabeled to **persistent bottom navigation and settings integration**). The planning discussion was not completed. The general direction was:
+### Phase 4.6 — Persistent Navigation Shell & Settings Integration (COMPLETE)
+1. **Persistent Navigation Shell (`AppShell`):** `StatefulShellRoute.indexedStack` with 3 primary destinations: Home, Library, and Settings.
+2. **Settings Screen:** Fullscreen settings screen with active server base URL, device identity, update channel selector, manual update checker, and brand intro replay.
+3. **Presence Telemetry:** Automatic client heartbeat registration (`features/devices/presentation/controllers/device_presence_controller.dart`).
 
-1. **Persistent bottom navigation bar** replacing the current "connection screen as home" pattern
-2. **Tab structure**: Library (home), Settings, possibly Devices
-3. **Settings screen** replacing the current bottom-sheet `SettingsSheet` with a full screen
-4. **Navigation architecture**: `ShellRoute` or `StatefulShellRoute` wrapping tabbed content
-
-This was **NOT** implemented — only discussed. The next coding model should:
-1. Re-read this document and `docs/PROJECT_STATUS.md`
-2. Inspect the current git state (`git status`, `git diff --stat`)
-3. Verify tests pass before making changes
-4. Ask the user whether to continue with the navigation restructure or a different priority
+### Phase 4.7 — Fire TV Stick 4K & Universal Android APK (COMPLETE)
+1. **Universal APK (`in.anisparvez.media_server_client`):** Single binary for both Android mobile touch devices and Android TV / Fire TV Stick 4K 10-foot remote devices.
+2. **Collapsible Obsidian Side Rail (`TvSideNavigationRail`):** 68dp collapsed / 220dp expanded side navigation rail replacing bottom navigation on TV mode.
+3. **Borderless Fullscreen TV Cinema Player:** Automatically removes portrait split-view on TV, mapping D-pad remote transport keys (Play/Pause, Rewind, Fast Forward, Seek ±10s).
+4. **Pass 2 Refinements (Focus Traversal & Debounced Exit):**
+   - Edge traversal bridge (`TvDirectionalFocusAction`) jumping from content column 0 directly to the TV side rail.
+   - Rail-to-content D-pad Right navigation restoring focus to the content area.
+   - Debounced root exit confirmation dialog (`TvExitDialog`, 350ms dismissal gate, focus trapped on Cancel with red glow).
+   - TV Settings card redesign with focus glow and switch exclusion to eliminate focus traps.
 
 ---
 

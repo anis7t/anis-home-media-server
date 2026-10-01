@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/tv_focusable.dart';
 import '../../domain/player_models.dart';
 
 /// Modal bottom sheet for choosing between available Audio Tracks.
@@ -130,53 +131,76 @@ class AudioTrackSheet extends StatelessWidget {
                   final isSelected = currentTrack.id == track.id;
                   final subtitle = _formatTrackSubtitle(track);
 
-                  return InkWell(
-                    onTap: () {
+                  return TvFocusable(
+                    borderRadius: BorderRadius.circular(10),
+                    onPressed: () {
                       onTrackSelected(track);
                       Navigator.of(context).pop();
                     },
-                    child: Container(
-                      height: subtitle != null ? 58 : 52,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  _formatTrackTitle(track),
-                                  style: TextStyle(
-                                    color: isSelected ? const Color(0xFFFF334B) : Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    builder: (context, isFocused, child) {
+                      return Container(
+                        height: subtitle != null ? 58 : 52,
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: isFocused
+                              ? const Color(0x33FF334B)
+                              : (isSelected ? Colors.white10 : Colors.transparent),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isFocused ? const Color(0xFFFF334B) : Colors.transparent,
+                            width: isFocused ? 2.5 : 1.0,
+                          ),
+                          boxShadow: isFocused
+                              ? const [
+                                  BoxShadow(
+                                    color: Color(0x99FF334B),
+                                    blurRadius: 14.0,
+                                    spreadRadius: 1.0,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (subtitle != null)
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
                                   Text(
-                                    subtitle,
+                                    _formatTrackTitle(track),
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.6),
-                                      fontSize: 12,
+                                      color: isSelected ? const Color(0xFFFF334B) : Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.w500,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                              ],
+                                  if (subtitle != null)
+                                    Text(
+                                      subtitle,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.6),
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                          if (isSelected)
-                            const Icon(
-                              Icons.check_rounded,
-                              color: Color(0xFFFF334B),
-                              size: 20,
-                            ),
-                        ],
-                      ),
-                    ),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_rounded,
+                                color: Color(0xFFFF334B),
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -303,61 +327,84 @@ class SubtitleTrackSheet extends StatelessWidget {
                   final track = displayTracks[idx];
                   final isSelected = currentTrack.id == track.id;
 
-                  return InkWell(
-                    onTap: () {
+                  return TvFocusable(
+                    borderRadius: BorderRadius.circular(10),
+                    onPressed: () {
                       onTrackSelected(track);
                       Navigator.of(context).pop();
                     },
-                    child: Container(
-                      height: 52,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    _formatTrackTitle(track),
-                                    style: TextStyle(
-                                      color: isSelected ? const Color(0xFFFF334B) : Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                    builder: (context, isFocused, child) {
+                      return Container(
+                        height: 52,
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: isFocused
+                              ? const Color(0x33FF334B)
+                              : (isSelected ? Colors.white10 : Colors.transparent),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isFocused ? const Color(0xFFFF334B) : Colors.transparent,
+                            width: isFocused ? 2.5 : 1.0,
+                          ),
+                          boxShadow: isFocused
+                              ? const [
+                                  BoxShadow(
+                                    color: Color(0x99FF334B),
+                                    blurRadius: 14.0,
+                                    spreadRadius: 1.0,
                                   ),
-                                ),
-                                if (track.isExternal) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'Local',
+                                ]
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _formatTrackTitle(track),
                                       style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
+                                        color: isSelected ? const Color(0xFFFF334B) : Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.w500,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (track.isExternal) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white12,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'Local',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                          if (isSelected)
-                            const Icon(
-                              Icons.check_rounded,
-                              color: Color(0xFFFF334B),
-                              size: 20,
-                            ),
-                        ],
-                      ),
-                    ),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_rounded,
+                                color: Color(0xFFFF334B),
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   );
                 },
               ),

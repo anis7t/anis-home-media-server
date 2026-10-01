@@ -15,6 +15,7 @@ class VideoTimelineBar extends StatefulWidget {
   final Map<String, dynamic>? previewMeta;
   final SeekPreviewState? previewStateOverride;
   final double touchTargetHeight;
+  final bool isFocused;
 
   const VideoTimelineBar({
     super.key,
@@ -27,6 +28,7 @@ class VideoTimelineBar extends StatefulWidget {
     this.previewMeta,
     this.previewStateOverride,
     this.touchTargetHeight = 48.0,
+    this.isFocused = false,
   });
 
   @override
@@ -152,7 +154,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
     final playedFraction = totalMs > 0 ? (playedMs / totalMs).clamp(0.0, 1.0) : 0.0;
     final bufferedFraction = totalMs > 0 ? (bufferedMs / totalMs).clamp(0.0, 1.0) : 0.0;
 
-    final isActive = _isDragging || _isHovering;
+    final isActive = _isDragging || _isHovering || widget.isFocused;
     final currentFraction = _isDragging ? _dragFraction : playedFraction;
 
     return LayoutBuilder(
@@ -254,14 +256,23 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
 
                       // Scrubber Thumb
                       Positioned(
-                        left: (trackWidth * currentFraction) - (isActive ? 8.0 : 6.5),
+                        left: (trackWidth * currentFraction) - (widget.isFocused ? 9.0 : (isActive ? 8.0 : 6.5)),
                         child: Container(
-                          width: isActive ? 16.0 : 13.0,
-                          height: isActive ? 16.0 : 13.0,
+                          width: widget.isFocused ? 18.0 : (isActive ? 16.0 : 13.0),
+                          height: widget.isFocused ? 18.0 : (isActive ? 16.0 : 13.0),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             shape: BoxShape.circle,
+                            border: widget.isFocused
+                                ? Border.all(color: const Color(0xFFFF334B), width: 2.5)
+                                : null,
                             boxShadow: [
+                              if (widget.isFocused)
+                                const BoxShadow(
+                                  color: Color(0x99FF334B),
+                                  blurRadius: 12.0,
+                                  spreadRadius: 2.0,
+                                ),
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.65),
                                 blurRadius: 4.0,

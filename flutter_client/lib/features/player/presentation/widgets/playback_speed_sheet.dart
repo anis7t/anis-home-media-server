@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/tv_focusable.dart';
+
 /// Modal bottom sheet for selecting playback speed.
 ///
 /// Designed with obsidian glass styling and high touch-target heights (>= 52dp)
@@ -100,35 +102,58 @@ class PlaybackSpeedSheet extends StatelessWidget {
             // Speed options list
             ...supportedRates.map((rate) {
               final isSelected = (currentRate - rate).abs() < 0.05;
-              return InkWell(
-                onTap: () {
+              return TvFocusable(
+                borderRadius: BorderRadius.circular(10),
+                onPressed: () {
                   onRateSelected(rate);
                   Navigator.of(context).pop();
                 },
-                child: Container(
-                  height: 52,
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    children: [
-                      Text(
-                        _formatRate(rate),
-                        style: TextStyle(
-                          color: isSelected ? const Color(0xFFFF334B) : Colors.white,
-                          fontSize: 15,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        ),
+                builder: (context, isFocused, child) {
+                  return Container(
+                    height: 52,
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: isFocused
+                          ? const Color(0x33FF334B)
+                          : (isSelected ? Colors.white10 : Colors.transparent),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isFocused ? const Color(0xFFFF334B) : Colors.transparent,
+                        width: isFocused ? 2.5 : 1.0,
                       ),
-                      const Spacer(),
-                      if (isSelected)
-                        const Icon(
-                          Icons.check_rounded,
-                          color: Color(0xFFFF334B),
-                          size: 20,
+                      boxShadow: isFocused
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x99FF334B),
+                                blurRadius: 14.0,
+                                spreadRadius: 1.0,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      children: [
+                        Text(
+                          _formatRate(rate),
+                          style: TextStyle(
+                            color: isSelected ? const Color(0xFFFF334B) : Colors.white,
+                            fontSize: 15,
+                            fontWeight: isSelected || isFocused ? FontWeight.bold : FontWeight.w500,
+                          ),
                         ),
-                    ],
-                  ),
-                ),
+                        const Spacer(),
+                        if (isSelected)
+                          const Icon(
+                            Icons.check_rounded,
+                            color: Color(0xFFFF334B),
+                            size: 20,
+                          ),
+                      ],
+                    ),
+                  );
+                },
               );
             }),
             const SizedBox(height: 12),

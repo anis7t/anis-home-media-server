@@ -6,4 +6,5 @@ class StorageKeys {
   static const String autoConnect = 'media_server_auto_connect';
   static const String updateChannel = 'media_server_update_channel';
   static const String lastUpdateCheckTime = 'media_server_last_update_check';
+  static const String debugTvModeOverride = 'media_server_debug_tv_mode_override';
 }
