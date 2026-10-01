@@ -328,3 +328,19 @@
   - **Non-GoRouter Context Navigation Guard**: In `_handleBack()`, ALWAYS test `Navigator.of(context).canPop()` before evaluating `context.canPop()`. In tests or non-GoRouter widget contexts, calling `context.canPop()` throws `No GoRouter found in context`.
   - **Injected Controller URL Resolution Guard**: In `_resolveEffectiveMediaUrl()`, check `widget.customController != null` at the immediate start of the function and return `widget.mediaUrl` immediately. Never await `settingsServiceProvider.getServerBaseUrl()` when an injected controller is present, as SharedPreferences asynchronous access in unit tests stalls widget pump cycles.
   - **Playback Progress Sealing**: In `_handleBack()`, invoke `_progress?.flush()` followed immediately by `_progress?.dispose()` prior to `await _controller.stop()`. This prevents media engines (such as media_kit/libmpv) from resetting position to 0 and overwriting the saved resume point.
+
+## 25. Android Hardware Video Playback Hardening, Driver Lock Prevention & Remote Control Etiquette
+- **Remote Input Takeover Protocol (Strict Invariant)**:
+  - Whenever taking over inputs or sending ADB remote control key events to a connected Fire TV Stick or Android TV, ALWAYS notify the user beforehand:
+    `"Please do not touch the remote..."`
+  - Once finished interacting or testing, ALWAYS release control by stating:
+    `"The app is free from your control."`
+- **MediaTek Display Processor (MDP) & PowerVR Driver Lock Prevention**:
+  - Zero-copy `hwdec: mediacodec` on Android passes decoded video hardware buffers directly to `SurfaceTexture` / `ANativeWindow` as EGLImages.
+  - On SoCs with MediaTek MDP and PowerVR GPUs (e.g. Amazon Fire TV Stick 4K `AFTMM`), non-16-byte-aligned frame dimensions (such as *Scary Movie* at 1916×800) cause PowerVR texture rejection (`E IMGSRV : IsTextureConsistent: IMGEGLImage is not consistent`), leaving display sync fences unsignaled. The kernel driver then deadlocks waiting for `fence[353]` timeout, resulting in a complete video pipeline freeze across the entire device until reboot.
+  - **Strict Solution — `mediacodec-copy`**: On Android, always configure `VideoControllerConfiguration(hwdec: 'mediacodec-copy')` in `MediaKitPlayerAdapter`. This reads back and renders frames via standard OpenGL ES texture shaders (`vo=gpu`), completely decoupling decoded frames from direct ANativeWindow hardware composer sync fences.
+- **Automatic Dynamic Software Fallback (`fallbackToSoftwareDecoder`)**:
+  - If hardware decoding errors occur or if the first video frame fails to render within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`), the adapter dynamically invokes `fallbackToSoftwareDecoder()`.
+  - It sets `(player.platform as dynamic).setProperty('hwdec', 'no')` (libavcodec CPU decoding) and triggers a position seek to flush decoder pipeline buffers cleanly without terminating playback or resetting audio.
+- **Expanded Decoder Error Matching**:
+  - The stream error listener must catch and trigger fallback on keywords: `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface`.
