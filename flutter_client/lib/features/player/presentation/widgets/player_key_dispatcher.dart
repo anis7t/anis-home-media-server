@@ -96,7 +96,8 @@ class PlayerKeyDispatcher {
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
           return true;
         } else if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-          onHandleBack(forceExit: true);
+          onUserInteraction();
+          onSetTvFocusZone(TvPlayerFocusZone.timeline);
           return true;
         }
         return false;
@@ -184,17 +185,9 @@ class PlayerKeyDispatcher {
         return true;
       }
 
-      // BACK KEY on TV (Unwind navigation state machine)
+      // BACK KEY on TV (Controls are visible: perform normal player exit)
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-        if (tvFocusZone == TvPlayerFocusZone.controls) {
-          onSetTvFocusZone(TvPlayerFocusZone.timeline);
-          return true;
-        }
-        if (controlsVisible) {
-          onHideControls();
-          return true;
-        }
-        onHandleBack(forceExit: true);
+        onHandleBack(forceExit: false);
         return true;
       }
 
@@ -272,8 +265,8 @@ class PlayerKeyDispatcher {
         return true;
       }
     } else if (key == LogicalKeyboardKey.goBack) {
-      if (controlsVisible) {
-        onHideControls();
+      if (!controlsVisible) {
+        onUserInteraction();
         return true;
       }
       if (isFullscreen) {

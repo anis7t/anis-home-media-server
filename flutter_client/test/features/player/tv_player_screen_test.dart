@@ -214,7 +214,28 @@ void main() {
       expect(find.byTooltip('Exit Fullscreen (f)'), findsNothing);
     });
 
-    testWidgets('TV remote Back key dismisses visible controls first', (tester) async {
+    testWidgets('TV remote Back key when controls are hidden reveals controls and keeps playback active', (tester) async {
+      await tester.pumpWidget(createTvPlayerApp());
+      controller.emitState(PlayerPlaybackState.playing);
+      await tester.pumpAndSettle();
+
+      // Fast-forward past auto-hide timer (4s) so controls become hidden
+      await tester.pump(const Duration(seconds: 5));
+      final overlayHidden = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
+      expect(overlayHidden.isVisible, isFalse);
+
+      // Press Back key (escape / goBack) with controls hidden
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      // Controls should now be revealed, focus restored to timeline, controller NOT stopped
+      expect(controller.stopCalled, isFalse);
+      final overlayRevealed = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
+      expect(overlayRevealed.isVisible, isTrue);
+      expect(overlayRevealed.isTimelineFocused, isTrue);
+    });
+
+    testWidgets('TV remote Back key when controls are visible stops controller and exits', (tester) async {
       await tester.pumpWidget(createTvPlayerApp());
       controller.emitState(PlayerPlaybackState.playing);
       await tester.pumpAndSettle();
@@ -224,26 +245,7 @@ void main() {
       final overlay1 = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
       expect(overlay1.isVisible, isTrue);
 
-      // Press Back key (escape / goBack)
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-
-      // Controls should now be dismissed / hidden, controller should NOT be stopped
-      expect(controller.stopCalled, isFalse);
-      final overlay2 = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
-      expect(overlay2.isVisible, isFalse);
-    });
-
-    testWidgets('TV remote Back key when controls are hidden stops controller and exits', (tester) async {
-      await tester.pumpWidget(createTvPlayerApp());
-      controller.emitState(PlayerPlaybackState.playing);
-      await tester.pumpAndSettle();
-
-      // Dismiss controls first
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump(const Duration(milliseconds: 100));
-
-      // Press Back key again with controls hidden
+      // Press Back key (escape / goBack) with controls visible
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 100));
 

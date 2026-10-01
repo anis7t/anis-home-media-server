@@ -6,6 +6,7 @@ import '../../../app/routes.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_typography.dart';
 import '../../../core/storage/settings_service.dart';
+import '../../../core/widgets/tv_focusable.dart';
 import '../controllers/connection_controller.dart';
 import '../models/connection_state.dart';
 
@@ -559,32 +560,60 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
     required bool isSelected,
     required IconData icon,
   }) {
-    return ActionChip(
-      avatar: Icon(
-        icon,
-        size: 14,
-        color: isSelected ? Colors.white : AppColors.textMuted,
-      ),
-      label: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-          color: isSelected ? Colors.white : AppColors.textSecondary,
-        ),
-      ),
-      backgroundColor: isSelected
-          ? AppColors.brandRed.withValues(alpha: 0.8)
-          : AppColors.surfaceElevated,
-      side: BorderSide(
-        color: isSelected ? AppColors.brandRed : AppColors.borderSubtle,
-        width: 1,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+    return TvFocusable(
+      borderRadius: BorderRadius.circular(8),
+      scaleOnFocus: false,
       onPressed: () {
         _urlController.text = url;
         ref.read(connectionControllerProvider.notifier).updateUrl(url);
         ref.read(connectionControllerProvider.notifier).testConnection();
+      },
+      builder: (context, isFocused, _) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isFocused
+                ? AppColors.brandRed.withValues(alpha: 0.25)
+                : (isSelected
+                    ? AppColors.brandRed.withValues(alpha: 0.8)
+                    : AppColors.surfaceElevated),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isFocused
+                  ? AppColors.brandRed
+                  : (isSelected ? AppColors.brandRed : AppColors.borderSubtle),
+              width: isFocused ? 2.0 : 1.0,
+            ),
+            boxShadow: isFocused
+                ? [
+                    BoxShadow(
+                      color: AppColors.brandRedGlow.withValues(alpha: 0.6),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isFocused || isSelected ? Colors.white : AppColors.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isFocused || isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isFocused || isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        );
       },
     );
   }

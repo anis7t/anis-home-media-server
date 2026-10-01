@@ -175,8 +175,9 @@ void main() {
       expect(find.byTooltip('Aspect Ratio'), findsOneWidget);
     });
 
-    testWidgets('Multi-tier Back state machine unwinds Zone 2 -> Zone 1 -> hidden -> exit', (tester) async {
+    testWidgets('TV remote Back key reveals controls when hidden and exits when visible', (tester) async {
       await tester.pumpWidget(createTvPlayerApp());
+      await controller.play();
       await tester.pump(const Duration(milliseconds: 100));
 
       // 1. Controls are visible initially, Zone is timeline (Zone 1)
@@ -192,23 +193,21 @@ void main() {
       expect(overlay2.isTimelineFocused, isFalse);
       expect(overlay2.tvFocusedControlIndex, greaterThanOrEqualTo(0));
 
-      // 3. Press Back / Escape key: should unwind from Zone 2 back to Zone 1 (timeline)
+      // 3. Fast-forward past auto-hide so controls become hidden
+      await tester.pump(const Duration(seconds: 5));
+      final overlayHidden = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
+      expect(overlayHidden.isVisible, isFalse);
+
+      // 4. Press Back / Escape key when hidden: reveals controls, restores timeline focus, keeps playing
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 100));
 
-      final overlay3 = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
-      expect(overlay3.isVisible, isTrue);
-      expect(overlay3.isTimelineFocused, isTrue);
-
-      // 4. Press Back / Escape again: should hide controls overlay
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump(const Duration(milliseconds: 100));
-
-      final overlay4 = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
-      expect(overlay4.isVisible, isFalse);
+      final overlayRevealed = tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay));
+      expect(overlayRevealed.isVisible, isTrue);
+      expect(overlayRevealed.isTimelineFocused, isTrue);
       expect(controller.stopCalled, isFalse);
 
-      // 5. Press Back / Escape with controls hidden: stops player & exits
+      // 5. Press Back / Escape key when visible: stops player & exits
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 100));
 

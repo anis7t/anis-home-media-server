@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/navigation/tv_spatial_focus_traversal_policy.dart';
 import 'routes.dart';
 import 'theme/app_theme.dart';
 
@@ -23,6 +24,12 @@ class MediaServerApp extends ConsumerWidget {
           (initialRoute != null
               ? AppRoutes.createRouter(initialLocation: initialRoute!)
               : AppRoutes.createRouter(initialLocation: AppRoutes.home)),
+      builder: (context, child) {
+        return FocusTraversalGroup(
+          policy: TvSpatialFocusTraversalPolicy(),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

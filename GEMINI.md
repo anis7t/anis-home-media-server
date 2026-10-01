@@ -314,8 +314,14 @@
   - Redundant mobile actions (such as Cast sheet button and Fullscreen toggle button) MUST remain hidden on TV (`isTv == true`).
 - **10-Foot TV D-Pad Remote Transport (2-Zone Focus Model)**:
   - Transport navigation is divided into 2 discrete zones: **Zone 1** (Timeline seekbar scrubber) and **Zone 2** (Playback controls row).
-  - On TV remotes, audio volume is managed exclusively via hardware HDMI-CEC or dedicated TV remote buttons. D-pad Up and Down MUST strictly navigate between Zone 1 and Zone 2, and must NEVER manipulate software volume levels.
-  - Back key unwinds the multi-tier state machine hierarchically: Zone 2 (controls) → Zone 1 (timeline) → dismiss overlay (hide controls) → exit player (`_handleBack`).
+  - Audio volume on TV remotes is managed exclusively via hardware HDMI-CEC or dedicated TV remote buttons. D-pad Up and Down MUST strictly navigate between Zone 1 and Zone 2, and must NEVER manipulate software volume levels.
+- **TV Remote Player Back Key Invariant (2-Step Model)**:
+  - When playback is active and player controls are hidden: the 1st Back press (`LogicalKeyboardKey.escape`, `LogicalKeyboardKey.goBack`, or `PopScope`) MUST reveal player controls (`_controlsVisible = true`), restore/re-establish player focus on the timeline scrubber (`_tvFocusZone = TvPlayerFocusZone.timeline`), reset the controls auto-hide timer, and consume the event without stopping playback or exiting.
+  - When player controls are visible: the 2nd Back press MUST execute normal player exit (cancel auto-hide timers, flush/dispose watch progress, stop player controller, and pop the player route).
+  - Never bypass controls visibility with `forceExit: isTv` or immediately exit when controls are hidden.
+- **2D Weighted Spatial Focus Traversal (`TvSpatialFocusTraversalPolicy`)**:
+  - Flutter's default `DirectionalFocusTraversalPolicyMixin` culls candidates to strict 1D geometric bands, which skips visually adjacent focusable elements on D-pad Up/Down when items do not overlap horizontally.
+  - Directional focus navigation across the application (registered at `MediaServerApp` root builder and `tvContentFocusScopeProvider`) enforces `TvSpatialFocusTraversalPolicy`: a 2D weighted vector distance policy (`score = Δprimary * 4.0 + Δorthogonal * 1.0 + Δalign * 0.25`) with a 60% row/column overlap gate, guaranteeing intuitive D-pad transitions between cards, rails, and buttons.
 - **TV Remote Exit Debouncing & Focus Trapping**:
   - Hardware Fire TV remotes frequently emit duplicate back events (key down + activity pop dispatch).
   - In `AppShell._handleBack()`, back events must be timestamp-debounced (`_lastBackTime`, 350ms) to prevent exit dialog flicker.

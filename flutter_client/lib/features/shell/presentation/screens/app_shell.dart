@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/navigation/tv_spatial_focus_traversal_policy.dart';
 import '../../../intro/presentation/controllers/intro_controller.dart';
 import '../../../intro/presentation/widgets/brand_intro_overlay.dart';
 import '../widgets/tv_exit_dialog.dart';
@@ -123,7 +124,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                       },
                       child: FocusScope(
                         node: ref.watch(tvContentFocusScopeProvider),
-                        child: widget.navigationShell,
+                        child: FocusTraversalGroup(
+                          policy: TvSpatialFocusTraversalPolicy(),
+                          child: widget.navigationShell,
+                        ),
                       ),
                     ),
                   ),

@@ -949,17 +949,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Future<void> _handleBack({bool forceExit = false}) async {
     final isTv = ref.read(isTvModeProvider);
-    if (isTv && _tvFocusZone == TvPlayerFocusZone.controls) {
-      setState(() => _tvFocusZone = TvPlayerFocusZone.timeline);
-      return;
-    }
-    if (isTv && _controlsVisible && !forceExit) {
-      setState(() => _controlsVisible = false);
-      return;
-    }
-    if (!isTv && !forceExit && _isFullscreen) {
-      await _toggleFullscreen();
-      return;
+    if (!forceExit) {
+      if (!_controlsVisible) {
+        _onUserInteraction();
+        if (isTv) {
+          setState(() => _tvFocusZone = TvPlayerFocusZone.timeline);
+        }
+        return;
+      }
+      if (!isTv && _isFullscreen) {
+        await _toggleFullscreen();
+        return;
+      }
     }
 
     _cancelAutoHideTimer();
@@ -1081,7 +1082,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             onVolumeChanged: _onVolumeChanged,
             onToggleMute: _toggleMute,
             onToggleFullscreen: isTv ? null : () => _toggleFullscreen(),
-            onBack: () => _handleBack(forceExit: isTv),
+            onBack: _handleBack,
             onUserInteraction: _onUserInteraction,
             onSeek: _onSeek,
             onScrubbingChanged: _onScrubbingChanged,
@@ -1159,7 +1160,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await _handleBack(forceExit: isTv);
+        await _handleBack();
       },
       child: Scaffold(
         backgroundColor: showFullscreen ? Colors.black : AppColors.background,

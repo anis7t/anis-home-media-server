@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/player/infrastructure/media_kit_player_adapter.dart';
 
 void main() {
   group('Hardware Decoder Fallback & Driver Lock Protection Tests', () {

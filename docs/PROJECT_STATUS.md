@@ -29,6 +29,19 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-02 — Android TV & Fire TV Player Back Behaviour (Phase 3 Complete)
+
+**Deliverable:** Resolved the TV Back button regression during video playback where pressing Back immediately terminated playback and exited to library/details. Re-established the intuitive 2-step TV remote transport model:
+1. **First Back Press (Controls Hidden):** When controls are hidden during active playback, pressing Back (`LogicalKeyboardKey.escape`, `LogicalKeyboardKey.goBack`, or Android OS `PopScope`) reveals the player controls, resets the auto-hide timer, restores player focus to the timeline scrubber (`_tvFocusZone = TvPlayerFocusZone.timeline`), and consumes the event without stopping playback or exiting.
+2. **Second Back Press (Controls Visible):** When controls are already visible, pressing Back executes the standard player exit lifecycle: cancels timers, flushes/disposes watch progress, stops the media controller, and pops the player route cleanly.
+3. **Removed Force-Exit Bypass:** Eliminated `forceExit: isTv` from `PopScope` and `onHandleBack(forceExit: true)` from `PlayerKeyDispatcher` when controls are hidden. All 248 Flutter tests pass with zero analyzer issues.
+
+### 2026-10-02 — 2D Weighted Spatial Focus Traversal Policy (Phase 2 Complete)
+
+**Deliverable:** Fixed intermittent D-pad Up/Down navigation skipping where visually adjacent focusable elements were bypassed due to Flutter's default 1D band-culling in `DirectionalFocusTraversalPolicyMixin`.
+1. **`TvSpatialFocusTraversalPolicy`:** Created a custom 2D directional traversal policy (`lib/core/navigation/tv_spatial_focus_traversal_policy.dart`) implementing weighted vector scoring (`score = Δprimary * 4.0 + Δorthogonal * 1.0 + Δalign * 0.25`) with a 60% row/column visual overlap gate.
+2. **App-Wide Registration:** Attached policy to `MediaServerApp` root builder in `app.dart` and `tvContentFocusScopeProvider` in `app_shell.dart`. Upgraded preset server chips in `connection_screen.dart` to `TvFocusable`. All spatial focus tests pass.
+
 ### 2026-10-01 — Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention
 
 **Deliverable:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`), enabling zero-stutter hardware-accelerated playback across all standard and non-16-byte-aligned video files (e.g. *Scary Movie* at 1916×800) alongside automatic dynamic software decoding (CPU fallback).

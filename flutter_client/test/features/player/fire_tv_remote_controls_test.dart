@@ -264,7 +264,7 @@ void main() {
       expect(find.byType(SubtitleTrackSheet), findsOneWidget);
     });
 
-    testWidgets('Back / Escape key dismisses visible controls overlay', (tester) async {
+    testWidgets('Back / Escape key exits when controls are visible', (tester) async {
       final controller = RemoteTestPlayerController();
       await tester.pumpWidget(createTestApp(controller));
       controller.emitState(PlayerPlaybackState.playing);
@@ -278,15 +278,38 @@ void main() {
         isTrue,
       );
 
-      // Press Back / Escape key
+      // Press Back / Escape key with controls visible -> exits player
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Controls are now hidden
+      expect(controller.stopCalled, isTrue);
+    });
+
+    testWidgets('Back / Escape key reveals controls when hidden without stopping playback', (tester) async {
+      final controller = RemoteTestPlayerController();
+      await tester.pumpWidget(createTestApp(controller));
+      controller.emitState(PlayerPlaybackState.playing);
+      controller.emitPosition(const Duration(minutes: 10));
+      controller.emitDuration(const Duration(minutes: 90));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Wait for auto-hide
+      await tester.pump(const Duration(seconds: 5));
       expect(
         tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay)).isVisible,
         isFalse,
       );
+
+      // Press Back / Escape key when controls are hidden
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Controls should now be visible and playback still active
+      expect(
+        tester.widget<PlayerControlsOverlay>(find.byType(PlayerControlsOverlay)).isVisible,
+        isTrue,
+      );
+      expect(controller.stopCalled, isFalse);
     });
   });
 }

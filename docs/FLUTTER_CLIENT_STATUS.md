@@ -1,9 +1,9 @@
 # Flutter Client — Phase Status & Handoff
 
-> **Last updated:** 2026-10-01
+> **Last updated:** 2026-10-02
 > **Active branch:** `feat/flutter-production-player`
 > **Package ID:** `in.anisparvez.media_server_client`
-> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2), `3b535dcb` (TV Pass 2 Polish & PlayerScreen Segregation), `1a6914ec` (Fire TV Driver Lock & Software Fallback)
+> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2), `3b535dcb` (TV Pass 2 Polish & PlayerScreen Segregation), `1a6914ec` (Fire TV Driver Lock & Software Fallback), `b961df1a` (UX Bugs: Phase 1 Investigation, Phase 2 Spatial Traversal, Phase 3 Player Back)
 > **Purpose:** Persistent handoff document. **Read this before touching the Flutter client.**
 
 ---
@@ -28,12 +28,33 @@
 
 ---
 
-## Current State (2026-10-01, after TV Pass 2 + PlayerScreen Modularization)
+## Current State (2026-10-02, after UX Bug Fixes: Phase 2 Spatial Focus & Phase 3 Player Back)
 
-**Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements and `PlayerScreen` modularization.
-**Test Results (verified 2026-10-01):**
-- Flutter unit & widget tests: **205 passed, 5 skipped** (0 failures).
+**Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements, `PlayerScreen` modularization, 2D weighted spatial focus traversal, and 2-step player Back navigation.
+**Test Results (verified 2026-10-02):**
+- Flutter unit & widget tests: **248 passed, 12 skipped** (0 failures).
 - Flutter static analysis (`flutter analyze`): **0 issues found**.
+
+### TV Remote Player Back Key Behaviour (Phase 3 Complete)
+
+- **Issue:** During media playback on TV/Fire TV, pressing Back would immediately terminate playback and exit the player route if controls were hidden, while requiring multiple Back presses to unwind focus when controls were visible.
+- **Root Causes:**
+  1. `PopScope` passed `forceExit: isTv`, which forced immediate exit on TV and bypassed controls visibility checks.
+  2. In `player_key_dispatcher.dart`, when `!controlsVisible`, pressing Back (`LogicalKeyboardKey.escape` / `LogicalKeyboardKey.goBack`) invoked `onHandleBack(forceExit: true)`.
+  3. When controls were visible, Back unwound focus from Zone 2 to Zone 1 and hid controls (`onHideControls()`) rather than performing normal player exit.
+- **Implemented Fix (2-Step TV Remote Model):**
+  - **First Back Press (Controls Hidden):** Back calls `onUserInteraction()` and `onSetTvFocusZone(TvPlayerFocusZone.timeline)`, revealing controls, resetting the auto-hide timer, restoring timeline scrubber focus, and consuming the event without stopping playback or exiting.
+  - **Second Back Press (Controls Visible):** Back invokes `onHandleBack(forceExit: false)` and performs normal player exit: cancels timers, flushes/disposes watch progress, stops the media controller, and pops the route cleanly.
+  - `PopScope` calls `_handleBack()` without `forceExit: isTv`. All 14 remote tests and 248 total tests pass.
+
+### 2D Weighted Spatial Focus Traversal Policy (Phase 2 Complete)
+
+- **Issue:** Flutter's default `DirectionalFocusTraversalPolicyMixin` clips focus candidate search to strict 1D geometric bands. When navigating D-pad Up/Down, focus skipped adjacent elements that did not horizontally overlap (e.g. preset chips in connection settings, staggered cards in grids).
+- **Implemented Fix:**
+  - Implemented `TvSpatialFocusTraversalPolicy` (`lib/core/navigation/tv_spatial_focus_traversal_policy.dart`), calculating directional candidate scores via weighted 2D vector distance:
+    $$\text{score} = \Delta\text{primary} \times 4.0 + \Delta\text{orthogonal} \times 1.0 + \Delta\text{align} \times 0.25$$
+  - Enforced a 60% visual row/column overlap gate (`overlapRatio > 0.6`).
+  - Attached app-wide to `MediaServerApp` root builder in `app.dart` and `tvContentFocusScopeProvider` in `app_shell.dart`. Upgraded connection preset chips to `TvFocusable`.
 
 ### Hardware Playback Hardening: Fire TV Stick 4K Driver Lock Prevention & Software Fallback
 
