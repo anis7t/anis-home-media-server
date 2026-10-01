@@ -6,6 +6,17 @@ import '../../domain/tv_player_focus.dart';
 
 /// Centralized keyboard, desktop shortcut, and 10-foot TV remote key event dispatcher.
 class PlayerKeyDispatcher {
+  /// Returns the accelerated seek step in seconds based on how many consecutive
+  /// D-pad hold repeats have fired.  Mirrors the feel of VLC / Kodi:
+  ///   0–3  repeats → 10 s
+  ///   4–8  repeats → 15 s
+  ///   9+   repeats → 30 s
+  static int _holdStep(int holdCount) {
+    if (holdCount < 4) return 10;
+    if (holdCount < 9) return 15;
+    return 30;
+  }
+
   static bool handleKeyEvent({
     required KeyEvent event,
     required BuildContext context,
@@ -32,8 +43,13 @@ class PlayerKeyDispatcher {
     required void Function(double volume) onVolumeChanged,
     required void Function(String message, {IconData? icon}) onShowHudToast,
     required VoidCallback onToggleFullscreen,
+    // D-pad hold seek: number of consecutive key-repeat events for this direction
+    int dpadHoldCount = 0,
+    // Called after every D-pad timeline seek so the caller can show a preview frame
+    void Function(Duration targetPosition)? onRequestSeekPreview,
   }) {
-    if (event is! KeyDownEvent) return false;
+    // Accept both initial key-down and held key-repeat events
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return false;
 
@@ -74,12 +90,14 @@ class PlayerKeyDispatcher {
       if (!controlsVisible) {
         if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
           onUserInteraction();
-          onSeekRelative(-10);
+          final step = _holdStep(dpadHoldCount);
+          onSeekRelative(-step);
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
           return true;
         } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
           onUserInteraction();
-          onSeekRelative(10);
+          final step = _holdStep(dpadHoldCount);
+          onSeekRelative(step);
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
           return true;
         } else if (key == LogicalKeyboardKey.select ||
@@ -127,10 +145,15 @@ class PlayerKeyDispatcher {
       // D-Pad LEFT
       if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
         if (tvFocusZone == TvPlayerFocusZone.timeline) {
-          onSeekRelative(-10);
+          final step = _holdStep(dpadHoldCount);
+          onSeekRelative(-step);
+          if (onRequestSeekPreview != null) {
+            onRequestSeekPreview(Duration.zero); // caller resolves actual target
+          }
           return true;
         } else {
-          if (tvFocusedControlIndex > 0) {
+          // Only move focus on fresh key-down, not on held repeats
+          if (event is KeyDownEvent && tvFocusedControlIndex > 0) {
             onSetTvFocusedControlIndex(tvFocusedControlIndex - 1);
           }
           return true;
@@ -140,10 +163,15 @@ class PlayerKeyDispatcher {
       // D-Pad RIGHT
       if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
         if (tvFocusZone == TvPlayerFocusZone.timeline) {
-          onSeekRelative(10);
+          final step = _holdStep(dpadHoldCount);
+          onSeekRelative(step);
+          if (onRequestSeekPreview != null) {
+            onRequestSeekPreview(Duration.zero); // caller resolves actual target
+          }
           return true;
         } else {
-          if (tvFocusedControlIndex < tvControlCount - 1) {
+          // Only move focus on fresh key-down, not on held repeats
+          if (event is KeyDownEvent && tvFocusedControlIndex < tvControlCount - 1) {
             onSetTvFocusedControlIndex(tvFocusedControlIndex + 1);
           }
           return true;

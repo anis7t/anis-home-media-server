@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -187,6 +188,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   CancelToken? _previewCancelToken;
   CancelToken? _subtitlesCancelToken;
   bool _isScrubbing = false;
+
+  // D-pad hold-seek state (TV)
+  int _dpadHoldCount = 0;
+  int _dpadHoldDirection = 0; // -1 = left, 1 = right, 0 = none
+  Timer? _dpadHoldResetTimer;
 
   final FocusNode _keyboardFocusNode = FocusNode();
 
@@ -994,8 +1000,56 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
   }
 
+  /// Computes the preview frame index for [target] using loaded preview metadata.
+  /// Returns null when no metadata is available.
+  int? _computeFrameIndex(Duration target) {
+    final meta = _previewMeta;
+    if (meta == null) return null;
+    final interval = (meta['interval'] as num?)?.toDouble() ?? 0.0;
+    final count = (meta['count'] as num?)?.toInt() ?? 0;
+    if (interval <= 0 || count <= 0) return null;
+    final seconds = target.inMilliseconds / 1000.0;
+    return (seconds / interval).floor().clamp(0, count - 1);
+  }
+
+  /// Called by [PlayerKeyDispatcher] after every D-pad timeline seek.
+  /// Requests a preview frame for the current (post-seek) position.
+  void _onDpadSeekPreviewRequest(Duration _) {
+    // Use the latest known transport position (already updated by _seekRelative)
+    final frameIndex = _computeFrameIndex(_position);
+    if (frameIndex != null) {
+      _seekPreviewController.requestFrame(frameIndex);
+    }
+  }
+
   bool _handleKeyEvent(KeyEvent event) {
     final isTv = ref.read(isTvModeProvider);
+    // Track consecutive D-pad hold repeats for step acceleration
+    final key = event.logicalKey;
+    final isLeftKey = key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ;
+    final isRightKey = key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL;
+    if (isLeftKey || isRightKey) {
+      final dir = isLeftKey ? -1 : 1;
+      if (event is KeyRepeatEvent && _dpadHoldDirection == dir) {
+        _dpadHoldCount++;
+      } else {
+        // Fresh key-down or direction changed — reset count
+        _dpadHoldCount = 0;
+        _dpadHoldDirection = dir;
+      }
+      // Auto-reset after 500ms of no key events
+      _dpadHoldResetTimer?.cancel();
+      _dpadHoldResetTimer = Timer(const Duration(milliseconds: 500), () {
+        _dpadHoldCount = 0;
+        _dpadHoldDirection = 0;
+      });
+    } else if (event is KeyDownEvent) {
+      // Non-directional key: clear hold state
+      _dpadHoldCount = 0;
+      _dpadHoldDirection = 0;
+      _dpadHoldResetTimer?.cancel();
+    }
+
     return PlayerKeyDispatcher.handleKeyEvent(
       event: event,
       context: context,
@@ -1022,6 +1076,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       onVolumeChanged: _onVolumeChanged,
       onShowHudToast: (msg, {icon}) => _showHudToast(msg, icon: icon),
       onToggleFullscreen: _toggleFullscreen,
+      dpadHoldCount: _dpadHoldCount,
+      onRequestSeekPreview: _previewMeta != null ? _onDpadSeekPreviewRequest : null,
     );
   }
 
@@ -1087,6 +1143,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _hudTimer?.cancel();
     _seekSettleTimer?.cancel();
     _doubleTapSeekTimer?.cancel();
+    _dpadHoldResetTimer?.cancel();
     _metaCancelToken?.cancel();
     _previewCancelToken?.cancel();
     _subtitlesCancelToken?.cancel();
