@@ -3,7 +3,7 @@
 > **Last updated:** 2026-10-01
 > **Active branch:** `feat/flutter-production-player`
 > **Package ID:** `in.anisparvez.media_server_client`
-> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2)
+> **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2), `3b535dcb` (TV Pass 2 Polish & PlayerScreen Segregation)
 > **Purpose:** Persistent handoff document. **Read this before touching the Flutter client.**
 
 ---
