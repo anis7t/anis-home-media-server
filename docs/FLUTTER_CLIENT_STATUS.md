@@ -441,10 +441,40 @@ ConnectionScreen → LibraryScreen → MovieDetailsScreen → PlayerScreen (prod
 2. **Collapsible Obsidian Side Rail (`TvSideNavigationRail`):** 68dp collapsed / 220dp expanded side navigation rail replacing bottom navigation on TV mode.
 3. **Borderless Fullscreen TV Cinema Player:** Automatically removes portrait split-view on TV, mapping D-pad remote transport keys (Play/Pause, Rewind, Fast Forward, Seek ±10s).
 4. **Pass 2 Refinements (Focus Traversal & Debounced Exit):**
-   - Edge traversal bridge (`TvDirectionalFocusAction`) jumping from content column 0 directly to the TV side rail.
-   - Rail-to-content D-pad Right navigation restoring focus to the content area.
-   - Debounced root exit confirmation dialog (`TvExitDialog`, 350ms dismissal gate, focus trapped on Cancel with red glow).
-   - TV Settings card redesign with focus glow and switch exclusion to eliminate focus traps.
+   - **Debounced Double-Back & Root Exit Focus Trap:**
+     - Converted `TvExitDialog` to a stateful dialog with an internal `_isShowing` static guard, `barrierDismissible: false`, and a 350ms dismissal gate (`_canDismissOnBack`).
+     - Added 350ms debounce (`_lastBackTime`) to `AppShell._handleBack(context)`.
+     - Trapped initial focus on "Cancel" with red obsidian glow (`AppColors.brandRed`), D-pad Right navigating to "Exit". Back press cancels without exiting.
+   - **Directional Traversal Bridge (`TvDirectionalFocusAction`):**
+     - Wrapped content area in `Actions(actions: { DirectionalFocusIntent: TvDirectionalFocusAction(...) })`.
+     - Intercepts boundary traversal when `focusInDirection(TraversalDirection.left)` returns `false` at column 0.
+     - Automatically routes focus to `tvRailFocusNodesProvider[currentIndex]` and expands `TvSideNavigationRail` (68dp to 220dp).
+   - **Rail-to-Content Focus Restoration:**
+     - Pressing D-pad Right on an expanded rail item collapses the rail back to 68dp and restores focus cleanly to the active content card.
+     - Stripped `escape` and `goBack` handlers from `_TvRailItem.onKeyEvent` so back events bubble exclusively to `AppShell._handleBack()`.
+   - **TV Settings 10-Foot Architecture:**
+     - Clean single "Settings" heading on TV (omitting redundant top branding/logo).
+     - Full-width focusable cards for Server Connection, Device ID, and Update Channel options with red active glow borders.
+     - Wrapped switches (`Switch.adaptive`) in `ExcludeFocus` to eliminate focus traps.
+   - **TV Remote Player Polish:**
+     - Bound 2-zone remote transport model.
+     - Eliminated D-pad Up/Down volume manipulation on TV to prevent conflicts with native HDMI-CEC TV hardware volume.
+     - Back key hierarchy: first Back dismisses visible on-screen controls; second Back stops playback, flushes watch progress, and returns to Movie Details.
+
+### Known Observations & Technical Focus for Next Session
+1. **Remote Back Button Twin-Dispatch & Exit Dialog Dismissal:**
+   - Physical Android TV remotes generate both a Flutter key event (`KeyDownEvent: goBack`) and an OS activity callback (`handlePopRoute`).
+   - The current 350ms gate in `TvExitDialog` ensures that rapid twin events or accidental double-taps do not instantly dismiss the dialog.
+   - *Observation for Next Session:* If the user wants the dialog to **never** dismiss on Back (strictly requiring D-pad selection of "Cancel" or "Exit"), `_canDismissOnBack` can be removed in favor of explicit button selection only (`Navigator.of(context).pop(false)` on Cancel).
+2. **Video Player Buffering & Transcoding Latency on Fire TV:**
+   - Fire TV Stick 4K communicates over LAN Wi-Fi to Waitress (`http://192.168.1.16:8000`).
+   - Direct-playable MP4/AAC streams (*Batman: Knightfall*) start within 1-2s. MKV/HEVC streams requiring dual-GPU HLS chunked transcoding (AMD Vega 8 + RX 560X) require 3-5s for chunk 0/1 encoding and segment delivery.
+   - *Observation for Next Session:* If stream buffering persists on specific media (*Coyote vs. Acme*), inspect server transcode logs (`cache/hls/`) or media container codec parameters via `/api/media-info/<filename>`.
+3. **Focus Traversal & Viewport Auto-Scroll:**
+   - In `TvFocusable`, viewport auto-scroll uses `keepVisibleAtEnd` when `alignment` is null.
+   - Ensure that rapidly scrubbing through long movie grids or settings cards keeps the focused card centered without jarring scroll leaps.
+4. **Player Remote Scrubbing & Controls Fade:**
+   - Pressing D-pad Left/Right in `PlayerScreen` scrubs ±10s. If controls fade out after 4s of inactivity during scrubbing, verify that subsequent D-pad clicks smoothly resurrect the HUD.
 
 ---
 
