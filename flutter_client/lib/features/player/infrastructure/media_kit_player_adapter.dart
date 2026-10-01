@@ -10,7 +10,15 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   VideoController? _videoController;
 
   VideoController get videoController =>
-      _videoController ??= VideoController(player);
+      _videoController ??= VideoController(
+        player,
+        configuration: VideoControllerConfiguration(
+          enableHardwareAcceleration: true,
+          hwdec: defaultTargetPlatform == TargetPlatform.android
+              ? 'mediacodec-copy'
+              : 'auto',
+        ),
+      );
 
   final _stateController = StreamController<PlayerPlaybackState>.broadcast();
   final _dimensionsController = StreamController<VideoDimensions>.broadcast();
@@ -22,10 +30,33 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   VideoDimensions _dimensions = VideoDimensions.zero;
   PlayerTrackInfo _trackInfo = const PlayerTrackInfo();
 
+  bool _hwdecFailed = false;
+  bool _firstFrameRendered = false;
+  Timer? _firstFrameTimeout;
+
   MediaKitPlayerAdapter({Player? player, VideoController? videoController})
       : player = player ?? Player() {
     _videoController = videoController;
     _initStreams();
+  }
+
+  /// Automatically fall back to software decoding (libavcodec) if hardware decoding locks or fails.
+  Future<void> fallbackToSoftwareDecoder() async {
+    if (_hwdecFailed) return;
+    _hwdecFailed = true;
+    debugPrint('[MediaKitPlayerAdapter] Falling back to software decoding (hwdec: no)');
+    try {
+      final nativePlatform = player.platform;
+      if (nativePlatform != null) {
+        await (nativePlatform as dynamic).setProperty('hwdec', 'no');
+        // Trigger a seek to current position so mpv flushes decoder buffers cleanly
+        if (player.state.playing || player.state.position > Duration.zero) {
+          await player.seek(player.state.position);
+        }
+      }
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Failed to switch hwdec property: $e');
+    }
   }
 
   void _initStreams() {
@@ -57,6 +88,19 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
 
     _subscriptions.add(player.stream.error.listen((errorMsg) {
       debugPrint('[MediaKitPlayerAdapter] Engine Error: $errorMsg');
+      if (!_hwdecFailed && defaultTargetPlatform == TargetPlatform.android) {
+        final lower = errorMsg.toLowerCase();
+        if (lower.contains('video') ||
+            lower.contains('codec') ||
+            lower.contains('mediacodec') ||
+            lower.contains('vd') ||
+            lower.contains('decoder') ||
+            lower.contains('hwdec') ||
+            lower.contains('surface')) {
+          fallbackToSoftwareDecoder();
+          return;
+        }
+      }
       _updateState(PlayerPlaybackState.error);
     }));
 
@@ -211,6 +255,24 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
       }
     }
 
+    _firstFrameRendered = false;
+    _firstFrameTimeout?.cancel();
+    if (!_hwdecFailed && defaultTargetPlatform == TargetPlatform.android) {
+      // If hardware decoder drops frames or fails to paint within 4s, fallback to CPU
+      _firstFrameTimeout = Timer(const Duration(seconds: 4), () {
+        if (!_firstFrameRendered) {
+          debugPrint('[MediaKitPlayerAdapter] First frame not rendered after 4s; falling back to software decoding');
+          fallbackToSoftwareDecoder();
+        }
+      });
+      try {
+        videoController.waitUntilFirstFrameRendered.then((_) {
+          _firstFrameRendered = true;
+          _firstFrameTimeout?.cancel();
+        }).catchError((_) {});
+      } catch (_) {}
+    }
+
     await player.play();
   }
 
@@ -271,6 +333,7 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
 
   @override
   Future<void> dispose() async {
+    _firstFrameTimeout?.cancel();
     for (final s in _subscriptions) {
       await s.cancel();
     }

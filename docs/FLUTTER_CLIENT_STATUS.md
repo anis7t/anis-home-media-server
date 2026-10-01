@@ -32,8 +32,16 @@
 
 **Git status:** `feat/flutter-production-player` — working branch with Pass 2 TV leanback refinements and `PlayerScreen` modularization.
 **Test Results (verified 2026-10-01):**
-- Flutter unit & widget tests: **204 passed, 5 skipped** (0 failures).
+- Flutter unit & widget tests: **205 passed, 5 skipped** (0 failures).
 - Flutter static analysis (`flutter analyze`): **0 issues found**.
+
+### Hardware Playback Hardening: Fire TV Stick 4K Driver Lock Prevention & Software Fallback
+
+During 10-foot playback on the Amazon Fire TV Stick 4K (`AFTMM`, MediaTek MT8695/MT8696 + PowerVR GE9215 GPU), certain titles (such as *Scary Movie* at 1916×800) previously locked the video pipeline: audio would play while video frames froze or remained completely black.
+- **Root Cause:** Zero-copy `hwdec: mediacodec` passes decoded hardware buffers directly to Android `SurfaceTexture` / `ANativeWindow` as EGLImages. When video dimensions are not 16-byte-aligned (e.g. 1916px width), PowerVR rejects the EGLImage (`E IMGSRV : IsTextureConsistent: IMGEGLImage is not consistent`), leaving display fences unsignaled. The MediaTek kernel driver then deadlocks indefinitely (`E MDP : wait input fence[353] timeout`), causing 100% frame drops across the device.
+- **Solution — `mediacodec-copy`:** In `MediaKitPlayerAdapter`, Android configuration now specifies `hwdec: 'mediacodec-copy'`. Frames are copied and rendered via standard OpenGL ES texture shaders (`vo=gpu`), eliminating direct ANativeWindow fence sharing with the display processor.
+- **Dynamic Software Fallback:** If hardware decoding encounters any failure or if the first frame fails to render within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`), the adapter dynamically invokes `fallbackToSoftwareDecoder()`, setting `hwdec: 'no'` (libavcodec CPU decoding) and issuing a micro-seek to cleanly flush decoder buffers without interrupting audio.
+- **Verification:** Verified with hardware playback on physical Fire TV Stick 4K (`192.168.1.70:5555`): *Batman: Knightfall* (1920×1080) and *Scary Movie* (1916×800) render full-screen video with zero dropped frames.
 
 ### PlayerScreen Modularization & Architecture Segregation (2,283 → 1,232 lines)
 

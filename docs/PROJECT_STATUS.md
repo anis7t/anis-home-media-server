@@ -29,6 +29,16 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-01 — Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention
+
+**Deliverable:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`), enabling zero-stutter hardware-accelerated playback across all standard and non-16-byte-aligned video files (e.g. *Scary Movie* at 1916×800) alongside automatic dynamic software decoding (CPU fallback).
+
+**Key Architectural Changes:**
+1. **`mediacodec-copy` Decoupled Pipeline:** Configured `VideoControllerConfiguration(hwdec: 'mediacodec-copy')` on Android in `MediaKitPlayerAdapter`. By copying decoded frames rather than sharing raw zero-copy `SurfaceTexture` hardware buffers with EGL, PowerVR texture inconsistency (`E IMGSRV : IsTextureConsistent: IMGEGLImage is not consistent`) and MediaTek MDP fence lockups (`E MDP : wait input fence[353] timeout`) are eliminated completely.
+2. **Dynamic Software Fallback (`fallbackToSoftwareDecoder`):** If hardware decoding encounters any driver errors or if the first video frame is not rendered within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`), the adapter dynamically sets `hwdec: 'no'` (libavcodec CPU decoding) and flushes decoder buffers via a position seek without interrupting audio or requiring an app restart.
+3. **Broadened Driver Error Keyword Detection:** Catch and recover from `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface` errors from the mpv stream error dispatcher.
+4. **Physical Verification:** Verified full-screen hardware-accelerated video playback on physical Amazon Fire TV Stick 4K (`192.168.1.70:5555`) with *Batman: Knightfall* (1920×1080) and *Scary Movie* (1916×800) with zero dropped frames. Built and deployed APK `1.2.12` (build 132). Unit tests: 205 passed, 0 analyzer issues.
+
 ### 2026-10-01 — PlayerScreen Architecture Segregation & Modularization (2,283 → 1,232 lines)
 
 **Deliverable:** Modularized the monolithic `player_screen.dart` (which exceeded 2,280 lines) into dedicated, highly focused domain, infrastructure, and presentation components. Extracted 5 decoupled modules, reducing `player_screen.dart` by over 1,050 lines (~46% line reduction) while preserving 100% backward compatibility, mobile portrait split-view, and 10-foot Fire TV / Android TV borderless fullscreen cinema invariants.
