@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/player/domain/player_models.dart';
 import 'package:media_server_client/features/player/presentation/widgets/playback_speed_sheet.dart';
@@ -107,12 +108,14 @@ void main() {
       ];
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SubtitleTrackSheet(
-              tracks: tracks,
-              currentTrack: tracks[1],
-              onTrackSelected: (t) => selectedTrack = t,
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleTrackSheet(
+                tracks: tracks,
+                currentTrack: tracks[1],
+                onTrackSelected: (t) => selectedTrack = t,
+              ),
             ),
           ),
         ),

@@ -11,7 +11,7 @@ class PlayerKeyDispatcher {
   ///   0–3  repeats → 10 s
   ///   4–8  repeats → 15 s
   ///   9+   repeats → 30 s
-  static int _holdStep(int holdCount) {
+  static int holdStep(int holdCount) {
     if (holdCount < 4) return 10;
     if (holdCount < 9) return 15;
     return 30;
@@ -29,7 +29,7 @@ class PlayerKeyDispatcher {
     required int tvFocusedControlIndex,
     required int tvControlCount,
     required VoidCallback onTogglePlayPause,
-    required void Function(int seconds) onSeekRelative,
+    required void Function(int seconds, {bool direct}) onSeekRelative,
     required VoidCallback onUserInteraction,
     required void Function(TvPlayerFocusZone zone) onSetTvFocusZone,
     required void Function(int index) onSetTvFocusedControlIndex,
@@ -47,6 +47,10 @@ class PlayerKeyDispatcher {
     int dpadHoldCount = 0,
     // Called after every D-pad timeline seek so the caller can show a preview frame
     void Function(Duration targetPosition)? onRequestSeekPreview,
+    // TV D-pad timeline scrubbing state
+    bool isDpadScrubbing = false,
+    VoidCallback? onCommitDpadScrub,
+    VoidCallback? onCancelDpadScrub,
   }) {
     // Accept both initial key-down and held key-repeat events
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
@@ -71,11 +75,11 @@ class PlayerKeyDispatcher {
       return true;
     } else if (key == LogicalKeyboardKey.mediaRewind ||
         key == LogicalKeyboardKey.mediaTrackPrevious) {
-      onSeekRelative(-15);
+      onSeekRelative(-15, direct: true);
       return true;
     } else if (key == LogicalKeyboardKey.mediaFastForward ||
         key == LogicalKeyboardKey.mediaTrackNext) {
-      onSeekRelative(15);
+      onSeekRelative(15, direct: true);
       return true;
     }
 
@@ -86,19 +90,44 @@ class PlayerKeyDispatcher {
       // D-pad Up/Down navigates between Timeline (Zone 1) & Controls (Zone 2).
       // -------------------------------------------------------------
 
+      // If currently D-pad scrubbing along timeline:
+      if (isDpadScrubbing) {
+        if (key == LogicalKeyboardKey.select ||
+            key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter ||
+            key == LogicalKeyboardKey.space ||
+            key == LogicalKeyboardKey.keyK) {
+          onCommitDpadScrub?.call();
+          return true;
+        } else if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
+          onCancelDpadScrub?.call();
+          return true;
+        } else if (key == LogicalKeyboardKey.arrowDown) {
+          onCancelDpadScrub?.call();
+          onSetTvFocusZone(TvPlayerFocusZone.controls);
+          return true;
+        }
+      }
+
       // If controls are hidden: any D-pad input reveals controls
       if (!controlsVisible) {
         if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
           onUserInteraction();
-          final step = _holdStep(dpadHoldCount);
+          final step = holdStep(dpadHoldCount);
           onSeekRelative(-step);
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
+          if (onRequestSeekPreview != null) {
+            onRequestSeekPreview(Duration.zero);
+          }
           return true;
         } else if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
           onUserInteraction();
-          final step = _holdStep(dpadHoldCount);
+          final step = holdStep(dpadHoldCount);
           onSeekRelative(step);
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
+          if (onRequestSeekPreview != null) {
+            onRequestSeekPreview(Duration.zero);
+          }
           return true;
         } else if (key == LogicalKeyboardKey.select ||
             key == LogicalKeyboardKey.enter ||
@@ -114,8 +143,7 @@ class PlayerKeyDispatcher {
           onSetTvFocusZone(TvPlayerFocusZone.timeline);
           return true;
         } else if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-          onUserInteraction();
-          onSetTvFocusZone(TvPlayerFocusZone.timeline);
+          onHandleBack(forceExit: false);
           return true;
         }
         return false;
@@ -123,6 +151,7 @@ class PlayerKeyDispatcher {
 
       // Controls ARE currently visible:
       onUserInteraction(); // Resets auto-hide timer
+
 
       // D-Pad UP: Move from controls into timeline
       if (key == LogicalKeyboardKey.arrowUp) {
@@ -145,7 +174,7 @@ class PlayerKeyDispatcher {
       // D-Pad LEFT
       if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ) {
         if (tvFocusZone == TvPlayerFocusZone.timeline) {
-          final step = _holdStep(dpadHoldCount);
+          final step = holdStep(dpadHoldCount);
           onSeekRelative(-step);
           if (onRequestSeekPreview != null) {
             onRequestSeekPreview(Duration.zero); // caller resolves actual target
@@ -163,7 +192,7 @@ class PlayerKeyDispatcher {
       // D-Pad RIGHT
       if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL) {
         if (tvFocusZone == TvPlayerFocusZone.timeline) {
-          final step = _holdStep(dpadHoldCount);
+          final step = holdStep(dpadHoldCount);
           onSeekRelative(step);
           if (onRequestSeekPreview != null) {
             onRequestSeekPreview(Duration.zero); // caller resolves actual target

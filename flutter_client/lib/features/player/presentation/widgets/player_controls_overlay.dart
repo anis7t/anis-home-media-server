@@ -52,12 +52,14 @@ class PlayerControlsOverlay extends StatefulWidget {
   final bool isTv;
   final bool isTimelineFocused;
   final int tvFocusedControlIndex;
+  final Duration? dpadScrubPosition;
 
   const PlayerControlsOverlay({
     super.key,
     required this.title,
     this.subtitle,
     required this.isVisible,
+
     required this.isPlaying,
     required this.isBuffering,
     required this.position,
@@ -93,7 +95,9 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.isTv = false,
     this.isTimelineFocused = false,
     this.tvFocusedControlIndex = -1,
+    this.dpadScrubPosition,
   });
+
 
   @override
   State<PlayerControlsOverlay> createState() => _PlayerControlsOverlayState();
@@ -407,8 +411,10 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                           previewStateOverride: widget.previewStateOverride,
                           touchTargetHeight: MediaQuery.of(context).size.width < 620 ? 16.0 : 22.0,
                           isFocused: widget.isTv && widget.isTimelineFocused,
+                          dpadScrubPosition: widget.dpadScrubPosition,
                         ),
                       ),
+
 
                       // Control buttons row with responsive layout
                       LayoutBuilder(

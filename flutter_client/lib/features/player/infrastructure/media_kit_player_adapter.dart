@@ -307,7 +307,13 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
       await player.setSubtitleTrack(nativeSub);
     }
     _updateTracks();
+    if (track.isExternal || track.id == 'no' || track.id == 'auto') {
+      _trackInfo = _trackInfo.copyWith(currentSubtitleTrack: track);
+      _tracksController.add(_trackInfo);
+    }
   }
+
+
 
   @override
   Future<void> setAudioTrack(PlayerAudioTrack track) async {

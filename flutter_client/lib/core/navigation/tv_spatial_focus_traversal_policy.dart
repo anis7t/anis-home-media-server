@@ -67,7 +67,26 @@ class TvSpatialFocusTraversalPolicy extends FocusTraversalPolicy {
     final nearestScope = currentNode.nearestScope;
     if (nearestScope == null) return false;
 
-    final focusedChild = nearestScope.focusedChild ?? currentNode;
+    final hasActiveChild = nearestScope.focusedChild != null &&
+        nearestScope.focusedChild != nearestScope &&
+        nearestScope.focusedChild!.context != null;
+
+    if (!hasActiveChild) {
+      final firstNode = findFirstFocusInDirection(currentNode, direction);
+      if (firstNode != null) {
+        final policy = switch (direction) {
+          TraversalDirection.up || TraversalDirection.left =>
+            ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+          TraversalDirection.down || TraversalDirection.right =>
+            ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        };
+        requestFocusCallback(firstNode, alignmentPolicy: policy);
+        return true;
+      }
+      return false;
+    }
+
+    final focusedChild = nearestScope.focusedChild!;
     final sourceRect = focusedChild.rect;
 
     final candidates = nearestScope.traversalDescendants
@@ -80,6 +99,7 @@ class TvSpatialFocusTraversalPolicy extends FocusTraversalPolicy {
     if (candidates.isEmpty) {
       return false;
     }
+
 
     FocusNode? bestCandidate;
     double bestScore = double.infinity;

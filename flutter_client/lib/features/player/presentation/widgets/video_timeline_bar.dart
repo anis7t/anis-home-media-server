@@ -16,6 +16,7 @@ class VideoTimelineBar extends StatefulWidget {
   final SeekPreviewState? previewStateOverride;
   final double touchTargetHeight;
   final bool isFocused;
+  final Duration? dpadScrubPosition;
 
   const VideoTimelineBar({
     super.key,
@@ -29,7 +30,9 @@ class VideoTimelineBar extends StatefulWidget {
     this.previewStateOverride,
     this.touchTargetHeight = 48.0,
     this.isFocused = false,
+    this.dpadScrubPosition,
   });
+
 
   @override
   State<VideoTimelineBar> createState() => _VideoTimelineBarState();
@@ -42,9 +45,15 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
   double _hoverFraction = 0.0;
 
   int? _computeFrameIndex(Duration target) {
-    if (widget.previewMeta == null) return null;
-    final interval = (widget.previewMeta!['interval'] as num?)?.toDouble() ?? 0.0;
-    final count = (widget.previewMeta!['count'] as num?)?.toInt() ?? 0;
+    final meta = widget.previewMeta;
+    final durationSec = widget.duration.inMilliseconds / 1000.0;
+    if (durationSec <= 0) return null;
+
+    final interval = (meta != null ? (meta['interval'] as num?)?.toDouble() : null) ??
+        (durationSec < 1800 ? 5.0 : (durationSec < 7200 ? 10.0 : 15.0));
+    final count = (meta != null ? (meta['count'] as num?)?.toInt() : null) ??
+        ((durationSec - 0.001) ~/ interval + 1);
+
     if (interval <= 0 || count <= 0) return null;
 
     final targetSeconds = target.inMilliseconds / 1000.0;
@@ -154,28 +163,38 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
     final playedFraction = totalMs > 0 ? (playedMs / totalMs).clamp(0.0, 1.0) : 0.0;
     final bufferedFraction = totalMs > 0 ? (bufferedMs / totalMs).clamp(0.0, 1.0) : 0.0;
 
-    final isActive = _isDragging || _isHovering || widget.isFocused;
-    final currentFraction = _isDragging ? _dragFraction : playedFraction;
+    final isDpadScrubbing = widget.dpadScrubPosition != null;
+    final dpadFraction = (isDpadScrubbing && totalMs > 0)
+        ? (widget.dpadScrubPosition!.inMilliseconds / totalMs).clamp(0.0, 1.0)
+        : playedFraction;
+
+    final isActive = _isDragging || _isHovering || isDpadScrubbing;
+    final currentFraction = _isDragging
+        ? _dragFraction
+        : (isDpadScrubbing ? dpadFraction : playedFraction);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final trackWidth = constraints.maxWidth;
         final previewFraction = _isDragging
             ? _dragFraction
-            : (_isHovering ? _hoverFraction : playedFraction);
+            : (isDpadScrubbing
+                ? dpadFraction
+                : (_isHovering ? _hoverFraction : playedFraction));
         final previewDuration = Duration(
           milliseconds: (previewFraction * totalMs).round(),
         );
 
         final previewState = widget.previewStateOverride ?? widget.seekPreviewController?.state;
-        final hasMetadata = widget.previewMeta != null &&
-            (widget.previewMeta!['count'] as num? ?? 0) > 0;
+        final hasMetadata = (widget.previewMeta != null &&
+            (widget.previewMeta!['count'] as num? ?? 0) > 0) || totalMs > 0;
         final displayedImageUrl = previewState?.displayedImageUrl;
 
         final showPreview = isActive && totalMs > 0;
-        final showImage = hasMetadata && (displayedImageUrl != null || (previewState?.isPendingDebounce ?? false));
+        final showImage = hasMetadata;
 
-        final cardWidth = showImage ? 112.0 : 64.0;
+
+        final cardWidth = showImage ? 187.0 : 64.0;
         final targetX = previewFraction * trackWidth;
         final clampedCardLeft = (targetX - (cardWidth / 2)).clamp(
           4.0,
@@ -323,16 +342,16 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Thumbnail Image (if metadata available)
+            // Thumbnail Image (if metadata available) - increased 67% (112x63 -> 187x105)
             if (showImage)
               SizedBox(
-                height: 63.0,
+                height: 105.0,
                 width: width,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     Container(color: const Color(0xFF0A0D14)),
-                    if (imageUrl != null)
+                    if (imageUrl != null && imageUrl.isNotEmpty)
                       Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
@@ -346,7 +365,7 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
                           );
                         },
                       ),
-                    if (isPending)
+                    if (isPending || (showImage && (imageUrl == null || imageUrl.isEmpty)))
                       Container(
                         color: Colors.black38,
                         child: const Center(
@@ -368,14 +387,14 @@ class _VideoTimelineBarState extends State<VideoTimelineBar> {
 
             // Timestamp pill
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 2.5, horizontal: 6.0),
-              color: Colors.black.withValues(alpha: 0.6),
+              padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 8.0),
+              color: Colors.black.withValues(alpha: 0.65),
               alignment: Alignment.center,
               child: Text(
                 _formatDuration(duration),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 10.5,
+                  fontSize: 12.0,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.2,
                   fontFeatures: [FontFeature.tabularFigures()],

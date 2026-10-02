@@ -56,21 +56,36 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     context.push(AppRoutes.movieDetails, extra: movie);
   }
 
-  Future<void> _onResumeWatching(MovieItem movie) async {
-    final baseUrl = ref.read(serverBaseUrlProvider);
-    final mediaUrl = '$baseUrl/media/${Uri.encodeComponent(movie.filename)}';
+  bool _isResumingWatching = false;
 
-    await context.push(
-      AppRoutes.player,
-      extra: {
-        'mediaUrl': mediaUrl,
-        'title': movie.title,
-        'subtitle': '${movie.year ?? ''} • ${movie.formattedRuntime}',
-        'startPosition': movie.position > 0
-            ? Duration(seconds: movie.position.toInt())
-            : null,
-      },
-    );
+  Future<void> _onResumeWatching(MovieItem movie) async {
+    if (_isResumingWatching) return;
+    _isResumingWatching = true;
+    try {
+      final baseUrl = ref.read(serverBaseUrlProvider);
+      final mediaUrl = '$baseUrl/media/${Uri.encodeComponent(movie.filename)}';
+
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      await context.push(
+        AppRoutes.player,
+        extra: {
+          'mediaUrl': mediaUrl,
+          'title': movie.title,
+          'subtitle': '${movie.year ?? ''} • ${movie.formattedRuntime}',
+          'startPosition': movie.position > 0
+              ? Duration(seconds: movie.position.toInt())
+              : null,
+          'mediaFilename': movie.filename,
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isResumingWatching = false);
+      } else {
+        _isResumingWatching = false;
+      }
+    }
 
     // The rail resumes from this list's MovieItem, so the list has to be
     // reloaded after playback - otherwise the next tap replays the position the

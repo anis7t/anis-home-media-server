@@ -1,5 +1,5 @@
 {
-  "lastVersionCode": 134,
+  "lastVersionCode": 138,
   "channels": {
     "production": {
       "version": "1.0.0",
@@ -7,10 +7,10 @@
       "publishedAt": "2026-09-25T00:00:00Z"
     },
     "developer": {
-      "version": "1.2.14",
-      "versionCode": 134,
-      "publishedAt": "2026-10-02T21:19:00.000000+00:00",
-      "sha256": "pending"
+      "version": "1.2.18",
+      "versionCode": 138,
+      "publishedAt": "2026-10-02T01:06:55.121623+00:00",
+      "sha256": "17e89fdbdd183439a26e13dda10dc95e5e17112246803e198b3e13708f6598f9"
     }
   }
 }

@@ -198,7 +198,7 @@ void main() {
       expect(controller.lastSeekTarget, const Duration(seconds: 600));
     });
 
-    testWidgets('arrowLeft and arrowRight keys seek -10s and +10s', (tester) async {
+    testWidgets('arrowLeft and arrowRight keys scrub timeline and Select commits seek', (tester) async {
       final controller = RemoteTestPlayerController();
       await tester.pumpWidget(createTestApp(controller));
       controller.emitState(PlayerPlaybackState.playing);
@@ -206,13 +206,17 @@ void main() {
       controller.emitDuration(const Duration(minutes: 90));
       await tester.pump(const Duration(milliseconds: 100));
 
-      // D-Pad Left: -10s from 600s -> 590s
+      // D-Pad Left: scrubs -10s from 600s -> 590s, Select commits seek
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pump(const Duration(milliseconds: 100));
       expect(controller.lastSeekTarget, const Duration(seconds: 590));
 
-      // D-Pad Right: +10s from 590s -> 600s
+      // D-Pad Right: scrubs +10s from 590s -> 600s, Select commits seek
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
       await tester.pump(const Duration(milliseconds: 100));
       expect(controller.lastSeekTarget, const Duration(seconds: 600));
     });

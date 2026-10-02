@@ -127,6 +127,13 @@ class SeekPreviewController {
     }
   }
 
+  /// Cancels pending timer and resets state.
+  void reset() {
+    cancelPending();
+    _state = const SeekPreviewState();
+    onStateChanged?.call(_state);
+  }
+
   void dispose() {
     _debounceTimer?.cancel();
   }

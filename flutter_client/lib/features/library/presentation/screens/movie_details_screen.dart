@@ -71,29 +71,44 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
     }
   }
 
+  bool _isLaunchingPlayer = false;
+
   Future<void> _launchPlayer({Duration? startPosition}) async {
+    if (_isLaunchingPlayer) return;
     final movie = _details?.movie ?? widget.initialMovie;
     if (movie == null) return;
 
-    final baseUrl = ref.read(serverBaseUrlProvider);
-    final mediaUrl = '$baseUrl/media/${Uri.encodeComponent(movie.filename)}';
+    _isLaunchingPlayer = true;
+    try {
+      final baseUrl = ref.read(serverBaseUrlProvider);
+      final mediaUrl = '$baseUrl/media/${Uri.encodeComponent(movie.filename)}';
 
-    final targetPosition =
-        startPosition ??
-        (movie.position > 10
-            ? Duration(seconds: movie.position.toInt())
-            : null);
+      final targetPosition =
+          startPosition ??
+          (movie.position > 10
+              ? Duration(seconds: movie.position.toInt())
+              : null);
 
-    await context.push(
-      AppRoutes.player,
-      extra: {
-        'mediaUrl': mediaUrl,
-        'title': movie.title,
-        'subtitle': '${movie.year ?? ''} • ${movie.formattedRuntime}',
-        'startPosition': targetPosition,
-        'mediaFilename': movie.filename,
-      },
-    );
+      // Unfocus details screen before pushing player so underlying route does not receive key events
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      await context.push(
+        AppRoutes.player,
+        extra: {
+          'mediaUrl': mediaUrl,
+          'title': movie.title,
+          'subtitle': '${movie.year ?? ''} • ${movie.formattedRuntime}',
+          'startPosition': targetPosition,
+          'mediaFilename': movie.filename,
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLaunchingPlayer = false);
+      } else {
+        _isLaunchingPlayer = false;
+      }
+    }
 
     // Refresh details and the shared library lists upon return to synchronize
     // watch position: the rail and grid resume from their own MovieItem, so a

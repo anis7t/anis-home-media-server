@@ -20,6 +20,7 @@ import '../domain/playback_mode.dart';
 import '../domain/player_controller_interface.dart';
 import '../domain/player_overlay_status.dart';
 import '../domain/seek_preview_controller.dart';
+import '../domain/subtitle_settings.dart';
 import '../domain/tv_player_focus.dart';
 import '../infrastructure/media_kit_player_adapter.dart';
 import '../infrastructure/media_volume_service.dart';
@@ -191,8 +192,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   // D-pad hold-seek state (TV)
   int _dpadHoldCount = 0;
-  int _dpadHoldDirection = 0; // -1 = left, 1 = right, 0 = none
-  Timer? _dpadHoldResetTimer;
+  Timer? _dpadHoldTimer;
+  bool _dpadHoldTriggered = false;
+
+  // TV D-pad timeline scrubbing state
+  bool _isDpadScrubbing = false;
+  Duration? _dpadScrubPosition;
+  Timer? _dpadScrubCommitTimer;
+  Timer? _dpadScrubInactivityTimer;
+  bool _backHandledByKeyEvent = false;
 
   final FocusNode _keyboardFocusNode = FocusNode();
 
@@ -204,6 +212,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onHardwareKeyEvent);
 
     if (widget.customController != null) {
       _controller = widget.customController!;
@@ -230,12 +239,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (_previewUrlResolver != null) {
           return await _previewUrlResolver!(frameIndex, sequenceId);
         }
+        final filename = _resolveFilename();
+        final serverOrigin = _apiServerOrigin();
+        if (filename != null && serverOrigin != null) {
+          final thumbStr = frameIndex.toString().padLeft(5, '0');
+          final enc = Uri.encodeComponent(filename);
+          return '$serverOrigin/seek-preview/$enc/thumb_$thumbStr.jpg';
+        }
         return '';
       },
       onStateChanged: (state) {
         if (mounted) setState(() {});
       },
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _keyboardFocusNode.requestFocus();
+      }
+    });
 
     WidgetsBinding.instance.addObserver(this);
 
@@ -314,6 +336,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
           if (!_isScrubbing) {
             _resetAutoHideTimer();
           }
+          _keyboardFocusNode.requestFocus();
         } else if (s == PlayerPlaybackState.paused) {
           _cancelAutoHideTimer();
           _controlsVisible = true;
@@ -413,11 +436,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         setState(() {
           _previewMeta = data;
           final template = data['url_template'] as String?;
-          if (template != null) {
-            _previewUrlResolver = (frameIndex, sequenceId) async {
+          final baseUrl = data['base_url'] as String?;
+          _previewUrlResolver = (frameIndex, sequenceId) async {
+            final thumbStr = frameIndex.toString().padLeft(5, '0');
+            if (template != null) {
               return '$serverOrigin${template.replaceAll('{frame}', frameIndex.toString()).replaceAll('{seq}', sequenceId.toString())}';
-            };
-          }
+            } else if (baseUrl != null) {
+              final cleanBase = baseUrl.startsWith('/') ? baseUrl : '/$baseUrl';
+              return '$serverOrigin$cleanBase/thumb_$thumbStr.jpg';
+            } else {
+              final enc = Uri.encodeComponent(filename);
+              return '$serverOrigin/seek-preview/$enc/thumb_$thumbStr.jpg';
+            }
+          };
         });
       }
     } catch (_) {}
@@ -441,6 +472,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       );
       if (!mounted) return;
       setState(() => _sidecarSubtitles = sidecars);
+
+      // Phase 5: Auto-activate default sidecar subtitle if track is auto or unselected
+      final defaultSidecar = sidecars.where((s) => s.isDefault).firstOrNull;
+      if (defaultSidecar != null &&
+          (_trackInfo.currentSubtitleTrack.id == 'auto' ||
+           _trackInfo.currentSubtitleTrack.id == 'no' ||
+           _trackInfo.currentSubtitleTrack.id.isEmpty)) {
+        await _controller.setSubtitleTrack(defaultSidecar);
+      }
     } catch (_) {}
   }
 
@@ -589,6 +629,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         startPosition: widget.startPosition,
         externalSubtitleUrl: widget.externalSubtitleUrl,
       );
+      if (mounted) {
+        _keyboardFocusNode.requestFocus();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -811,10 +854,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _showHudToast(label, icon: Icons.aspect_ratio_rounded);
   }
 
-  Future<void> _seekRelative(int seconds, {bool fromDoubleTap = false}) async {
+  void _stepDpadScrub(int seconds) {
+    _dpadScrubCommitTimer?.cancel();
+    if (!_isDpadScrubbing) {
+      _isDpadScrubbing = true;
+      _dpadScrubPosition = _position > Duration.zero ? _position : _transportPosition;
+    }
+
+    final curSec = _dpadScrubPosition!.inSeconds;
+    final maxSec = _transportDuration.inSeconds;
+    final targetSec = maxSec > 0
+        ? (curSec + seconds).clamp(0, maxSec)
+        : ((curSec + seconds) < 0 ? 0 : (curSec + seconds));
+    final target = Duration(seconds: targetSec);
+
+    setState(() {
+      _dpadScrubPosition = target;
+      _controlsVisible = true;
+      _tvFocusZone = TvPlayerFocusZone.timeline;
+    });
+    _cancelAutoHideTimer();
+
+    final frameIndex = _computeFrameIndex(target);
+    if (frameIndex != null) {
+      _seekPreviewController.requestFrame(frameIndex);
+    }
+
+    // Manual commit on Select invariant: holding or stepping seek adjusts the scrub target
+    // with continuous live preview frames without auto-committing. The user must press Select
+    // to start playing there. Inactivity timer provides a generous 30s fallback to cancel.
+    _dpadScrubInactivityTimer?.cancel();
+    _dpadScrubInactivityTimer = Timer(const Duration(seconds: 30), () {
+      if (mounted) _cancelDpadScrub();
+    });
+  }
+
+  Future<void> _seekRelative(int seconds, {bool fromDoubleTap = false, bool direct = false}) async {
     _onUserInteraction();
     _hudTimer?.cancel();
     _seekSettleTimer?.cancel();
+
+    final isTv = ref.read(isTvModeProvider);
+
+    // On 10-foot TV remotes, non-direct timeline seeks enter a decoupled scrubbing mode
+    // with continuous seek preview frame display.
+    if (isTv && !fromDoubleTap && !direct) {
+      _stepDpadScrub(seconds);
+      return;
+    }
 
     if (fromDoubleTap) {
       _doubleTapSeekTimer?.cancel();
@@ -859,6 +946,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       if (mounted) {
         setState(() => _position = target);
       }
+      if (direct && _state != PlayerPlaybackState.playing) {
+        await _controller.play();
+      }
     }
 
     if (!fromDoubleTap) {
@@ -873,6 +963,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       });
     }
+  }
+
+  Future<void> _commitDpadScrub() async {
+    _dpadScrubInactivityTimer?.cancel();
+    _dpadScrubCommitTimer?.cancel();
+    if (!_isDpadScrubbing || _dpadScrubPosition == null) return;
+    final target = _dpadScrubPosition!;
+    setState(() {
+      _isDpadScrubbing = false;
+      _dpadScrubPosition = null;
+      _position = target;
+    });
+
+    if (_casting) {
+      _sendCastSeek(target);
+    } else {
+      await _controller.seek(target);
+      _progress?.onSeek(target);
+      await _controller.play();
+    }
+
+    _resetAutoHideTimer();
+  }
+
+  void _cancelDpadScrub() {
+    _dpadScrubInactivityTimer?.cancel();
+    _dpadScrubCommitTimer?.cancel();
+    if (!_isDpadScrubbing) return;
+    setState(() {
+      _isDpadScrubbing = false;
+      _dpadScrubPosition = null;
+    });
+    _seekPreviewController.reset();
+    _resetAutoHideTimer();
   }
 
   void _onVolumeChanged(double val) {
@@ -1001,53 +1125,124 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   /// Computes the preview frame index for [target] using loaded preview metadata.
-  /// Returns null when no metadata is available.
+  /// Falls back to mathematical duration interval if metadata is still resolving.
   int? _computeFrameIndex(Duration target) {
     final meta = _previewMeta;
-    if (meta == null) return null;
-    final interval = (meta['interval'] as num?)?.toDouble() ?? 0.0;
-    final count = (meta['count'] as num?)?.toInt() ?? 0;
+    final durationSec = _transportDuration.inMilliseconds / 1000.0;
+    if (durationSec <= 0) return null;
+
+    final interval = (meta != null ? (meta['interval'] as num?)?.toDouble() : null) ??
+        (durationSec < 1800 ? 5.0 : (durationSec < 7200 ? 10.0 : 15.0));
+    final count = (meta != null ? (meta['count'] as num?)?.toInt() : null) ??
+        ((durationSec - 0.001) ~/ interval + 1);
+
     if (interval <= 0 || count <= 0) return null;
     final seconds = target.inMilliseconds / 1000.0;
     return (seconds / interval).floor().clamp(0, count - 1);
   }
 
   /// Called by [PlayerKeyDispatcher] after every D-pad timeline seek.
-  /// Requests a preview frame for the current (post-seek) position.
+  /// Requests a preview frame for the current (post-seek or scrub) position.
   void _onDpadSeekPreviewRequest(Duration _) {
-    // Use the latest known transport position (already updated by _seekRelative)
-    final frameIndex = _computeFrameIndex(_position);
+    final target = (_isDpadScrubbing && _dpadScrubPosition != null)
+        ? _dpadScrubPosition!
+        : _transportPosition;
+    final frameIndex = _computeFrameIndex(target);
     if (frameIndex != null) {
       _seekPreviewController.requestFrame(frameIndex);
     }
   }
 
+  bool _onHardwareKeyEvent(KeyEvent event) {
+    if (!mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    return _handleKeyEvent(event);
+  }
+
   bool _handleKeyEvent(KeyEvent event) {
     final isTv = ref.read(isTvModeProvider);
-    // Track consecutive D-pad hold repeats for step acceleration
     final key = event.logicalKey;
+
+    final isBackKey = key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack;
+    if (isBackKey && event is KeyDownEvent) {
+      _backHandledByKeyEvent = true;
+      Timer.run(() => _backHandledByKeyEvent = false);
+    }
+
     final isLeftKey = key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ;
     final isRightKey = key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL;
-    if (isLeftKey || isRightKey) {
+
+    // -------------------------------------------------------------
+    // TV D-PAD TIMELINE SEEK & SCRUB STATE MACHINE
+    // -------------------------------------------------------------
+    if (isTv && (isLeftKey || isRightKey)) {
       final dir = isLeftKey ? -1 : 1;
-      if (event is KeyRepeatEvent && _dpadHoldDirection == dir) {
-        _dpadHoldCount++;
-      } else {
-        // Fresh key-down or direction changed — reset count
-        _dpadHoldCount = 0;
-        _dpadHoldDirection = dir;
+
+      // When controls are visible AND focused on Zone 2 (action buttons),
+      // Left/Right moves focus between buttons, not timeline seek.
+      final isNavigatingControlsRow = _controlsVisible &&
+          !_isDpadScrubbing &&
+          _tvFocusZone == TvPlayerFocusZone.controls;
+
+      if (!isNavigatingControlsRow) {
+        if (event is KeyDownEvent) {
+          _onUserInteraction();
+          if (_isDpadScrubbing) {
+            // Already in scrub mode: tap nudges scrub position by 10s
+            _stepDpadScrub(dir * 10);
+            return true;
+          } else {
+            // Normal playback: start hold detection
+            _dpadHoldTimer?.cancel();
+            _dpadHoldCount = 0;
+            _dpadHoldTriggered = false;
+            _dpadHoldTimer = Timer(const Duration(milliseconds: 250), () {
+              if (!mounted) return;
+              _dpadHoldTriggered = true;
+              _stepDpadScrub(dir * 10);
+            });
+            return true;
+          }
+        } else if (event is KeyRepeatEvent) {
+          // Held press: repeat event fired by OS
+          _dpadHoldTimer?.cancel();
+          _dpadHoldTriggered = true;
+          _dpadHoldCount++;
+          final step = PlayerKeyDispatcher.holdStep(_dpadHoldCount);
+          _stepDpadScrub(dir * step);
+          return true;
+        } else if (event is KeyUpEvent) {
+          // Key released
+          _dpadHoldTimer?.cancel();
+          if (!_dpadHoldTriggered && !_isDpadScrubbing) {
+            // DOTTED PRESS: Key released before hold threshold without repeat!
+            // Directly seek and play through!
+            _seekRelative(dir * 10, direct: true);
+          }
+          // Reset hold tracking
+          _dpadHoldCount = 0;
+          _dpadHoldTriggered = false;
+          return true;
+        }
+        return true;
       }
-      // Auto-reset after 500ms of no key events
-      _dpadHoldResetTimer?.cancel();
-      _dpadHoldResetTimer = Timer(const Duration(milliseconds: 500), () {
-        _dpadHoldCount = 0;
-        _dpadHoldDirection = 0;
-      });
-    } else if (event is KeyDownEvent) {
-      // Non-directional key: clear hold state
-      _dpadHoldCount = 0;
-      _dpadHoldDirection = 0;
-      _dpadHoldResetTimer?.cancel();
+    }
+
+    // Guard: Consume KeyUp events for remote navigation keys to prevent bubbling to background layers
+    if (event is KeyUpEvent) {
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown ||
+          key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.space ||
+          key == LogicalKeyboardKey.escape ||
+          key == LogicalKeyboardKey.goBack) {
+        return true;
+      }
+      return false;
     }
 
     return PlayerKeyDispatcher.handleKeyEvent(
@@ -1062,7 +1257,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       tvFocusedControlIndex: _tvFocusedControlIndex,
       tvControlCount: _tvControlCount,
       onTogglePlayPause: _togglePlayPause,
-      onSeekRelative: (s) => _seekRelative(s),
+      onSeekRelative: (s, {direct = false}) => _seekRelative(s, direct: direct),
       onUserInteraction: _onUserInteraction,
       onSetTvFocusZone: (zone) => setState(() => _tvFocusZone = zone),
       onSetTvFocusedControlIndex: (idx) => setState(() => _tvFocusedControlIndex = idx),
@@ -1078,12 +1273,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       onToggleFullscreen: _toggleFullscreen,
       dpadHoldCount: _dpadHoldCount,
       onRequestSeekPreview: _previewMeta != null ? _onDpadSeekPreviewRequest : null,
+      isDpadScrubbing: _isDpadScrubbing,
+      onCommitDpadScrub: _commitDpadScrub,
+      onCancelDpadScrub: _cancelDpadScrub,
     );
   }
 
   Future<void> _handleBack({bool forceExit = false}) async {
     final isTv = ref.read(isTvModeProvider);
     if (!forceExit) {
+      if (_isDpadScrubbing) {
+        _cancelDpadScrub();
+        return;
+      }
       if (!_controlsVisible) {
         _onUserInteraction();
         if (isTv) {
@@ -1098,6 +1300,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     }
 
     _cancelAutoHideTimer();
+    _dpadScrubInactivityTimer?.cancel();
+    _dpadScrubCommitTimer?.cancel();
     _castPollTimer?.cancel();
     _hudTimer?.cancel();
     _seekSettleTimer?.cancel();
@@ -1134,16 +1338,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
     for (final s in _subscriptions) {
       s.cancel();
     }
     _cancelAutoHideTimer();
+    _dpadScrubInactivityTimer?.cancel();
+    _dpadScrubCommitTimer?.cancel();
     _castPollTimer?.cancel();
     _hudTimer?.cancel();
     _seekSettleTimer?.cancel();
     _doubleTapSeekTimer?.cancel();
-    _dpadHoldResetTimer?.cancel();
+    _dpadHoldTimer?.cancel();
     _metaCancelToken?.cancel();
     _previewCancelToken?.cancel();
     _subtitlesCancelToken?.cancel();
@@ -1176,7 +1383,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             onVerticalDragBegin: _onVerticalDragBegin,
             onVerticalDragDelta: _onVerticalDragDelta,
             child: _videoController != null
-                ? PlayerSurface(controller: _videoController!, fit: _videoFit)
+                ? PlayerSurface(
+                    controller: _videoController!,
+                    fit: _videoFit,
+                    subtitleSettings: ref.watch(subtitleSettingsProvider),
+                  )
                 : Container(color: Colors.black),
           ),
         ),
@@ -1243,6 +1454,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             onOpenCastSheet: isTv || _resolveFilename() == null ? null : _openCastSheet,
             isCasting: castState.isCasting,
             isTv: isTv,
+            dpadScrubPosition: _isDpadScrubbing ? _dpadScrubPosition : null,
             isTimelineFocused: isTv && _tvFocusZone == TvPlayerFocusZone.timeline,
             tvFocusedControlIndex: (isTv && _tvFocusZone == TvPlayerFocusZone.controls)
                 ? _tvFocusedControlIndex
@@ -1305,72 +1517,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        if (_backHandledByKeyEvent) {
+          _backHandledByKeyEvent = false;
+          return;
+        }
         await _handleBack();
       },
       child: Scaffold(
         backgroundColor: showFullscreen ? Colors.black : AppColors.background,
-        body: showFullscreen
-            ? Focus(
-                focusNode: _keyboardFocusNode,
-                autofocus: true,
-                onKeyEvent: (node, event) {
-                  final handled = _handleKeyEvent(event);
-                  return handled ? KeyEventResult.handled : KeyEventResult.ignored;
-                },
-                child: MouseRegion(
-                  onHover: (_) => _onUserInteraction(),
-                  child: playerStack,
-                ),
-              )
-            : SafeArea(
-                bottom: false,
-                child: Focus(
-                  focusNode: _keyboardFocusNode,
-                  autofocus: true,
-                  onKeyEvent: (node, event) {
-                    final handled = _handleKeyEvent(event);
-                    return handled ? KeyEventResult.handled : KeyEventResult.ignored;
-                  },
-                  child: MouseRegion(
-                    onHover: (_) => _onUserInteraction(),
-                    child: Column(
-                      children: [
-                        const PlayerBrandHeader(),
-                        const SizedBox(height: 8),
-                        AspectRatio(
-                          aspectRatio: 16 / 10.5,
-                          child: Container(
-                            color: Colors.black,
-                            child: playerStack,
+        body: FocusScope(
+          autofocus: true,
+          child: Focus(
+            focusNode: _keyboardFocusNode,
+            autofocus: true,
+            child: MouseRegion(
+              onHover: (_) => _onUserInteraction(),
+              child: showFullscreen
+                  ? playerStack
+                  : SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          const PlayerBrandHeader(),
+                          const SizedBox(height: 8),
+                          AspectRatio(
+                            aspectRatio: 16 / 10.5,
+                            child: Container(
+                              color: Colors.black,
+                              child: playerStack,
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: PlayerDetailsPanel(
-                            title: widget.title,
-                            subtitle: widget.subtitle,
-                            serverOrigin: _apiServerOrigin() ?? 'http://127.0.0.1:8000',
-                            filename: _resolveFilename() ?? 'Media Stream',
-                            playbackMode: _playbackMode,
-                            movieMeta: _movieMeta,
-                            position: _position,
-                            duration: _duration,
-                            onBack: _handleBack,
-                            onServerUrlChanged: (newUrl) async {
-                              await SettingsService().setServerBaseUrl(newUrl);
-                              if (mounted) {
-                                _showHudToast(
-                                  'Server Saved: $newUrl',
-                                  icon: Icons.check_circle_rounded,
-                                );
-                              }
-                            },
+                          Expanded(
+                            child: PlayerDetailsPanel(
+                              title: widget.title,
+                              subtitle: widget.subtitle,
+                              serverOrigin: _apiServerOrigin() ?? 'http://127.0.0.1:8000',
+                              filename: _resolveFilename() ?? 'Media Stream',
+                              playbackMode: _playbackMode,
+                              movieMeta: _movieMeta,
+                              position: _position,
+                              duration: _duration,
+                              onBack: _handleBack,
+                              onServerUrlChanged: (newUrl) async {
+                                await SettingsService().setServerBaseUrl(newUrl);
+                                if (mounted) {
+                                  _showHudToast(
+                                    'Server Saved: $newUrl',
+                                    icon: Icons.check_circle_rounded,
+                                  );
+                                }
+                              },
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              ),
+            ),
+          ),
+        ),
       ),
     );
   }
