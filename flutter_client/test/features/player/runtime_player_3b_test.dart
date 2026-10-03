@@ -16,7 +16,14 @@ const String libmpvPath =
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    HttpOverrides.global = null;
+    // Re-enabling real sockets is only ever correct for an operator who has explicitly
+    // opted into live-server tests. Unconditionally nulling this made every ordinary
+    // `flutter test` run issue real GETs to http://127.0.0.1:8000 - the running
+    // production service on this host - which the assertions in this group then
+    // depended on, so they passed only while production happened to answer.
+    if (liveServerTestsEnabled) {
+      HttpOverrides.global = null;
+    }
     if (File(libmpvPath).existsSync()) {
       MediaKit.ensureInitialized(libmpv: libmpvPath);
     } else {
@@ -88,7 +95,7 @@ void main() {
       expect(thumbRes.data!.length, greaterThan(100)); // Valid non-empty JPEG bytes
 
       controller.dispose();
-    });
+    }, skip: liveServerSkip);
 
     test('2. Live direct playback seeking and position progression', () async {
       final adapter = MediaKitPlayerAdapter();

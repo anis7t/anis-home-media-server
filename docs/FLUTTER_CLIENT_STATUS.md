@@ -213,6 +213,7 @@ the Continue Watching rail and grid reload after playback (`loadLibrary(isRefres
 4. **Single App ID:** Android package is `in.anisparvez.media_server_client` — no separate dev/prod package IDs.
 5. **Same signing key:** All builds (production and developer) use the same release keystore.
 6. **Test isolation:** `tests/conftest.py` redirects cache, database, uploads, updates to throwaway temp dirs. Never bypass this.
+7. **Test network isolation:** an ordinary `flutter test` must not reach `https://media.anisparvez.in` or the loopback service. Install `installTestNetworkGuard()` from `test/support/test_network_guard.dart` and use its `testOrigin` sentinel in any test that mounts the real app; only `liveServerSkip`-gated tests may talk to a running server. The app ships production as its compile-time default (`SettingsService.defaultServerUrl`), and `/player` carries a hard-coded production media fallback for `adb ... --es route "/player"`, so both leak into tests unless overridden.
 
 ---
 
@@ -549,15 +550,55 @@ cd E:\MediaServer\flutter_client
 
 ### Testing
 ```powershell
-cd E:\MediaServer\flutter_client
-& "D:\src\flutter\bin\flutter.bat" test                    # 120 tests
-& "D:\src\flutter\bin\flutter.bat" analyze lib test         # Static analysis
+cd E:\MediaServer
+.\scripts\run_flutter_tests.ps1                 # analyze + full suite, purges media_kit state either side
+.\scripts\run_flutter_tests.ps1 -Concurrency 1   # serial
+.\scripts\run_flutter_tests.ps1 -SkipAnalyze -TestPath test/features
+.\scripts\run_flutter_tests.ps1 -PurgeOnly      # just clean up
 ```
+
+**Use the script, not a bare `flutter test`.** Plain `flutter test` is flaky, and the flake is an
+upstream `media_kit` defect, not a project bug.
+
+`NativeReferenceHolder` (`media_kit-1.2.6/lib/src/player/native/utils/native_reference_holder.dart`)
+persists one reference-buffer address in a temp file named
+`com.alexmercerind.media_kit.NativeReferenceHolder.$pid`. The file is **created empty and written
+afterwards** (lines 50-55) and is **never deleted**. Windows recycles PIDs, so a later `flutter test`
+process routinely inherits a PID a previous run used and finds that dead run's file. It then either:
+
+- `int.parse('')` on the empty file (line 58) -> `FormatException: Invalid number (at character 1)`; or
+- `Pointer.fromAddress(<address from a dead process's heap>)` (line 59) -> reads 512 slots and hands
+  them to the dispose callback -> hang, or a crash; or
+- hits `_file.exists_()` mid-write when two isolates in the *same* run initialise concurrently
+  (`flutter test` runs each test file as an isolate in one process) -> the same `FormatException`.
+
+When the throw happens, `_completer.complete()` (line 76) is skipped, so every `add()`/`remove()`
+awaiting `_completer.future` (lines 83, 101) hangs - which is why a whole file reports
+**"did not complete"** rather than a clean assertion failure.
+
+Measured on this host: 415 orphaned files spanning 2026-09-24 to 2026-10-03, 70 of them zero-byte,
+caused 2 failures in 6 runs - **including one `--concurrency=1` run**. Serial execution is therefore
+**not** a fix on its own; the dominant cause is stale state surviving *across* runs.
+
+`run_flutter_tests.ps1` purges before the run (virgin state) and again in a `finally` block
+(nothing left to poison the next run - this is what stops the accumulation). It refuses to delete a
+file whose PID is a live process, so it can never pull the rug from under a running `flutter_tester`.
+After it, repeated full-suite runs leave **0** stale files.
+
+The whole code path is gated behind `if (!kDebugMode) return;` (line 43), so **release APKs and
+on-device playback are unaffected** - this is host-test-only.
+
+Do not "fix" the flake by re-adding `MediaKit.ensureInitialized()` to test files that do not need
+native playback: every such file is one more participant.
+`test/connection_screen_test.dart` renders only `ConnectionScreen`/`HomeScreen`/`AppShell` and
+deliberately omits it. `runtime_player_3b_test.dart` no longer runs it either, because `setUpAll`
+does not execute when every test in a file is skipped. Only files that genuinely construct a real
+`PlayerController` (`app_shell_test.dart`, `runtime_player_3a_test.dart`) should call it.
 
 ### Backend Testing
 ```powershell
 cd E:\MediaServer
-.\venv\Scripts\python.exe -m pytest tests/                  # 239 tests
+.\venv\Scripts\python.exe -m pytest tests/                  # 344 collected
 ```
 
 ### Publishing an Update

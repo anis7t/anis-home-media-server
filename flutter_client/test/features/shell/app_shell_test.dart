@@ -12,6 +12,11 @@ import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
 import 'package:media_server_client/core/storage/settings_service.dart'
     hide serverBaseUrlProvider;
+// Same library, second view: the async (FutureProvider) origin that
+// settings_content.dart watches, which otherwise shows the production default until it
+// resolves and makes the displayed origin depend on microtask timing.
+import 'package:media_server_client/core/storage/settings_service.dart'
+    as settings show serverBaseUrlProvider;
 import 'package:media_server_client/features/library/data/models/library_response.dart';
 import 'package:media_server_client/features/library/data/models/movie_details.dart';
 import 'package:media_server_client/features/library/data/models/movie_extended_details.dart';
@@ -22,9 +27,17 @@ import 'package:media_server_client/features/updater/presentation/controllers/up
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../updater/update_controller_test.dart';
+import '../../support/test_network_guard.dart';
 
 const String libmpvPath =
     'E:/MediaServer/flutter_client/build/windows/x64/runner/Release/libmpv-2.dll';
+
+/// Media URL handed to the `/player` route. Resolved against the non-routable sentinel
+/// so the player derives its API origin from this rather than from the production
+/// `connectionControllerProvider` fallback.
+final String _playerMediaUrl = Uri.encodeQueryComponent(
+  '$testOrigin/media/batman.mp4',
+);
 
 class MockSecureStorage extends FlutterSecureStorage {
   final Map<String, String> data = {};
@@ -63,7 +76,7 @@ class FakeShellLibraryRepository extends LibraryRepository {
     this.watching = const [],
   }) : super(
          ApiClient(
-           baseUrl: 'http://127.0.0.1:8000',
+           baseUrl: testOrigin,
            authInterceptor: DeviceAuthInterceptor(
              DeviceIdentityService(secureStorage: MockSecureStorage()),
            ),
@@ -120,6 +133,9 @@ void main() {
     } else {
       MediaKit.ensureInitialized();
     }
+    // Installed after the binding so a stray request fails loudly instead of being
+    // swallowed by the binding's 400-returning HTTP mock.
+    installTestNetworkGuard();
   });
 
   const testMovie1 = MovieItem(
@@ -153,8 +169,20 @@ void main() {
   late FakeShellLibraryRepository fakeLibRepo;
 
   setUp(() async {
+    resetBlockedRequests();
+    // Proof that no test in this file even attempts non-sentinel traffic, not merely
+    // that it fails to get a response.
+    addTearDown(() {
+      expect(
+        blockedRequests,
+        isEmpty,
+        reason: 'ordinary tests must not attempt traffic outside $testOrigin',
+      );
+    });
+    // The sentinel, never the production host: SettingsService.defaultServerUrl is
+    // https://media.anisparvez.in and an unset preference falls through to it.
     SharedPreferences.setMockInitialValues({
-      'server_base_url': 'https://media.anisparvez.in',
+      'server_base_url': testOrigin,
       'device_id': 'test-device-uuid-9999',
       'update_channel': 'production',
     });
@@ -175,7 +203,8 @@ void main() {
         appInstallerBridgeProvider.overrideWithValue(mockBridge),
         updateRepositoryProvider.overrideWithValue(fakeUpdateRepo),
         libraryRepositoryProvider.overrideWithValue(fakeLibRepo),
-        serverBaseUrlProvider.overrideWithValue('https://media.anisparvez.in'),
+        serverBaseUrlProvider.overrideWithValue(testOrigin),
+        settings.serverBaseUrlProvider.overrideWith((ref) => testOrigin),
       ],
       child: MediaServerApp(
         initialRoute: initialLocation,
@@ -301,9 +330,13 @@ void main() {
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
 
-        // Direct intent route to /player
+        // Direct intent route to /player. An explicit `mediaUrl` is passed because the
+        // `/player` route otherwise falls back to a hard-coded production origin and a
+        // real production filename in lib/app/routes.dart; that fallback exists for
+        // `adb shell am start ... --es route "/player"` and must not be exercised here.
+        final playerLocation = '${AppRoutes.player}?mediaUrl=$_playerMediaUrl';
         await tester.pumpWidget(
-          createSubject(initialLocation: AppRoutes.player),
+          createSubject(initialLocation: playerLocation),
         );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
@@ -329,7 +362,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('SERVER & CONNECTION'), findsOneWidget);
-        expect(find.text('https://media.anisparvez.in'), findsOneWidget);
+        expect(find.text(testOrigin), findsOneWidget);
         expect(find.text('UPDATE CHANNEL'), findsOneWidget);
         expect(find.textContaining('Production (Stable)'), findsOneWidget);
         expect(find.text('Developer'), findsWidgets);
