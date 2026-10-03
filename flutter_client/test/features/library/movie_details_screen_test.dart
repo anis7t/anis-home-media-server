@@ -73,6 +73,17 @@ class FakeDetailsLibraryRepository extends LibraryRepository {
     if (onGetMovies != null) return onGetMovies!();
     return const LibraryResponse(movies: [], watching: [], total: 0);
   }
+
+  @override
+  Future<bool> startTranscode(String filename) async => true;
+
+  @override
+  Future<Map<String, dynamic>> getTranscodeStatus(String filename) async => {
+    'status': 'building',
+    'percent': 25.0,
+    'speed': 2.5,
+    'remaining': 120.0,
+  };
 }
 
 void main() {
@@ -456,6 +467,50 @@ void main() {
       // Movie details now loaded
       expect(find.text('Sample Movie'), findsOneWidget);
       expect(find.text('Overview'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'intercepts play button when media requires 100% transcode and is not ready',
+    (tester) async {
+      Map<String, dynamic>? playerArgs;
+      const untranscodedDetails = MovieDetails(
+        movie: sampleMovie,
+        specs: sampleSpecs,
+        extended: sampleExtended,
+        formattedRuntime: '1h 50m',
+        needsTranscode: true,
+        isTranscodeReady: false,
+      );
+
+      final repo = FakeDetailsLibraryRepository(
+        onGetMovieDetails: (fn) async => untranscodedDetails,
+      );
+
+      await tester.pumpWidget(
+        createSubject(
+          repo: repo,
+          initialMovie: sampleMovie,
+          onNavigatedToPlayer: (extra) => playerArgs = extra,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final playBtnFinder = find.byKey(const ValueKey('primary_play_button'));
+      expect(playBtnFinder, findsOneWidget);
+
+      // Tap Play Movie
+      await tester.tap(playBtnFinder);
+      await tester.pump();
+
+      // Transcode gate dialog must appear
+      expect(find.text('Full Transcode Required'), findsOneWidget);
+      // Player route must NOT have been pushed
+      expect(playerArgs, isNull);
+
+      // Dismiss dialog
+      await tester.tap(find.text('Wait in Background'));
+      await tester.pumpAndSettle();
     },
   );
 }

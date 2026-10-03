@@ -39,7 +39,7 @@ class GPUWorkerConfig:
         """Return FFmpeg video encoder arguments."""
         if self.backend == "amf":
             return [
-                "-vf", "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12",
+                "-vf", "vpp_amf=h='min(1080,ih)':w=-2:format=nv12",
                 "-c:v", "h264_amf",
                 "-quality", "speed",
                 "-rc", "cqp",

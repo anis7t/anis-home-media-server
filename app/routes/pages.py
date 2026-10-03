@@ -12,7 +12,12 @@ from app.services.media_service import (
 from app.services.device_service import current_device_id
 from app.services.subtitles_service import tracks
 from app.services.system_service import get_system_telemetry
-from app.services.transcode_service import get_active_transcodes
+from app.services.transcode_service import (
+    _is_hls_truly_complete,
+    get_active_transcodes,
+    hls_cache_dir,
+    needs_transcode,
+)
 from app.utils.filesystem import is_video, safe_path
 from app.utils.formatting import format_runtime_display
 
@@ -72,6 +77,10 @@ def details(filename):
     formatted_runtime = format_runtime_display(m.get('runtime'))
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
+    needs_tc = needs_transcode(path)
+    hls_dir = hls_cache_dir(path)
+    pl_file = hls_dir / 'playlist.m3u8'
+    is_ready = _is_hls_truly_complete(pl_file, path) if needs_tc else True
     return render_template(
         'details.html',
         movie=m,
@@ -79,7 +88,9 @@ def details(filename):
         extended=extended,
         specs=specs,
         formatted_runtime=formatted_runtime,
-        transcode_info=transcode_info
+        transcode_info=transcode_info,
+        needs_transcode=needs_tc,
+        is_transcode_ready=is_ready,
     )
 
 
@@ -94,11 +105,17 @@ def watch(filename):
     db.close()
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
+    needs_tc = needs_transcode(path)
+    hls_dir = hls_cache_dir(path)
+    pl_file = hls_dir / 'playlist.m3u8'
+    is_ready = _is_hls_truly_complete(pl_file, path) if needs_tc else True
     return render_template(
         'player.html',
         movie=m,
         tracks=tracks(path, m),
-        transcode_info=transcode_info
+        transcode_info=transcode_info,
+        needs_transcode=needs_tc,
+        is_transcode_ready=is_ready,
     )
 
 

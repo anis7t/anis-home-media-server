@@ -54,7 +54,7 @@ def _probe_file_duration(path) -> float:
         out = subprocess.run(
             [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
              '-of', 'default=nw=1:nk=1', str(path)],
-            capture_output=True, text=True, timeout=30, check=False,
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30, check=False,
         )
         return float(out.stdout.strip())
     except Exception:
@@ -826,7 +826,13 @@ class DualGPUTranscodeJob:
                 )
                 video_duration = self.container_duration
             self.total_duration = float(video_duration or self.container_duration)
-            if abs(self.total_duration - self.container_duration) > 1.0:
+            if self.container_duration > 600.0 and self.total_duration < (self.container_duration * 0.5):
+                logger.warning(
+                    "Source %s: measured video duration %.1fs is suspiciously short compared to container %.1fs; falling back to container duration",
+                    self.filename, self.total_duration, self.container_duration,
+                )
+                self.total_duration = self.container_duration
+            elif abs(self.total_duration - self.container_duration) > 1.0:
                 logger.info(
                     "Source %s: container %.1fs but video stream ends at %.1fs — planning against video",
                     self.filename, self.container_duration, self.total_duration,

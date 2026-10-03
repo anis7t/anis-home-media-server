@@ -33,6 +33,8 @@ def probe_media(path):
         [probe, '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)],
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         check=False,
     )
     try:

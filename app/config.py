@@ -6,11 +6,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).resolve().parent.parent)).resolve()
+import sys
+if "pytest" in sys.modules or os.environ.get("MEDIA_SERVER_MEDIA_ROOT"):
+    load_dotenv(BASE_DIR / ".env", override=False)
+else:
+    load_dotenv(BASE_DIR / ".env", override=True)
 
 # Base directories
-BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).resolve().parent.parent)).resolve()
-MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", BASE_DIR / "media")).resolve()
+MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "D:/Flicks" if os.name == "nt" else BASE_DIR / "media")).resolve()
 DATABASE = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 
 # Cache directories

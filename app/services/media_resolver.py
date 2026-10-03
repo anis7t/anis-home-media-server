@@ -48,7 +48,7 @@ def _title_similarity(left, right):
 
 def _probe_duration_seconds(path):
     try:
-        result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=15, check=False)
+        result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace', timeout=15, check=False)
         value = float((result.stdout or "").strip())
         return value if value > 0 else None
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -161,7 +161,7 @@ def resolve_via_moviehash(path, session, token):
 def resolve_via_container_tags(path, session, token):
     """Resolve using embedded format/stream title metadata."""
     try:
-        result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json", str(path)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=15, check=False)
+        result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json", str(path)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace', timeout=15, check=False)
         if result.returncode != 0 or not result.stdout:
             return None, None
         meta = json.loads(result.stdout)

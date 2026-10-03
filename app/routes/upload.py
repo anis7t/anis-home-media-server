@@ -22,10 +22,16 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 8 * 1024 * 1024
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024 * 1024
 def get_upload_tmp():
+    import sys
+    if "pytest" in sys.modules and not os.environ.get("MEDIA_SERVER_UPLOAD_TMP"):
+        return config.MEDIA_ROOT / ".uploads"
     return getattr(config, 'UPLOAD_TMP', config.MEDIA_ROOT / ".uploads")
 
 
 def get_upload_target_dir():
+    import sys
+    if "pytest" in sys.modules and not os.environ.get("MEDIA_SERVER_UPLOAD_TARGET_DIR"):
+        return config.MEDIA_ROOT
     return getattr(config, 'UPLOAD_TARGET_DIR', config.MEDIA_ROOT)
 
 

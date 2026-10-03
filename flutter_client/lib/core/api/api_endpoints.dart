@@ -11,6 +11,8 @@ class ApiEndpoints {
   static const String mediaInfo = '/api/media-info';
   static const String progress = '/api/progress';
   static const String scan = '/api/scan';
+  static const String transcodeStart = '/api/transcode/start';
+  static const String transcodeStatus = '/api/transcode-status';
   static const String appUpdate = '/api/app/update';
   static const String appDownload = '/api/app/download';
 }

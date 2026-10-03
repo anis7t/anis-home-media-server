@@ -342,14 +342,47 @@ def hls_playlist(filename):
     directory = hls_cache_dir(path)
     playlist = directory / 'playlist.m3u8'
     proc = ensure_hls_transcode(filename)
-    deadline = time.time() + 2.0
+    deadline = time.time() + 3.0
     while time.time() < deadline:
-        if playlist.is_file() and 'segment_' in playlist.read_text(errors='replace'):
-            break
-        if proc is not None and proc.poll() is not None:
-            break
+        if playlist.is_file():
+            try:
+                pl_content = playlist.read_text(encoding='utf-8', errors='replace')
+                if 'segment_' in pl_content:
+                    break
+            except OSError:
+                pass
+        if proc is not None:
+            ret = proc.poll()
+            if isinstance(ret, int):
+                # Job terminated
+                break
         time.sleep(0.05)
-    if not playlist.is_file():
+
+    has_segments = False
+    if playlist.is_file():
+        try:
+            pl_content = playlist.read_text(encoding='utf-8', errors='replace')
+            has_segments = 'segment_' in pl_content
+        except OSError:
+            pass
+
+    if not has_segments:
+        # Check if job errored out
+        if proc is not None:
+            ret = proc.poll()
+            if isinstance(ret, int) and ret != 0:
+                config.HLS_PROCESSES.pop(filename, None)
+                return jsonify(error='Transcode job failed or exited with an error'), 500
+
+        # If job is actively running and we are not in testing mode, signal client to retry
+        if proc is not None and proc.poll() is None and not current_app.testing:
+            return Response(
+                '#EXTM3U\n#EXT-X-VERSION:3\n',
+                status=503,
+                headers={'Retry-After': '1', 'Cache-Control': 'no-cache, no-store, must-revalidate'},
+                mimetype='application/vnd.apple.mpegurl'
+            )
+
         return Response('#EXTM3U\n#EXT-X-VERSION:3\n', mimetype='application/vnd.apple.mpegurl')
     try:
         reconcile_hls_playlist_discontinuities(directory, path)

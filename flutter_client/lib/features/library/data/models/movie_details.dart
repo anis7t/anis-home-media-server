@@ -12,6 +12,8 @@ class MovieDetails {
   final String formattedRuntime;
   final int? backdropTmdbId;
   final Map<String, dynamic>? transcodeInfo;
+  final bool needsTranscode;
+  final bool isTranscodeReady;
 
   const MovieDetails({
     required this.movie,
@@ -20,6 +22,8 @@ class MovieDetails {
     this.formattedRuntime = '',
     this.backdropTmdbId,
     this.transcodeInfo,
+    this.needsTranscode = false,
+    this.isTranscodeReady = true,
   });
 
   /// Resolves the absolute HTTP URL for backdrop artwork.
@@ -59,6 +63,8 @@ class MovieDetails {
       transcodeInfo: json['transcode_info'] is Map<String, dynamic>
           ? json['transcode_info'] as Map<String, dynamic>
           : null,
+      needsTranscode: json['needs_transcode'] == true,
+      isTranscodeReady: json['is_transcode_ready'] != false,
     );
   }
 
@@ -70,6 +76,8 @@ class MovieDetails {
       'formatted_runtime': formattedRuntime,
       'backdrop_tmdb_id': backdropTmdbId,
       'transcode_info': transcodeInfo,
+      'needs_transcode': needsTranscode,
+      'is_transcode_ready': isTranscodeReady,
     };
   }
 }

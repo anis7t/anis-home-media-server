@@ -302,8 +302,46 @@
   </div>
 </dialog>
 
+<!-- Full Transcoding Required Modal Gate -->
+<dialog id="transcodeGateModal" class="sub-modal" aria-labelledby="tgModalTitle" aria-modal="true" style="padding:0;background:transparent;border:0;color:inherit;max-width:min(90vw,540px);width:100%;margin:auto;">
+  <div class="sub-modal-inner" style="background:#141822;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:1.4rem;box-shadow:0 16px 40px rgba(0,0,0,0.7);">
+    <div class="sub-modal-header" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:0.8rem;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="pulse-dot" id="tgPulse" style="width:10px;height:10px;"></span>
+        <h2 id="tgModalTitle" style="margin:0;font-size:1.15rem;font-weight:700;color:#fff;">Full Transcode Required</h2>
+      </div>
+      <button type="button" class="sub-modal-close" onclick="document.getElementById('transcodeGateModal').close()" aria-label="Close" style="background:none;border:none;color:#8890a0;font-size:1.4rem;cursor:pointer;line-height:1;">&times;</button>
+    </div>
+    <p style="margin:0 0 1rem 0;color:#b0b7c3;font-size:0.92rem;line-height:1.5;">
+      This movie requires <strong>100% complete transcoding</strong> before streaming begins. Dual-GPU conversion is actively running. You can wait here or keep it transcoding in the background.
+    </p>
+
+    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem;margin-bottom:1.2rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+        <span id="tgCardTitle" style="font-weight:600;font-size:0.9rem;color:#e2e8f0;">⚡ Dual-GPU Transcoding</span>
+        <span id="tgPct" style="font-weight:700;font-size:1.05rem;color:#ff334b;">0.0%</span>
+      </div>
+      <div style="width:100%;height:7px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-bottom:0.6rem;">
+        <div id="tgFill" style="width:0%;height:100%;background:linear-gradient(90deg,#ff334b,#e50914);transition:width 0.3s ease;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#8890a0;">
+        <span id="tgTime">0:00 / 0:00</span>
+        <span id="tgSpeed"></span>
+        <span id="tgEta">Calculating ETA...</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button type="button" class="btn-sub-action" onclick="document.getElementById('transcodeGateModal').close()" style="cursor:pointer;padding:0.65rem 1.1rem;border-radius:8px;background:rgba(255,255,255,0.07);color:#fff;border:1px solid rgba(255,255,255,0.12);">Wait in Background</button>
+      <a id="tgPlayBtn" class="btn-primary-play" href="{{url_for('watch',filename=movie.filename)}}" style="pointer-events:none;opacity:0.35;text-decoration:none;padding:0.65rem 1.25rem;border-radius:8px;">Waiting for 100%...</a>
+    </div>
+  </div>
+</dialog>
+
 <script>
 const filename={{movie.filename|tojson}};
+const needsTranscode={{ 'true' if needs_transcode else 'false' }};
+let isTranscodeReady={{ 'true' if is_transcode_ready else 'false' }};
 let isWatched={{1 if movie.percent >= 90 else 0}};
 const movieDur={{movie.duration or (movie.runtime*60 if movie.runtime else 0)}};
 const moviePos={{movie.position or 0}};
@@ -382,27 +420,85 @@ const fmtDtcEta=s=>{
   return s>=3600?Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m remaining':Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s remaining';
 };
 
+function openTranscodeGate(targetUrl){
+  const modal=document.getElementById('transcodeGateModal');
+  if(!modal)return;
+  const tgPlayBtn=document.getElementById('tgPlayBtn');
+  if(tgPlayBtn&&targetUrl){
+    tgPlayBtn.href=targetUrl;
+  }
+  if(!modal.open){
+    modal.showModal();
+  }
+  fetch('/api/transcode/start/'+encodeURIComponent(filename),{method:'POST'}).catch(()=>{});
+  pollDetailsTranscode();
+  if(dtcTimer){clearInterval(dtcTimer);}
+  dtcTimer=setInterval(pollDetailsTranscode,1000);
+}
+
+const playBtn=document.getElementById('playBtn');
+if(playBtn){
+  playBtn.addEventListener('click',e=>{
+    if(needsTranscode&&!isTranscodeReady){
+      e.preventDefault();
+      openTranscodeGate(playBtn.href);
+    }
+  });
+}
+const replayBtn=document.getElementById('replayBtn');
+if(replayBtn){
+  replayBtn.addEventListener('click',e=>{
+    if(needsTranscode&&!isTranscodeReady){
+      e.preventDefault();
+      openTranscodeGate(replayBtn.href);
+    }
+  });
+}
+
 function pollDetailsTranscode(){
   fetch('/api/transcode-status/'+encodeURIComponent(filename))
     .then(r=>r.json())
     .then(s=>{
       const card=document.getElementById('detailsTranscodeCard');
-      if(!card)return;
+      const tgPct=document.getElementById('tgPct');
+      const tgFill=document.getElementById('tgFill');
+      const tgTime=document.getElementById('tgTime');
+      const tgSpeed=document.getElementById('tgSpeed');
+      const tgEta=document.getElementById('tgEta');
+      const tgPlayBtn=document.getElementById('tgPlayBtn');
+      const tgPulse=document.getElementById('tgPulse');
+      const tgCardTitle=document.getElementById('tgCardTitle');
+
       if(s.status==='building'||s.status==='partial'){
-        card.style.display='block';
-        const pctEl=document.getElementById('dtcPct');
-        const fillEl=document.getElementById('dtcFill');
-        const timeEl=document.getElementById('dtcTime');
-        const spdEl=document.getElementById('dtcSpeed');
-        const etaEl=document.getElementById('dtcEta');
         const pct=Math.min(99.9,Math.max(0,s.percent||0));
-        if(pctEl)pctEl.textContent=pct.toFixed(1)+'%';
-        if(fillEl)fillEl.style.width=Math.max(2,pct)+'%';
-        if(timeEl&&s.duration)timeEl.textContent=fmtDtcTime(s.encoded)+' / '+fmtDtcTime(s.duration);
-        if(spdEl)spdEl.textContent=s.speed>0?(s.speed.toFixed(1)+'x'):'';
-        if(etaEl)etaEl.textContent='ETA: '+fmtDtcEta(s.remaining);
+        const pctText=pct.toFixed(1)+'%';
+        const timeText=(s.duration)?fmtDtcTime(s.encoded)+' / '+fmtDtcTime(s.duration):'0:00 / 0:00';
+        const spdText=s.speed>0?(s.speed.toFixed(1)+'x'):'';
+        const etaText='ETA: '+fmtDtcEta(s.remaining);
+
+        if(card){
+          card.style.display='block';
+          const pctEl=document.getElementById('dtcPct');
+          const fillEl=document.getElementById('dtcFill');
+          const timeEl=document.getElementById('dtcTime');
+          const spdEl=document.getElementById('dtcSpeed');
+          const etaEl=document.getElementById('dtcEta');
+          if(pctEl)pctEl.textContent=pctText;
+          if(fillEl)fillEl.style.width=Math.max(2,pct)+'%';
+          if(timeEl)timeEl.textContent=timeText;
+          if(spdEl)spdEl.textContent=spdText;
+          if(etaEl)etaEl.textContent=etaText;
+        }
+
+        if(tgPct)tgPct.textContent=pctText;
+        if(tgFill)tgFill.style.width=Math.max(2,pct)+'%';
+        if(tgTime)tgTime.textContent=timeText;
+        if(tgSpeed)tgSpeed.textContent=spdText;
+        if(tgEta)tgEta.textContent=etaText;
+
       }else if(s.status==='ready'){
-        if(card.style.display!=='none'){
+        isTranscodeReady=true;
+        if(card&&card.style.display!=='none'){
           const titleEl=document.getElementById('dtcTitle');
           const pulseEl=document.getElementById('dtcPulse');
           const fillEl=document.getElementById('dtcFill');
@@ -413,17 +509,26 @@ function pollDetailsTranscode(){
           if(fillEl){fillEl.style.width='100%';fillEl.style.background='#22c55e';}
           if(pctEl)pctEl.textContent='100%';
           if(etaEl)etaEl.textContent='Ready for stream';
-          if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
           setTimeout(()=>{
             card.style.transition='opacity 0.6s ease';
             card.style.opacity='0';
             setTimeout(()=>{card.style.display='none';},600);
           },5000);
-        }else{
-          if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
         }
+        if(tgPct)tgPct.textContent='100%';
+        if(tgFill){tgFill.style.width='100%';tgFill.style.background='#22c55e';}
+        if(tgCardTitle)tgCardTitle.textContent='✓ Transcoding Complete';
+        if(tgPulse)tgPulse.className='pulse-dot idle';
+        if(tgEta)tgEta.textContent='Ready to stream';
+        if(tgPlayBtn){
+          tgPlayBtn.style.pointerEvents='auto';
+          tgPlayBtn.style.opacity='1';
+          tgPlayBtn.textContent='▶ Play Now';
+          tgPlayBtn.style.background='linear-gradient(135deg,#ff334b,#e50914)';
+        }
+        if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
       }else if(s.status==='idle'){
-        if(card.style.display==='none'){
+        if(card&&card.style.display==='none'){
           if(dtcTimer){clearInterval(dtcTimer);dtcTimer=null;}
         }
       }

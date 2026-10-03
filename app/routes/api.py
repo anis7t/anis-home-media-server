@@ -21,8 +21,10 @@ from app.services.worker_service import trigger_missing_transcodes
 from app.services.tmdb_service import download_poster
 from app.services.transcode_service import (
     _is_hls_truly_complete,
+    ensure_hls_transcode,
     get_active_transcodes,
     hls_cache_dir,
+    needs_transcode,
     transcode_cache_path,
     transcode_progress_path,
 )
@@ -91,6 +93,10 @@ def media_info(filename):
     db.close()
     movie_meta = dict(row) if row else {}
 
+    needs_tc = needs_transcode(path)
+    hls_dir = hls_cache_dir(path)
+    is_ready = _is_hls_truly_complete(hls_dir / 'playlist.m3u8', path) if needs_tc else True
+
     return jsonify(
         container=path.suffix[1:].lower(),
         duration=duration,
@@ -98,6 +104,8 @@ def media_info(filename):
         width=video_stream.get('width'),
         height=video_stream.get('height'),
         direct_play=direct_play,
+        needs_transcode=needs_tc,
+        is_transcode_ready=is_ready,
         ffprobe_available=bool(probe),
         transcoding_available=bool(check_which('ffmpeg')),
         title=movie_meta.get('title'),
@@ -220,6 +228,76 @@ def transcode_status(filename):
         encoded=encoded,
         duration=duration,
         speed=speed
+    )
+
+
+@api_bp.route('/api/media-readiness/<path:filename>')
+def media_readiness(filename):
+    """Check if media is 100% ready for playback or requires waiting for transcode completion."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+
+    needs = needs_transcode(path)
+    if not needs:
+        return jsonify({
+            'filename': filename,
+            'direct_playable': True,
+            'needs_transcode': False,
+            'is_ready': True,
+            'status': 'direct'
+        })
+
+    hls_dir = hls_cache_dir(path)
+    hls_playlist_file = hls_dir / 'playlist.m3u8'
+    is_ready = _is_hls_truly_complete(hls_playlist_file, path)
+
+    proc = config.HLS_PROCESSES.get(filename)
+    is_running = proc is not None and proc.poll() is None
+
+    # Query current progress
+    active_transcodes = get_active_transcodes()
+    transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
+
+    return jsonify({
+        'filename': filename,
+        'direct_playable': False,
+        'needs_transcode': True,
+        'is_ready': is_ready,
+        'is_running': is_running,
+        'status': 'ready' if is_ready else ('building' if is_running else 'idle'),
+        'transcode_info': transcode_info
+    })
+
+
+@api_bp.route('/api/transcode/start/<path:filename>', methods=['POST', 'GET'])
+def start_media_transcode(filename):
+    """Trigger or resume background transcoding for untranscoded media."""
+    path = safe_path(filename)
+    if not is_video(path):
+        abort(404)
+
+    if not needs_transcode(path):
+        return jsonify(status='ready', message='Direct playable media does not require transcoding')
+
+    hls_dir = hls_cache_dir(path)
+    hls_playlist_file = hls_dir / 'playlist.m3u8'
+    if _is_hls_truly_complete(hls_playlist_file, path):
+        return jsonify(status='ready', message='Media is already fully transcoded')
+
+    rel = get_rel_path(path)
+    proc = ensure_hls_transcode(rel)
+
+    # Wake background transcoder event if available
+    try:
+        from app.services.worker_service import _TRANSCODE_WAKE_EVENT
+        _TRANSCODE_WAKE_EVENT.set()
+    except Exception:
+        pass
+
+    return jsonify(
+        status='building' if (proc is not None and proc.poll() is None) else 'queued',
+        message='Transcoding started in background'
     )
 
 
@@ -801,6 +879,10 @@ def api_movie_details(filename):
             )
         ) else None
 
+        from app.services.transcode_service import needs_transcode, hls_cache_dir, _is_hls_truly_complete
+        needs_tc = needs_transcode(path)
+        is_ready = _is_hls_truly_complete(hls_cache_dir(path) / 'playlist.m3u8', path) if needs_tc else True
+
         return jsonify(
             movie=movie_dict,
             specs=specs,
@@ -808,6 +890,8 @@ def api_movie_details(filename):
             formatted_runtime=formatted_runtime,
             backdrop_tmdb_id=backdrop_tmdb_id,
             transcode_info=transcode_info,
+            needs_transcode=needs_tc,
+            is_transcode_ready=is_ready,
         )
     finally:
         db.close()

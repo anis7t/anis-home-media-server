@@ -5,12 +5,14 @@ import requests
 import re
 import time
 import json
+from dotenv import load_dotenv
 from posters import download_poster
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
-MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "/home/iamroot/Media/Movies")).resolve()
-DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 ENV_FILE = BASE_DIR / ".env"
+load_dotenv(ENV_FILE, override=True)
+MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "D:/Flicks" if os.name == "nt" else "/home/iamroot/Media/Movies")).resolve()
+DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 
 TMDB_API = "https://api.themoviedb.org/3"
 
@@ -280,12 +282,16 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         print("    TMDB_API_TOKEN not found.")
         return None
 
-    media_root = Path(media_root or MEDIA_ROOT).resolve()
-    path = Path(path).resolve()
     try:
-        relative = path.relative_to(media_root).as_posix()
-    except ValueError:
-        relative = path.name
+        from app.utils.filesystem import get_rel_path
+        relative = get_rel_path(path)
+    except Exception:
+        media_root = Path(media_root or MEDIA_ROOT).resolve()
+        path = Path(path).resolve()
+        try:
+            relative = path.relative_to(media_root).as_posix()
+        except ValueError:
+            relative = path.name
 
     close_conn = False
     if conn is None:
@@ -316,6 +322,30 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
 
         if not movie:
             print("    TMDB: no match")
+            now_ts = int(time.time())
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO movies (
+                    filename,
+                    title,
+                    year,
+                    tmdb_id,
+                    overview,
+                    poster_path,
+                    backdrop_path,
+                    runtime,
+                    genres,
+                    vote_average,
+                    updated_at,
+                    release_date,
+                    details_json,
+                    last_metadata_refresh
+                )
+                VALUES (?, ?, ?, NULL, 'No TMDB metadata found', '', '', 0, '', 0.0, ?, ?, '{}', ?)
+                """,
+                (relative, title, year, now_ts, str(year) if year else "", now_ts),
+            )
+            conn.commit()
             return None
 
         tmdb_id = movie["id"]
@@ -424,32 +454,45 @@ def scan_unindexed(media_root=None, db_path=None, token=None):
         print("TMDB_API_TOKEN not configured. Skipping scan.")
         return []
 
-    media_root = Path(media_root or MEDIA_ROOT).resolve()
-    db_path = Path(db_path or DB_PATH).resolve()
-
-    if not media_root.exists():
-        return []
+    try:
+        from app import config
+        roots = config.get_media_roots() if media_root is None else [Path(media_root).resolve()]
+        db_path = Path(db_path or config.DATABASE).resolve()
+    except Exception:
+        roots = [Path(media_root or MEDIA_ROOT).resolve()]
+        db_path = Path(db_path or DB_PATH).resolve()
 
     conn = sqlite3.connect(db_path)
     setup_database(conn)
 
-    video_files = sorted(
-        path
-        for path in media_root.rglob("*")
-        if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
-    )
+    video_files = []
+    seen = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
+                if path.name not in seen:
+                    seen.add(path.name)
+                    video_files.append(path)
 
     indexed = {
         row[0]
         for row in conn.execute(
-            "SELECT filename FROM movies WHERE tmdb_id IS NOT NULL"
+            "SELECT filename FROM movies"
         ).fetchall()
     }
 
-    unindexed = [
-        p for p in video_files
-        if p.relative_to(media_root).as_posix() not in indexed
-    ]
+    try:
+        from app.utils.filesystem import get_rel_path
+    except Exception:
+        get_rel_path = None
+
+    unindexed = []
+    for p in video_files:
+        rel = get_rel_path(p) if get_rel_path else p.name
+        if rel not in indexed and p.name not in indexed:
+            unindexed.append(p)
 
     if not unindexed:
         conn.close()

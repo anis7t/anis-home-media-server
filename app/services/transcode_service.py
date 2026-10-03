@@ -213,7 +213,7 @@ def compat_transcode_args(vaapi_available=False, amf_available=False):
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
     if amf_available:
-        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
+        return ['-vf', "vpp_amf=h='min(1080,ih)':w=-2:format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p']
@@ -224,7 +224,7 @@ def hls_transcode_args(vaapi_available=False, amf_available=False):
     preset = os.environ.get("MEDIA_SERVER_TRANSCODE_PRESET", "superfast")
     crf = os.environ.get("MEDIA_SERVER_TRANSCODE_CRF", "23")
     if amf_available:
-        return ['-vf', "scale=-2:'min(1080,ih)':flags=bicubic,format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
+        return ['-vf', "vpp_amf=h='min(1080,ih)':w=-2:format=nv12", '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '22', '-qp_p', '24']
     if vaapi_available:
         return ['-vf', 'format=nv12,hwupload,scale_vaapi=w=1920:h=-2', '-c:v', 'h264_vaapi', '-qp', '24', '-pix_fmt', 'nv12']
     return ['-vf', 'scale=-2:1080,format=yuv420p', '-c:v', 'libx264', '-preset', preset, '-crf', crf, '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1']
@@ -893,7 +893,7 @@ def measure_segment_duration(path) -> float:
         out = subprocess.run(
             [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
              '-of', 'default=nw=1:nk=1', str(path)],
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
         value = 0.0
         for line in out.stdout.splitlines():
             line = line.strip()
@@ -932,7 +932,7 @@ def measure_segment_video_span(path):
         out = subprocess.run(
             [ffprobe, '-v', 'error', '-select_streams', 'v:0',
              '-show_entries', 'packet=pts_time', '-of', 'csv=p=0', str(path)],
-            capture_output=True, text=True, timeout=60)
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
         for line in out.stdout.splitlines():
             line = line.strip().rstrip(',')
             if line and line != 'N/A':
@@ -1030,7 +1030,7 @@ def measure_segment_frame_count(path) -> int:
         out = subprocess.run(
             [ffprobe, '-v', 'error', '-select_streams', 'v:0', '-count_packets',
              '-show_entries', 'stream=nb_read_packets', '-of', 'default=nw=1:nk=1', str(path)],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
         if out.returncode != 0:
             return -1                      # unreadable file: unknown, not "empty"
         frames = -1
@@ -1322,9 +1322,11 @@ def source_video_duration(path, fallback=None):
     so callers degrade to the previous behaviour rather than to a hard failure.
     """
     path = Path(path)
+    info = None
     if fallback is None:
         try:
-            fallback = float(probe_media(path).get('format', {}).get('duration') or 0) or None
+            info = probe_media(path)
+            fallback = float(info.get('format', {}).get('duration') or 0) or None
         except (TypeError, ValueError, OSError):
             fallback = None
 
@@ -1342,13 +1344,47 @@ def source_video_duration(path, fallback=None):
     except OSError:
         cache_key = None
 
+    # Step 1: Check stream-level duration metadata (present in MP4/MKV container tracks)
+    try:
+        if info is None:
+            info = probe_media(path)
+        video_stream = next((s for s in info.get('streams', []) if s.get('codec_type') == 'video'), {})
+
+        # Check stream duration attribute
+        v_dur = video_stream.get('duration')
+        if v_dur:
+            try:
+                val = float(v_dur)
+                if val > 0:
+                    return _remember_video_duration(cache_key, val)
+            except (ValueError, TypeError):
+                pass
+
+        # Check stream tags DURATION (standard Matroska/mkvmerge track statistics)
+        v_dur_tag = video_stream.get('tags', {}).get('DURATION')
+        if v_dur_tag:
+            try:
+                parts = str(v_dur_tag).strip().split(':')
+                if len(parts) == 3:
+                    h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+                    val = h * 3600 + m * 60 + s
+                    if val > 0:
+                        return _remember_video_duration(cache_key, val)
+            except (ValueError, TypeError):
+                pass
+    except Exception as exc:
+        logger.debug("Failed parsing stream duration tags for %s: %s", path, exc)
+
     def _scan(read_intervals=None):
         cmd = [probe, '-v', 'error', '-select_streams', 'v:0']
         if read_intervals:
             cmd += ['-read_intervals', read_intervals]
         cmd += ['-show_entries', 'packet=pts_time,duration_time', '-of', 'csv=p=0', str(path)]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15, check=False)
+            ret = getattr(res, 'returncode', 0)
+            if isinstance(ret, int) and ret != 0:
+                return None
         except (OSError, subprocess.SubprocessError):
             return None
         last_end = None
@@ -1371,11 +1407,11 @@ def source_video_duration(path, fallback=None):
         if end and end > 0:
             return _remember_video_duration(cache_key, end)
 
-    # Video ended before the midpoint (audio outlasts video by more than half), or the
-    # fallback duration is unknown: fall back to a full video packet scan.
+    # If midpoint scan did not produce a result, do a bounded scan or return fallback
     end = _scan()
     if end and end > 0:
         return _remember_video_duration(cache_key, end)
+
     return fallback
 
 

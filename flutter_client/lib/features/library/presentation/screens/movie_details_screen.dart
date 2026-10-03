@@ -14,6 +14,7 @@ import '../../data/models/movie_item.dart';
 import '../../data/models/movie_specs.dart';
 import '../../data/repositories/library_repository.dart';
 import '../controllers/library_controller.dart';
+import '../widgets/transcode_gate_dialog.dart';
 
 /// Screen displaying rich metadata, technical specs, and direct playback handshake for a single movie.
 class MovieDetailsScreen extends ConsumerStatefulWidget {
@@ -77,6 +78,21 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
     if (_isLaunchingPlayer) return;
     final movie = _details?.movie ?? widget.initialMovie;
     if (movie == null) return;
+
+    final needsTc = _details?.needsTranscode ?? false;
+    final isReady = _details?.isTranscodeReady ?? true;
+
+    if (needsTc && !isReady) {
+      await TranscodeGateDialog.show(
+        context,
+        movie: movie,
+        onPlayReady: () {
+          _fetchDetails();
+          _launchPlayer(startPosition: startPosition);
+        },
+      );
+      return;
+    }
 
     _isLaunchingPlayer = true;
     try {

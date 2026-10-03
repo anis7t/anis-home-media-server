@@ -594,6 +594,10 @@ class MediaServerTests(unittest.TestCase):
         saved_file = Path(app.config.MEDIA_ROOT) / json_data['filename']
         self.assertTrue(saved_file.is_file())
         self.assertEqual(saved_file.read_bytes(), b'dummy-video-data-12345')
+        try:
+            saved_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def test_api_upload_endpoint_rejects_invalid_extension(self):
         import io
@@ -642,6 +646,10 @@ class MediaServerTests(unittest.TestCase):
             saved_file = Path(app.config.MEDIA_ROOT) / json_data['filename']
             self.assertTrue(saved_file.is_file())
             self.assertEqual(saved_file.read_bytes(), b'dummy-mkv-video-content')
+            try:
+                saved_file.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def test_player_page_renders_header_branding_and_nav_links(self):
         res = self.client.get('/watch/Example.2026.mp4')

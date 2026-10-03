@@ -41,7 +41,9 @@ def extract_embedded_subtitle(path, stream_idx):
                 '-c:s', 'webvtt',
                 '-f', 'webvtt', str(temp_target)
             ]
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=60)
+            file_size_gb = path.stat().st_size / (1024 ** 3) if path.exists() else 1
+            timeout = max(180, int(file_size_gb * 30))
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=timeout)
             if res.returncode == 0 and temp_target.is_file() and temp_target.stat().st_size > 0:
                 content = temp_target.read_text(encoding='utf-8', errors='replace')
                 temp_target.write_text(srt_to_vtt(content), encoding='utf-8')

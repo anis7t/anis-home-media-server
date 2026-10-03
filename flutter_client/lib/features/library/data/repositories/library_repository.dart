@@ -91,6 +91,33 @@ class LibraryRepository {
       throw AppException('Error triggering library scan: $e');
     }
   }
+
+  /// Triggers background transcoding for a movie.
+  Future<bool> startTranscode(String filename) async {
+    await _ensureBaseUrl();
+    try {
+      final encoded = Uri.encodeComponent(filename);
+      final response = await _dio.post('${ApiEndpoints.transcodeStart}/$encoded');
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Polls the live transcoding status for a movie.
+  Future<Map<String, dynamic>> getTranscodeStatus(String filename) async {
+    await _ensureBaseUrl();
+    try {
+      final encoded = Uri.encodeComponent(filename);
+      final response = await _dio.get('${ApiEndpoints.transcodeStatus}/$encoded');
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return const {};
+    } catch (_) {
+      return const {};
+    }
+  }
 }
 
 /// Riverpod provider for LibraryRepository.
