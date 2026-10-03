@@ -32,7 +32,11 @@ for media in sorted(video_paths(), key=lambda p: p.name):
     if "#EXT-X-ENDLIST" in text:
         skipped.append((media.name, "already complete"))
         continue
-    total = source_video_duration(media, fallback=0.0) or 0.0
+    # Default fallback: passing anything non-None here DISABLES source_video_duration's own
+    # container-duration fallback, so a title whose video end cannot be measured returns a hard 0
+    # and is then skipped as "no measurable source duration" (this is what left 28 Weeks Later
+    # unsealed even though it is fully rendered and frame-complete).
+    total = source_video_duration(media) or 0.0
     if total <= 0:
         kept.append((media.name, "no measurable source duration"))
         continue

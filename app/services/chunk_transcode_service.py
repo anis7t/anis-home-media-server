@@ -3,6 +3,7 @@
 Distributes movie HLS transcoding across multiple GPUs (e.g. Discrete RX 560X + Integrated Vega 8)
 by assigning keyframe-aware sequential chunks concurrently and continuously assembling the master HLS playlist.
 """
+import json
 import logging
 import math
 import os
@@ -122,6 +123,90 @@ def plan_chunks(total_duration: float, chunk_duration: float = DEFAULT_CHUNK_DUR
         current_time += dur
 
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# Frame-exact window arithmetic
+# ---------------------------------------------------------------------------
+# Frame accounting compares an INTEGER frame count against an expectation. Deriving that
+# expectation as `duration * fps` gives a fractional target for every source whose rate is not a
+# whole number of frames per second (23.976 = 24000/1001, 29.97, 30000/1001, ...), so a chunk that
+# is genuinely complete is measured as short by up to half a frame, and every boundary in the
+# cache contributes a little phantom deficit that has nothing to do with lost content. Working in
+# frame indices removes that class of error entirely: the difference of two rounded indices is
+# exactly the number of frames whose presentation times fall inside [start, end).
+#
+# The tolerance is expressed in FRAMES too, deliberately not in seconds. Rounding loss is a
+# per-boundary phenomenon - the frames between a window edge and the muxer's first emitted frame -
+# so it does not grow with a chunk's duration. The old rule, max(0.6s, 1% of the chunk), gave a
+# 60s chunk 0.6s (14 frames at 24fps) but a 30s chunk 0.6s and a 2h feature 0.005*duration, so
+# identical losses were judged wildly differently depending on which window they landed in. That
+# inconsistency is what let two independent auditors disagree about the same cache.
+
+#: Seconds of keyframe/muxer alignment slack a single chunk boundary may legitimately lose.
+#: Expressed in frames at call time (see chunk_boundary_frame_tolerance) because the loss is a
+#: property of the encoder's alignment, not of how long the chunk is.
+#:
+#: Measured on the 4K HDR / AMF path (Project.Hail.Mary, 3840x2160 HEVC, 24fps): chunks 0, 29,
+#: 42, 54, 64, 78, 89, 114, 138, 151 and 155 each render 1425 of an expected 1440 frames - a
+#: 15-frame (0.625s) shortfall that recurs identically after every re-render. That is fixed
+#: encoder boundary loss, not missing content, and a tolerance below it produced an unbounded
+#: re-render loop: the same chunk ids were re-rendered pass after pass while the parallel phase
+#: burned both GPUs. The old rule, max(0.6s, 1% of the chunk), was accidentally just loose enough
+#: to absorb this - but it also scaled with duration, giving a 60s chunk 0.6s and a 2h feature
+#: 72s, so identical losses were judged wildly differently depending on which window they fell in.
+#: 0.7s in frames is duration-independent, still an order of magnitude below any real hole
+#: (the documented live damage was 277s = 6648 frames at 24fps).
+CHUNK_BOUNDARY_TOLERANCE_SECONDS = 0.7
+
+
+def chunk_boundary_frame_tolerance(fps: float) -> int:
+    """Frames a chunk boundary may lose to alignment, at *fps*.
+
+    Scales with frame rate (a fixed time slack is more frames at 60fps than at 24fps) but never
+    with the chunk's duration.
+    """
+    if fps <= 0:
+        return 1
+    return max(1, int(math.ceil(CHUNK_BOUNDARY_TOLERANCE_SECONDS * fps)))
+
+
+# --- Whole-cache ceiling ------------------------------------------------------
+# The per-chunk tolerance is an ALLOWANCE, and allowances multiply: 17 frames x 157 chunks is
+# ~111s that a single feature-length cache could shed without tripping any per-chunk check. The
+# measured reality is far smaller - Project.Hail.Mary (9382s, 157 chunks) loses 133 frames
+# (5.5s, 0.06%) because ~7% of renders drop one priming window at the head. This ceiling is the
+# backstop: it is a property of the RUNTIME, not of the chunk count, so it cannot be widened by
+# simply making a film longer.
+AGGREGATE_LOSS_CEILING_SECONDS = 10.0
+AGGREGATE_LOSS_CEILING_FRACTION = 0.001
+
+
+def aggregate_loss_ceiling_frames(fps: float, total_duration: float) -> int:
+    """Frames a whole cache may shed before the loss is treated as a real defect.
+
+    max(10s, 0.1% of runtime), expressed in frames at *fps*. A short clip is held to the 10s
+    floor; a feature is held to 0.1%, so a 2.6h film may not quietly lose more than ~9s.
+    """
+    if fps <= 0:
+        return 1
+    ceiling_s = max(AGGREGATE_LOSS_CEILING_SECONDS,
+                    AGGREGATE_LOSS_CEILING_FRACTION * max(0.0, float(total_duration)))
+    return max(1, int(math.ceil(ceiling_s * fps)))
+
+
+def frame_index_at(seconds: float, fps: float) -> int:
+    """Index of the frame at, or immediately before, *seconds*."""
+    return int(round(float(seconds) * float(fps)))
+
+
+def expected_frames_for_window(start_time: float, duration: float, fps: float) -> int:
+    """Frames whose presentation time falls in [start_time, start_time + duration).
+
+    Integer by construction, so a complete chunk measures as exactly complete.
+    """
+    return max(0, frame_index_at(float(start_time) + float(duration), fps)
+               - frame_index_at(start_time, fps))
 
 
 class DualGPUTranscodeJob:
@@ -568,6 +653,53 @@ class DualGPUTranscodeJob:
         self._update_master_playlist(is_complete=False)
         return repaired
 
+    def _record_accepted_loss(self, deficits) -> None:
+        """Write the shortfall this cache is being sealed with, explicitly.
+
+        "Accept and account" only means anything if the accepted number is written down rather
+        than inferred. A cache can be frame-complete by the per-chunk allowance and still be
+        short of the source (measured: Project.Hail.Mary, 133 frames / 5.5s over 157 chunks, from
+        ~7% of renders dropping one decoder-priming window at the head of a seeked chunk). That is
+        accepted deliberately, bounded by the whole-cache ceiling in chunk_content_deficits, and
+        recorded here so it can be compared against the next render instead of rediscovered.
+
+        Deliberately NOT written into hls.progress: that is ffmpeg's own -progress file.
+        """
+        try:
+            from datetime import datetime, timezone
+            totals = {}
+            chunk_content_deficits(self.hls_dir, self.total_duration,
+                                    source_path=getattr(self, 'path', None), totals=totals)
+            missing = int(totals.get('missing_frames') or 0)
+            if missing <= 0:
+                return
+            payload = {
+                'media': self.filename,
+                'recorded_utc': datetime.now(timezone.utc).isoformat(),
+                'missing_frames': missing,
+                'missing_s': round(missing / (totals.get('fps') or self._fps() or 24.0), 3),
+                'chunks_measured': totals.get('chunks_measured'),
+                'per_chunk_tolerance_frames': totals.get('per_chunk_tolerance_frames'),
+                'aggregate_ceiling_frames': totals.get('aggregate_ceiling_frames'),
+                'reason': 'accepted decoder-priming loss at seeked chunk boundaries',
+            }
+            path = self.hls_dir / 'hls.loss.json'
+            tmp = path.with_suffix('.tmp')
+            tmp.write_text(json.dumps(payload, indent=1, sort_keys=True), encoding='utf-8')
+            os.replace(tmp, path)
+            logger.info('Accepted %.2fs (%d frame(s)) of encoder priming loss for %s - recorded in %s',
+                        payload['missing_s'], missing, self.filename, path.name)
+        except Exception as exc:            # accounting must never break sealing
+            logger.debug('Could not record accepted loss for %s: %s', self.filename, exc)
+
+    def _fps(self) -> Optional[float]:
+        try:
+            from app.services.transcode_service import source_frame_rate
+            fps = source_frame_rate(getattr(self, 'path', None))
+            return fps or None
+        except Exception:
+            return None
+
     def _finalize(self) -> None:
         """Assemble the master playlist and only then declare completion.
 
@@ -593,6 +725,7 @@ class DualGPUTranscodeJob:
                 logger.warning("Frame accounting failed for %s: %s", self.filename, exc)
 
         if has_segments and coverage >= MIN_COVERAGE_RATIO and not deficits:
+            self._record_accepted_loss(deficits)
             _VALIDATION_FAILURES.pop(str(self.hls_dir), None)
             _FORCE_TAIL_RERENDER.pop(str(self.hls_dir), None)
             _TAIL_REPAIR_ATTEMPTS.pop(str(self.hls_dir), None)

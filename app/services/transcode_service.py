@@ -1081,6 +1081,9 @@ def _dense_cache_content_deficits(hls_dir, total_duration: float, fps: float):
     overflowing chunks, 6900 frames gone) is short here, while a dense cache whose chunks emitted
     the planned 15 segments is complete and must be left alone.
     """
+    # Frame-exact arithmetic shared with the per-chunk path and with scripts/hls_frame_audit.py.
+    from app.services.chunk_transcode_service import (
+        expected_frames_for_window, aggregate_loss_ceiling_frames)
     try:
         counts = [measure_segment_frame_count(seg) for seg in sorted(Path(hls_dir).glob('segment_*.ts'))]
     except OSError:
@@ -1088,40 +1091,68 @@ def _dense_cache_content_deficits(hls_dir, total_duration: float, fps: float):
     if not counts or any(c < 0 for c in counts):
         return []            # unknown: never strip ENDLIST or re-render on a guess
     frames = sum(counts)
-    expected = total_duration * fps
-    missing = (expected - frames) / fps
-    # The whole-cache total is exact (a verified re-render matched the source frame for frame),
-    # so this can be far tighter than the per-chunk rule: 1.5% of a 2h movie is two minutes and
-    # would let a real 60s hole pass. 0.5% (41s on a 2h movie) still ignores encoder rounding.
-    if missing > max(2.0, 0.005 * total_duration):
+    expected = expected_frames_for_window(0.0, total_duration, fps)
+    missing_frames = expected - frames
+    # Same whole-cache ceiling the strided path uses. This used to be the per-boundary allowance
+    # MULTIPLIED by the chunk count, on the theory that rounding loss accrues per boundary - but
+    # the measured reality is 0.9 frames per boundary, not 17, so that made the envelope ~20x too
+    # generous: 162 chunks x 17 frames is 115s of silent loss on a dense feature. It also left the
+    # two layouts judging identical damage by completely different standards (73-115s dense vs 10s
+    # strided). The ceiling is a property of the runtime, not of the chunk count.
+    #
+    # Both dense tests that constrain this still hold: 40 frames of encoder rounding (1.6s) stays
+    # under the 240-frame ceiling and is ignored; a real 2500-frame (100s) hole is far over it and
+    # is still caught.
+    tolerance_frames = aggregate_loss_ceiling_frames(fps, total_duration)
+    if missing_frames > tolerance_frames:
         return [{'chunk_id': -1, 'start': 0.0, 'expected_frames': int(expected),
-                 'frames': int(frames), 'missing_s': round(missing, 2), 'legacy_layout': True}]
+                 'frames': int(frames), 'missing_frames': int(missing_frames),
+                 'missing_s': round(missing_frames / fps, 2), 'legacy_layout': True,
+                 'ceiling_frames': tolerance_frames}]
     return []
 
 
-def chunk_content_deficits(hls_dir, total_duration: float, source_path=None, chunk_ids=None):
+def chunk_content_deficits(hls_dir, total_duration: float, source_path=None, chunk_ids=None,
+                           totals=None):
     """Chunks holding materially fewer video frames than their window requires.
 
-    Returns [{chunk_id, start, expected_frames, frames, missing_s}] for chunks missing more than
-    max(0.6s, 1.5% of the chunk). This is what catches content a resume skipped: every segment
-    can exist, measure a sane duration and still be missing seconds of frames.
+    Returns [{chunk_id, start, expected_frames, frames, missing_frames, missing_s}] for chunks
+    missing more than one boundary allowance. This is what catches content a resume skipped:
+    every segment can exist, measure a sane duration and still be missing seconds of frames.
 
     Per-chunk windows are only meaningful on the strided grid (see chunk_transcode_service's
     layout marker). A cache still on the legacy dense grid is judged as a whole instead, and
     attributed to a single aggregate entry with chunk_id -1.
+
+    A per-chunk allowance multiplies by the chunk count, so a whole-cache ceiling is applied on
+    top: if the chunks together still shed more than aggregate_loss_ceiling_frames() the result
+    gains an aggregate entry (chunk_id -1, aggregate=True) even when no single chunk tripped.
+
+    Pass a dict as *totals* to receive the measured totals (frames_expected, frames_found,
+    missing_frames, missing_s, ceiling_frames) whether or not anything was flagged.
     """
     deficits = []
     if total_duration <= 0:
         return deficits
     try:
         from app.services.chunk_transcode_service import (
-            SEGMENTS_PER_CHUNK_STRIDE, cache_uses_strided_layout, plan_chunks)
+            SEGMENTS_PER_CHUNK_STRIDE, aggregate_loss_ceiling_frames, cache_uses_strided_layout,
+            expected_frames_for_window, plan_chunks, chunk_boundary_frame_tolerance)
         plan = plan_chunks(total_duration)
     except Exception:
         return deficits
-    fps = source_frame_rate(source_path) if source_path else 24.0
+    # Frame-exact window arithmetic; see chunk_transcode_service for why `duration * fps` is
+    # not usable here. An unknown frame rate makes every expectation a guess, and guessing is
+    # how a complete cache gets re-rendered forever - so judge nothing instead.
+    # Frame-exact window arithmetic; see chunk_transcode_service for why `duration * fps` is
+    # not usable here. An unknown frame rate makes every expectation a guess, and guessing is
+    # how a complete cache gets re-rendered forever - so judge nothing instead.
+    fps = source_frame_rate(source_path) if source_path else 0.0
     if fps <= 0:
-        fps = 24.0
+        logger.warning('Frame accounting: no usable frame rate for %s; reporting no deficits',
+                       source_path)
+        return deficits
+    tolerance_frames = chunk_boundary_frame_tolerance(fps)
     hls_dir = Path(hls_dir)
     if not cache_uses_strided_layout(hls_dir):
         # Legacy dense cache: per-chunk windows are NOT recoverable from indices here. Chunk N's
@@ -1132,6 +1163,9 @@ def chunk_content_deficits(hls_dir, total_duration: float, source_path=None, chu
         return _dense_cache_content_deficits(hls_dir, total_duration, fps)
     wanted = set(chunk_ids) if chunk_ids is not None else None
     unknown = 0
+    measured_expected = 0
+    measured_found = 0
+    measured_missing = 0
     for c in plan:
         try:
             cid = int(c['chunk_id'])
@@ -1162,16 +1196,56 @@ def chunk_content_deficits(hls_dir, total_duration: float, source_path=None, chu
             unknown += 1                   # cannot judge this chunk: never re-render on a guess
             continue
         frames = sum(counts)
-        expected = duration * fps
-        missing = (expected - frames) / fps
-        if missing > max(0.6, 0.01 * duration):
+        expected = expected_frames_for_window(c['start_time'], duration, fps)
+        missing_frames = expected - frames
+        measured_expected += expected
+        measured_found += frames
+        measured_missing += missing_frames
+        if missing_frames > tolerance_frames:
             deficits.append({'chunk_id': cid, 'start': round(float(c['start_time']), 1),
                              'expected_frames': int(expected), 'frames': int(frames),
-                             'missing_s': round(missing, 2)})
+                             'missing_frames': int(missing_frames),
+                             'missing_s': round(missing_frames / fps, 2)})
     if unknown:
         logger.warning('Frame accounting: %d of %d chunk(s) could not be measured (no ffprobe or '
                        'unreadable segments); they are reported as neither complete nor deficient',
                        unknown, len(plan))
+
+    # Whole-cache ceiling. The per-chunk allowance multiplies by the chunk count, so on its own it
+    # would permit ~111s of loss on a 157-chunk feature without a single chunk tripping. The
+    # ceiling is a property of the runtime, not the chunk count.
+    #
+    # It only fires when NO chunk was flagged: its whole purpose is to catch the case the
+    # per-chunk check structurally cannot see, namely many chunks each a little short. Adding it
+    # on top of an existing per-chunk entry would report the same frames twice.
+    ceiling_frames = aggregate_loss_ceiling_frames(fps, total_duration)
+    if totals is not None:
+        totals.update({
+            'frames_expected': measured_expected,
+            'frames_found': measured_found,
+            'missing_frames': measured_missing,
+            'missing_s': round(measured_missing / fps, 2) if fps else 0.0,
+            'chunks_measured': len(plan) - unknown,
+            'per_chunk_tolerance_frames': tolerance_frames,
+            'aggregate_ceiling_frames': ceiling_frames,
+        })
+    if measured_missing > ceiling_frames and not deficits:
+        deficits.append({
+            'chunk_id': -1, 'start': 0.0, 'aggregate': True,
+            'expected_frames': int(measured_expected), 'frames': int(measured_found),
+            'missing_frames': int(measured_missing),
+            'missing_s': round(measured_missing / fps, 2) if fps else 0.0,
+            'ceiling_frames': ceiling_frames,
+            'per_chunk_tolerance_frames': tolerance_frames,
+            'reason': 'aggregate loss exceeds the whole-cache ceiling',
+        })
+        logger.error(
+            'Frame accounting: %s loses %d frame(s) (%.2fs) across %d chunk(s), over the '
+            'whole-cache ceiling of %d frame(s) (%.2fs) even though no single chunk exceeded its '
+            '%d-frame boundary allowance',
+            hls_dir, measured_missing, measured_missing / fps if fps else 0.0,
+            len(plan) - unknown, ceiling_frames, ceiling_frames / fps if fps else 0.0,
+            tolerance_frames)
     return deficits
 
 

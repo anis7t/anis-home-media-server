@@ -24,21 +24,15 @@ FFPROBE = str(Path(_BIN) / "ffprobe.exe")
 
 
 def count_frames(path):
-    try:
-        out = subprocess.run(
-            [FFPROBE, "-v", "error", "-select_streams", "v:0", "-count_packets",
-             "-show_entries", "stream=nb_read_packets", "-of", "default=nw=1:nk=1", str(path)],
-            capture_output=True, text=True, timeout=120)
-        for line in out.stdout.splitlines():
-            line = line.strip()
-            if line and line != "N/A":
-                try:
-                    return int(float(line))     # duplicated per TS program: take the first
-                except ValueError:
-                    continue
-        return 0
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return 0
+    """Video frames in one segment.
+
+    Delegates to the server's own memoised measurement so there is a single probe implementation
+    with a single convention for "unknown". The local ffprobe call this replaced returned 0 on
+    failure, which the server deliberately refuses to do: an unreadable segment is unknown (-1),
+    never empty, because treating it as empty marks every chunk deficient and re-renders forever.
+    """
+    from app.services.transcode_service import measure_segment_frame_count
+    return measure_segment_frame_count(path)
 
 
 def source_fps(path):
@@ -64,29 +58,73 @@ def source_fps(path):
 
 def audit(media):
     from app.services.transcode_service import hls_cache_dir
-    from app.services.chunk_transcode_service import plan_chunks
+    # Shared with the server's own accounting (transcode_service.chunk_content_deficits) so the
+    # two can never disagree again: this script used to apply max(0.6, 1.5% * duration) while the
+    # server applied max(0.6, 1% * duration), which made a 0.625s deficit on a 60s chunk invisible
+    # here and visible there - the same cache, two verdicts.
+    from app.services.chunk_transcode_service import (
+        expected_frames_for_window, plan_chunks, SEGMENTS_PER_CHUNK_STRIDE,
+        chunk_boundary_frame_tolerance)
     cache = hls_cache_dir(media)
     if not (cache / "playlist.m3u8").is_file():
         return None
     fps = source_fps(media)
+    if fps <= 0:
+        return {"media": media.name, "fps": fps, "error": "unusable frame rate - not judged"}
     plan = plan_chunks(_video_end(media))
     segs = sorted(cache.glob("segment_*.ts"))
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # Deliberately conservative. This audit counts packets over tens of GB and can run while the
+    # server is transcoding; at one worker per core it starves the AMF encoder's CPU side and the
+    # GPUs visibly drop to single-digit utilisation. Leave headroom for the transcode.
+    workers = max(1, min(4, (os.cpu_count() or 4) // 2))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         counts = dict(zip([s.name for s in segs], pool.map(count_frames, segs)))
-    rows, missing_total = [], 0.0
+    # A zero-length segment terminates a chunk's run exactly as a missing one does.
+    present = {s.name for s in segs if s.stat().st_size > 0}
+
+    tolerance = chunk_boundary_frame_tolerance(fps)
+    rows, missing_total, missing_frames_total, unknown, unstarted = [], 0.0, 0, 0, 0
     for c in plan:
-        start, count = c["start_seg"], c["expected_segs"]
-        frames = sum(counts.get(f"segment_{i:06d}.ts", 0) for i in range(start, start + count))
-        expected = c["duration"] * fps
-        deficit = (expected - frames) / fps if fps else 0.0
-        if deficit > max(0.6, 0.015 * c["duration"]):
+        start = c["start_seg"]
+        # Measure the chunk's OWN contiguous run of segments, bounded by the stride - NOT the
+        # planned `expected_segs` count. A 60s chunk legitimately emits 15, 16 or 17 segments
+        # depending on the encoder's keyframes, and all of them belong to this chunk. Measuring
+        # only the planned count undercounts the frames and invents enormous phantom deficits:
+        # it reported 104,601 missing frames (72 minutes) in a cache the server judges complete.
+        # This is the same defect the server's strided-layout work fixed; this script was missed.
+        run, i = [], start
+        while i < start + SEGMENTS_PER_CHUNK_STRIDE:
+            name = f"segment_{i:06d}.ts"
+            if name not in present:
+                if run:
+                    break              # end of this chunk's run
+                i += 1
+                continue                 # this chunk has not started yet
+            run.append(name)
+            i += 1
+        if not run:
+            unstarted += 1
+            continue
+        window = [counts[n] for n in run]
+        if any(v < 0 for v in window):
+            unknown += 1        # unknown is never "empty" and never deficient
+            continue
+        frames = sum(window)
+        expected = expected_frames_for_window(c["start_time"], c["duration"], fps)
+        missing_frames = expected - frames
+        if missing_frames > tolerance:
             rows.append({"chunk_id": c["chunk_id"], "start": c["start_time"],
-                         "expected_frames": round(expected), "frames": frames,
-                         "missing_s": round(deficit, 2)})
-            missing_total += deficit
+                         "segments": len(run), "expected_frames": expected, "frames": frames,
+                         "missing_frames": missing_frames,
+                         "missing_s": round(missing_frames / fps, 2)})
+            missing_total += missing_frames / fps
+            missing_frames_total += missing_frames
     return {"media": media.name, "fps": round(fps, 3), "chunks": len(plan),
-            "deficient_chunks": len(rows), "missing_s": round(missing_total, 1),
-            "worst": sorted(rows, key=lambda r: -r["missing_s"])[:6]}
+            "tolerance_frames_per_chunk": tolerance,
+            "unmeasurable_chunks": unknown, "unrendered_chunks": unstarted,
+            "deficient_chunks": len(rows), "missing_frames": missing_frames_total,
+            "missing_s": round(missing_total, 1),
+            "worst": sorted(rows, key=lambda r: -r["missing_frames"])[:6]}
 
 
 def _video_end(media):
