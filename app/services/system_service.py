@@ -279,16 +279,48 @@ def get_system_telemetry():
     mem_used_str = f"{vmem.used / (1024**3):.1f} GB"
     mem_total_str = f"{vmem.total / (1024**3):.1f} GB"
 
-    # Storage Space (MEDIA_ROOT or root filesystem fallback)
-    try:
-        storage_path = str(MEDIA_ROOT) if MEDIA_ROOT.exists() else "/"
-        du = psutil.disk_usage(storage_path)
-    except Exception:
-        du = psutil.disk_usage("/")
+    # Storage Space (Aggregate pool across active media & server drives, plus per-drive details)
+    drives_info = []
+    pool_used = 0
+    pool_total = 0
+    pool_free = 0
 
-    storage_used_str = f"{du.used / (1024**3):.1f} GB"
-    storage_free_str = f"{du.free / (1024**3):.1f} GB"
-    storage_total_str = f"{du.total / (1024**3):.1f} GB"
+    # Primary media drives to track
+    target_mounts = ["D:\\", "E:\\"] if os.name == "nt" else ["/"]
+    for mount in target_mounts:
+        try:
+            if Path(mount).exists():
+                u = psutil.disk_usage(mount)
+                drive_letter = mount.rstrip("\\/")
+                drives_info.append({
+                    "drive": drive_letter,
+                    "percent": round(u.percent, 1),
+                    "used_str": f"{u.used / (1024**3):.1f} GB",
+                    "free_str": f"{u.free / (1024**3):.1f} GB",
+                    "total_str": f"{u.total / (1024**3):.1f} GB",
+                })
+                pool_used += u.used
+                pool_total += u.total
+                pool_free += u.free
+        except Exception:
+            pass
+
+    if not drives_info:
+        try:
+            storage_path = str(MEDIA_ROOT) if MEDIA_ROOT.exists() else "/"
+            du = psutil.disk_usage(storage_path)
+        except Exception:
+            du = psutil.disk_usage("/")
+        pool_used = du.used
+        pool_total = du.total
+        pool_free = du.free
+        pool_pct = round(du.percent, 1)
+    else:
+        pool_pct = round((pool_used / pool_total * 100), 1) if pool_total > 0 else 0.0
+
+    storage_used_str = f"{pool_used / (1024**3):.1f} GB"
+    storage_free_str = f"{pool_free / (1024**3):.1f} GB"
+    storage_total_str = f"{pool_total / (1024**3):.1f} GB"
 
     # Rates
     rates = _tracker.get_rates()
@@ -328,16 +360,17 @@ def get_system_telemetry():
             "sub": f"Read: {disk_read_str} · Write: {disk_write_str}",
         },
         "storage": {
-            "percent": round(du.percent, 1),
-            "used": du.used,
-            "free": du.free,
-            "total": du.total,
+            "percent": pool_pct,
+            "used": pool_used,
+            "free": pool_free,
+            "total": pool_total,
             "used_str": storage_used_str,
             "free_str": storage_free_str,
             "total_str": storage_total_str,
             "label": "Storage Pool",
-            "display": f"{round(du.percent, 1)}% · {storage_used_str} / {storage_total_str}",
-            "sub": f"{storage_free_str} remaining free",
+            "display": f"{pool_pct}% · {storage_used_str} / {storage_total_str}",
+            "sub": " · ".join(f"{d['drive']} {d['free_str']} free" for d in drives_info) if drives_info else f"{storage_free_str} remaining free",
+            "drives": drives_info,
         },
         "network": {
             "rx_rate": round(rates["net_rx_rate"], 1),
