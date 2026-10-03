@@ -79,7 +79,7 @@ def stream_reader(pipe, name):
             print(f"[{name}] {s}", flush=True)
 
 def main():
-    exe_path = r"c:\MediaServer\flutter_client\build\windows\x64\runner\Release\media_server_client.exe"
+    exe_path = r"e:\MediaServer\flutter_client\build\windows\x64\runner\Release\media_server_client.exe"
     if not os.path.exists(exe_path):
         print(f"Error: {exe_path} not found")
         sys.exit(1)
