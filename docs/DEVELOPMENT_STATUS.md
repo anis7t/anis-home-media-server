@@ -8,7 +8,7 @@ Clean Base branch: `feat/storage-retention-cache-purge`
 ## 1. Branch Architecture & Environment State
 
 - **Branch Structure:**
-  - `feat/storage-retention-cache-purge` (at `9cf8d21`): Pure backend engine branch containing storage retention policies, dual-drive tiering (`C:` fast NVMe SSD vs `D:\Flicks` mass storage), cross-drive cache/subtitle resilience, and multi-chunk HLS discontinuity alignment.
+  - `feat/storage-retention-cache-purge` (at `9cf8d21`): Pure backend engine branch containing storage retention policies, dual-drive tiering (`E:` fast SSD for runtime/cache/database vs `D:\Flicks` mass storage), cross-drive cache/subtitle resilience, and multi-chunk HLS discontinuity alignment.
   - `feat/unified-header-navigation` (at `6c6e6c6`): Pure frontend & UX branch containing the frosted obsidian navigation redesign, 3D play brand identity, responsive swipeable mobile action rails, desktop search bar density polish, universal customizable select styling (`appearance: base-select`), and Chromium Hls.js precedence.
 - **Environment:** Windows 11 Home / Workstation
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
@@ -20,13 +20,16 @@ Clean Base branch: `feat/storage-retention-cache-purge`
 
 ```text
 Project:       E:\MediaServer
-Media root:    C:\Flicks
-Upload root:   D:\Flicks\.uploads -> D:\Flicks (215+ GB storage pool on D:)
-Archive root:  D:\Flicks\.archive (215+ GB free storage pool on D:)
-Transcode:     E:\MediaServer\cache\hls (fast NVMe SSD generation & delivery)
+Media root:    D:\Flicks
+Upload root:   D:\Flicks\.uploads -> D:\Flicks (high-capacity storage pool on D:)
+Archive root:  D:\Flicks\.archive (cold source retention on D:)
+Deleted root:  D:\Flicks\.deleted (deleted-source staging on D:)
+Transcode:     E:\MediaServer\cache\hls (fast SSD generation & delivery)
 Previews:      E:\MediaServer\cache\previews (seek thumbnail frame cache)
 Database:      E:\MediaServer\media.db
 Venv:          E:\MediaServer\venv
+Storage pool:  D: + E: aggregated (per-drive breakdown in /api/system-status)
+Note:          C: is not used by this project.
 ```
 
 ---
@@ -46,8 +49,8 @@ Venv:          E:\MediaServer\venv
 - **Chromium Hls.js Precedence:** Prioritizes `window.Hls && Hls.isSupported()` over native `canPlayType` before falling back, preventing Windows Chromium browsers from attempting native Safari-style playback which cannot demux multi-chunk offsets.
 
 ### Dual-Drive Storage Tiering & Headroom Prioritization
-- **Headroom Optimization:** Preserves primary fast NVMe SSD (`C:`) for OS, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache/previews`), and completed multi-GPU HLS caches (`cache/hls`).
-- **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), and cold source archives (`D:\Flicks\.archive`).
+- **Headroom Optimization:** Preserves the primary fast SSD `E:` (`E:\MediaServer`) for the application and runtime, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache\previews`), and completed multi-GPU HLS caches (`cache\hls`).
+- **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), cold source archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
 - **Dynamic Multi-Root Discovery:** `config.get_media_roots()` returns all active storage roots. All routing, authorization, and media scanning procedures validate against all configured roots.
 - **Deterministic Cache Continuity:** `hls_cache_dir()` and `preview_dir()` compute relative paths across all active roots, ensuring media files moved or archived between drives retain their deterministic cache keys and active streams.
 - **Cross-Root Subtitle Mirror Discovery:** Resolves sidecar `.srt`/`.vtt` files across mirror subdirectories in any active drive root (stripping `.archive` subpaths).

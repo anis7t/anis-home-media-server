@@ -210,9 +210,10 @@ If a file has a non-standard name, the forensic resolver (`media_resolver.py`) i
 
 ## 8. Storage Retention & Cache Management
 
-### Dual-Drive Storage Tiering (C: SSD + D: HDD)
-- **Fast NVMe SSD (`C:\`):** Hosts the operating system, SQLite database (`media.db`), live seek preview thumbnails (`cache/previews`), and completed HLS transcode streams (`cache/hls`).
-- **Mass Storage Drive (`D:\Flicks`):** Dedicated to high-capacity cold storage, holding raw movie files, upload staging (`D:\Flicks\.uploads`), and source archives (`D:\Flicks\.archive`).
+### Dual-Drive Storage Tiering (E: SSD + D: Mass Storage)
+- **Fast SSD (`E:\MediaServer`):** Hosts the application and runtime, SQLite database (`E:\MediaServer\media.db`), live seek preview thumbnails (`E:\MediaServer\cache\previews`), and completed HLS transcode streams (`E:\MediaServer\cache\hls`).
+- **Mass Storage Drive (`D:\Flicks`):** Dedicated to high-capacity cold storage, holding raw movie files, upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`), and source archives (`D:\Flicks\.archive`).
+- The system telemetry Storage Pool combines `D:` and `E:` into one capacity figure with a per-drive breakdown. Drive `C:` is not used by the media server.
 
 ### Configurable Retention Policies
 In **My Library (`/manage`)**, configure post-transcode policies:

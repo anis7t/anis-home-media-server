@@ -21,7 +21,7 @@ Environment:
 ```text
 OS:              Windows
 Project:         E:\MediaServer
-Media root:      C:\Flicks
+Media root:      C:\Flicks   <-- AS OF THE 2026-09-15 REPRO; see note below
 Python:          3.14.3
 FFmpeg:          9.0.1 essentials build with AMF
 WSGI:            Waitress
@@ -29,6 +29,13 @@ Origin:          127.0.0.1:8000
 Test movie:      The Odyssey (2026)
 TMDb ID:         1368337
 ```
+
+> **Historical note (added during a documentation-only correction).** The `Media root` value above
+> is preserved exactly as it was at the time of this reproduction and must not be read as current
+> configuration. The media root has since moved off `C:`; the current topology is documented in
+> [`WINDOWS_SETUP.md`](WINDOWS_SETUP.md) and `docs/DEVELOPMENT_STATUS.md`:
+> application/runtime/database/cache on `E:\MediaServer`, media on `D:\Flicks`.
+> No behavioural conclusion in this report depends on the drive letter.
 
 The test was deliberately performed from a clean cache state.
 

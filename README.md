@@ -145,7 +145,7 @@ The `/devices` telemetry dashboard provides full visibility into connected clien
 
 ## Dual-Drive Storage Tiering
 
-- **Tiered Multi-Volume Architecture:** Optimizes fast NVMe SSD (`C:`) for OS, SQLite (`media.db`), in-progress scratch, seek frame previews (`cache/previews`), and active HLS stream caches (`cache/hls`), while offloading cold raw media, upload staging (`D:\Flicks\.uploads`), and archives to mass storage (`D:\Flicks`, `D:\Flicks\.archive`).
+- **Tiered Multi-Volume Architecture:** Optimizes the fast SSD `E:` (`E:\MediaServer`) for the application and runtime, SQLite (`E:\MediaServer\media.db`), in-progress scratch, seek frame previews (`E:\MediaServer\cache\previews`), and active HLS stream caches (`E:\MediaServer\cache\hls`), while offloading cold raw media, upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`), and archives to high-capacity storage `D:` (`D:\Flicks`, `D:\Flicks\.archive`). `C:` is not used by this project.
 - **Post-Transcode Retention Policies:** Configurable policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table.
 - **Safe Orphaned Cache Purge:** One-click automated cache reconciliation auditing and removing stale HLS directories without disrupting active transcodes.
 
@@ -190,7 +190,7 @@ Browser / Client (Desktop, Tablet, Mobile)
     ┌──────────────┼──────────────────────────┐
     ▼              ▼                          ▼
  SQLite DB      Dual-GPU FFmpeg Workers    Local Media Root
- (media.db)     ├─ GPU 0: AMD RX 560X      (C:\Media)
+ (media.db)     ├─ GPU 0: AMD RX 560X      (D:\Flicks)
                 └─ GPU 1: AMD Vega 8
 ```
 
@@ -249,7 +249,7 @@ Store environment variables in `E:\MediaServer\.env` (never commit this file):
 
 ```ini
 TMDB_API_TOKEN=<your_tmdb_bearer_token>  # set locally; do not commit the token
-MEDIA_SERVER_MEDIA_ROOT=C:\Media
+MEDIA_SERVER_MEDIA_ROOT=D:\Flicks
 MEDIA_SERVER_DATABASE=E:\MediaServer\media.db
 MEDIA_SERVER_BASE_DIR=E:\MediaServer
 MEDIA_SERVER_LOG_LEVEL=INFO

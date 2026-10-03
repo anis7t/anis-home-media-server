@@ -213,18 +213,19 @@
   - The production `MediaServer` service runs under `NT AUTHORITY\SYSTEM`. Stopping or restarting it requires elevated privileges. Use `scripts/restart_service.bat` (which requests UAC elevation via `Start-Process ... -Verb RunAs`) or an elevated PowerShell terminal (`Restart-Service MediaServer`).
 
 ## 18. Storage Retention & Cross-Drive File Operations (Strict Guardrail)
-- **Cross-Drive File Moves (`C:` to `D:`)**:
+- **Cross-Drive File Moves (any volume pair, in practice `E:` ↔ `D:`)**:
   - Never invoke `os.rename()` for moving files across disk volumes on Windows; it fails with `[WinError 17] The system cannot move the file to a different disk drive`.
   - Always use `shutil.move(src, dst)`. Ensure the target directory exists (`parent.mkdir(parents=True, exist_ok=True)`) and unlink any pre-existing collision targets (`target_path.unlink(missing_ok=True)`) prior to moving.
 - **Canonical Cache Directory Resolution**:
   - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
 - **Dual-Drive Storage Tiering & Headroom Prioritization**:
-  - **Drive `C:` (NVMe SSD):** Must be reserved for OS, database (`media.db`), in-progress transcode scratch, seek thumbnails (`cache/previews`), and completed multi-GPU HLS streams (`cache/hls`) for zero-stutter playback. Raw multi-gigabyte video files should not remain on `C:`.
-  - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), and cold archives (`D:\Flicks\.archive`).
+  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the SQLite database (`E:\MediaServer\media.db`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
+  - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), cold archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
+  - **Drive `C:` is not part of this project's storage.** Do not create, read, or assume project paths on `C:`; historical `C:\Flicks` references in older notes are obsolete.
   - `config.get_media_roots()` returns `[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`. All media discovery, route authorization, and path validation must check all roots returned by `get_media_roots()`.
 - **Cross-Volume Deterministic Cache Key Continuity**:
   - Both `hls_cache_dir(path)` and `preview_dir(path)` must compute relative paths across all roots in `config.get_media_roots()` (`alt_path = root / rel`).
-  - When media files are moved or archived from `C:` to `D:`, their deterministic cache directories must remain identical and active, preventing stream 404s and false-positive cache orphan classification.
+  - When a media file is moved or archived between any two roots (today: `D:\Flicks` → `D:\Flicks\.archive`, and in principle across volumes), its deterministic cache directory must remain identical and active, preventing stream 404s and false-positive cache orphan classification.
 - **Cross-Volume Subtitle Discovery & Route Authorization**:
   - `tracks(path)` in `subtitles_service.py` must compute `rel_filename` dynamically by matching against `get_media_roots()` rather than assuming `MEDIA_ROOT`.
   - Subtitle search must inspect both `path.parent` and `config.MEDIA_ROOT`.

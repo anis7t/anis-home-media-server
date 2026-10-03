@@ -7,8 +7,11 @@ This document records the complete Windows development and production environmen
 ## 1. Project Layout & Environment
 
 - **Repository Root:** `E:\MediaServer`
-- **Media Library:** `C:\Media`
-- **Archive Storage Pool:** `D:\Flicks\.archive` (215+ GB free storage pool on D:)
+- **Media Library:** `D:\Flicks`
+- **Archive Storage Pool:** `D:\Flicks\.archive`
+- **Upload Staging:** `D:\Flicks\.uploads`
+- **Deleted-Source Staging:** `D:\Flicks\.deleted`
+- **Transcode Cache:** `E:\MediaServer\cache\hls` (Storage Pool telemetry aggregates `D:` + `E:`)
 - **SQLite Database:** `E:\MediaServer\media.db`
 - **Environment File:** `E:\MediaServer\.env`
 - **Virtual Environment:** `E:\MediaServer\venv`

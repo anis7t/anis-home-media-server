@@ -579,7 +579,7 @@ The AMF adapter binding **is implemented** in `transcode_service.py`:
 - **No backup strategy**: SQLite file at `E:\MediaServer\media.db`
 
 ### Storage Layout
-- Media: `C:\Flicks` (configured via MEDIA_SERVER_MEDIA_ROOT)
+- Media: `D:\Flicks` (configured via `MEDIA_SERVER_MEDIA_ROOT`)
 - Cache: `E:\MediaServer\cache\` (gitignored)
 - Posters/Backdrops: `E:\MediaServer\cache\posters\`, `cache\backdrops\`
 - HLS segments: `cache\hls\<sha256>\`
