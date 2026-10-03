@@ -262,16 +262,57 @@ The current project includes:
   migration and the resume rebuild all call it, and `hls_playlist` corrects what it *serves* — so caches
   written before the fix are healed on delivery while the file on disk stays as written (its labels are
   the content record). Same rule as the EXTINF lesson above: labels are honest, container durations not.
+- **Frame accounting is frame-index exact, and shared with the audit tool.** `chunk_content_deficits()`
+  and `scripts/hls_frame_audit.py` call the *same* helpers in `chunk_transcode_service`:
+  `frame_index_at()`, `expected_frames_for_window()`, `chunk_boundary_frame_tolerance()` and
+  `aggregate_loss_ceiling_frames()`. Never reintroduce a local expectation or window in either place.
+  - **Expectation is a difference of frame indices, never `duration * fps`.** `duration * fps` is
+    fractional at 23.976 / 29.97 / 30000÷1001, so a complete chunk measures short and every boundary
+    contributes a phantom deficit.
+  - **Per-chunk tolerance is a frame count, never a percentage of duration.**
+    `chunk_boundary_frame_tolerance(fps)` is a fixed 0.7 s of alignment slack expressed in frames. The old
+    `max(0.6s, 1% of chunk)` gave a 60 s chunk 0.6 s and a 2 h feature 72 s, so identical damage was
+    judged by whichever window it landed in.
+  - **The 0.7 s is measured, not chosen.** A single fresh render of a 4K HDR/AMF chunk reproducibly loses
+    exactly **15 frames (0.625 s @ 24 fps) at the head of the window**, and the loss is **identical for
+    60 s, 61 s and 65 s windows** — fixed decode-pipeline priming, *not* a seek-position error. Seeking
+    1 s earlier and extending `-t` by 1 s recovers it (1440 → 1449 frames). Repeated repair passes converge
+    it away, which is why the serial repair loop eventually stopped; do not "fix" it by changing the render
+    command without weighing that against a live transcode pipeline.
+  - **Measure a chunk's own contiguous run**, bounded by `start_seg + SEGMENTS_PER_CHUNK_STRIDE`. A chunk
+    legitimately emits 15, 16 or 17 segments; counting only `expected_segs` undercounts and invents
+    deficits up to **104 601 frames** where none exist.
+  - **Per-chunk allowances multiply, so there is a whole-cache ceiling.** 17 frames × 157 chunks is ~111 s
+    a feature could shed unnoticed. `aggregate_loss_ceiling_frames()` = `max(10 s, 0.1 % of runtime)`, applied
+    to **both** the strided and the dense path so both layouts are judged by one standard. It fires
+    **only when no chunk was flagged** — its purpose is the case the per-chunk check cannot see.
+  - **Unknown is never empty.** A frame count of `-1` means unmeasurable and the chunk is skipped; only a
+    genuinely-read 0 counts as zero. Returning 0 for an unreadable segment caused unbounded re-rendering.
+  - **`_finalize()` records the accepted shortfall** to `hls.loss.json` (frames, seconds, chunks, both
+    thresholds, timestamp, reason) when it seals a short cache. Not into `hls.progress` — that is ffmpeg's
+    own `-progress` file.
+- **Never call `source_video_duration(path, fallback=<anything but None>)`.** Any non-`None` fallback
+  disables that function's own container-duration fallback, so a title whose video end cannot be measured
+  returns a hard `0`; `plan_chunks(0)` is then `[]` and the cache is judged **vacuously complete**. Use the
+  bare call. This silently skipped 28 Weeks Later in `hls_restore_endlist.py`, and every such title in
+  `hls_frame_audit.py`.
+- **`_finalize()` only runs at the end of a transcode job**, so a cache refused ENDLIST is never
+  re-evaluated on its own — it simply sits there. `scripts/hls_restore_endlist.py` re-checks and seals such
+  caches using the fixed measurement (restoring only what measures complete, backing up the playlist
+  first). Run it after any change to the accounting.
 - **Frame accounting is the only trustworthy content measure.** `chunk_content_deficits()`
   counts video packets per chunk and compares with `chunk window x source fps`; a real cache
   measured 100 % by duration while missing **277.2 s of frames across 101 chunks** (independent
   packet-PTS scan: 85 gaps / 279.4 s - the two agree within 2 s). A frame count of `-1` means
   *unknown* (unreadable file, no ffprobe, segment still being written) and must never be treated
   as empty, or every chunk looks deficient and the cache re-renders forever.
-- **ENDLIST must never be written while any chunk is short of frames**, and a chunk with a frame
-  deficit is not "rendered". `repair_understated_caches()` (cache-maintenance-worker) strips
-  ENDLIST from caches that claim completion but are short, so the pipeline re-renders them. It
-  never relabels: a genuinely short cache must be re-rendered, not rewritten.
+- **ENDLIST must not be written over measured content loss**, and a chunk beyond its boundary allowance
+  is not "rendered". The practical rule is bounded: a chunk may fall short by up to one **chunk-boundary
+  allowance** (measured encoder priming — see the frame-accounting section below) and a whole cache by up
+  to the **aggregate ceiling**; past either, ENDLIST is refused. `repair_understated_caches()`
+  (cache-maintenance-worker) strips ENDLIST from caches that claim completion but are short, so the
+  pipeline re-renders them. It never relabels: a genuinely short cache must be re-rendered, not
+  rewritten. The accepted shortfall is **recorded** to `hls.loss.json`, not silently swallowed.
 - **Frame measurement must respect the cache's layout.** Per-chunk windows are exact *only* on the
   strided grid (`.seg_layout` = `stride32`). On a legacy dense cache chunk N's overflow segment
   sits on chunk N+1's first index, so a strided window reads a neighbour's segments for most

@@ -29,6 +29,40 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-04 — Frame-exact chunk accounting; the two auditors made to agree
+
+**Deliverable:** `chunk_content_deficits()` (server) and `scripts/hls_frame_audit.py` (diagnostics) measured the same cache differently and disagreed. Both now share one implementation in `chunk_transcode_service`: `frame_index_at()`, `expected_frames_for_window()`, `chunk_boundary_frame_tolerance()`, `aggregate_loss_ceiling_frames()`.
+
+Three defects fixed, each verified against real caches:
+
+1. **Fractional expectation.** `expected = duration * fps` is fractional at 23.976 / 29.97 / 30000÷1001, so complete chunks measured short and every boundary added a phantom deficit. Replaced by a difference of rounded frame indices — always an integer, always exactly the frames whose presentation times fall in the window.
+2. **Duration-scaled tolerance.** `max(0.6s, 1% of chunk)` gave a 60s chunk 0.6s and a 2h feature 72s, so identical damage was judged by whichever window it landed in. Now a fixed 0.7s of alignment slack expressed in frames, never multiplied by chunk length.
+3. **Audit script on the wrong window.** It used the old dense-grid `range(start_seg, start_seg + expected_segs)`. A chunk legitimately emits 15, 16 or 17 segments, so it undercounted and invented deficits up to **104,601 frames (72 minutes)** in a cache the server called complete. It also returned `0` for an unreadable segment where the server returns `-1` unknown. Cross-check over 21 caches: **17 AGREE**, and all 4 divergences were exactly the 4 legacy **dense** caches where the server judges whole-cache on purpose and the script had no layout guard.
+
+**Measured, not assumed — encoder priming.** A single fresh render of a 4K HDR/AMF chunk (3840×2160 HEVC, 24fps) reproducibly loses exactly **15 frames (0.625s) at the head of the window**, and the loss is **identical for 60s, 61s and 65s windows** — fixed decode-pipeline priming, not a seek-position error. Seeking 1s earlier and extending `-t` by 1s recovers it (1440 → 1449 frames). This is why a strict 2-frame tolerance produced an **unbounded re-render loop** over the same chunk ids; repeated serial repair converges it away, which is why that loop eventually stopped.
+
+**Whole-cache ceiling added.** Per-chunk allowances multiply: 17 frames × 157 chunks is ~111s a feature could shed with nothing tripping. Bounded to `max(10s, 0.1% of runtime)`, applied to **both** layouts so dense and strided are judged identically. It fires only when no chunk was flagged. Verified all 7 dense caches measure 1 frame or negative, so tightening from 73–115s to 10s triggers no re-renders.
+
+**Accepted shortfall is now recorded.** `_finalize()` writes `hls.loss.json` (frames, seconds, chunks, both thresholds, timestamp, reason) when sealing a short cache — not into `hls.progress`, which is ffmpeg's own `-progress` file.
+
+**Also fixed:** `hls_restore_endlist.py` passed `source_video_duration(media, fallback=0.0)`. Any non-`None` fallback disables that function's container-duration fallback, so a title whose video end cannot be measured returns `0`, `plan_chunks(0)` is `[]`, and the cache is judged **vacuously complete**. This is why *28 Weeks Later* sat 101/101 rendered and frame-complete but unsealed; `hls_frame_audit.py:_video_end` had the same defect and silently skipped such titles.
+
+**Measured outcome, 4K HDR reference film (Project.Hail.Mary):** 157/157 chunks rendered, chunk **seams clean** (0–3 frames, ~0.46s across 10 boundaries), residual ~133 frames (5.5s over 156 min) scattered as **1–4 frame (42–167 ms)** shortfalls inside individual segments. No stall is possible — no data is missing from the playlist — and no cut is visible at that scale. Verified on the Fire TV Stick over LAN.
+
+**Verified:** `py_compile` clean; **361 passed / 1 skipped**; 18 new tests in `tests/test_hls_frame_accounting.py`.
+
+**Library state after the work:** all 21 caches sealed with ENDLIST, none re-rendering, 0 frame loss on 20 of 21. *Teenage Sex and Death at Camp Miasma* (user upload) transcoded first-pass at 6721.6s of 6721.6s with zero deficit.
+
+### 2026-10-04 — Flutter test isolation from the live server; media_kit temp-state accumulation
+
+**Deliverable:** `scripts/run_flutter_tests.ps1`; network guard in `flutter_client/test/support/test_network_guard.dart`.
+
+Two live-server leaks closed. (1) `app_shell_test.dart` mounted the real router, whose `/player` route falls back to a hard-coded production origin, and wired `serverBaseUrlProvider` to `https://media.anisparvez.in`. (2) `runtime_player_3b_test.dart` nulled `HttpOverrides.global` unconditionally and left its first test ungated, so **every full-suite run made real GETs to `http://127.0.0.1:8000`** — the running service — and passed only because production answered.
+
+The guard installs an allowlist `HttpOverrides` that refuses any non-sentinel host. The sentinel is `http://test.invalid:8000`, deliberately **non-loopback**: `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests needing a live server stay behind `liveServerSkip`.
+
+**Never run a bare `flutter test`.** `NativeReferenceHolder` writes a reference-buffer address to `…NativeReferenceHolder.$pid`, creates it empty before writing, and never deletes it. Windows recycles PIDs, so a new test process inherits a dead run's file and either parses `''` or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` awaiting the never-completed `_completer` — a whole file reports "did not complete". Measured 415 orphans (70 empty) over 10 days causing 2 failures in 6 runs **including one `--concurrency=1` run**, so serial is **not** a fix. The script purges before and after; after it, repeated runs leave 0.
+
 ### 2026-10-02 — Playback Overlay State Management (Phase 4 Complete)
 
 **Deliverable:** Resolved clashing, stacked, and lingering playback status overlays on the video canvas (Issue 3). Unified independent boolean layers (`isOpening`, `_isBuffering`, `_isHudVisible`, Center Play/Pause) into a single, mutually exclusive state model:
@@ -802,4 +836,21 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote stream latency and Cloudflare tunnel limits.
+1. **`tests/test_storage_retention.py:68` writes into the live library.** It does
+   `app.config.MEDIA_ROOT / "TestActiveMovie.2026.mkv"` — that is `D:\Flicks` — and the running
+   server then creates a cache dir for the file, which the test deletes, orphaning it.
+   `purge_orphaned_caches()` reclaims it on its next pass (observed doing so at 21:45 on 2026-10-03),
+   but every suite run plants a fresh one. Use a fixture path under the temp tree.
+2. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
+   shared measurement, but on the 4 legacy dense caches per-chunk windows are meaningless by design
+   (the server judges whole-cache there on purpose). It should fall back to whole-cache accounting or
+   say so explicitly instead of reporting per-chunk figures that read as real deficits.
+3. **ADB direct-intent: `--es mediaUrl` does not survive the shell.** Verified working form is
+   `--es route '/movie-details?filename=<name>'` (extras with query params work; a URL *value* is
+   mangled in transit, so `/player` silently falls back to its hard-coded Batman entry). Worth
+   recording in `GEMINI.md` §21 alongside the existing rapid-device-testing guidance.
+4. **E: is removable media.** `E:\MediaServer` (app, `media.db`, entire HLS cache, previews, venv) is a
+   `Micro PS SD` reader, while `D:` is a 1TB HDD and `C:` a 256GB SSD. Volume reports healthy and
+   dirty-bit clear, and throughput is SSD-like, but database and cache on removable media means
+   ejection/contact risk and no SMART signal. Worth a deliberate decision.
+5. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote stream latency and Cloudflare tunnel limits.
