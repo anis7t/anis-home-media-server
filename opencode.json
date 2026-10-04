@@ -67,7 +67,7 @@
           "--project",
           "E:/MediaServer",
           "--tool-timeout",
-          "120"
+          "240"
         ],
         "enabled": true
       }

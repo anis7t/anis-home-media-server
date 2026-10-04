@@ -14,7 +14,7 @@ reviewable by a verification model).
 | `context7` | MCP (remote) | connected |
 | `mobile` | MCP (local, `npx @mobilenext/mobile-mcp`) | connected, 33 tools, no device attached |
 | `media-db` | MCP (local, `uvx fastmcp-sqlite`) | connected, read-only |
-| `serena` | MCP (local, `uvx` + git) | connected |
+| `serena` | MCP (local, `uvx` + git) | connected, 3 language servers, dashboard on :24282 |
 | `chrome-devtools` | MCP | pre-existing, global config |
 | `cloudflare` | skill | `.agents/skills/cloudflare` |
 | `webapp-testing` | skill | `.agents/skills/webapp-testing` |
@@ -40,10 +40,108 @@ no status command for them; the cheapest direct check is running the analyzer:
 cd flutter_client; dart analyze lib test       # Dart/Flutter
 ```
 
-`pyright` reports 11 pre-existing errors and 1 warning in
-`app/config.py` + `app/services/transcode_service.py`, and 0 in
-`app/services/gpu_service.py`. These are the project's existing state, not
-regressions - do not treat a non-zero count as something this setup introduced.
+`pyright` reports **9 pre-existing errors and 0 warnings** across
+`app/config.py` + `app/services/transcode_service.py` + `app/services/gpu_service.py`,
+all 9 in `transcode_service.py`: 5 `reportUndefinedVariable`, 3
+`reportAttributeAccessIssue`, 1 `reportPossiblyUnboundVariable`. Both analyzers in
+play agree exactly - npm `pyright@1.1.414` (the `lsp` block) and Serena's pinned
+`1.1.403`.
+
+These are the project's existing state, not regressions - do not treat a non-zero
+count as something this setup introduced. Across `app/`, `scripts/` and the root
+scripts the total is **66**.
+
+`pyrightconfig.json` is what makes these numbers mean anything. Without it pyright
+does not see `.\venv` and reports `Import "..." could not be resolved` as an **Error**
+on every file that imports Flask, pytest or psutil - which is why `app/config.py` used
+to appear in this list and now does not. Verify with:
+
+```powershell
+pyright --outputjson app/config.py       # 0 diagnostics
+```
+
+## Serena
+
+Installed as an MCP server (`uvx --from git+https://github.com/oraios/serena serena
+start-mcp-server --context desktop-app --project E:/MediaServer`), pinned in
+`opencode.json`. It is a **second, independent** code-intelligence stack from the
+`lsp` block above - it spawns its own Pyright, its own Dart SDK and its own
+TypeScript server, and it does not read `opencode.json`'s LSP settings.
+
+### The dashboard is not a separate install
+
+There is no dashboard package on this machine. It is a Flask app served *by the MCP
+server process itself*, enabled by `web_dashboard: true`:
+
+```
+http://127.0.0.1:24282/dashboard/index.html
+```
+
+The port increments if 24282 is taken (24283, 24284, ...). It can read and write both
+config files, add/remove language servers, edit memories, show live tool-call stats and
+logs, and shut the server down. **Prefer editing the files** - the changes are
+reviewable diffs, and language servers only pick them up on restart anyway.
+
+### Two config layers, and one that silently fails
+
+| File | Scope |
+| --- | --- |
+| `%USERPROFILE%\.serena\serena_config.yml` | global |
+| `.serena\project.yml` | this project |
+
+`.serena/` is gitignored, so all of it is machine-local - consistent with the
+hardcoded `--project E:/MediaServer` path in `opencode.json`.
+
+**`trusted_project_path_patterns` gates `ls_specific_settings`.** It is set to
+`["E:/MediaServer"]` (Serena's own default is `["**"]`). If a project is not trusted,
+`serena/project.py` **discards** `ls_specific_settings` from `project.yml` and only
+logs a warning - so a language-server pin looks configured and does nothing. Check the
+startup log for `not trusted` before concluding a setting is wrong.
+
+### Current configuration
+
+- **Languages: `dart`, `python`, `typescript`.** `html` was removed - `templates/*.html`
+  is Jinja2 and the HTML server reported 18 Errors + 5 Warnings of pure noise on
+  `templates/library.html` alone (see *Deliberately omitted* below).
+- **`typescript`** is kept despite there being no `.ts` files: it is the only server
+  covering `static/js/`, and returns real symbols for e.g. `runChunkedUpload`.
+- **Dart is pinned to `3.13.4`** via `ls_specific_settings.dart.dart_sdk_version`,
+  matching `flutter_client/pubspec.yaml` (`sdk: ^3.13.4`) and the host Flutter SDK.
+  Serena's default is **3.7.1**, which predates the language the client is written in.
+- **`--tool-timeout 240`** (was 120, which is below Serena's own global default). At
+  120 the startup log recorded `AddLanguage:python failed after 1 minutes, 58.6 seconds
+  / Request timed out`.
+
+### Memories
+
+Four pointer memories in `.serena/memories/` - `architecture`, `testing-protocol`,
+`hls-invariants`, `paths-and-drives` - plus an `initial_prompt` that inlines all four
+via `embed_memory()`.
+
+They are **deliberately pointers, not copies.** `.serena/` is gitignored, so duplicating
+the invariants from `AGENTS.md` there would create an untracked file that silently
+drifts from the authoritative text. Each memory routes to the right `AGENTS.md` section
+and states that `AGENTS.md` wins on any conflict.
+
+When editing `initial_prompt`, note that `embed_memory()` **swallows load failures and
+returns an empty string** (`agent.py`, `log.error` then `return ""`) - a typo'd memory
+name is indistinguishable from success. Read it back rather than trusting the YAML:
+
+```powershell
+# activate the project, then confirm the memory actually rendered:
+Select-String -Path "$env:USERPROFILE\.serena\logs\<today>\*.txt" `
+              -Pattern "Tried to embed memory"
+```
+
+No output means all four resolved. `list_memories` must return exactly the names used
+in the `embed_memory()` calls.
+
+### Restart is the gate
+
+`language_servers`, `ls_specific_settings` and the Python venv fix all require a Serena
+restart. `restart_language_server` is not in the active toolset, so start a fresh
+session. Changing languages live from the dashboard works, but a config edit plus a
+restart is the reviewable path.
 
 ## Why the database MCP is pointed at a snapshot
 
@@ -123,7 +221,10 @@ diagnosing.
   already cover browser automation, and `webapp-testing` documents the
   Playwright path.
 - **HTML/CSS LSP** - `templates/*.html` is Jinja2, so an HTML server reports
-  syntax errors on every template expression. Noise without signal.
+  syntax errors on every template expression. Noise without signal. This was
+  independently re-added to Serena's language servers and removed again;
+  symbol tools on `templates/` now correctly report "no suitable language
+  server".
 - **The unscoped `mobile-mcp` npm package** - not "the same tool, older". It is
   a different project (`runablehq/mobile-mcp`), abandoned since April 2025. The
   package here is the scoped `@mobilenext/mobile-mcp`. An earlier draft of this
