@@ -48,3 +48,10 @@ key.properties
 updates/*
 !updates/version_registry.json
 !updates/.gitkeep
+
+# OpenCode: read-only SQLite snapshot for the media-db MCP server (refresh via .opencode/db/refresh-snapshot.ps1)
+.opencode/db/*.db
+opencode/db/*.db.tmp
+
+# Serena MCP local project state (semantic index; regenerate with the serena MCP)
+.serena/

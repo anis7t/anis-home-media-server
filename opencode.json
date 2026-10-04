@@ -1,0 +1,112 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "lsp": {
+    "pyright": {
+      "command": ["pyright", "--stdio"],
+      "extensions": [".py", ".pyi"],
+      "initialization": {
+        "python": {
+          "analysis": {
+            "typeCheckingMode": "basic",
+            "autoSearchPaths": true,
+            "useLibraryCodeForTypes": true,
+            "diagnosticMode": "workspace"
+          }
+        }
+      }
+    },
+    "dart": {
+      "command": ["dart", "language-server", "--protocol=lsp"],
+      "extensions": [".dart"],
+      "initialization": {
+        "closingNotifier": true,
+        "flutterEnabled": true
+      }
+    }
+  },
+
+  "mcp": {
+    "timeout": { "startup": 120000 },
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "enabled": true
+      },
+      "mobile": {
+        "type": "local",
+        "command": ["npx", "-y", "@mobilenext/mobile-mcp@latest"],
+        "enabled": true
+      },
+      "media-db": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "fastmcp-sqlite",
+          "--db",
+          ".opencode/db/media.snapshot.db",
+          "--read-only",
+          "--allowed-dir",
+          ".opencode/db",
+          "--max-rows",
+          "200"
+        ],
+        "enabled": true
+      },
+      "serena": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "--from",
+          "git+https://github.com/oraios/serena",
+          "serena",
+          "start-mcp-server",
+          "--context",
+          "desktop-app",
+          "--project",
+          "E:/MediaServer",
+          "--tool-timeout",
+          "120"
+        ],
+        "enabled": true
+      }
+    }
+  },
+
+  "plugins": [
+    "opencode-shell-strategy",
+    "opencode-dynamic-context-pruning"
+  ],
+
+  "permissions": {
+    "read": [
+      { "action": "read", "resource": "E:/MediaServer/media.db", "effect": "deny" },
+      { "action": "read", "resource": "D:/Flicks/**", "effect": "ask" }
+    ],
+    "edit": [
+      { "action": "edit", "resource": "E:/MediaServer/media.db", "effect": "deny" }
+    ],
+    "bash": [
+      { "action": "shell", "resource": "nssm *", "effect": "ask" },
+      { "action": "shell", "resource": "cloudflared *", "effect": "ask" },
+      { "action": "shell", "resource": "adb *", "effect": "ask" },
+      { "action": "shell", "resource": "taskkill *", "effect": "ask" }
+    ],
+    "webfetch": [{ "action": "webfetch", "resource": "*", "effect": "allow" }]
+  },
+
+  "watcher": {
+    "ignore": [
+      "cache/**",
+      "venv/**",
+      "flutter_client/build/**",
+      "flutter_client/.dart_tool/**",
+      "flutter_client/android/.gradle/**",
+      "flutter_client/android/build/**",
+      "logs/**",
+      "updates/**",
+      "media.db*"
+    ]
+  }
+}
