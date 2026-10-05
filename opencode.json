@@ -74,9 +74,12 @@
     }
   },
 
+  "instructions": [
+    "https://raw.githubusercontent.com/JRedeker/opencode-shell-strategy/trunk/shell_strategy.md"
+  ],
+
   "plugins": [
-    "opencode-shell-strategy",
-    "opencode-dynamic-context-pruning"
+    "@tarquinen/opencode-dcp"
   ],
 
   "permissions": {

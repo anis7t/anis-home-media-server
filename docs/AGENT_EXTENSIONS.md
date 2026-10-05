@@ -19,8 +19,8 @@ reviewable by a verification model).
 | `cloudflare` | skill | `.agents/skills/cloudflare` |
 | `webapp-testing` | skill | `.agents/skills/webapp-testing` |
 | `media-server-verify` | skill | `.opencode/skills/media-server-verify` (authored here) |
-| `opencode-shell-strategy` | plugin | configured |
-| `opencode-dynamic-context-pruning` | plugin | configured |
+| `shell_strategy.md` | instruction | loaded from the JRedeker repo (remote URL) |
+| `@tarquinen/opencode-dcp` | plugin | configured |
 
 Note: LSP is **disabled by default** in OpenCode, so the `lsp` block in
 `opencode.json` is what turns diagnostics on. Without it there is no type
@@ -38,6 +38,51 @@ no status command for them; the cheapest direct check is running the analyzer:
 ```powershell
 .\venv\Scripts\python.exe -m pytest tests/     # Python
 cd flutter_client; dart analyze lib test       # Dart/Flutter
+```
+
+## Plugins and instructions - repo names are not package names
+
+Two entries in `opencode.json` were previously listed under `plugins[]` and failed
+on every startup with `NpmInstallFailedError: 404`. Neither package has ever existed
+on npm; the cause was using **GitHub repository names where npm package names** were
+required, and putting one entry in the wrong array entirely.
+
+| Was listed in `plugins[]` | Reality | Correct wiring |
+| --- | --- | --- |
+| `opencode-dynamic-context-pruning` | Real repo `Opencode-DCP/opencode-dynamic-context-pruning`; the npm name is **`@tarquinen/opencode-dcp`** | `plugins[]` |
+| `opencode-shell-strategy` | Real repo `JRedeker/opencode-shell-strategy` (MIT), but it is **not an npm package** - it is a markdown instruction file | `instructions[]` |
+
+**`opencode-shell-strategy` could never have worked in `plugins[]`.** npm has no such
+package under any scope; it is installed as an instruction file instead:
+
+```json
+"instructions": [
+  "https://raw.githubusercontent.com/JRedeker/opencode-shell-strategy/trunk/shell_strategy.md"
+]
+```
+
+It teaches non-interactive shell forms (`npm init -y`, `git commit -m`, `sudo -n`,
+`--no-pager`) because OpenCode's shell has no TTY/PTY, so anything that prompts hangs
+until timeout.
+
+`@tarquinen/opencode-dcp` prunes obsolete tool outputs to cut token use. It is
+**AGPL-3.0-or-later**; that is fine here because it is a dev-time tool and is never
+linked into the shipped application.
+
+### Verify
+
+A failed npm plugin is logged, not thrown, so the session still works - it just shows
+as a red dot. Check the log rather than assuming:
+
+```powershell
+Select-String -Path "$env:USERPROFILE\.local\share\opencode\log\opencode.log" `
+              -Pattern "failed to load plugin"
+```
+
+Package names are cheap to verify before committing them:
+
+```powershell
+npm view <package> version      # 404 means the name is wrong
 ```
 
 `pyright` reports **9 pre-existing errors and 0 warnings** across
