@@ -39,6 +39,13 @@ class MediaServerTests(unittest.TestCase):
     def test_library_and_pwa(self):
         self.assertEqual(self.client.get('/').status_code, 200)
         self.assertEqual(self.client.get('/manifest.webmanifest').status_code, 200)
+    def test_android_download_page(self):
+        response = self.client.get('/download')
+        html = response.data.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<h1 id="appDownloadTitle">Install the Android app</h1>', html)
+        self.assertIn('The production app is not available yet.', html)
+        self.assertIn('Download the production APK to your Android device.', html)
     def test_ranges(self):
         url='/media/Example.2026.mp4'
         response=self.client.get(url, headers={'Range':'bytes=2-5'})

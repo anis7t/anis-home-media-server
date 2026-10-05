@@ -19,7 +19,7 @@ from app.services.transcode_service import (
     needs_transcode,
 )
 from app.utils.filesystem import is_video, safe_path
-from app.utils.formatting import format_runtime_display
+from app.utils.formatting import format_bytes_display, format_runtime_display
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -132,6 +132,33 @@ def manifest():
         'icons': [{'src': '/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml'}]
     }
     return Response(json.dumps(manifest_data), mimetype='application/manifest+json')
+
+
+@pages_bp.route('/download')
+def download():
+    """Render the production Android client download page."""
+    manifest = {}
+    manifest_file = config.UPDATES_DIR / 'production' / 'manifest.json'
+    apk_file = config.UPDATES_DIR / 'production' / 'media-server-client.apk'
+
+    if manifest_file.is_file():
+        try:
+            parsed = json.loads(manifest_file.read_text(encoding='utf-8'))
+            if isinstance(parsed, dict):
+                manifest = parsed
+        except (OSError, json.JSONDecodeError):
+            manifest = {}
+
+    return render_template(
+        'download.html',
+        app_manifest=manifest,
+        app_available=apk_file.is_file() and apk_file.stat().st_size > 0,
+        app_download_url='/api/app/download?channel=production',
+        app_size_display=(
+            format_bytes_display(manifest.get('fileSizeBytes'))
+            if manifest.get('fileSizeBytes') else None
+        ),
+    )
 
 
 @pages_bp.route('/icon.svg')

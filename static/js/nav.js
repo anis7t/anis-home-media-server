@@ -9,6 +9,8 @@
     const headers = document.querySelectorAll('header, .player-header, .manage-header');
     if (!headers.length) return;
 
+    addAppDownloadLinks();
+
     // Scroll-aware elevation
     let ticking = false;
     window.addEventListener('scroll', () => {
@@ -22,6 +24,29 @@
       }
     }, { passive: true });
 
+  }
+
+  function addAppDownloadLinks() {
+    const downloadIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+    const containers = document.querySelectorAll('.header-actions-rail, .manage-header-actions, .player-header-actions');
+
+    containers.forEach(container => {
+      if (container.querySelector('a[href="/download"]')) return;
+      const link = document.createElement('a');
+      link.href = '/download';
+      link.className = 'header-action-btn header-nav-btn app-download-link';
+      link.title = 'Download the Android app';
+      link.innerHTML = downloadIcon + '<span>Get the app</span>';
+      container.appendChild(link);
+    });
+
+    document.querySelectorAll('.site-footer .footer-links').forEach(list => {
+      if (list.querySelector('a[href="/download"]')) return;
+      const item = document.createElement('li');
+      item.innerHTML = '<a href="/download">Android app</a>';
+      const lastItem = list.lastElementChild;
+      list.insertBefore(item, lastItem || null);
+    });
   }
 
   if (document.readyState === 'loading') {

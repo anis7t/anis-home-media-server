@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-05
 Repository: `anis7t/media-server`
 Working branch: `feat/flutter-production-player`
 
@@ -28,6 +28,25 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 ---
 
 ## 0. Recent work
+
+### 2026-10-05 — Site-wide Android APK download flow and production release
+
+**Deliverable:** Added the responsive `/download` page titled **Install the
+Android app**, site-wide **Get the app** navigation, footer links, production
+manifest metadata, and graceful unavailable-state handling. The public page
+uses only `/api/app/download?channel=production`; the developer channel is not
+exposed.
+
+Published production APK `1.2.19` (version code `139`) for package
+`in.anisparvez.media_server_client`, targeting Android SDK 36 with minimum SDK
+24. The artifact is 102,222,801 bytes and has SHA-256
+`b7cbcb036dd2066e844d0313d574729505e0630fbda7cc4b6dff974b3b885a77`.
+
+The complete release and deployment procedure is in
+[`docs/ANDROID_APP_DISTRIBUTION.md`](ANDROID_APP_DISTRIBUTION.md). The
+`MediaServer` Waitress service was restarted after deployment; Cloudflared was
+not restarted. Live verification returned HTTP 200 for `/download` and the
+production APK endpoint, including range-download headers.
 
 ### 2026-10-04 — Frame-exact chunk accounting; the two auditors made to agree
 

@@ -1,10 +1,23 @@
 # Flutter Client — Phase Status & Handoff
 
-> **Last updated:** 2026-10-02
+> **Last updated:** 2026-10-05
 > **Active branch:** `feat/flutter-production-player`
 > **Package ID:** `in.anisparvez.media_server_client`
 > **Source conversations:** `8478b150` (Phase 1 & 2), `995057c0` (Phase 2–3C), `fbcf1933` (Phase 4 + Multi-Channel Updates), `96ba34db` (Phase 4.7 + TV Pass 2), `3b535dcb` (TV Pass 2 Polish & PlayerScreen Segregation), `1a6914ec` (Fire TV Driver Lock & Software Fallback), `b961df1a` (UX Bugs: Phase 1 Investigation, Phase 2 Spatial Traversal, Phase 3 Player Back)
 > **Purpose:** Persistent handoff document. **Read this before touching the Flutter client.**
+
+## Production distribution
+
+The universal production APK is published through the server's verified release
+workflow and downloaded from `/download`. The 2026-10-05 release is version
+`1.2.19` / version code `139`, package
+`in.anisparvez.media_server_client`, minimum SDK 24, target SDK 36. Its
+SHA-256 is
+`b7cbcb036dd2066e844d0313d574729505e0630fbda7cc4b6dff974b3b885a77`.
+
+See [`ANDROID_APP_DISTRIBUTION.md`](ANDROID_APP_DISTRIBUTION.md) for the
+release command, signing requirements, public endpoint, and service reload
+procedure.
 
 ---
 

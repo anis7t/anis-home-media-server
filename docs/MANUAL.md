@@ -57,6 +57,17 @@ Anis' Home Media Server can be streamed from any modern web browser without inst
 - **Public Address:** `https://media.anisparvez.in`
 - **Architecture:** Powered by Cloudflare Named Tunnels (`cloudflared`). The tunnel creates an outbound TLS connection from your host machine to Cloudflare's edge network, bypassing CGNAT and ISP firewall restrictions without opening router ports.
 
+### Android APK installation
+The universal Android client supports Android phones, Android TV, and Fire TV:
+
+1. Open [`https://media.anisparvez.in/download`](https://media.anisparvez.in/download), or select **Get the app** in the web app.
+2. Download the production APK.
+3. Open the downloaded file and approve Android's installation prompt. Android may ask you to allow installation from your browser or file manager.
+4. Open the app and connect it to the media server.
+
+The current release, APK checksum, publishing command, and troubleshooting
+details are maintained in [`ANDROID_APP_DISTRIBUTION.md`](ANDROID_APP_DISTRIBUTION.md).
+
 ### Progressive Web App (PWA) Installation
 The server provides a certified PWA manifest and vector SVG brand icon for native app feel:
 - **iOS (Safari):** Open `https://media.anisparvez.in`, tap the **Share** button, and select **Add to Home Screen**.

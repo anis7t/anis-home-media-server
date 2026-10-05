@@ -6,6 +6,14 @@ The platform includes dedicated routes, services, utilities, background workers,
 
 > **Current status:** Fully functional home media server. Core library and playback workflows are operational, hardware-accelerated transcoding utilizes dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails are operational, and the system runs persistently as background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record and [`docs/MANUAL.md`](docs/MANUAL.md) for the comprehensive user manual.
 
+## Android app
+
+The universal Android client is available from the site's **Get the app** link
+or directly at [`/download`](https://media.anisparvez.in/download). The current
+production release is documented in
+[`docs/ANDROID_APP_DISTRIBUTION.md`](docs/ANDROID_APP_DISTRIBUTION.md), including
+the verified publishing and deployment procedure.
+
 ---
 
 ## Table of Contents

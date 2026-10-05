@@ -848,6 +848,109 @@ body.page-navigating .devices-main {
   user-select: none;
 }
 
+/* Android app download page */
+.app-download-content {
+  width: min(100% - 2.5rem, 980px);
+  margin: 0 auto;
+  padding: clamp(3rem, 8vw, 6rem) 0 1rem;
+}
+.app-download-card,
+.app-install-steps {
+  background: rgba(16, 21, 31, .78);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 50px rgba(0,0,0,.22);
+}
+.app-download-card {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  text-align: center;
+}
+.app-download-eyebrow {
+  margin: 0 0 .65rem;
+  color: #ff4962;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+.app-download-card h1 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  line-height: 1.1;
+}
+.app-download-lead {
+  max-width: 580px;
+  margin: 1rem auto 0;
+  color: #a8b3c5;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+.app-download-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .5rem .8rem;
+  margin: 1.4rem 0;
+  color: #94a3b8;
+  font-size: .82rem;
+}
+.app-download-meta span:not(:last-child)::after {
+  content: '•';
+  margin-left: .8rem;
+  color: rgba(255,255,255,.2);
+}
+.app-download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  min-height: 44px;
+  padding: .7rem 1.25rem;
+  border-radius: 999px;
+  background: #e50914;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(229,9,20,.24);
+  transition: background .18s ease, transform .18s ease;
+}
+.app-download-button:hover { background: #ff2638; transform: translateY(-1px); }
+.app-download-button:focus-visible { outline: 2px solid #ff8090; outline-offset: 3px; }
+.app-download-button svg { width: 18px; height: 18px; }
+.app-download-note,
+.app-download-unavailable span {
+  display: block;
+  margin: 1rem 0 0;
+  color: #7f8da3;
+  font-size: .82rem;
+  line-height: 1.55;
+}
+.app-download-unavailable {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: .8rem;
+  color: #e2e8f0;
+  background: rgba(255,255,255,.03);
+}
+.app-download-unavailable strong { display: block; }
+.app-install-steps {
+  max-width: 720px;
+  margin: 1.25rem auto 0;
+  padding: 1.35rem 1.5rem;
+}
+.app-install-steps h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
+.app-install-steps ol { margin: 0; padding-left: 1.25rem; color: #cbd5e1; line-height: 1.8; }
+.app-install-steps p { margin: .8rem 0 0; color: #7f8da3; font-size: .84rem; }
+@media (max-width: 600px) {
+  .app-download-content { width: min(100% - 1.5rem, 980px); padding-top: 2.25rem; }
+  .app-download-card { padding: 1.5rem 1rem; }
+  .app-download-lead { font-size: .95rem; }
+  .app-install-steps { padding: 1.15rem 1rem; }
+}
+
 /* Privacy modal */
 #privacyModal::backdrop {
   background: rgba(4,6,11,.78);

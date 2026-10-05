@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Android App — Anis' Home Media Server</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#090b10">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <style>{{css|safe}}</style>
+</head>
+<body class="app-download-page">
+  <header>
+    <div class="header-brand-row">
+      <a href="/" class="brand-link" title="Anis' Home Media Server">
+        <img class="brand-icon" src="/icon.svg" alt="">
+        <div class="brand-text">
+          <div class="brand-title-wrap">
+            <span class="brand-owner">Anis'</span>
+            <span class="brand-title">Home Media Server</span>
+          </div>
+          <span class="brand-subtitle">PLAY • ORGANIZE • ENJOY</span>
+        </div>
+      </a>
+    </div>
+    <nav class="manage-header-actions" aria-label="Site navigation">
+      <a href="/" class="header-action-btn header-nav-btn" title="Back to Home Stream">Home Stream</a>
+      <a href="/manage" class="header-action-btn header-nav-btn" title="Manage Media Files">My Library</a>
+      <a href="/devices" class="header-action-btn header-nav-btn" title="Connected Client Devices">Devices</a>
+    </nav>
+  </header>
+
+  <main class="app-download-content">
+    <section class="app-download-card" aria-labelledby="appDownloadTitle">
+      <p class="app-download-eyebrow">ANDROID CLIENT</p>
+      <h1 id="appDownloadTitle">Install the Android app</h1>
+      <p class="app-download-lead">Watch and manage your library from Android phones, Android TV, and Fire TV.</p>
+
+      {% if app_available %}
+        <div class="app-download-meta">
+          <span>Production release</span>
+          {% if app_manifest.get('version') %}<span>Version {{ app_manifest.get('version') }}</span>{% endif %}
+          {% if app_size_display %}<span>{{ app_size_display }}</span>{% endif %}
+        </div>
+        <a class="app-download-button" href="{{ app_download_url }}" download>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+          </svg>
+          <span>Download APK</span>
+        </a>
+        <p class="app-download-note">After downloading, open the APK on your Android device to install it.</p>
+      {% else %}
+        <div class="app-download-unavailable" role="status">
+          <strong>The production app is not available yet.</strong>
+          <span>The Android download will appear here once a production release has been published.</span>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="app-install-steps" aria-labelledby="appInstallStepsTitle">
+      <h2 id="appInstallStepsTitle">Installation</h2>
+      <ol>
+        <li>Download the production APK to your Android device.</li>
+        <li>Open the downloaded file and follow Android's installation prompt.</li>
+        <li>Open the app and connect it to your media server.</li>
+      </ol>
+      <p>Android may ask you to allow installation from your browser or file manager.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p class="footer-copy">© 2026 Anis' Home Media Server. All rights reserved.</p>
+    <ul class="footer-links">
+      <li><a href="/manual">How to use</a></li>
+      <li><a href="/download" aria-current="page">Android app</a></li>
+      <li><span>No registered trademarks</span></li>
+    </ul>
+  </footer>
+  <script src="/static/js/nav.js?v=6" defer></script>
+</body>
+</html>
