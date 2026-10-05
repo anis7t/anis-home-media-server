@@ -1,9 +1,10 @@
 # Development Status / Session Handoff
 
-Last updated: 2026-09-18
+Last updated: 2026-10-05
 Repository: `anis7t/media-server`
-Active Working branch: `feat/unified-header-navigation`
-Clean Base branch: `feat/storage-retention-cache-purge`
+Active Working branch: `feat/flutter-production-player` (the branch bullets under
+*Branch Structure* below are historical and describe the earlier
+`feat/unified-header-navigation` / `feat/storage-retention-cache-purge` split)
 
 ## 1. Branch Architecture & Environment State
 
@@ -17,6 +18,67 @@ Clean Base branch: `feat/storage-retention-cache-purge`
 - **Python:** 3.14.3 (`E:\MediaServer\venv`)
 - **FFmpeg:** 9.0.1 essentials build with AMF & D3D11va
 - **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
+- **Flutter:** 3.47.6 stable (`D:\src\flutter`), bundling **Dart 3.13.5**
+- **Android SDK:** `D:\platform-tools-latest-windows` (see the misnomer note below); platform-tools 37.0.1, build-tools 36.0.0, platforms android-35/36, NDK 28.2.13676358, emulator 37.2.12
+- **Node:** v25.7.0 · **npm:** 11.10.1 · **opencode:** 2.0.11
+
+### The Flutter SDK carries a local patch — do not `--force` an upgrade
+
+`D:\src\flutter` is **not** a pristine checkout. It has an uncommitted local change to
+`packages/flutter_tools/lib/src/windows/visual_studio.dart` (+35 lines) that teaches
+Flutter where to find the Windows 10 SDK when the registry does not list it. The
+lookup order it adds is:
+
+1. the `WindowsSdkDir` environment variable (set to `D:\WindowsKits\10\`)
+2. `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Microsoft SDKs\Windows\v10.0`
+3. the hardcoded fallbacks `D:\WindowsKits\10` and `C:\Program Files (x86)\Windows Kits\10`
+
+Without it, `flutter doctor` reports `[!] Unable to locate a Windows 10 SDK` and the
+Windows desktop target cannot be built.
+
+**`flutter upgrade --force` erases this silently.** The safe sequence is:
+
+```powershell
+git -C D:\src\flutter diff -- packages/flutter_tools/lib/src/windows/visual_studio.dart `
+     > E:\MediaServer\docs\flutter-winsdk-location-patch.diff     # back it up FIRST
+git -C D:\src\flutter stash push -- packages/flutter_tools/lib/src/windows/visual_studio.dart
+flutter upgrade
+git -C D:\src\flutter stash pop
+Remove-Item D:\src\flutter\bin\cache\flutter_tools.stamp          # force tool rebuild
+flutter doctor                                                   # expect [√] Visual Studio
+```
+
+The `flutter_tools.stamp` deletion is **not optional**. `stash pop` restores the
+source with a *newer* mtime than the compiled tool snapshot, and `flutter doctor` will
+otherwise keep reporting the SDK as missing even though the patch is back — which looks
+exactly like the upgrade having broken the Windows build. Deleting the stamp makes
+`flutter` rebuild `flutter_tools` from the patched source.
+
+A copy of the patch is committed at `docs/flutter-winsdk-location-patch.diff`.
+
+### `D:\platform-tools-latest-windows` is not just platform-tools
+
+The directory name is misleading: it is a **complete Android SDK** (build-tools, NDK,
+platforms, emulator, system-images, cmdline-tools, cmake). `ANDROID_HOME` and
+`ANDROID_SDK_ROOT` both point at it, as does `sdk.dir` in
+`flutter_client\android\local.properties`.
+
+**There are six `adb.exe` copies on this machine and two are on `PATH`:**
+
+| Path | Version | Role |
+| --- | --- | --- |
+| `D:\platform-tools-latest-windows\platform-tools\adb.exe` | 37.0.1-15733141 | The SDK copy. First on `PATH`; referenced by the env vars and Flutter. |
+| `C:\Users\anis7\AppData\Local\Microsoft\WinGet\Packages\Genymobile.scrcpy_…\adb.exe` | 37.0.0-14910828 | Bundled inside scrcpy v4.1. Second on `PATH`. |
+
+Four further copies sit off-`PATH` and are stale: `D:\ChangZhi\LDPlayer\` (2021),
+`D:\Current Download\scrcpy-win64-v1.24\` (2022), `D:\New folder (4)\` (2019),
+`D:\RFO-BASIC! Quick APK\tools\` (2014).
+
+This matters because the adb **server** on tcp:5037 is owned by whichever client
+started it. The two `PATH` copies differ, so launching scrcpy's bundled client against
+a server the SDK copy started forces a version-mismatch restart — the usual
+"device offline" symptom. `flutter doctor` flags it as
+`! Multiple adb binaries found`.
 
 ```text
 Project:       E:\MediaServer
