@@ -3,7 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 _orig_media_root_env = os.environ.get("MEDIA_SERVER_MEDIA_ROOT")
 _orig_database_env = os.environ.get("MEDIA_SERVER_DATABASE")
@@ -192,6 +192,64 @@ class MediaServerTests(unittest.TestCase):
             data = res.json
             self.assertIn('status', data)
             self.assertIn('busy', data)
+    def test_api_scan_reports_queued_transcodes(self):
+        # Two incomplete media files, nothing running: the first is started
+        # immediately and the second is deferred to the background daemon.
+        mkv1 = Path(TMP.name) / 'QueuedOne.2026.mkv'
+        mkv2 = Path(TMP.name) / 'QueuedTwo.2026.mkv'
+        mkv1.write_bytes(b'mkv one')
+        mkv2.write_bytes(b'mkv two')
+        fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
+        saved = dict(app.config.HLS_PROCESSES)
+        app.config.HLS_PROCESSES.clear()
+        try:
+            with patch('app.routes.api.trigger_library_scan', return_value=False), \
+                 patch('app.services.worker_service.video_paths', return_value=[mkv1, mkv2]), \
+                 patch('app.services.worker_service._is_hls_truly_complete', return_value=False), \
+                 patch('app.services.worker_service.needs_transcode', return_value=True), \
+                 patch('app.services.worker_service.ensure_hls_transcode', return_value=fake_proc) as mock_ensure:
+                res = self.client.post('/api/scan')
+            self.assertEqual(res.status_code, 200)
+            data = res.json
+            self.assertEqual(data['transcodes_queued'], 1)
+            self.assertEqual(data['transcodes_started'], 1)
+            self.assertEqual(data['status'], 'scanning')
+            self.assertEqual(mock_ensure.call_count, 1)
+
+            # A transcode is already running: serialization must hold, nothing
+            # new is started, and both missing items are queued instead.
+            app.config.HLS_PROCESSES['sentinel'] = fake_proc
+            with patch('app.routes.api.trigger_library_scan', return_value=False), \
+                 patch('app.services.worker_service.video_paths', return_value=[mkv1, mkv2]), \
+                 patch('app.services.worker_service._is_hls_truly_complete', return_value=False), \
+                 patch('app.services.worker_service.needs_transcode', return_value=True), \
+                 patch('app.services.worker_service.ensure_hls_transcode', return_value=None) as mock_ensure2:
+                res = self.client.post('/api/scan')
+            self.assertEqual(res.status_code, 200)
+            data = res.json
+            self.assertEqual(data['transcodes_queued'], 2)
+            self.assertEqual(data['transcodes_started'], 0)
+            mock_ensure2.assert_not_called()
+        finally:
+            app.config.HLS_PROCESSES.clear()
+            app.config.HLS_PROCESSES.update(saved)
+    def test_transcode_start_endpoint_is_post_only(self):
+        mkv = Path(TMP.name) / 'PostOnly.2026.mkv'
+        mkv.write_bytes(b'mkv content')
+        fake_proc = MagicMock()
+        fake_proc.poll.return_value = None
+        # GET is no longer a valid method on the route.
+        self.assertEqual(
+            self.client.get('/api/transcode/start/PostOnly.2026.mkv').status_code, 405
+        )
+        # POST keeps the existing successful behavior.
+        with patch('app.routes.api.needs_transcode', return_value=True), \
+             patch('app.routes.api._is_hls_truly_complete', return_value=False), \
+             patch('app.routes.api.ensure_hls_transcode', return_value=fake_proc):
+            res = self.client.post('/api/transcode/start/PostOnly.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(res.json['status'], ('building', 'queued'))
     def test_homepage_includes_scan_button(self):
         html = self.client.get('/').data.decode()
         self.assertIn('id="scanBtn"', html)

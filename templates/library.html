@@ -410,7 +410,12 @@ function triggerScan(btn) {
   btn.textContent = 'Scanning...';
   fetch('/api/scan', { method: 'POST' })
     .then(r => r.json())
-    .then(() => {
+    .then(d => {
+      const q = d.transcodes_queued || 0;
+      const s = d.transcodes_started || 0;
+      btn.textContent = q > 0
+        ? 'Queued ' + q + ' transcode' + (q === 1 ? '' : 's')
+        : s > 0 ? 'Started ' + s + ' transcode' + (s === 1 ? '' : 's') : 'Scan complete';
       setTimeout(() => location.reload(), 1500);
     })
     .catch(() => {

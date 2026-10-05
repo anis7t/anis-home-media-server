@@ -30,6 +30,7 @@ def trigger_missing_transcodes():
     any subsequent missing items sequentially.
     """
     started = 0
+    queued = 0
     skipped = 0
     errors = 0
 
@@ -37,7 +38,7 @@ def trigger_missing_transcodes():
         paths = list(video_paths())
     except Exception as exc:
         logger.warning("Unable to enumerate media for manual transcode pass: %s", exc)
-        return {"started": 0, "skipped": 0, "errors": 1}
+        return {"started": 0, "queued": 0, "skipped": 0, "errors": 1}
 
     # Check if a transcode is already active
     active_running = any(
@@ -70,7 +71,7 @@ def trigger_missing_transcodes():
                     errors += 1
             else:
                 # Transcode is queued for background worker
-                skipped += 1
+                queued += 1
         except Exception as exc:
             errors += 1
             logger.warning("Manual transcode trigger failed for %s: %s", get_rel_path(p), exc)
@@ -78,7 +79,7 @@ def trigger_missing_transcodes():
     # Signal the auto transcoder worker loop to check immediately
     _TRANSCODE_WAKE_EVENT.set()
 
-    return {"started": started, "skipped": skipped, "errors": errors}
+    return {"started": started, "queued": queued, "skipped": skipped, "errors": errors}
 
 
 def auto_transcoder_loop():
