@@ -36,17 +36,5 @@
   "python.terminal.shellIntegration.enabled": false,
   "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
   "python.useEnvironmentsExtension": false,
-  "bloc.languageServer.enabled": false,
-  "python.testing.pytestEnabled": true,
-  "python.testing.unittestEnabled": false,
-  "python.testing.pytestArgs": [
-    "tests"
-  ],
-  "yaml.schemas": {
-    "https://spec.openapis.org/oas/3.1/schema/2026-10-09": [
-      "docs/openapi.yaml"
-    ]
-  },
-  "yaml.format.enable": true,
-  "yaml.validate": true
+  "bloc.languageServer.enabled": false
 }

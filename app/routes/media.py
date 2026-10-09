@@ -8,7 +8,7 @@ import threading
 import time
 from functools import lru_cache
 from shutil import which as shutil_which
-from flask import Blueprint, Response, abort, jsonify, request, send_file
+from flask import Blueprint, Response, abort, current_app, jsonify, request, send_file
 from werkzeug.utils import send_file as send_file_for_environ
 
 from app import config

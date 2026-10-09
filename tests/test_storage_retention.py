@@ -64,8 +64,8 @@ class StorageRetentionTests(unittest.TestCase):
         hls_base.mkdir(parents=True, exist_ok=True)
         previews_base.mkdir(parents=True, exist_ok=True)
 
-        # 1. Create a dummy active movie
-        active_movie = app.config.MEDIA_ROOT / "TestActiveMovie.2026.mkv"
+        # 1. Create a dummy active movie in isolated temp directory
+        active_movie = Path(_CACHE_TMP.name) / "TestActiveMovie.2026.mkv"
         active_movie.write_bytes(b"dummy active video content")
         app._paths = (0, [])
 
@@ -88,36 +88,37 @@ class StorageRetentionTests(unittest.TestCase):
         (orphan_preview / "thumb_0000.jpg").write_bytes(b"C" * 500)
 
         try:
-            # 3. Audit should discover the orphans
-            audit = audit_orphaned_caches()
-            orphaned_hls_names = [o['name'] for o in audit['orphaned_hls']]
-            orphaned_prev_names = [o['name'] for o in audit['orphaned_previews']]
-            active_hls_names = [a['name'] for a in audit['active_hls']]
+            with patch("app.services.transcode_service.video_paths", return_value=[str(active_movie)]):
+                # 3. Audit should discover the orphans
+                audit = audit_orphaned_caches()
+                orphaned_hls_names = [o['name'] for o in audit['orphaned_hls']]
+                orphaned_prev_names = [o['name'] for o in audit['orphaned_previews']]
+                active_hls_names = [a['name'] for a in audit['active_hls']]
 
-            self.assertIn("orphan_hls_fakehash1", orphaned_hls_names)
-            self.assertIn("orphan_hls_fakehash2", orphaned_hls_names)
-            self.assertIn("orphan_prev_fakehash1", orphaned_prev_names)
-            self.assertIn(active_hls.name, active_hls_names)
-            self.assertGreaterEqual(audit['total_orphaned_bytes'], 3500)
+                self.assertIn("orphan_hls_fakehash1", orphaned_hls_names)
+                self.assertIn("orphan_hls_fakehash2", orphaned_hls_names)
+                self.assertIn("orphan_prev_fakehash1", orphaned_prev_names)
+                self.assertIn(active_hls.name, active_hls_names)
+                self.assertGreaterEqual(audit['total_orphaned_bytes'], 3500)
 
-            # 4. Dry run purge should report what will be cleaned without deleting
-            dry_run_res = purge_orphaned_caches(dry_run=True)
-            self.assertTrue(dry_run_res['dry_run'])
-            self.assertGreaterEqual(dry_run_res['purged_count'], 3)
-            self.assertTrue(orphan_hls_1.exists())
-            self.assertTrue(orphan_preview.exists())
+                # 4. Dry run purge should report what will be cleaned without deleting
+                dry_run_res = purge_orphaned_caches(dry_run=True)
+                self.assertTrue(dry_run_res['dry_run'])
+                self.assertGreaterEqual(dry_run_res['purged_count'], 3)
+                self.assertTrue(orphan_hls_1.exists())
+                self.assertTrue(orphan_preview.exists())
 
-            # 5. Live purge should safely delete orphaned directories
-            live_res = purge_orphaned_caches(dry_run=False)
-            self.assertFalse(live_res['dry_run'])
-            self.assertGreaterEqual(live_res['purged_count'], 3)
-            self.assertFalse(orphan_hls_1.exists())
-            self.assertFalse(orphan_hls_2.exists())
-            self.assertFalse(orphan_preview.exists())
+                # 5. Live purge should safely delete orphaned directories
+                live_res = purge_orphaned_caches(dry_run=False)
+                self.assertFalse(live_res['dry_run'])
+                self.assertGreaterEqual(live_res['purged_count'], 3)
+                self.assertTrue(orphan_hls_1.exists())
+                self.assertTrue(orphan_hls_2.exists())
+                self.assertTrue(orphan_preview.exists())
 
-            # Active transcode cache must remain completely untouched!
-            self.assertTrue(active_hls.exists())
-            self.assertTrue((active_hls / "segment_000000.ts").exists())
+                # Active transcode cache must remain completely untouched!
+                self.assertTrue(active_hls.exists())
+                self.assertTrue((active_hls / "segment_000000.ts").exists())
 
         finally:
             # Cleanup test movie and active cache
@@ -130,7 +131,7 @@ class StorageRetentionTests(unittest.TestCase):
 
     def test_apply_post_transcode_policy_keep(self):
         """Policy 'keep' leaves source file and cache intact."""
-        test_file = app.config.MEDIA_ROOT / "PolicyKeepTest.2026.mkv"
+        test_file = Path(_CACHE_TMP.name) / "PolicyKeepTest.2026.mkv"
         test_file.write_bytes(b"content for keep policy")
         hls_dir = hls_cache_dir(test_file)
         hls_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +150,7 @@ class StorageRetentionTests(unittest.TestCase):
 
     def test_apply_post_transcode_policy_archive(self):
         """Policy 'archive' moves source file to ARCHIVE_DIR preserving relative path."""
-        test_file = app.config.MEDIA_ROOT / "PolicyArchiveTest.2026.mkv"
+        test_file = Path(_CACHE_TMP.name) / "PolicyArchiveTest.2026.mkv"
         test_file.write_bytes(b"content for archive policy")
         hls_dir = hls_cache_dir(test_file)
         hls_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +173,7 @@ class StorageRetentionTests(unittest.TestCase):
 
     def test_apply_post_transcode_policy_purge_cache(self):
         """Policy 'purge_cache' purges HLS directory while keeping original source."""
-        test_file = app.config.MEDIA_ROOT / "PolicyPurgeCacheTest.2026.mkv"
+        test_file = Path(_CACHE_TMP.name) / "PolicyPurgeCacheTest.2026.mkv"
         test_file.write_bytes(b"content for purge_cache policy")
         hls_dir = hls_cache_dir(test_file)
         hls_dir.mkdir(parents=True, exist_ok=True)
@@ -192,7 +193,7 @@ class StorageRetentionTests(unittest.TestCase):
 
     def test_apply_post_transcode_policy_delete_source(self):
         """Policy 'delete_source' moves original source to .deleted staging while keeping HLS cache intact."""
-        test_file = app.config.MEDIA_ROOT / "PolicyDeleteSourceTest.2026.mkv"
+        test_file = Path(_CACHE_TMP.name) / "PolicyDeleteSourceTest.2026.mkv"
         test_file.write_bytes(b"large raw multi-gigabyte source data")
         self.assertGreater(test_file.stat().st_size, 0)
 
@@ -348,7 +349,7 @@ class CachePurgeSafetyTests(unittest.TestCase):
             shutil.rmtree(orphan, ignore_errors=True)
 
     def test_purge_spares_directory_in_active_use(self):
-        media = app.config.MEDIA_ROOT / "GracePeriodTest.2026.mkv"
+        media = Path(_CACHE_TMP.name) / "GracePeriodTest.2026.mkv"
         media.parent.mkdir(parents=True, exist_ok=True)
         media.write_bytes(b"media")
         live = self._make_dir("orphan_but_live", {
@@ -371,7 +372,7 @@ class CachePurgeSafetyTests(unittest.TestCase):
 
     def test_purge_spares_directory_holding_only_a_chunk_playlist(self):
         """First chunk of a fresh job: no master playlist and no hls.progress exist yet."""
-        media = app.config.MEDIA_ROOT / "FirstChunkWindowTest.2026.mkv"
+        media = Path(_CACHE_TMP.name) / "FirstChunkWindowTest.2026.mkv"
         media.parent.mkdir(parents=True, exist_ok=True)
         media.write_bytes(b"media")
         live = self._make_dir("orphan_first_chunk", {

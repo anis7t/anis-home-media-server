@@ -16,6 +16,9 @@ else:
 # Base directories
 MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "D:/Flicks" if os.name == "nt" else BASE_DIR / "media")).resolve()
 DATABASE = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
+DATABASE_BACKEND = os.environ.get("MEDIA_SERVER_DATABASE_BACKEND", "sqlite").lower().strip()
+DATABASE_URL = os.environ.get("MEDIA_SERVER_DATABASE_URL", "").strip() or None
+ALLOWED_DATABASE_BACKENDS = frozenset({"sqlite", "postgres", "postgresql"})
 
 # Cache directories
 CACHE_DIR = BASE_DIR / "cache"
