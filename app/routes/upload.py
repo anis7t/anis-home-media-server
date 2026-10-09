@@ -112,16 +112,19 @@ def _prepare_media(target_path):
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
     if not scanned_details:
+        db = None
         try:
             db = get_db()
             db.execute(
-                "INSERT OR IGNORE INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (filename) DO NOTHING",
                 (rel_filename, parsed_title, parsed_year, int(time.time()))
             )
             db.commit()
-            db.close()
         except Exception:
             pass
+        finally:
+            if db:
+                db.close()
 
     trigger_library_scan()
 

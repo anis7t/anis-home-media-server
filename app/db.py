@@ -180,15 +180,25 @@ class PostgresSession:
             except Exception:
                 pass
 
+    def __del__(self):
+        if not getattr(self, "_closed", True):
+            try:
+                self.close()
+            except Exception:
+                pass
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self.rollback()
-        else:
-            self.commit()
-        self.close()
+        try:
+            if exc_type:
+                self.rollback()
+            else:
+                self.commit()
+        finally:
+            self.close()
+
 
 
 def get_db():

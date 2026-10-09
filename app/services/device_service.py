@@ -436,10 +436,10 @@ def lookup_geoip_and_isp(ip, connection_type):
         }
 
     # Check ip_cache in database
+    db = None
     try:
         db = get_db()
         row = db.execute("SELECT * FROM ip_cache WHERE ip=?", (ip,)).fetchone()
-        db.close()
         if row and value(row, 'isp'):
             return {
                 "isp": value(row, 'isp'),
@@ -448,6 +448,9 @@ def lookup_geoip_and_isp(ip, connection_type):
             }
     except Exception as e:
         logger.debug(f"ip_cache read error: {e}")
+    finally:
+        if db:
+            db.close()
 
     # Fallback default values
     default_res = {
@@ -476,15 +479,17 @@ def lookup_geoip_and_isp(ip, connection_type):
 
                 # Persist into ip_cache
                 db = get_db()
-                db.execute(
-                    "INSERT INTO ip_cache(ip, isp, org, city, country, updated_at) "
-                    "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
-                    "ON CONFLICT(ip) DO UPDATE SET "
-                    "isp=excluded.isp, org=excluded.org, city=excluded.city, country=excluded.country, updated_at=CURRENT_TIMESTAMP",
-                    (ip, isp_val, data.get('org') or isp_val, city_val, country_val)
-                )
-                db.commit()
-                db.close()
+                try:
+                    db.execute(
+                        "INSERT INTO ip_cache(ip, isp, org, city, country, updated_at) "
+                        "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+                        "ON CONFLICT(ip) DO UPDATE SET "
+                        "isp=excluded.isp, org=excluded.org, city=excluded.city, country=excluded.country, updated_at=CURRENT_TIMESTAMP",
+                        (ip, isp_val, data.get('org') or isp_val, city_val, country_val)
+                    )
+                    db.commit()
+                finally:
+                    db.close()
                 return {
                     "isp": isp_val,
                     "city": city_val,
@@ -544,6 +549,7 @@ def register_device_request(req):
     mac = resolve_mac_address(client_ip, conn_type)
     geo = lookup_geoip_and_isp(public_ip or client_ip, conn_type)
 
+    db = None
     try:
         db = get_db()
         db.execute(
@@ -595,9 +601,11 @@ def register_device_request(req):
             )
         )
         db.commit()
-        db.close()
     except Exception as e:
         logger.warning(f"Error registering device {device_id}: {e}")
+    finally:
+        if db:
+            db.close()
 
     return device_id, is_new
 
@@ -680,6 +688,7 @@ def record_device_watch(device_id, filename, position, duration):
 
     completed = 1 if (dur > 0 and (pos >= dur * 0.9 or (dur - pos) <= 15)) else 0
 
+    db = None
     try:
         db = get_db()
         db.execute(
@@ -696,9 +705,11 @@ def record_device_watch(device_id, filename, position, duration):
             (device_id, filename, pos, dur, completed)
         )
         db.commit()
-        db.close()
     except Exception as e:
         logger.warning(f"Error recording device watch for {device_id}: {e}")
+    finally:
+        if db:
+            db.close()
 
 
 def format_time_ago(ts_str):

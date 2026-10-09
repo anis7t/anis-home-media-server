@@ -1,6 +1,8 @@
 """Unit and integration tests for DatabaseAdapter (Stage 1 of SQLite-to-PostgreSQL migration)."""
 import os
+from pathlib import Path
 import sqlite3
+import tempfile
 import threading
 import unittest
 from unittest.mock import MagicMock, patch
@@ -130,6 +132,18 @@ class TestSQLPlaceholderNormalization(unittest.TestCase):
         expected = "/* Check condition? */ SELECT * FROM movies WHERE id = %s"
         self.assertEqual(normalize_sql(sql, backend="postgres"), expected)
 
+    def test_on_conflict_upsert_query_placeholder_replacement(self):
+        """ON CONFLICT queries with multiple placeholders must convert all placeholders to %s."""
+        sql = (
+            "INSERT INTO movies (filename, title, year, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (filename) DO NOTHING"
+        )
+        expected = (
+            "INSERT INTO movies (filename, title, year, updated_at) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT (filename) DO NOTHING"
+        )
+        self.assertEqual(normalize_sql(sql, backend="postgres"), expected)
+
 
 class TestPostgresSessionLifecycle(unittest.TestCase):
     """Verify PostgresSession checkout, execution, transaction management, and pool return semantics."""
@@ -198,6 +212,44 @@ class TestPostgresSessionLifecycle(unittest.TestCase):
         self.mock_conn.rollback.assert_called_once()
         self.mock_pool.putconn.assert_called_once_with(self.mock_conn)
 
+    def test_context_manager_commit_failure_still_invokes_close_and_reraises(self):
+        """Context manager must close and return connection to pool even if commit() raises."""
+        self.mock_conn.commit.side_effect = RuntimeError("Commit failed")
+        with self.assertRaises(RuntimeError) as ctx:
+            with PostgresSession(self.mock_pool) as session:
+                pass
+        self.assertIn("Commit failed", str(ctx.exception))
+        self.mock_conn.commit.assert_called_once()
+        self.assertTrue(session._closed)
+        self.mock_pool.putconn.assert_called_once_with(self.mock_conn)
+
+    def test_context_manager_rollback_failure_still_invokes_close_and_reraises(self):
+        """Context manager must close and return connection to pool even if rollback() raises."""
+        self.mock_conn.rollback.side_effect = RuntimeError("Rollback failed")
+        with self.assertRaises(RuntimeError) as ctx:
+            with PostgresSession(self.mock_pool) as session:
+                raise ValueError("Original block failure")
+        self.assertIn("Rollback failed", str(ctx.exception))
+        self.mock_conn.rollback.assert_called_once()
+        self.assertTrue(session._closed)
+        self.mock_pool.putconn.assert_called_once_with(self.mock_conn)
+
+    def test_del_automatically_releases_unclosed_session(self):
+        """Dropping an unclosed PostgresSession (e.g. on unhandled exception) must release connection back to pool."""
+        session = PostgresSession(self.mock_pool)
+        self.assertFalse(session._closed)
+        session.__del__()
+        self.assertTrue(session._closed)
+        self.mock_pool.putconn.assert_called_once_with(self.mock_conn)
+
+    def test_del_idempotent_after_explicit_close(self):
+        """__del__() on an already closed PostgresSession must be a no-op."""
+        session = PostgresSession(self.mock_pool)
+        session.close()
+        self.assertEqual(self.mock_pool.putconn.call_count, 1)
+        session.__del__()
+        self.assertEqual(self.mock_pool.putconn.call_count, 1)
+
 
 class TestThreadSafePoolCheckout(unittest.TestCase):
     """Verify thread-safety of connection pool checkout and return."""
@@ -240,6 +292,150 @@ class TestPoolShutdown(unittest.TestCase):
         with patch("app.db._PG_POOL", mock_pool):
             close_db_pool()
             mock_pool.close.assert_called_once()
+
+
+class TestQueryPortabilityAndHarmonization(unittest.TestCase):
+    """Verify ANSI/PostgreSQL/SQLite portable query execution and caller harmonization."""
+
+    def test_on_conflict_do_nothing_sqlite_execution(self):
+        """ON CONFLICT DO NOTHING must execute cleanly on SQLite."""
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE movies (filename TEXT PRIMARY KEY, title TEXT, year INTEGER, updated_at INTEGER)")
+        conn.execute("INSERT INTO movies VALUES ('test.mp4', 'Original', 2020, 100)")
+        conn.commit()
+
+        # Insert conflicting row
+        conn.execute(
+            "INSERT INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (filename) DO NOTHING",
+            ('test.mp4', 'Ignored', 2026, 200)
+        )
+        conn.commit()
+
+        row = conn.execute("SELECT title, year, updated_at FROM movies WHERE filename='test.mp4'").fetchone()
+        self.assertEqual(row[0], 'Original')
+        self.assertEqual(row[1], 2020)
+        conn.close()
+
+    def test_on_conflict_do_update_sqlite_execution(self):
+        """ON CONFLICT DO UPDATE SET ... must execute cleanly on SQLite and update target values."""
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE movies (filename TEXT PRIMARY KEY, title TEXT, year INTEGER, updated_at INTEGER)")
+        conn.execute("INSERT INTO movies VALUES ('test.mp4', 'Original', 2020, 100)")
+        conn.commit()
+
+        conn.execute(
+            """
+            INSERT INTO movies (filename, title, year, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (filename) DO UPDATE SET
+                title=excluded.title,
+                year=excluded.year,
+                updated_at=excluded.updated_at
+            """,
+            ('test.mp4', 'Updated Title', 2026, 300)
+        )
+        conn.commit()
+
+        row = conn.execute("SELECT title, year, updated_at FROM movies WHERE filename='test.mp4'").fetchone()
+        self.assertEqual(row[0], 'Updated Title')
+        self.assertEqual(row[1], 2026)
+        self.assertEqual(row[2], 300)
+        conn.close()
+
+    def test_scanner_scan_unindexed_uses_get_db(self):
+        """scanner.scan_unindexed() must obtain connection from app.db.get_db and close it."""
+        import scanner
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = []
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as empty_dir:
+            with patch("scanner.load_token", return_value="fake_token"), \
+                 patch("scanner.get_db", return_value=mock_conn) as mock_get_db:
+                res = scanner.scan_unindexed(media_root=empty_dir)
+                mock_get_db.assert_called_once()
+                mock_conn.close.assert_called_once()
+                self.assertEqual(res, [])
+
+    def test_posters_main_uses_get_db(self):
+        """posters.main() must obtain connection from app.db.get_db and close it."""
+        import posters
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = []
+        with patch("app.db.get_db", return_value=mock_conn) as mock_get_db:
+            posters.main()
+            mock_get_db.assert_called_once()
+            mock_conn.close.assert_called_once()
+
+    def test_scanner_scan_single_file_postgres_failure_does_not_open_sqlite(self):
+        """scan_single_file must propagate PostgreSQL errors and never open SQLite."""
+        import scanner
+        with patch("scanner.load_token", return_value="fake_token"), \
+             patch("app.db.get_db", side_effect=RuntimeError("PostgreSQL pool unreachable")), \
+             patch("sqlite3.connect") as mock_sqlite:
+            with self.assertRaises(RuntimeError) as ctx:
+                scanner.scan_single_file("movie.mkv")
+            self.assertIn("PostgreSQL pool unreachable", str(ctx.exception))
+            mock_sqlite.assert_not_called()
+
+    def test_scanner_scan_unindexed_postgres_failure_does_not_open_sqlite(self):
+        """scan_unindexed must propagate PostgreSQL errors and never open SQLite."""
+        import scanner
+        with patch("scanner.load_token", return_value="fake_token"), \
+             patch("scanner.get_db", side_effect=RuntimeError("PostgreSQL pool unreachable")), \
+             patch("sqlite3.connect") as mock_sqlite:
+            with self.assertRaises(RuntimeError) as ctx:
+                scanner.scan_unindexed()
+            self.assertIn("PostgreSQL pool unreachable", str(ctx.exception))
+            mock_sqlite.assert_not_called()
+
+    def test_posters_main_postgres_failure_does_not_open_sqlite(self):
+        """posters.main must propagate PostgreSQL errors and never open SQLite."""
+        import posters
+        with patch("app.db.get_db", side_effect=RuntimeError("PostgreSQL pool unreachable")), \
+             patch("sqlite3.connect") as mock_sqlite:
+            with self.assertRaises(RuntimeError) as ctx:
+                posters.main()
+            self.assertIn("PostgreSQL pool unreachable", str(ctx.exception))
+            mock_sqlite.assert_not_called()
+
+    def test_scanner_custom_db_path_workflow_preserved(self):
+        """Explicit offline/custom db_path must still open custom SQLite database."""
+        import scanner
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
+            custom_db = Path(tmp_dir) / "custom.db"
+            conn = sqlite3.connect(custom_db)
+            conn.execute("CREATE TABLE movies (filename TEXT PRIMARY KEY, title TEXT)")
+            conn.commit()
+            conn.close()
+
+            with patch("scanner.load_token", return_value="fake_token"), \
+                 patch("scanner.get_db") as mock_get_db:
+                res = scanner.scan_unindexed(media_root=tmp_dir, db_path=custom_db)
+                mock_get_db.assert_not_called()
+                self.assertEqual(res, [])
+
+    def test_scanner_scan_single_file_closes_conn_on_completion_and_error(self):
+        """scan_single_file must close conn when acquired, but preserve externally passed conn."""
+        import scanner
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value = None
+
+        with patch("scanner.load_token", return_value="fake_token"), \
+             patch("app.db.get_db", return_value=mock_conn), \
+             patch("scanner.parse_filename", return_value=("Test Movie", 2026)), \
+             patch("app.services.media_resolver.is_anonymous_name", return_value=False), \
+             patch("scanner.find_movie", return_value=None):
+            # 1. Internally acquired conn must be closed
+            scanner.scan_single_file("Test Movie 2026.mkv")
+            mock_conn.close.assert_called_once()
+
+        # 2. Externally passed conn must NOT be closed by scan_single_file
+        external_conn = MagicMock()
+        with patch("scanner.load_token", return_value="fake_token"), \
+             patch("scanner.parse_filename", return_value=("Test Movie", 2026)), \
+             patch("app.services.media_resolver.is_anonymous_name", return_value=False), \
+             patch("scanner.find_movie", return_value=None):
+            scanner.scan_single_file("Test Movie 2026.mkv", conn=external_conn)
+            external_conn.close.assert_not_called()
 
 
 if __name__ == "__main__":

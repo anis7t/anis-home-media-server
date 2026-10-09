@@ -312,8 +312,11 @@ def purge_media(filename):
     rel_filename = get_rel_path(path)
 
     db = get_db()
-    movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
-    progress_row = db.execute("SELECT * FROM progress WHERE filename=?", (rel_filename,)).fetchone()
+    try:
+        movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
+        progress_row = db.execute("SELECT * FROM progress WHERE filename=?", (rel_filename,)).fetchone()
+    finally:
+        db.close()
     tmdb_id = value(movie_row, 'tmdb_id')
     poster_path = value(movie_row, 'poster_path')
 
@@ -359,35 +362,37 @@ def purge_media(filename):
 
     # 4. Purge TMDb posters and backdrops if not referenced by other items
     purged_posters = []
-    if tmdb_id:
-        other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
-        if not other:
-            cached_p = config.POSTER_CACHE / f"{tmdb_id}.jpg"
-            if cached_p.is_file():
-                cached_p.unlink(missing_ok=True)
-                purged_posters.append(str(cached_p))
-            cached_b = config.BACKDROP_CACHE / f"{tmdb_id}.jpg"
-            if cached_b.is_file():
-                cached_b.unlink(missing_ok=True)
-                purged_posters.append(str(cached_b))
+    db = get_db()
+    try:
+        if tmdb_id:
+            other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
+            if not other:
+                cached_p = config.POSTER_CACHE / f"{tmdb_id}.jpg"
+                if cached_p.is_file():
+                    cached_p.unlink(missing_ok=True)
+                    purged_posters.append(str(cached_p))
+                cached_b = config.BACKDROP_CACHE / f"{tmdb_id}.jpg"
+                if cached_b.is_file():
+                    cached_b.unlink(missing_ok=True)
+                    purged_posters.append(str(cached_b))
 
-    if poster_path and str(poster_path).startswith('local:'):
-        try:
-            local_poster = config.MEDIA_ROOT / poster_path[6:]
-            if local_poster.is_file():
-                local_poster.unlink(missing_ok=True)
-                purged_posters.append(str(local_poster))
-        except Exception:
-            pass
+        if poster_path and str(poster_path).startswith('local:'):
+            try:
+                local_poster = config.MEDIA_ROOT / poster_path[6:]
+                if local_poster.is_file():
+                    local_poster.unlink(missing_ok=True)
+                    purged_posters.append(str(local_poster))
+            except Exception:
+                pass
 
-    if path.parent.is_dir():
-        for ext in config.POSTER_EXTENSIONS:
-            local_ext = path.with_suffix(ext)
-            if local_ext.is_file():
-                local_ext.unlink(missing_ok=True)
-                purged_posters.append(str(local_ext))
+        if path.parent.is_dir():
+            for ext in config.POSTER_EXTENSIONS:
+                local_ext = path.with_suffix(ext)
+                if local_ext.is_file():
+                    local_ext.unlink(missing_ok=True)
+                    purged_posters.append(str(local_ext))
 
-    # 5. Purge database records (per-device rows key on the same filename, and a
+        # 5. Purge database records (per-device rows key on the same filename, and a
         #    client may have stored the basename rather than the relative path)
         db.execute("DELETE FROM movies WHERE filename=?", (rel_filename,))
         db.execute("DELETE FROM progress WHERE filename=?", (rel_filename,))
@@ -396,7 +401,8 @@ def purge_media(filename):
             [(k,) for k in {rel_filename, path.name}],
         )
         db.commit()
-    db.close()
+    finally:
+        db.close()
 
     # 6. Delete media file on disk and any upload part files
     file_deleted = False

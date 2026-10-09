@@ -82,16 +82,18 @@ def media_info(filename):
         duration = _source_progress_duration(path) or duration
 
     db = get_db()
-    row = db.execute(
-        'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename = ?',
-        (filename,)
-    ).fetchone()
-    if not row:
+    try:
         row = db.execute(
-            'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename LIKE ?',
-            (f'%{Path(filename).name}%',)
+            'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename = ?',
+            (filename,)
         ).fetchone()
-    db.close()
+        if not row:
+            row = db.execute(
+                'SELECT title, year, overview, genres, vote_average, runtime, release_date FROM movies WHERE filename LIKE ?',
+                (f'%{Path(filename).name}%',)
+            ).fetchone()
+    finally:
+        db.close()
     movie_meta = dict(row) if row else {}
 
     needs_tc = needs_transcode(path)
@@ -311,20 +313,22 @@ def progress():
         if not is_video(path):
             abort(404)
         db = get_db()
-        from app.services.device_service import current_device_id
-        device_id = current_device_id()
-        row = None
-        if device_id:
-            for key in (filename, path.name):
-                row = db.execute(
-                    'SELECT position,duration FROM device_watch_history WHERE device_id=? AND filename=?',
-                    (device_id, key),
-                ).fetchone()
-                if row:
-                    break
-        if row is None and not device_id:
-            row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
-        db.close()
+        try:
+            from app.services.device_service import current_device_id
+            device_id = current_device_id()
+            row = None
+            if device_id:
+                for key in (filename, path.name):
+                    row = db.execute(
+                        'SELECT position,duration FROM device_watch_history WHERE device_id=? AND filename=?',
+                        (device_id, key),
+                    ).fetchone()
+                    if row:
+                        break
+            if row is None and not device_id:
+                row = db.execute('SELECT position,duration FROM progress WHERE filename=?', (filename,)).fetchone()
+        finally:
+            db.close()
         return jsonify(position=value(row, 'position', 0), duration=value(row, 'duration', 0))
 
     data = request.get_json(silent=True) or {}
@@ -340,13 +344,15 @@ def progress():
     if duration:
         position = min(position, duration)
     db = get_db()
-    db.execute(
-        'INSERT INTO progress(filename,position,duration) VALUES(?,?,?) '
-        'ON CONFLICT(filename) DO UPDATE SET position=excluded.position,duration=excluded.duration,updated_at=CURRENT_TIMESTAMP',
-        (filename, position, duration)
-    )
-    db.commit()
-    db.close()
+    try:
+        db.execute(
+            'INSERT INTO progress(filename,position,duration) VALUES(?,?,?) '
+            'ON CONFLICT(filename) DO UPDATE SET position=excluded.position,duration=excluded.duration,updated_at=CURRENT_TIMESTAMP',
+            (filename, position, duration)
+        )
+        db.commit()
+    finally:
+        db.close()
 
     try:
         from app.services.device_service import register_device_request, record_device_watch
@@ -391,8 +397,10 @@ def tmdb_poster(tmdb_id):
     target = config.POSTER_CACHE / f'{tmdb_id}.jpg'
     if not target.is_file():
         db = get_db()
-        row = db.execute('SELECT poster_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone()
-        db.close()
+        try:
+            row = db.execute('SELECT poster_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone()
+        finally:
+            db.close()
         if row and value(row, 'poster_path'):
             try:
                 import posters
@@ -408,8 +416,10 @@ def tmdb_backdrop(tmdb_id):
     target = config.BACKDROP_CACHE / f'{tmdb_id}.jpg'
     if not target.is_file():
         db = get_db()
-        row = db.execute('SELECT backdrop_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone()
-        db.close()
+        try:
+            row = db.execute('SELECT backdrop_path FROM movies WHERE tmdb_id=?', (tmdb_id,)).fetchone()
+        finally:
+            db.close()
         if row and value(row, 'backdrop_path'):
             try:
                 import posters
@@ -495,18 +505,21 @@ def upload():
     rel_filename = get_rel_path(target_path)
     parsed_title, parsed_year = scanner.parse_filename(target_path)
 
-    # 3. Fallback database registration in SQLite if TMDB had no match or was offline
+    # 3. Fallback database registration if TMDB had no match or was offline
     if not scanned_details:
+        db = None
         try:
             db = get_db()
             db.execute(
-                "INSERT OR IGNORE INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO movies (filename, title, year, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (filename) DO NOTHING",
                 (rel_filename, parsed_title, parsed_year, int(time.time()))
             )
             db.commit()
-            db.close()
         except Exception:
             pass
+        finally:
+            if db:
+                db.close()
 
     # 4. Trigger library scan sync
     trigger_library_scan()

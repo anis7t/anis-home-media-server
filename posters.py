@@ -75,55 +75,53 @@ def download_poster(tmdb_id, poster_path, backdrop=False):
 
 
 def main():
+    from app.db import get_db, value
+    conn = get_db()
+    try:
+        movies = conn.execute("""
+            SELECT
+                filename,
+                title,
+                tmdb_id,
+                poster_path,
+                backdrop_path
+            FROM movies
+            WHERE tmdb_id IS NOT NULL
+        """).fetchall()
 
-    if not DB_PATH.exists():
-        print("media.db not found.")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
-
-    movies = conn.execute("""
-        SELECT
-            filename,
-            title,
-            tmdb_id,
-            poster_path,
-            backdrop_path
-        FROM movies
-        WHERE tmdb_id IS NOT NULL
-    """).fetchall()
-
-    print(f"Found {len(movies)} movies with metadata.")
-    print()
-
-    successful = 0
-    failed = 0
-
-    for index, (filename, title, tmdb_id, poster_path, backdrop_path) in enumerate(
-        movies, 1
-    ):
-
-        print(
-            f"[{index}/{len(movies)}] {title}"
-        )
-
-        if not poster_path:
-            print("    No poster available from TMDB.")
-            failed += 1
-        elif download_poster(tmdb_id, poster_path):
-            successful += 1
-        else:
-            failed += 1
-
-        if backdrop_path:
-            download_poster(tmdb_id, backdrop_path, backdrop=True)
-
+        print(f"Found {len(movies)} movies with metadata.")
         print()
 
-        # Small pause between movies
-        time.sleep(2)
+        successful = 0
+        failed = 0
 
-    conn.close()
+        for index, m in enumerate(movies, 1):
+            title = value(m, 'title') or (m[1] if isinstance(m, (tuple, list)) else 'Unknown')
+            tmdb_id = value(m, 'tmdb_id') or (m[2] if isinstance(m, (tuple, list)) else None)
+            poster_path = value(m, 'poster_path') or (m[3] if isinstance(m, (tuple, list)) else None)
+            backdrop_path = value(m, 'backdrop_path') or (m[4] if isinstance(m, (tuple, list)) else None)
+
+            print(
+                f"[{index}/{len(movies)}] {title}"
+            )
+
+            if not poster_path:
+                print("    No poster available from TMDB.")
+                failed += 1
+            elif download_poster(tmdb_id, poster_path):
+                successful += 1
+            else:
+                failed += 1
+
+            if backdrop_path:
+                download_poster(tmdb_id, backdrop_path, backdrop=True)
+
+            print()
+
+            # Small pause between movies
+            time.sleep(2)
+    finally:
+        conn.close()
 
     print("--------------------------------")
     print("Poster download complete.")

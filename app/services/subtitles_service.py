@@ -179,12 +179,15 @@ def tracks(path, movie_meta=None):
     rel_filename = get_rel_path(path)
 
     if movie_meta is None:
+        db = None
         try:
             db = get_db()
             movie_meta = movie(path, db)
-            db.close()
         except Exception:
             pass
+        finally:
+            if db:
+                db.close()
 
     # 1. Directory subtitles
     from app.utils.subtitles import get_short_movie_name

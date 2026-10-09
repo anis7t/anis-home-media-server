@@ -64,15 +64,17 @@ def details(filename):
     if not is_video(path):
         abort(404)
     db = get_db()
-    m = movie(path, db, current_device_id())
-    backdrop = m['tmdb_id'] if m['tmdb_id'] and (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file() else None
-    extended = {}
-    if m.get('details_json'):
-        try:
-            extended = json.loads(m['details_json'])
-        except Exception:
-            extended = {}
-    db.close()
+    try:
+        m = movie(path, db, current_device_id())
+        backdrop = m['tmdb_id'] if m['tmdb_id'] and (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file() else None
+        extended = {}
+        if m.get('details_json'):
+            try:
+                extended = json.loads(m['details_json'])
+            except Exception:
+                extended = {}
+    finally:
+        db.close()
     specs = extract_media_technical_specs(path, m)
     formatted_runtime = format_runtime_display(m.get('runtime'))
     active_transcodes = get_active_transcodes()
@@ -101,8 +103,10 @@ def watch(filename):
     if not is_video(path):
         abort(404)
     db = get_db()
-    m = movie(path, db, current_device_id())
-    db.close()
+    try:
+        m = movie(path, db, current_device_id())
+    finally:
+        db.close()
     active_transcodes = get_active_transcodes()
     transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
     needs_tc = needs_transcode(path)
