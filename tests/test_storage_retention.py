@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app
+from app.config import require_within_cache_root
 from app.db import get_db, get_setting, init_db, set_setting
 from app.services.transcode_service import (
     apply_post_transcode_policy,
@@ -20,15 +21,74 @@ from app.services.transcode_service import (
     purge_transcode_caches_for_media,
 )
 
-# Isolate the cache directory for this module. audit_orphaned_caches() discovers "active" cache
-# dirs from video_paths() (a temp MEDIA_ROOT under pytest) while get_cache_dir() resolves
-# app.CACHE_DIR, so against a developer machine's live cache every real HLS directory looks
-# orphaned and the non-dry-run purge below would delete production transcodes.
+# Module-private scratch directory. Still used for the dummy MEDIA files the tests
+# below create - a media file is not cache data.
+#
+# The cache assignments that follow are NOT what isolates these tests.
+# tests/conftest.py::_point_app_at_temp() re-imposes the shared session cache
+# (conftest's `_CACHE`, via `_CACHE_ATTRS`) before EVERY test, so anything set at
+# import time here is overwritten before a test body runs. The live purge in
+# test_audit_and_purge_orphaned_caches would then be able to remove any orphaned
+# directory present in that shared tree, not just this module's fixtures.
+# Isolation is therefore established per test by _dedicated_cache_root() at the
+# start of the test body, which runs after every hook and fixture.
 _CACHE_TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
 app.CACHE_DIR = Path(_CACHE_TMP.name) / "cache"
 app.config.CACHE_DIR = app.CACHE_DIR
 (app.CACHE_DIR / "hls").mkdir(parents=True, exist_ok=True)
 (app.CACHE_DIR / "previews").mkdir(parents=True, exist_ok=True)
+
+
+def _lexical(path):
+    """Normalise *path* for comparison WITHOUT touching the filesystem.
+
+    os.path.realpath() resolves symlinks by stat'ing each component, which is
+    itself a form of access to the very paths this check exists to protect, so
+    every comparison in this module is purely lexical.
+    """
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
+def _within(path, root):
+    """True when *path* is *root* or lies beneath it. Lexical, case-insensitive."""
+    key = _lexical(path)
+    base = _lexical(root)
+    return key == base or key.startswith(base + os.sep)
+
+
+def _dedicated_cache_root(tag="purge_orphans"):
+    """Create a unique cache root for one test, including the subtrees it purges."""
+    root = Path(tempfile.mkdtemp(prefix=f"mscache_{tag}_")) / "cache"
+    (root / "hls").mkdir(parents=True, exist_ok=True)
+    (root / "previews").mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _assert_dedicated_cache_root(case, root, previous_cache):
+    """Fail *case* unless *root* is provably a fresh disposable tree.
+
+    Called BEFORE the application is pointed at *root*, so a failure leaves the
+    process exactly as it found it and no purge-capable call has been made.
+    Only lexical comparisons are used: no protected production path is stat'ed,
+    listed, or opened.
+    """
+    target = _lexical(root)
+    temp = _lexical(tempfile.gettempdir())
+    if target == temp or not target.startswith(temp + os.sep):
+        case.fail(f"dedicated cache root {target} is not beneath the temp directory {temp}")
+
+    forbidden = {
+        "shared test cache": previous_cache,
+        "repository cache": Path(__file__).resolve().parent.parent / "cache",
+        "production cache": r"E:\MediaServer\cache",
+        "production media root": r"D:\Flicks",
+    }
+    for label, other in forbidden.items():
+        if other is None:
+            continue
+        other_key = _lexical(other)
+        if target == other_key or target.startswith(other_key + os.sep) or other_key.startswith(target + os.sep):
+            case.fail(f"dedicated cache root {target} overlaps the {label} ({other_key})")
 
 
 class StorageRetentionTests(unittest.TestCase):
@@ -58,36 +118,64 @@ class StorageRetentionTests(unittest.TestCase):
 
     def test_audit_and_purge_orphaned_caches(self):
         """Verify audit distinguishes active vs orphaned directories, and purge cleans orphans."""
-        cache_base = get_cache_dir()
-        hls_base = cache_base / 'hls'
-        previews_base = cache_base / 'previews'
-        hls_base.mkdir(parents=True, exist_ok=True)
-        previews_base.mkdir(parents=True, exist_ok=True)
-
-        # 1. Create a dummy active movie in isolated temp directory
-        active_movie = Path(_CACHE_TMP.name) / "TestActiveMovie.2026.mkv"
-        active_movie.write_bytes(b"dummy active video content")
-        app._paths = (0, [])
-
-        active_hls = hls_cache_dir(active_movie)
-        active_hls.mkdir(parents=True, exist_ok=True)
-        (active_hls / "playlist.m3u8").write_text("#EXTM3U\n#EXT-X-ENDLIST\n")
-        (active_hls / "segment_000000.ts").write_bytes(b"12345")
-
-        # 2. Create orphaned directories
-        orphan_hls_1 = hls_base / "orphan_hls_fakehash1"
-        orphan_hls_1.mkdir(parents=True, exist_ok=True)
-        (orphan_hls_1 / "segment_000000.ts").write_bytes(b"A" * 1000)
-
-        orphan_hls_2 = hls_base / "orphan_hls_fakehash2"
-        orphan_hls_2.mkdir(parents=True, exist_ok=True)
-        (orphan_hls_2 / "segment_000000.ts").write_bytes(b"B" * 2000)
-
-        orphan_preview = previews_base / "orphan_prev_fakehash1"
-        orphan_preview.mkdir(parents=True, exist_ok=True)
-        (orphan_preview / "thumb_0000.jpg").write_bytes(b"C" * 500)
+        # Phase 3.8G4: bind this test to a private cache root so the live purge
+        # below can only ever reach the fixtures created in this method.
+        previous_cache = app.CACHE_DIR
+        dedicated = _dedicated_cache_root()
+        _assert_dedicated_cache_root(self, dedicated, previous_cache)  # before any mutation
+        app.config.CACHE_DIR = dedicated
+        app.CACHE_DIR = dedicated
+        # Declared before the try so the finally can clean up after an early
+        # failure without referencing a name that was never bound.
+        active_movie = active_hls = orphan_hls_1 = orphan_hls_2 = orphan_preview = None
 
         try:
+            # Both names must agree, or the application's approved_cache_root() refuses.
+            self.assertEqual(_lexical(app.config.CACHE_DIR), _lexical(app.CACHE_DIR))
+
+            cache_base = get_cache_dir()
+            self.assertEqual(_lexical(cache_base), _lexical(dedicated))
+            hls_base = cache_base / 'hls'
+            previews_base = cache_base / 'previews'
+            hls_base.mkdir(parents=True, exist_ok=True)
+            previews_base.mkdir(parents=True, exist_ok=True)
+
+            # 1. Create a dummy active movie in isolated temp directory
+            active_movie = Path(_CACHE_TMP.name) / "TestActiveMovie.2026.mkv"
+            active_movie.write_bytes(b"dummy active video content")
+            app._paths = (0, [])
+
+            active_hls = hls_cache_dir(active_movie)
+            active_hls.mkdir(parents=True, exist_ok=True)
+            (active_hls / "playlist.m3u8").write_text("#EXTM3U\n#EXT-X-ENDLIST\n")
+            (active_hls / "segment_000000.ts").write_bytes(b"12345")
+
+            # 2. Create orphaned directories
+            orphan_hls_1 = hls_base / "orphan_hls_fakehash1"
+            orphan_hls_1.mkdir(parents=True, exist_ok=True)
+            (orphan_hls_1 / "segment_000000.ts").write_bytes(b"A" * 1000)
+
+            orphan_hls_2 = hls_base / "orphan_hls_fakehash2"
+            orphan_hls_2.mkdir(parents=True, exist_ok=True)
+            (orphan_hls_2 / "segment_000000.ts").write_bytes(b"B" * 2000)
+
+            orphan_preview = previews_base / "orphan_prev_fakehash1"
+            orphan_preview.mkdir(parents=True, exist_ok=True)
+            (orphan_preview / "thumb_0000.jpg").write_bytes(b"C" * 500)
+
+            # Before ANY purge-capable call: prove both purge trees sit inside the
+            # dedicated root, using the same validator production code applies to
+            # every destructive cache target.
+            for _label, _base in (('hls', hls_base), ('previews', previews_base)):
+                self.assertTrue(
+                    _within(_base, dedicated),
+                    f"{_label} cache base is outside the dedicated cache root",
+                )
+                self.assertEqual(
+                    require_within_cache_root(_base, f'retention_test({_label})'),
+                    _base.resolve(),
+                )
+
             with patch("app.services.transcode_service.video_paths", return_value=[str(active_movie)]):
                 # 3. Audit should discover the orphans
                 audit = audit_orphaned_caches()
@@ -112,21 +200,31 @@ class StorageRetentionTests(unittest.TestCase):
                 live_res = purge_orphaned_caches(dry_run=False)
                 self.assertFalse(live_res['dry_run'])
                 self.assertGreaterEqual(live_res['purged_count'], 3)
-                self.assertTrue(orphan_hls_1.exists())
-                self.assertTrue(orphan_hls_2.exists())
-                self.assertTrue(orphan_preview.exists())
+                # Issue B: the live purge removes these directories, so they must be
+                # ABSENT afterwards. The previous assertTrue contradicted both the
+                # comment above and the purged_count assertion on the line above.
+                self.assertFalse(orphan_hls_1.exists())
+                self.assertFalse(orphan_hls_2.exists())
+                self.assertFalse(orphan_preview.exists())
 
                 # Active transcode cache must remain completely untouched!
                 self.assertTrue(active_hls.exists())
                 self.assertTrue((active_hls / "segment_000000.ts").exists())
 
         finally:
-            # Cleanup test movie and active cache
-            active_movie.unlink(missing_ok=True)
-            shutil.rmtree(active_hls, ignore_errors=True)
-            shutil.rmtree(orphan_hls_1, ignore_errors=True)
-            shutil.rmtree(orphan_hls_2, ignore_errors=True)
-            shutil.rmtree(orphan_preview, ignore_errors=True)
+            # Restore both cache roots FIRST. Whatever failed above, the
+            # application must not be left pointing at this test's private root.
+            app.config.CACHE_DIR = previous_cache
+            app.CACHE_DIR = previous_cache
+            # Clean up only fixtures that were actually created, and only inside
+            # this test's two private roots (the dedicated cache and _CACHE_TMP).
+            if active_movie is not None and _within(active_movie, _CACHE_TMP.name):
+                active_movie.unlink(missing_ok=True)
+            for _dir in (active_hls, orphan_hls_1, orphan_hls_2, orphan_preview):
+                if _dir is None:
+                    continue
+                if _within(_dir, dedicated) or _within(_dir, _CACHE_TMP.name):
+                    shutil.rmtree(_dir, ignore_errors=True)
             app._paths = (0, [])
 
     def test_apply_post_transcode_policy_keep(self):
