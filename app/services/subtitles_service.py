@@ -18,6 +18,8 @@ from app.services.media_service import movie, probe_media
 from app.utils.filesystem import is_video
 from app.utils.subtitles import compute_opensubtitles_hash, detect_subtitle_language, srt_to_vtt
 
+logger = logging.getLogger(__name__)
+
 
 def extract_embedded_subtitle(path, stream_idx):
     """Extract embedded subtitle track via ffmpeg and save as WebVTT in cache."""
@@ -351,31 +353,58 @@ def purge_subtitles_for_media(path):
     purged = []
 
     # 1. Embedded subtitles cache
+    #
+    # Phase 3.8D: cache deletions validate the actual target against the approved
+    # cache root. Refusals are recorded and reported, not silently swallowed.
+    #
+    # Phase 3.8F: the outer handlers are `except Exception` again, matching the
+    # behaviour this function had before 3.8D. `purge_subtitles_for_media` has a
+    # single caller (`media_service.purge_media`) which invokes it WITHOUT an
+    # enclosing handler, part-way through a destructive sequence that has already
+    # purged transcode caches. A subtitle-cache failure must therefore not abort
+    # the rest of that purge, which is the established cleanup contract.
+    #
+    # The ordering below is load-bearing: `except config.CacheRootUnsafe` is
+    # listed FIRST, so a refusal is logged and recorded and never falls through
+    # to the broad handler. A refusal is therefore never reported as a deletion.
+    refused = []
     try:
         if path.exists():
             stamp = f"{path}:{path.stat().st_size}:{path.stat().st_mtime_ns}".encode()
             file_hash = hashlib.sha256(stamp).hexdigest()[:16]
-            if config.SUBTITLE_EMBEDDED_CACHE.is_dir():
-                for vtt in config.SUBTITLE_EMBEDDED_CACHE.glob(f"{file_hash}_*.vtt"):
-                    try:
-                        vtt.unlink(missing_ok=True)
-                        purged.append(str(vtt))
-                    except Exception:
-                        pass
+            try:
+                embedded_base = config.require_within_cache_root(
+                    config.SUBTITLE_EMBEDDED_CACHE, 'purge_subtitles_for_media(embedded)')
+                if embedded_base.is_dir():
+                    for vtt in embedded_base.glob(f"{file_hash}_*.vtt"):
+                        try:
+                            vtt.unlink(missing_ok=True)
+                            purged.append(str(vtt))
+                        except Exception:
+                            pass
+            except config.CacheRootUnsafe as exc:
+                logger.error("REFUSING to purge embedded subtitle cache for %s: %s", path, exc)
+                refused.append({'path': str(config.SUBTITLE_EMBEDDED_CACHE), 'reason': str(exc)})
     except Exception:
-        pass
+        logger.warning("Embedded subtitle cache cleanup failed for %s", path, exc_info=True)
 
     # 2. Online subtitles cache
     try:
         if path.exists():
             stamp_online = f"{path}:{path.stat().st_size}".encode()
             online_hash = hashlib.sha256(stamp_online).hexdigest()[:16]
-            online_file = config.SUBTITLE_ONLINE_CACHE / f"{online_hash}.vtt"
-            if online_file.is_file():
-                online_file.unlink(missing_ok=True)
-                purged.append(str(online_file))
+            try:
+                online_file = config.require_within_cache_root(
+                    config.SUBTITLE_ONLINE_CACHE / f"{online_hash}.vtt",
+                    'purge_subtitles_for_media(online)')
+                if online_file.is_file():
+                    online_file.unlink(missing_ok=True)
+                    purged.append(str(online_file))
+            except config.CacheRootUnsafe as exc:
+                logger.error("REFUSING to purge online subtitle cache for %s: %s", path, exc)
+                refused.append({'path': str(config.SUBTITLE_ONLINE_CACHE), 'reason': str(exc)})
     except Exception:
-        pass
+        logger.warning("Online subtitle cache cleanup failed for %s", path, exc_info=True)
 
     # 3. Sidecar subtitles alongside movie file (e.g. .srt or .vtt matching stem)
     try:
@@ -391,6 +420,14 @@ def purge_subtitles_for_media(path):
     except Exception:
         pass
 
+    # Refusals are logged above and summarised here. The return value stays a flat
+    # list of purged paths so existing callers and the API response contract are
+    # unchanged; a refusal is never reported as a successful purge.
+    if refused:
+        logger.error(
+            "Refused %d subtitle cache deletion(s) for %s: %s",
+            len(refused), path, "; ".join(r['reason'] for r in refused),
+        )
     return purged
 
 

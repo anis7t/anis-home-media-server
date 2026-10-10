@@ -729,8 +729,11 @@ def storage_purge_orphans():
         or (request.is_json and request.get_json(silent=True) and request.get_json().get('dry_run') is True)
     )
     res = purge_orphaned_caches(dry_run=dry_run)
+    # Phase 3.8D: a refusal must not be presented as a successful purge. The
+    # `result` payload is unchanged (and still carries `refused`/`reason`), so
+    # existing clients keep working; `success` now reflects what actually happened.
     return jsonify({
-        'success': True,
+        'success': not res.get('refused'),
         'result': res,
     })
 

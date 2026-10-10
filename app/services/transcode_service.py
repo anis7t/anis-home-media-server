@@ -95,6 +95,15 @@ def get_cache_dir():
     return config.CACHE_DIR
 
 
+# The cache-root boundary lives in app.config (Phase 3.8D) so that media_service,
+# subtitles_service, preview_service and this module all share one authoritative
+# check without import cycles. These are aliases, not wrappers or subclasses, so
+# `except CacheRootUnsafe` still catches the exception config raises.
+CacheRootUnsafe = config.CacheRootUnsafe
+approved_cache_root = config.approved_cache_root
+_require_within_cache_root = config.require_within_cache_root
+
+
 def transcode_cache_path(path, mode='direct'):
     """Generate deterministic cache file path for transcoded MP4."""
     path = Path(path)
@@ -232,8 +241,10 @@ def hls_transcode_args(vaapi_available=False, amf_available=False):
 
 def cleanup_cache():
     """Remove orphaned .part.mp4 files and enforce size cap on transcode cache."""
+    # Fail closed: the directory actually unlinked from, not merely the config
+    # value it was derived from.
     cache_dir = get_cache_dir()
-    transcode_dir = cache_dir / 'transcodes'
+    transcode_dir = _require_within_cache_root(cache_dir / 'transcodes', 'cleanup_cache')
     if not transcode_dir.is_dir():
         return
     part_files = list(transcode_dir.glob('*.part.mp4'))
@@ -266,8 +277,14 @@ def cleanup_cache_on_startup():
     as trustworthy as media enumeration, and a purge at startup can wipe every transcode on the
     host when the roots or database are not readable yet. Opt in with
     MEDIA_SERVER_PURGE_ON_STARTUP=1; the periodic maintenance worker still audits automatically.
+
+    Startup must obey the same cache-root boundary as every other caller, and must never take
+    the service down because of it: an unresolvable cache root is logged and skipped.
     """
-    cleanup_cache()
+    try:
+        cleanup_cache()
+    except CacheRootUnsafe as exc:
+        logger.error("Startup cache cleanup skipped: %s", exc)
     if os.environ.get('MEDIA_SERVER_PURGE_ON_STARTUP', '0') == '1':
         try:
             res = purge_orphaned_caches()
@@ -307,6 +324,36 @@ def audit_orphaned_caches():
     except Exception as exc:
         active_videos = []
         degraded_reasons.append(f"media enumeration failed: {exc}")
+
+    # ENUMERATION COMPLETENESS (Phase 3.8D).
+    #
+    # A non-empty enumeration is NOT proof that the library was fully walked. The
+    # purge incident this guards against returned one real file from a valid root
+    # and was therefore indistinguishable from a complete listing, so every other
+    # cache directory was classified orphaned and deleted.
+    #
+    # What can be established from source, without inventing a coverage threshold:
+    # `video_paths()` skips any root that does not exist (`if not root.exists():
+    # continue`), so an absent or unreadable configured root yields a SILENTLY
+    # PARTIAL list - no exception, no degraded flag. That is a completeness failure
+    # the code can actually observe, so it is treated as one.
+    media_roots_missing = []
+    try:
+        configured_roots = config.get_media_roots()
+    except Exception as exc:
+        configured_roots = []
+        degraded_reasons.append(f"media root configuration unreadable: {exc}")
+    for root in configured_roots:
+        try:
+            if not root.exists() or not root.is_dir():
+                media_roots_missing.append(str(root))
+        except OSError as exc:
+            media_roots_missing.append(f"{root} ({exc})")
+    if media_roots_missing:
+        degraded_reasons.append(
+            "media enumeration is incomplete: configured root(s) missing or unreadable: "
+            + ", ".join(media_roots_missing)
+        )
 
     active_hls_map = {}       # dir_name -> source Path
     active_preview_map = {}   # dir_name -> source Path
@@ -438,6 +485,7 @@ def audit_orphaned_caches():
         'total_active_dirs': len(active_hls) + len(active_previews),
         'degraded': degraded,
         'degraded_reasons': degraded_reasons,
+        'media_roots_missing': media_roots_missing,
     }
 
 
@@ -446,7 +494,29 @@ def purge_orphaned_caches(dry_run=False):
 
     Uses _remove_path_with_retries to ensure Windows file locks are handled safely.
     Returns dict with freed_bytes, purged_dirs, failed_dirs, dry_run.
+
+    Refuses - without enumerating or deleting anything - when the cache root cannot be
+    established as the single configured root, and re-checks every directory immediately
+    before removing it.
     """
+    # Fail closed BEFORE the audit: a misdirected cache root must not even be walked.
+    try:
+        approved_cache_root()
+    except CacheRootUnsafe as exc:
+        logger.error("REFUSING to purge caches: %s", exc)
+        return {
+            'freed_bytes': 0,
+            'purged_count': 0,
+            'purged_dirs': [],
+            'failed_count': 0,
+            'failed_dirs': [],
+            'skipped_live_count': 0,
+            'skipped_live': [],
+            'dry_run': dry_run,
+            'refused': True,
+            'reason': str(exc),
+        }
+
     audit = audit_orphaned_caches()
     if audit.get('degraded'):
         reason = '; '.join(audit.get('degraded_reasons') or []) or 'cache audit degraded'
@@ -471,7 +541,15 @@ def purge_orphaned_caches(dry_run=False):
     now = time.time()
 
     for item in orphans:
-        target = Path(item['path'])
+        # Defence in depth: the audited path is re-checked against the approved root
+        # immediately before removal, so a cache path resolved differently by the
+        # audit cannot be deleted through.
+        try:
+            target = _require_within_cache_root(item['path'], 'purge_orphaned_caches')
+        except CacheRootUnsafe as exc:
+            logger.error("REFUSING to purge %s: %s", item['path'], exc)
+            failed_dirs.append({'path': str(item['path']), 'remaining': 'refused: outside approved cache root'})
+            continue
         if not dry_run and _looks_like_live_transcode(target, now):
             # Never delete a directory an in-flight FFmpeg is still writing into.
             skipped_live.append(item['path'])
@@ -2004,18 +2082,34 @@ def purge_transcode_caches_for_media(path, known_hls_dir=None):
     purged = {'hls_dirs': [], 'mp4_files': [], 'failed': []}
 
     target_hls_dirs = []
+    refused = []
     if known_hls_dir:
         hd = Path(known_hls_dir)
-        if hd not in target_hls_dirs:
-            target_hls_dirs.append(hd)
+        # known_hls_dir arrives from a caller, so it is the one target that is not
+        # derived from the cache root itself and must be proven to sit inside it.
+        try:
+            hd = _require_within_cache_root(hd, 'purge_transcode_caches_for_media')
+        except CacheRootUnsafe as exc:
+            logger.error("REFUSING to purge HLS directory: %s", exc)
+            refused.append({'path': str(hd), 'remaining': 'refused: outside approved cache root'})
+        else:
+            if hd not in target_hls_dirs:
+                target_hls_dirs.append(hd)
 
     if path is not None:
         source_path = Path(path)
         if source_path.exists():
+            calc_dir = None
             try:
                 calc_dir = hls_cache_dir(source_path)
+                calc_dir = _require_within_cache_root(
+                    calc_dir, 'purge_transcode_caches_for_media')
                 if calc_dir not in target_hls_dirs:
                     target_hls_dirs.append(calc_dir)
+            except CacheRootUnsafe as exc:
+                logger.error("REFUSING to purge HLS directory: %s", exc)
+                refused.append({'path': str(calc_dir if calc_dir is not None else source_path),
+                                'remaining': 'refused: outside approved cache root'})
             except Exception:
                 pass
 
@@ -2039,6 +2133,15 @@ def purge_transcode_caches_for_media(path, known_hls_dir=None):
                 mp4_path = transcode_cache_path(path, mode)
                 prog_path = transcode_progress_path(path, mode)
                 part_path = mp4_path.with_name(mp4_path.stem + '.part.mp4')
+                # Same boundary as the HLS branch: prove each derived file lives in
+                # the approved cache root before it is unlinked.
+                mp4_path = _require_within_cache_root(mp4_path, 'purge_transcode_caches_for_media')
+                prog_path = _require_within_cache_root(prog_path, 'purge_transcode_caches_for_media')
+                part_path = _require_within_cache_root(part_path, 'purge_transcode_caches_for_media')
+            except CacheRootUnsafe as exc:
+                logger.error("REFUSING to purge transcode cache file: %s", exc)
+                refused.append({'path': str(mp4_path), 'remaining': f'refused: {exc}'})
+                break
             except (OSError, ValueError):
                 continue
             for cache_path in (mp4_path, prog_path, part_path):
@@ -2051,4 +2154,7 @@ def purge_transcode_caches_for_media(path, known_hls_dir=None):
                 else:
                     purged['failed'].append({'path': str(cache_path), 'remaining': remaining})
 
+    # Refusals surface through the existing `failed` contract so callers that only
+    # inspect purge results still see that nothing outside the root was removed.
+    purged['failed'].extend(refused)
     return purged

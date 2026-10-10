@@ -21,13 +21,126 @@ DATABASE_URL = os.environ.get("MEDIA_SERVER_DATABASE_URL", "").strip() or None
 ALLOWED_DATABASE_BACKENDS = frozenset({"sqlite", "postgres", "postgresql"})
 
 # Cache directories
-CACHE_DIR = BASE_DIR / "cache"
+#
+# MEDIA_SERVER_CACHE_DIR follows the same contract as MEDIA_SERVER_MEDIA_ROOT and
+# MEDIA_SERVER_DATABASE above: unset means the default under BASE_DIR. It exists
+# because CACHE_DIR was previously the one writable path with NO environment
+# override, so any process that wanted a different cache tree had to monkeypatch
+# `app.CACHE_DIR` or `config.CACHE_DIR` after import. That asymmetry is what let a
+# misdirected cache path reach the destructive maintenance functions in
+# app/services/transcode_service.py.
+#
+# A blank or whitespace-only value is treated as ABSENT, not as a path: Path("")
+# resolves to the process working directory, which would silently install the
+# working directory as the cache root (and, after the checks below, as an approved
+# root for deletion). This mirrors the `.strip() or None` idiom already used for
+# DATABASE_URL above.
+#
+# Relative values are resolved against the process working directory at import
+# time (normal Path.resolve semantics); the default is already absolute because
+# BASE_DIR is resolved, so an unset value leaves CACHE_DIR exactly as before.
+_cache_dir_override = (os.environ.get("MEDIA_SERVER_CACHE_DIR") or "").strip()
+CACHE_DIR = Path(_cache_dir_override).resolve() if _cache_dir_override else (BASE_DIR / "cache")
+del _cache_dir_override
 POSTER_CACHE = CACHE_DIR / "posters"
 BACKDROP_CACHE = CACHE_DIR / "backdrops"
 SUBTITLE_CACHE = CACHE_DIR / "subtitles"
 SUBTITLE_EMBEDDED_CACHE = SUBTITLE_CACHE / "embedded"
 SUBTITLE_ONLINE_CACHE = SUBTITLE_CACHE / "online"
 UPDATES_DIR = Path(os.environ.get("MEDIA_SERVER_UPDATES_DIR", BASE_DIR / "updates")).resolve()
+
+# --------------------------------------------------------------------------- #
+# Cache-root safety boundary (Phase 3.8D)
+#
+# Every destructive cache deletion funnels through here. It lives in config
+# rather than in transcode_service so that media_service, subtitles_service,
+# preview_service and transcode_service all reach the SAME check without creating
+# import cycles (each already imports `config`).
+#
+# WHAT THIS ESTABLISHES: internal consistency plus containment.
+# WHAT IT DOES NOT ESTABLISH: that the configured root is the *intended* one.
+# Agreement proves the two configuration sources describe the same tree; it is
+# not proof that the tree is the right tree to delete from. The configured root
+# remains an operational trust boundary.
+# --------------------------------------------------------------------------- #
+
+
+class CacheRootUnsafe(RuntimeError):
+    """A destructive cache operation refused to run.
+
+    Raised when the cache root cannot be established as the single configured
+    root, so no deletion can be proven to stay inside it.
+    """
+
+
+def _cache_key(path):
+    """Normalise *path* for comparison. Does not require it to exist."""
+    return os.path.normcase(os.path.realpath(str(path)))
+
+
+def approved_cache_root():
+    """Return the one cache root that destructive operations may touch.
+
+    Fail closed.
+
+    ``config.CACHE_DIR`` is the declared root; ``app.CACHE_DIR`` is the legacy
+    override that ``transcode_service.get_cache_dir()`` prefers. Both are checked
+    and must agree, because a partial override would otherwise let a deletion aim
+    at a different tree than the derived constants (``POSTER_CACHE``,
+    ``SUBTITLE_*``) still describe.
+
+    In production both names are the same object (``app/__init__.py`` re-exports
+    ``CACHE_DIR``), so this never refuses a correctly configured server.
+    """
+    declared = getattr(sys.modules[__name__], 'CACHE_DIR', None)
+    # Reject an empty/blank root deterministically. Path("") stringifies to ".",
+    # which normalises to the process working directory - exactly the accidental
+    # "the working directory is the cache" state this check exists to prevent.
+    raw = "" if declared is None else str(declared).strip()
+    if not raw or raw == '.':
+        raise CacheRootUnsafe(
+            f"cache root is unset or resolves to the working directory: {declared!r}"
+        )
+    try:
+        declared_key = _cache_key(declared)
+    except (TypeError, ValueError):
+        raise CacheRootUnsafe(
+            f"cache root is not a usable path: {declared!r}"
+        ) from None
+
+    app_module = sys.modules.get('app')
+    override = getattr(app_module, 'CACHE_DIR', None) if app_module is not None else None
+    if override is not None and _cache_key(override) != declared_key:
+        raise CacheRootUnsafe(
+            f"conflicting cache roots: config.CACHE_DIR={declared_key} vs "
+            f"app.CACHE_DIR={_cache_key(override)}; refusing a destructive "
+            "cache operation."
+        )
+    return Path(os.path.realpath(str(declared)))
+
+
+def require_within_cache_root(target, action="cache operation"):
+    """Refuse *target* unless it is the approved cache root or lives inside it.
+
+    Applied to the directory or file actually about to be removed, not to the
+    configuration value it was derived from. Raises before any mutation and never
+    redirects the target.
+    """
+    root = approved_cache_root()
+    try:
+        resolved = _cache_key(target)
+    except (TypeError, ValueError):
+        raise CacheRootUnsafe(
+            f"{action} target could not be resolved: {target!r}"
+        ) from None
+    root_key = _cache_key(root)
+    if resolved != root_key and not resolved.startswith(root_key + os.sep):
+        raise CacheRootUnsafe(
+            f"{action} target {resolved} is outside the approved cache root "
+            f"{root_key}; refusing."
+        )
+    return Path(os.path.realpath(str(target)))
+
 
 # Supported file extensions
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"}
