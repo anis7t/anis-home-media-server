@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 from app import config
 from app.db import get_db, value
 from app.utils.filesystem import get_rel_path, is_video, safe_path
-from app.utils.formatting import clean_title, format_bytes_display
+from app.utils.formatting import clean_title, format_bytes_display, format_db_timestamp
 
 # Cached video paths (timestamp, list_of_paths)
 _paths = (0, [])
@@ -148,7 +148,7 @@ def movie(path, db, device_id=None):
         position=pos,
         duration=dur,
         percent=min(100, pos / dur * 100) if dur else 0,
-        updated_at=value(progress, 'updated_at', ''),
+        updated_at=format_db_timestamp(value(progress, 'updated_at', '')),
         backdrop_path=value(meta, 'backdrop_path', ''),
         details_json=value(meta, 'details_json', ''),
         last_metadata_refresh=value(meta, 'last_metadata_refresh')
@@ -351,14 +351,25 @@ def purge_media(filename):
     purged_subs = purge_subtitles_for_media(path)
 
     # 3b. Purge seek preview thumbnail cache
+    #
+    # Phase 3.8D: this deletes cache data, so it must pass the same cache-root
+    # boundary as the orphan purge. It previously ran under a bare
+    # `except Exception: pass`, which made a refusal indistinguishable from success.
+    purged_cache_dirs = []
+    refused_cache_deletes = []
     try:
         from app.services.preview_service import preview_dir
         import shutil
-        p_dir = preview_dir(path)
+        p_dir = config.require_within_cache_root(
+            preview_dir(path), 'purge_media(preview)')
         if p_dir.exists():
             shutil.rmtree(p_dir, ignore_errors=True)
-    except Exception:
-        pass
+            purged_cache_dirs.append(str(p_dir))
+    except config.CacheRootUnsafe as exc:
+        logger.error("REFUSING to purge preview cache for %s: %s", path, exc)
+        refused_cache_deletes.append({'path': str(path), 'reason': str(exc)})
+    except Exception as exc:
+        logger.warning("Preview cache purge failed for %s: %s", path, exc)
 
     # 4. Purge TMDb posters and backdrops if not referenced by other items
     purged_posters = []
@@ -367,14 +378,21 @@ def purge_media(filename):
         if tmdb_id:
             other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
             if not other:
-                cached_p = config.POSTER_CACHE / f"{tmdb_id}.jpg"
-                if cached_p.is_file():
-                    cached_p.unlink(missing_ok=True)
-                    purged_posters.append(str(cached_p))
-                cached_b = config.BACKDROP_CACHE / f"{tmdb_id}.jpg"
-                if cached_b.is_file():
-                    cached_b.unlink(missing_ok=True)
-                    purged_posters.append(str(cached_b))
+                # Poster/backdrop caches are deletions too: validate the actual file
+                # before unlinking, and surface a refusal instead of swallowing it.
+                for attr, label in (('POSTER_CACHE', 'poster'), ('BACKDROP_CACHE', 'backdrop')):
+                    try:
+                        cached = config.require_within_cache_root(
+                            getattr(config, attr) / f"{tmdb_id}.jpg",
+                            f'purge_media({label})')
+                        if cached.is_file():
+                            cached.unlink(missing_ok=True)
+                            purged_posters.append(str(cached))
+                    except config.CacheRootUnsafe as exc:
+                        logger.error("REFUSING to purge %s cache for %s: %s", label, rel_filename, exc)
+                        refused_cache_deletes.append({'path': f'{label}:{tmdb_id}', 'reason': str(exc)})
+                    except OSError as exc:
+                        logger.warning("Could not purge %s cache %s: %s", label, tmdb_id, exc)
 
         if poster_path and str(poster_path).startswith('local:'):
             try:
@@ -441,6 +459,8 @@ def purge_media(filename):
         'purged_transcodes': transcode_purge_info,
         'purged_subtitles': purged_subs,
         'purged_posters': purged_posters,
+        'purged_cache_dirs': purged_cache_dirs,
+        'refused_cache_deletes': refused_cache_deletes,
         'tmdb_purged': bool(tmdb_id),
         'db_rows_purged': bool(movie_row or progress_row)
     }
