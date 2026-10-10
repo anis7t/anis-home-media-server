@@ -438,5 +438,589 @@ class TestQueryPortabilityAndHarmonization(unittest.TestCase):
             external_conn.close.assert_not_called()
 
 
+class TestPostgresMigrationsRunner(unittest.TestCase):
+    """Unit and integration tests for PostgreSQL schema migration runner (Phase 3.1)."""
+
+    def setUp(self):
+        self.mock_db = MagicMock()
+        self.mock_cursor = MagicMock()
+        self.mock_db.execute.return_value = self.mock_cursor
+        # Default: empty schema_migrations (no migrations previously applied)
+        self.mock_cursor.fetchall.return_value = []
+
+    def test_migration_runner_acquires_and_releases_advisory_lock(self):
+        """run_postgres_migrations must acquire advisory lock at entry and release it in finally."""
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+
+        run_postgres_migrations(self.mock_db)
+
+        # First query should be pg_advisory_lock
+        first_call = self.mock_db.execute.call_args_list[0]
+        self.assertIn(f"pg_advisory_lock({PG_MIGRATION_ADVISORY_LOCK_KEY})", first_call[0][0])
+
+        # Last query should be pg_advisory_unlock
+        last_call = self.mock_db.execute.call_args_list[-1]
+        self.assertIn(f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})", last_call[0][0])
+
+    def test_migration_runner_releases_advisory_lock_even_on_exception(self):
+        """run_postgres_migrations must ensure pg_advisory_unlock is invoked when a statement fails."""
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, POSTGRES_MIGRATIONS, run_postgres_migrations
+
+        # Make a migration execution fail
+        def fail_on_movies_create(sql, *args, **kwargs):
+            if "CREATE TABLE IF NOT EXISTS movies" in sql:
+                raise RuntimeError("Postgres DDL syntax error")
+            return self.mock_cursor
+
+        self.mock_db.execute.side_effect = fail_on_movies_create
+
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(self.mock_db)
+        self.assertIn("Postgres DDL syntax error", str(ctx.exception))
+
+        # Advisory unlock must still have been called
+        unlock_calls = [
+            call for call in self.mock_db.execute.call_args_list
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in call[0][0]
+        ]
+        self.assertTrue(len(unlock_calls) >= 1)
+        self.mock_db.rollback.assert_called()
+
+    def test_migration_runner_applies_all_statements_and_records_version(self):
+        """run_postgres_migrations must execute each migration statement and record the version."""
+        from app.db import POSTGRES_MIGRATIONS, run_postgres_migrations
+
+        run_postgres_migrations(self.mock_db)
+
+        executed_sqls = [call[0][0] for call in self.mock_db.execute.call_args_list]
+
+        # Verify key tables in Migration 1 are created
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS movies" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS progress" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS devices" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS device_watch_history" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS ip_cache" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS settings" in s for s in executed_sqls))
+
+        # Verify indexes are created
+        self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_devices_last_seen" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_dwh_device" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_progress_updated" in s for s in executed_sqls))
+        self.assertTrue(any("CREATE INDEX IF NOT EXISTS idx_movies_tmdb" in s for s in executed_sqls))
+
+        # Verify version recording
+        version_record_calls = [
+            call for call in self.mock_db.execute.call_args_list
+            if "INSERT INTO schema_migrations" in call[0][0]
+        ]
+        self.assertEqual(len(version_record_calls), len(POSTGRES_MIGRATIONS))
+        self.assertEqual(version_record_calls[0][0][1], (1,))
+
+    def test_migration_runner_skips_already_applied_migrations(self):
+        """run_postgres_migrations must be idempotent and skip already-recorded versions."""
+        from app.db import run_postgres_migrations
+
+        # Simulate version 1 already present in schema_migrations
+        self.mock_cursor.fetchall.return_value = [{"version": 1}]
+
+        run_postgres_migrations(self.mock_db)
+
+        executed_sqls = [call[0][0] for call in self.mock_db.execute.call_args_list]
+
+        # No CREATE TABLE movies or INSERT INTO schema_migrations should be run
+        self.assertFalse(any("CREATE TABLE IF NOT EXISTS movies" in s for s in executed_sqls))
+        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in executed_sqls))
+
+    def test_migration_runner_rolls_back_and_does_not_record_version_on_failure(self):
+        """If a migration fails midway, rollback must be called and the version must not be recorded."""
+        from app.db import run_postgres_migrations
+
+        def fail_on_settings(sql, *args, **kwargs):
+            if "CREATE TABLE IF NOT EXISTS settings" in sql:
+                raise RuntimeError("Disk full / permission denied")
+            return self.mock_cursor
+
+        self.mock_db.execute.side_effect = fail_on_settings
+
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(self.mock_db)
+        self.assertIn("Disk full / permission denied", str(ctx.exception))
+
+        self.mock_db.rollback.assert_called()
+        executed_sqls = [call[0][0] for call in self.mock_db.execute.call_args_list]
+        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in executed_sqls))
+
+    def test_init_db_dispatches_to_run_postgres_migrations(self):
+        """init_db must invoke run_postgres_migrations when backend is postgres."""
+        from app.db import init_db
+
+        with patch("app.db.get_backend", return_value="postgres"), \
+             patch("app.db.get_db", return_value=self.mock_db), \
+             patch("app.db.run_postgres_migrations") as mock_runner:
+            init_db()
+            mock_runner.assert_called_once_with(self.mock_db)
+            self.mock_db.close.assert_called_once()
+
+    def test_live_postgres_integration_gated(self):
+        """Optional integration test executed ONLY when MEDIA_SERVER_TEST_POSTGRES_URL is provided."""
+        test_url = os.environ.get("MEDIA_SERVER_TEST_POSTGRES_URL")
+        if not test_url:
+            self.skipTest("Live PostgreSQL test skipped: MEDIA_SERVER_TEST_POSTGRES_URL not set in environment.")
+
+        from app.db import PostgresSession, get_postgres_pool, run_postgres_migrations
+        with patch.object(config, "DATABASE_BACKEND", "postgres"), \
+             patch.object(config, "DATABASE_URL", test_url):
+            pool = get_postgres_pool()
+            session = PostgresSession(pool)
+            try:
+                run_postgres_migrations(session)
+                # Verify schema_migrations has version 1
+                cur = session.execute("SELECT version FROM schema_migrations WHERE version=1")
+                self.assertIsNotNone(cur.fetchone())
+            finally:
+                session.close()
+
+
+class TestPostgresMigrationDefinitionsHardening(unittest.TestCase):
+    """Regression tests for Phase 3.1 objectives A1, A2 and A4 (DDL semantics + validation)."""
+
+    def _movies_ddl(self):
+        from app.db import POSTGRES_MIGRATIONS
+        for _version, _desc, statements in POSTGRES_MIGRATIONS:
+            for stmt in statements:
+                if "CREATE TABLE IF NOT EXISTS movies" in stmt:
+                    return stmt
+        self.fail("movies DDL not found in POSTGRES_MIGRATIONS")
+
+    def _watch_history_ddl(self):
+        from app.db import POSTGRES_MIGRATIONS
+        for _version, _desc, statements in POSTGRES_MIGRATIONS:
+            for stmt in statements:
+                if "CREATE TABLE IF NOT EXISTS device_watch_history" in stmt:
+                    return stmt
+        self.fail("device_watch_history DDL not found in POSTGRES_MIGRATIONS")
+
+    def test_device_watch_history_uses_by_default_identity(self):
+        """device_watch_history.id must allow explicit values for future data import."""
+        ddl = self._watch_history_ddl()
+        self.assertIn("GENERATED BY DEFAULT AS IDENTITY", ddl)
+        self.assertNotIn("GENERATED ALWAYS AS IDENTITY", ddl)
+
+    def test_movies_details_json_remains_text(self):
+        """movies.details_json must stay TEXT so callers keep receiving JSON strings."""
+        ddl = self._movies_ddl()
+        self.assertIn("details_json TEXT", ddl)
+        self.assertNotIn("details_json JSONB", ddl)
+        self.assertNotIn("details_json JSON", ddl.replace("details_json TEXT", ""))
+
+    def test_validate_rejects_non_integer_version(self):
+        from app.db import _validate_postgres_migrations
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([( "1", "bad", ["SELECT 1"])])
+
+    def test_validate_rejects_bool_version(self):
+        from app.db import _validate_postgres_migrations
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(True, "bool version", ["SELECT 1"])])
+
+    def test_validate_rejects_zero_and_negative_versions(self):
+        from app.db import _validate_postgres_migrations
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(0, "zero", ["SELECT 1"])])
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(-2, "negative", ["SELECT 1"])])
+
+    def test_validate_rejects_duplicate_versions(self):
+        from app.db import _validate_postgres_migrations
+        dupes = [(1, "one", ["SELECT 1"]), (1, "one again", ["SELECT 2"])]
+        with self.assertRaises(ValueError) as ctx:
+            _validate_postgres_migrations(dupes)
+        self.assertIn("Duplicate", str(ctx.exception))
+
+    def test_validate_rejects_malformed_entries(self):
+        from app.db import _validate_postgres_migrations
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(1, "missing statements")])
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(1, "", ["SELECT 1"])])
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(1, "empty statements", [])])
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations("not-a-list")
+
+    def test_validate_rejects_invalid_sql_definitions(self):
+        from app.db import _validate_postgres_migrations
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(1, "non-string stmt", [123])])
+        with self.assertRaises(ValueError):
+            _validate_postgres_migrations([(1, "empty stmt", ["   "])])
+
+    def test_validate_sorts_out_of_order_definitions(self):
+        from app.db import _validate_postgres_migrations
+        out_of_order = [
+            (2, "second", ["SELECT 2"]),
+            (1, "first", ["SELECT 1"]),
+        ]
+        sorted_migrations = _validate_postgres_migrations(out_of_order)
+        self.assertEqual([m[0] for m in sorted_migrations], [1, 2])
+
+    def test_runner_rejects_invalid_definitions_before_ddl(self):
+        """Validation must fail fast: no lock acquisition and no DDL on bad definitions."""
+        from app.db import run_postgres_migrations
+        mock_db = MagicMock()
+        with patch("app.db.POSTGRES_MIGRATIONS", [(0, "bad", ["SELECT 1"])]):
+            with self.assertRaises(ValueError):
+                run_postgres_migrations(mock_db)
+        mock_db.execute.assert_not_called()
+
+    def test_runner_applies_out_of_order_definitions_in_version_order(self):
+        from app.db import run_postgres_migrations
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_db.execute.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+        out_of_order = [
+            (2, "second", ["SELECT 2"]),
+            (1, "first", ["SELECT 1"]),
+        ]
+        with patch("app.db.POSTGRES_MIGRATIONS", out_of_order):
+            run_postgres_migrations(mock_db)
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertIn("SELECT 1", sqls)
+        self.assertIn("SELECT 2", sqls)
+        self.assertLess(sqls.index("SELECT 1"), sqls.index("SELECT 2"))
+
+
+class TestPostgresFutureSchemaVersions(unittest.TestCase):
+    """Regression tests for Phase 3.1 objective A3 (future-version guard + empty handling)."""
+
+    def _mock_db(self, applied):
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_db.execute.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [{"version": v} for v in applied]
+        return mock_db
+
+    def test_future_applied_version_is_rejected(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db = self._mock_db([99])
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+        msg = str(ctx.exception)
+        self.assertIn("99", msg)
+        self.assertIn("unsupported", msg.lower())
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertFalse(any("CREATE TABLE IF NOT EXISTS movies" in s for s in sqls))
+        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in sqls))
+        self.assertTrue(any(f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in s for s in sqls))
+
+    def test_empty_history_applies_supported_migrations(self):
+        from app.db import run_postgres_migrations
+        mock_db = self._mock_db([])
+        run_postgres_migrations(mock_db)
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertTrue(any("CREATE TABLE IF NOT EXISTS movies" in s for s in sqls))
+        self.assertTrue(any("INSERT INTO schema_migrations" in s for s in sqls))
+
+    def test_normal_upgrade_from_earlier_version(self):
+        from app.db import run_postgres_migrations
+        mock_db = self._mock_db([1])
+        migrations = [
+            (1, "first", ["SELECT 1"]),
+            (2, "second", ["SELECT 2"]),
+        ]
+        with patch("app.db.POSTGRES_MIGRATIONS", migrations):
+            run_postgres_migrations(mock_db)
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertFalse(any(s.strip() == "SELECT 1" for s in sqls))
+        self.assertTrue(any(s.strip() == "SELECT 2" for s in sqls))
+
+    def test_empty_definitions_with_empty_history_is_noop(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db = self._mock_db([])
+        with patch("app.db.POSTGRES_MIGRATIONS", []):
+            run_postgres_migrations(mock_db)
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertTrue(any(f"pg_advisory_lock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in s for s in sqls))
+        self.assertTrue(any(f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in s for s in sqls))
+        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in sqls))
+
+    def test_empty_definitions_with_applied_versions_is_rejected(self):
+        from app.db import run_postgres_migrations
+        mock_db = self._mock_db([1])
+        with patch("app.db.POSTGRES_MIGRATIONS", []):
+            with self.assertRaises(RuntimeError) as ctx:
+                run_postgres_migrations(mock_db)
+        self.assertIn("1", str(ctx.exception))
+
+
+class TestPostgresMigrationLockCleanupHardening(unittest.TestCase):
+    """Regression tests for Phase 3.1 objectives B1-B4 (lock release + unsafe-connection discard)."""
+
+    def _mock_db(self):
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_db.execute.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+        mock_db._pool = MagicMock()
+        mock_db._conn = MagicMock()
+        mock_db._closed = False
+        return mock_db, mock_cursor
+
+    def test_bootstrap_failure_propagates_and_attempts_unlock(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, _cursor = self._mock_db()
+
+        def fail_on_bootstrap(sql, *args, **kwargs):
+            if "CREATE TABLE IF NOT EXISTS schema_migrations" in sql:
+                raise RuntimeError("bootstrap disk error")
+            return _cursor
+
+        mock_db.execute.side_effect = fail_on_bootstrap
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+        self.assertIn("bootstrap disk error", str(ctx.exception))
+        unlock_calls = [
+            call for call in mock_db.execute.call_args_list
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in call[0][0]
+        ]
+        self.assertTrue(len(unlock_calls) >= 1)
+        sqls = [call[0][0] for call in mock_db.execute.call_args_list]
+        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in sqls))
+
+    def test_unlock_failure_after_success_is_reported_and_discards(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_on_unlock(sql, *args, **kwargs):
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("unlock connection reset")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_on_unlock
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+        self.assertIn("advisory lock", str(ctx.exception).lower())
+        self.assertIsNotNone(ctx.exception.__cause__)
+        self.assertIn("unlock connection reset", str(ctx.exception.__cause__))
+        mock_db._conn.close.assert_called_once()
+        mock_db._pool.putconn.assert_called_once_with(mock_db._conn)
+        self.assertTrue(mock_db._closed)
+
+    def test_unlock_failure_after_migration_failure_preserves_original(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_both(sql, *args, **kwargs):
+            if "CREATE TABLE IF NOT EXISTS movies" in sql:
+                raise RuntimeError("original DDL failure")
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("unlock failed during cleanup")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_both
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+        self.assertIn("original DDL failure", str(ctx.exception))
+        self.assertNotIn("unlock failed during cleanup", str(ctx.exception))
+        self.assertIsNotNone(ctx.exception.__cause__)
+        self.assertIn("unlock failed during cleanup", str(ctx.exception.__cause__))
+        mock_db._conn.close.assert_called_once()
+        mock_db._pool.putconn.assert_called_once_with(mock_db._conn)
+
+    def test_lock_acquire_failure_raises_without_unlock(self):
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_on_lock(sql, *args, **kwargs):
+            if f"pg_advisory_lock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("lock timeout")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_on_lock
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+        self.assertIn("acquire", str(ctx.exception).lower())
+        unlock_calls = [
+            call for call in mock_db.execute.call_args_list
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in call[0][0]
+        ]
+        self.assertEqual(len(unlock_calls), 0)
+
+    def test_postgres_session_discard_closes_and_replaces(self):
+        """PostgresSession.discard() must close the session and putconn the closed conn."""
+        from app.db import PostgresSession
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_pool.getconn.return_value = mock_conn
+        session = PostgresSession(mock_pool)
+        self.assertTrue(session.discard())
+        mock_conn.close.assert_called_once()
+        mock_pool.putconn.assert_called_once_with(mock_conn)
+        self.assertTrue(session._closed)
+        session.close()
+        self.assertEqual(mock_pool.putconn.call_count, 1)
+
+
+class TestPostgresConnectionDisposalSafety(unittest.TestCase):
+    """Connection-disposal safety rules.
+
+    Scope and limits of these tests: every pool/connection here is a
+    ``unittest.mock`` double, so these tests prove only the *ordering and
+    reporting contract* of our own code. They cannot prove that a real
+    PostgreSQL server session is actually terminated by ``Connection.close()``,
+    that the session-level advisory lock is released server-side, or that
+    ``psycopg_pool`` discards and replaces a connection handed back to it. That
+    still requires a live PostgreSQL verification run.
+    """
+
+    def _session(self, conn=None, pool=None):
+        from app.db import PostgresSession
+        mock_pool = pool or MagicMock()
+        mock_conn = conn or MagicMock()
+        mock_pool.getconn.return_value = mock_conn
+        session = PostgresSession(mock_pool)
+        return session, mock_pool, mock_conn
+
+    def test_discard_does_not_return_connection_to_pool_when_close_fails(self):
+        """A close() failure must NOT putconn a possibly-still-open connection.
+
+        psycopg_pool resets and re-serves any connection it considers usable, so
+        returning a connection that may still be open could hand a still-locked
+        server session to the next client.
+        """
+        session, mock_pool, mock_conn = self._session()
+        mock_conn.close.side_effect = RuntimeError("close failed: broken pipe")
+
+        with self.assertLogs("app.db", level="ERROR") as logs:
+            discarded = session.discard()
+
+        self.assertFalse(discarded)
+        mock_conn.close.assert_called_once()
+        mock_pool.putconn.assert_not_called()
+        self.assertTrue(session._closed)
+        self.assertTrue(any("NOT being returned to the pool" in m for m in logs.output))
+
+    def test_discard_reports_failure_when_putconn_raises_after_successful_close(self):
+        """A putconn() failure after a good close must not be reported as success."""
+        session, mock_pool, mock_conn = self._session()
+        mock_pool.putconn.side_effect = ValueError(
+            "can't return connection to pool 'x': it doesn't come from any pool"
+        )
+
+        with self.assertLogs("app.db", level="ERROR") as logs:
+            discarded = session.discard()
+
+        self.assertFalse(discarded)
+        mock_conn.close.assert_called_once()
+        mock_pool.putconn.assert_called_once_with(mock_conn)
+        self.assertTrue(
+            any("failed to return it to the pool" in m for m in logs.output),
+            logs.output,
+        )
+
+    def test_discard_without_handles_reports_limitation(self):
+        """Missing pool/connection handles must be reported, not treated as safe."""
+        from app.db import _discard_postgres_migration_connection
+        bare = object()
+
+        with self.assertLogs("app.db", level="ERROR") as logs:
+            self.assertFalse(_discard_postgres_migration_connection(bare))
+        self.assertTrue(any("no pool/connection handle" in m for m in logs.output))
+
+    def test_dispose_helper_confirms_success_only_when_both_steps_succeed(self):
+        """_dispose_postgres_connection() returns True only on close + putconn."""
+        from app.db import _dispose_postgres_connection
+        pool = MagicMock()
+        conn = MagicMock()
+        self.assertTrue(_dispose_postgres_connection(conn, pool, reason="unit test"))
+
+    def _mock_db(self):
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_db.execute.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+        mock_db._pool = MagicMock()
+        mock_db._conn = MagicMock()
+        mock_db._closed = False
+        return mock_db, mock_cursor
+
+    def test_migration_failure_with_unlock_and_disposal_failure_keeps_original_primary(self):
+        """Migration failure + unlock failure + disposal failure: original stays primary."""
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_both(sql, *args, **kwargs):
+            if "CREATE TABLE IF NOT EXISTS movies" in sql:
+                raise RuntimeError("original DDL failure")
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("unlock failed during cleanup")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_both
+        mock_db._conn.close.side_effect = RuntimeError("close failed during disposal")
+
+        with self.assertLogs("app.db", level="ERROR") as logs:
+            with self.assertRaises(RuntimeError) as ctx:
+                run_postgres_migrations(mock_db)
+
+        # Original migration failure remains the primary exception...
+        self.assertIn("original DDL failure", str(ctx.exception))
+        self.assertNotIn("unlock failed during cleanup", str(ctx.exception))
+        # ...with the unlock failure chained as __cause__.
+        self.assertIsNotNone(ctx.exception.__cause__)
+        self.assertIn("unlock failed during cleanup", str(ctx.exception.__cause__))
+        # Disposal failure is observable in the logs, and the open connection is
+        # NOT recycled into the pool.
+        self.assertTrue(any("NOT being returned to the pool" in m for m in logs.output))
+        self.assertTrue(any("Migration cleanup INCOMPLETE" in m for m in logs.output))
+        mock_db._pool.putconn.assert_not_called()
+
+    def test_successful_migration_with_unlock_and_disposal_failure_reports_unconfirmed(self):
+        """Unlock failure + disposal failure after success must not claim disposal."""
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_on_unlock(sql, *args, **kwargs):
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("unlock connection reset")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_on_unlock
+        mock_db._pool.putconn.side_effect = ValueError("connection not from this pool")
+
+        with self.assertLogs("app.db", level="ERROR") as logs:
+            with self.assertRaises(RuntimeError) as ctx:
+                run_postgres_migrations(mock_db)
+
+        message = str(ctx.exception)
+        self.assertIn("COULD NOT BE CONFIRMED", message)
+        self.assertIn("unlock connection reset", message)
+        self.assertNotIn("The connection was discarded and must not be reused.", message)
+        self.assertIsNotNone(ctx.exception.__cause__)
+        self.assertTrue(any("failed to return it to the pool" in m for m in logs.output))
+
+    def test_successful_migration_with_unlock_failure_and_confirmed_disposal(self):
+        """Existing successful-disposal behavior stays covered and truthfully worded."""
+        from app.db import PG_MIGRATION_ADVISORY_LOCK_KEY, run_postgres_migrations
+        mock_db, mock_cursor = self._mock_db()
+
+        def fail_on_unlock(sql, *args, **kwargs):
+            if f"pg_advisory_unlock({PG_MIGRATION_ADVISORY_LOCK_KEY})" in sql:
+                raise RuntimeError("unlock connection reset")
+            return mock_cursor
+
+        mock_db.execute.side_effect = fail_on_unlock
+        with self.assertRaises(RuntimeError) as ctx:
+            run_postgres_migrations(mock_db)
+
+        message = str(ctx.exception)
+        self.assertIn("closed and returned to the pool for replacement", message)
+        self.assertNotIn("COULD NOT BE CONFIRMED", message)
+        mock_db._conn.close.assert_called_once()
+        mock_db._pool.putconn.assert_called_once_with(mock_db._conn)
+        self.assertTrue(mock_db._closed)
+
+
 if __name__ == "__main__":
     unittest.main()
