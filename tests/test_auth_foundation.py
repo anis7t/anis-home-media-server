@@ -111,9 +111,15 @@ class TestFailsClosed:
 class TestMediaPlaneStaysAnonymous:
     """`build_media_url()` hands Cast/DLNA LAN URLs they fetch themselves.
 
-    They cannot authenticate, so gating /media and /hls behind a login would
+    They cannot authenticate, so gating the media routes behind a login would
     break casting and DLNA playback. Phase E introduces signed URLs. Until then
     the gate must not touch them - and must say so at startup.
+
+    These assertions are on real requests, not on blueprint membership. An
+    earlier version asserted only that `media` was absent from
+    PROTECTED_BLUEPRINTS, which was true while the gate was still wrong:
+    `/api/seek-preview-meta/<path>` lives on that same blueprint and is a
+    control-plane endpoint that must be gated.
     """
 
     def test_media_blueprint_is_not_protected(self):
@@ -127,6 +133,21 @@ class TestMediaPlaneStaysAnonymous:
     def test_hls_path_is_not_refused(self, client, enforce):
         assert client.get("/hls/does-not-exist.mkv/playlist.m3u8").status_code != 401
 
+    def test_hls_segment_is_not_refused(self, client, enforce):
+        assert client.get("/hls/does-not-exist.mkv/segment_000000.ts").status_code != 401
+
+    def test_transcode_route_is_not_refused(self, client, enforce):
+        # Serves a browser-safe MP4 - media delivery, so it belongs to the
+        # anonymous set. Found by enumerating every route, not by assuming.
+        assert client.get("/transcode/does-not-exist.mkv").status_code != 401
+
+    def test_anonymous_rules_cover_every_media_delivery_route(self):
+        """The exemption list must contain what it claims to contain."""
+        assert "/media/<path:filename>" in auth_service.ANONYMOUS_RULES
+        assert "/hls/<path:filename>/playlist.m3u8" in auth_service.ANONYMOUS_RULES
+        assert "/hls/<path:filename>/<segment>" in auth_service.ANONYMOUS_RULES
+        assert "/transcode/<path:filename>" in auth_service.ANONYMOUS_RULES
+
     def test_startup_warns_that_media_is_still_anonymous(self, enforce, caplog):
         with caplog.at_level("WARNING"):
             auth_service.warn_if_media_plane_anonymous()
@@ -137,6 +158,93 @@ class TestMediaPlaneStaysAnonymous:
         with caplog.at_level("WARNING"):
             auth_service.warn_if_media_plane_anonymous()
         assert not [r for r in caplog.records if "media plane" in r.message]
+
+
+class TestRouteClassification:
+    """Scoping is by explicit rule exemption, so classification must be deliberate.
+
+    The first implementation scoped by blueprint and was wrong in both
+    directions. These pin the two specific mistakes, found by running the real
+    service with enforcement enabled.
+    """
+
+    def test_seek_preview_meta_is_gated(self, client, enforce):
+        """REGRESSION: it escaped the gate by sharing a blueprint with media.
+
+        It is a control-plane API endpoint that reports sampling metadata for a
+        media file. Blueprint scoping let it through anonymously.
+        """
+        assert client.get("/api/seek-preview-meta/does-not-exist.mkv").status_code == 401
+
+    def test_poster_is_gated_by_decision_not_by_accident(self, client, enforce):
+        """Artwork reveals what someone watches, so it is authenticated.
+
+        It happens to sit on the `api` blueprint, but the point is that this is
+        the intended classification - a deliberate 401, not a side effect.
+        """
+        assert client.get("/poster/does-not-exist.jpg").status_code == 401
+
+    def test_tmdb_poster_is_gated(self, client, enforce):
+        assert client.get("/tmdb-poster/62").status_code == 401
+
+    def test_seek_preview_thumbnail_is_explicitly_exempt(self, client, enforce):
+        # Seek previews are requested by the player element the same way media
+        # is; keeping them anonymous is a Phase E decision to revisit.
+        assert client.get("/seek-preview/does-not-exist.mkv/1.jpg").status_code != 401
+
+    def test_every_registered_rule_is_either_exempt_or_gated(self, client, enforce):
+        """No route may fall through the classification.
+
+        Anything not in ANONYMOUS_RULES must be refused under enforcement. This
+        is the invariant the blueprint-scoped version silently violated.
+
+        Requests use a method the rule actually allows: Flask raises the routing
+        error (404/405) BEFORE `before_request` runs, so probing a POST-only
+        route with GET would report "not gated" for every one of them and the
+        sweep would pass while proving nothing.
+        """
+        problems = []
+        for rule in app.app.url_map.iter_rules():
+            path = _concrete_path(rule.rule)
+            if path is None:
+                continue
+            methods = (rule.methods or set()) - {"HEAD", "OPTIONS"}
+            if not methods:
+                continue
+            method = sorted(methods)[0]
+            response = client.open(path, method=method)
+            exempt = rule.rule in auth_service.ANONYMOUS_RULES
+            if exempt and response.status_code == 401:
+                problems.append(f"{rule.rule} is exempt but returned 401")
+            elif not exempt and response.status_code != 401:
+                problems.append(
+                    f"{rule.rule} is not exempt but returned {response.status_code}"
+                )
+        assert not problems, "route classification gaps:\n  " + "\n  ".join(problems)
+
+
+def _concrete_path(rule: str):
+    """Turn a Flask rule into a requestable path, or None if not derivable.
+
+    The ``int:`` case must be checked BEFORE the generic ``<...>`` case: a
+    segment like ``<int:tmdb_id>`` starts with ``<``, and treating it as a plain
+    placeholder yields ``/tmdb-poster/x``, which the int converter rejects. That
+    produced a routing 404 rather than a gate response, which looks exactly like
+    an ungated route - the sweep reported a false classification gap.
+    """
+    if rule.endswith("/<upload_id>/complete"):
+        return None
+    out = []
+    for part in rule.split("/"):
+        if "int:" in part:
+            out.append("1")
+        elif part.startswith("<"):
+            out.append("x")
+        elif "<" in part:
+            out.append("x")
+        else:
+            out.append(part)
+    return "/".join(out) or "/"
 
 
 # --------------------------------------------------------------------------- #

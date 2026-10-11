@@ -21,11 +21,13 @@ devices / cast) is Phase B work. It is safe to defer because the fail-closed
 path means the destructive routes are unreachable rather than over-permissive
 until a provider exists.
 
-The media plane (`/media`, `/hls`) is NOT gated here. Cast and DLNA receivers
-fetch those URLs themselves and cannot authenticate - see
-`build_media_url()` in `app/services/cast_service.py:287`. Gating them is Phase E,
-which introduces short-lived signed URLs. `warn_if_media_plane_anonymous()`
-surfaces that gap loudly at startup instead of leaving it to be discovered.
+The media plane (`/media`, `/hls`, `/transcode`) is NOT gated, and neither is
+`/api/seek-preview-meta` - see ANONYMOUS_RULES for why the exemption list is
+explicit rather than blueprint-derived. Cast and DLNA receivers fetch the media
+routes themselves and cannot authenticate. Phase E introduces short-lived signed
+URLs, and it is also where the seek-preview route gets its own decision.
+`warn_if_media_plane_anonymous()` surfaces the gap loudly at startup instead of
+leaving it to be discovered.
 """
 
 from __future__ import annotations
@@ -41,10 +43,40 @@ from app import config
 
 log = logging.getLogger(__name__)
 
-#: Blueprints whose routes require a credential once enforcement is on.
-#: Keyed on Flask's blueprint name (`request.blueprint`).
+#: Routes that MUST stay anonymous so Cast and DLNA receivers keep working.
 #:
-#: `media` is deliberately absent - see the module docstring.
+#: `build_media_url()` (`app/services/cast_service.py:287`) hands these devices a
+#: URL on the LAN address which they fetch themselves. A Samsung TV reading a
+#: DIDL-Lite `<res>` URL, or a Cast receiver running its own loader, cannot
+#: complete an OAuth redirect, hold a session cookie, or set an Authorization
+#: header. Gating these is the one way to break casting and DLNA playback.
+#:
+#: This list is deliberately EXPLICIT rather than derived from blueprint
+#: membership. The first implementation scoped by blueprint name, and that was
+#: wrong in both directions: it gated `/poster/<path>` and `/tmdb-poster/<int>`
+#: (registered on the `api` blueprint) purely because of where they live, while
+#: `/api/seek-preview-meta/<path>` - a genuine control-plane endpoint - escaped
+#: the gate entirely because it shares a blueprint with media delivery. Both
+#: were found by running the real service with enforcement on; the unit tests
+#: could not see them, because they only asserted blueprint membership.
+#:
+#: Adding a new media-delivery route means adding it here.
+ANONYMOUS_RULES = frozenset({
+    # Byte-range direct play.
+    "/media/<path:filename>",
+    # HLS master playlist and segments.
+    "/hls/<path:filename>/playlist.m3u8",
+    "/hls/<path:filename>/<segment>",
+    # Browser-safe MP4 with byte range support - also media delivery.
+    "/transcode/<path:filename>",
+    # Seek-preview thumbnails are fetched by the player element the same way
+    # media is, so they travel on the same anonymous path.
+    "/seek-preview/<path:filename>/<thumb>",
+})
+
+#: Blueprints whose routes require a credential once enforcement is on.
+#: Retained for the role lookup and documentation; scoping itself is by rule
+#: (see ANONYMOUS_RULES), which is finer-grained and explicit.
 PROTECTED_BLUEPRINTS = frozenset({"api", "cast", "pages", "subtitles"})
 
 #: Blueprints that additionally require the `admin` role.
@@ -104,26 +136,37 @@ def _reject_anonymous() -> Response:
     return _deny(401, _PROVIDER_MISSING)
 
 
+def current_rule() -> Optional[str]:
+    """The Flask rule string for the matched route, or None.
+
+    `request.url_rule` is None only when routing failed to match, in which case
+    the 404 handler takes over and the gate has nothing to decide.
+    """
+    rule = getattr(request, "url_rule", None)
+    return getattr(rule, "rule", None) if rule is not None else None
+
+
 def check_control_plane_request() -> Optional[Response]:
     """Enforce authentication for the current request if it is in scope.
 
     Returns None to continue the request, or a Response to short-circuit it.
 
-    Scoping is by blueprint name rather than URL prefix so that a new route is
-    protected by default: anything registered on a protected blueprint is
-    covered without anyone remembering to decorate it.
+    Scoping is by explicit rule exemption (ANONYMOUS_RULES) rather than by
+    blueprint, so the answer to "is this route anonymous?" is a reviewable list
+    instead of a side effect of where someone registered a view.
     """
     if not config.auth_enabled():
         return None
 
-    blueprint = request.blueprint
-    if blueprint not in PROTECTED_BLUEPRINTS:
+    rule = current_rule()
+    if rule is None or rule in ANONYMOUS_RULES:
         return None
 
     identity = resolve_identity()
     if identity is None:
         return _reject_anonymous()
 
+    blueprint = request.blueprint
     required = ROLE_ADMIN if blueprint in ADMIN_BLUEPRINTS else ROLE_VIEWER
     if not role_satisfies(identity.role, required):
         return _deny(403, f"This endpoint requires the '{required}' role.")

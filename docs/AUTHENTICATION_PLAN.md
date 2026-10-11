@@ -245,23 +245,70 @@ unchanged.
   recovery step (`MEDIA_SERVER_AUTH=0`). A half-enabled auth system that left the
   destructive routes reachable would be worse than none, because it would look
   protected.
-- **The media plane is not gated.** Cast and DLNA receivers fetch `/media` and
-  `/hls` themselves and cannot authenticate. `warn_if_media_plane_anonymous()`
-  logs that gap at startup rather than leaving it to be discovered. Phase E
-  closes it with signed URLs.
-- **Scoping is by blueprint name, not URL prefix.** A new route on `api`,
-  `pages`, `subtitles` or `cast` is protected by default, without anyone
-  remembering to decorate it. `cast` additionally requires `admin`.
+- **Scoping is by explicit rule exemption, not by blueprint.** The first
+  implementation scoped by blueprint name and was wrong in both directions —
+  see the correction below.
+- **Only five routes stay anonymous:** `/media/<path>`,
+  `/hls/<path>/playlist.m3u8`, `/hls/<path>/<segment>`, `/transcode/<path>` and
+  `/seek-preview/<path>/<thumb>`. Cast and DLNA receivers fetch the media ones
+  themselves and cannot authenticate. Phase E replaces the first four with
+  signed URLs.
+
+### Correction found by running the real service (2026-10-12)
+
+Enabling enforcement on the live server exposed two classification defects the
+unit tests could not see, because they asserted blueprint *membership* rather
+than behaviour:
+
+| Route | Blueprint | First behaviour | Correct |
+|---|---|---|---|
+| `/api/seek-preview-meta/<path>` | `media` | **404 — anonymously reachable** | **401** |
+| `/poster/<path>`, `/tmdb-poster/<int>` | `api` | 401 | 401, but *deliberately* |
+
+`/api/seek-preview-meta` is a control-plane endpoint that reports sampling
+metadata for a media file; it escaped the gate only because it shares a blueprint
+with media delivery. The poster routes were gated by accident of registration,
+not by decision.
+
+The gate now keys on an explicit `ANONYMOUS_RULES` list of exactly five rules.
+`tests/test_auth_foundation.py::TestRouteClassification` sweeps **every**
+registered route and asserts each is either explicitly exempt or refused — using
+each rule's own HTTP method, because Flask raises the routing error before
+`before_request` runs, so a GET against a POST-only route reports 405 regardless
+of the gate.
+
+Verified live with enforcement on: the four media rules and seek-preview return
+404; `/api/movies`, `/api/seek-preview-meta`, `/tmdb-poster` and `/poster` return
+401.
 
 **Verification**
 
-- **772 passed / 28 skipped** (720 baseline + 52 new).
+- **780 passed / 28 skipped** (720 baseline + 60 new).
 - Library files (100), production `movies` rows (44) and the `cache/hls` tree
   (42 757 entries) were **hash-identical before and after** the full run.
 - The schema change was rehearsed against a *copy* of the production database:
   8 → 10 tables, exactly `auth_tokens` and `users` created, nothing removed, every
-  pre-existing table byte-identical. The live service picks the tables up on its
-  next restart; it has not been restarted.
+  pre-existing table byte-identical.
+
+### Operational note: never use `nssm set ... AppEnvironmentExtra KEY=VALUE`
+
+Learned the hard way on 2026-10-12. `nssm set MediaServer AppEnvironmentExtra
+MEDIA_SERVER_AUTH=1` **replaces the entire `REG_MULTI_SZ` list** rather than
+appending. It reduced the service environment from 8 entries to 1, destroying
+`PATH` and every `MEDIA_SERVER_*` variable; for ~90 seconds the auto-transcoder
+loop logged `[WinError 2]` because ffmpeg could no longer be found. The tell is
+`mode=legacy` in the startup log — the adaptive settings had vanished.
+
+**Always write the registry value directly with an explicit `MultiString` type,
+passing the complete intended list**, then verify the entry count and that no
+entry is empty. Both traps already documented in
+`TRANSCODE_CORRECTNESS_AND_TELEMETRY.md` §4 apply on top of this:
+`Restart-Service` is not enough (use `Stop-Service` then `Start-Service`), and an
+empty entry truncates everything after it.
+
+No data was lost — library, `movies` rows and the `cache/hls` tree were
+hash-identical before and after, and the environment was restored from the values
+captured beforehand.
 
 **Not done in Phase A, by design**
 
