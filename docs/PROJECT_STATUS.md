@@ -6,30 +6,30 @@ Working branch: `feat/flutter-production-player`
 
 ---
 
-## Flutter Client Migration (active — read before touching `flutter_client/`)
+## Flutter Client Migration (active â€” read before touching `flutter_client/`)
 
 Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS.md)**
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| 1 | Flutter Client Foundation | ✅ Committed (`5b0b1fa`, `eadb257`) on `feat/flutter-player-poc` |
-| 2 | Video Player POC | ✅ COMPLETE — All 6 stages (2A–2E + 2F Acceptance Report) PASS on LAN & WAN (`f8e8c23`) |
-| 3A | Production Player Architecture | ✅ COMPLETE — Committed on `feat/flutter-production-player` |
-| 3B | Android-First Timeline & Live Seek Preview | ✅ COMPLETE — Committed (`2e95246`) |
-| 3C | Audio & Subtitle Track Selectors, Speed & Controls Polish | ✅ COMPLETE — 58/58 tests passed, zero analyzer issues |
-| 4.1 | Library Data Layer & API Endpoints | ✅ COMPLETE — API contracts frozen |
-| 4.2 | Library UI, Movie Card Grid, Continue Watching Rail | ✅ COMPLETE — physical device verified |
-| 4.3 | Library Search, Sort, Filter | ✅ COMPLETE — debounced search, 3 sort modes, genre filter |
-| 4.4 | Movie Details Screen & Direct Playback Handshake | ✅ COMPLETE — details → play → back flow verified |
-| 4.5 | Multi-Channel Distribution & In-App Update Architecture | ✅ COMPLETE — update subsystem operational |
-| 4.6 | Persistent Bottom Navigation & Settings Integration | ✅ COMPLETE — 3-tab shell (Home, Library, Settings), device-verified; 143 passed / 10 skipped (live-server tests opt-in) |
-| 4.7 | Fire TV & Android TV 10-Foot Experience (Universal APK) | ✅ COMPLETE — Single universal APK (`in.anisparvez.media_server_client`) for Mobile & TV. Runtime capability detection, collapsible obsidian side rail (`TvSideNavigationRail`), borderless fullscreen TV player, autofocus action triggers, D-pad remote navigation, physical Fire TV Stick 4K (`AFTMM`) & Vivo mobile verified |
+| 1 | Flutter Client Foundation | âœ… Committed (`5b0b1fa`, `eadb257`) on `feat/flutter-player-poc` |
+| 2 | Video Player POC | âœ… COMPLETE â€” All 6 stages (2Aâ€“2E + 2F Acceptance Report) PASS on LAN & WAN (`f8e8c23`) |
+| 3A | Production Player Architecture | âœ… COMPLETE â€” Committed on `feat/flutter-production-player` |
+| 3B | Android-First Timeline & Live Seek Preview | âœ… COMPLETE â€” Committed (`2e95246`) |
+| 3C | Audio & Subtitle Track Selectors, Speed & Controls Polish | âœ… COMPLETE â€” 58/58 tests passed, zero analyzer issues |
+| 4.1 | Library Data Layer & API Endpoints | âœ… COMPLETE â€” API contracts frozen |
+| 4.2 | Library UI, Movie Card Grid, Continue Watching Rail | âœ… COMPLETE â€” physical device verified |
+| 4.3 | Library Search, Sort, Filter | âœ… COMPLETE â€” debounced search, 3 sort modes, genre filter |
+| 4.4 | Movie Details Screen & Direct Playback Handshake | âœ… COMPLETE â€” details â†’ play â†’ back flow verified |
+| 4.5 | Multi-Channel Distribution & In-App Update Architecture | âœ… COMPLETE â€” update subsystem operational |
+| 4.6 | Persistent Bottom Navigation & Settings Integration | âœ… COMPLETE â€” 3-tab shell (Home, Library, Settings), device-verified; 143 passed / 10 skipped (live-server tests opt-in) |
+| 4.7 | Fire TV & Android TV 10-Foot Experience (Universal APK) | âœ… COMPLETE â€” Single universal APK (`in.anisparvez.media_server_client`) for Mobile & TV. Runtime capability detection, collapsible obsidian side rail (`TvSideNavigationRail`), borderless fullscreen TV player, autofocus action triggers, D-pad remote navigation, physical Fire TV Stick 4K (`AFTMM`) & Vivo mobile verified |
 
 ---
 
 ## 0. Recent work
 
-### 2026-10-11 — Transcode correctness, throughput and telemetry
+### 2026-10-11 â€” Transcode correctness, throughput and telemetry
 
 Full detail and the measurements behind every number:
 `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`. Three separate defects:
@@ -38,7 +38,7 @@ Full detail and the measurements behind every number:
 `measure_segment_frame_count()` documented `-1` for unmeasurable and `0` only for a
 segment ffprobe actually read and found empty. It returned `0` in two of those three
 cases. The damaging one was the freshness guard that deliberately refuses to probe a
-segment younger than `_SEGMENT_PROBE_FRESH_SECONDS` — so a chunk re-rendered by the
+segment younger than `_SEGMENT_PROBE_FRESH_SECONDS` â€” so a chunk re-rendered by the
 serial repair measured its own brand-new segments as empty, was reported ~15s short,
 had its ENDLIST refused, and was then re-rendered again despite being complete.
 Measured cost on a fixed 96s clip: **26.2s -> 13.7s**. This is the `AGENTS.md`
@@ -51,7 +51,7 @@ capped at two because the scheduler started one thread per detected GPU.
 `select_amf_strategy()` now picks the filter chain from the probed source: `vpp_amf`
 is a *depth converter* first (h264_amf rejects 10-bit on drivers older than 23.30,
 and the encode fails outright), so 10-bit and oversized sources keep it, while an
-8-bit source within the 1080p profile skips it — worth ~19% on its own.
+8-bit source within the 1080p profile skips it â€” worth ~19% on its own.
 `expand_workers()` sizes the pool per class, discrete-weighted, with distinct names so
 retiring one duplicate cannot take down its siblings. Verified aggregate throughput on
 an idle machine with frame-checked runs: 4K10 1.62x->1.86x, 1080p10 4.01x->4.51x,
@@ -61,7 +61,7 @@ an idle machine with frame-checked runs: 4K10 1.62x->1.86x, 1080p10 4.01x->4.51x
 Worker-count acceptance criterion is **completeness, not speed**: a finished transcode
 with zero missing frames, ENDLIST written, no `hls.loss.json`. A 2/3/4/6-worker sweep
 on a 600s clip passed all four (peak 5.26x at 4 workers) and every run produced a
-**byte-identical output layout** — worker count changes speed, never content.
+**byte-identical output layout** â€” worker count changes speed, never content.
 
 **3. Speed and ETA telemetry (user-visible).** `_initial_cached_sec` walked segment
 indices densely from 0, stopping at the first inter-chunk gap on the strided layout: a
@@ -70,7 +70,7 @@ near 2x**. Speed was also a lifetime average, and no ETA was emitted, so the API
 divided the remainder by an instantaneous number. Observed on the live job: claimed
 5.3x with a 7m53s ETA against a real ~2.2x and ~16 minutes. Speed is now a trailing
 90s window rate, the job publishes its own `eta_s`/`rate_window_s`, and the figure is
-withheld entirely until the window spans 20s — the UI shows "Calculating..." rather
+withheld entirely until the window spans 20s â€” the UI shows "Calculating..." rather
 than a confident wrong number. Live after: speed holds 7.2-7.5x and the ETA falls
 monotonically.
 
@@ -87,7 +87,7 @@ isolation defect were cascaded out through `/api/media/delete`; the real
 Suite on `main` after these changes: **410 passed, 0 failed** (46 new tests across four
 new files).
 
-### 2026-10-11 (later) — adaptive strategy enabled, and two invisible configs made visible
+### 2026-10-11 (later) â€” adaptive strategy enabled, and two invisible configs made visible
 
 The adaptive transcode strategy described above is now **live in the deployed service**
 (`mode=adaptive workers(10-bit/oversized)=4 workers(8-bit)=2`, confirmed in the startup log).
@@ -95,7 +95,7 @@ The adaptive transcode strategy described above is now **live in the deployed se
 Getting there surfaced a Windows service trap worth recording: **an empty entry in NSSM's
 `AppEnvironmentExtra` silently truncates every variable stored after it.** The three new
 variables were correctly present in the registry and the service still reported
-`mode=legacy`. Compounding it, `Restart-Service` is *not* sufficient — the NSSM wrapper
+`mode=legacy`. Compounding it, `Restart-Service` is *not* sufficient â€” the NSSM wrapper
 survives and keeps the environment block it built at its own launch. A full
 `Stop-Service` + `Start-Service` is required; **no machine reboot is ever needed.** Both
 facts are now in `AGENTS.md` and the transcode write-up.
@@ -103,7 +103,7 @@ facts are now in `AGENTS.md` and the transcode write-up.
 Also enabled: `media_root_health()` (`app/services/media_service.py`), called at startup
 from `run_production.py`. The service ran with `MEDIA_SERVER_MEDIA_ROOT` on an empty
 `C:\Flicks` for an unknown period and nothing said so, because the library still resolved
-through `get_media_roots()`'s fallback — a misconfiguration that appears to work is the
+through `get_media_roots()`'s fallback â€” a misconfiguration that appears to work is the
 dangerous kind. It now reports missing, non-directory, unreadable and empty roots, and is
 diagnostic only.
 
@@ -114,7 +114,7 @@ Re-measured on both adapters: the driver is current (`31.0.21923.1000`, June 202
 runtime**, and H.264 High10 is unavailable on this VCN hardware regardless of driver age.
 The conclusion (`vpp_amf` required for 10-bit) stands; the stated reason did not.
 
-### 2026-10-05 — Site-wide Android APK download flow and production release
+### 2026-10-05 â€” Site-wide Android APK download flow and production release
 
 **Deliverable:** Added the responsive `/download` page titled **Install the
 Android app**, site-wide **Get the app** navigation, footer links, production
@@ -133,74 +133,74 @@ The complete release and deployment procedure is in
 not restarted. Live verification returned HTTP 200 for `/download` and the
 production APK endpoint, including range-download headers.
 
-### 2026-10-04 — Frame-exact chunk accounting; the two auditors made to agree
+### 2026-10-04 â€” Frame-exact chunk accounting; the two auditors made to agree
 
 **Deliverable:** `chunk_content_deficits()` (server) and `scripts/hls_frame_audit.py` (diagnostics) measured the same cache differently and disagreed. Both now share one implementation in `chunk_transcode_service`: `frame_index_at()`, `expected_frames_for_window()`, `chunk_boundary_frame_tolerance()`, `aggregate_loss_ceiling_frames()`.
 
 Three defects fixed, each verified against real caches:
 
-1. **Fractional expectation.** `expected = duration * fps` is fractional at 23.976 / 29.97 / 30000÷1001, so complete chunks measured short and every boundary added a phantom deficit. Replaced by a difference of rounded frame indices — always an integer, always exactly the frames whose presentation times fall in the window.
+1. **Fractional expectation.** `expected = duration * fps` is fractional at 23.976 / 29.97 / 30000Ã·1001, so complete chunks measured short and every boundary added a phantom deficit. Replaced by a difference of rounded frame indices â€” always an integer, always exactly the frames whose presentation times fall in the window.
 2. **Duration-scaled tolerance.** `max(0.6s, 1% of chunk)` gave a 60s chunk 0.6s and a 2h feature 72s, so identical damage was judged by whichever window it landed in. Now a fixed 0.7s of alignment slack expressed in frames, never multiplied by chunk length.
 3. **Audit script on the wrong window.** It used the old dense-grid `range(start_seg, start_seg + expected_segs)`. A chunk legitimately emits 15, 16 or 17 segments, so it undercounted and invented deficits up to **104,601 frames (72 minutes)** in a cache the server called complete. It also returned `0` for an unreadable segment where the server returns `-1` unknown. Cross-check over 21 caches: **17 AGREE**, and all 4 divergences were exactly the 4 legacy **dense** caches where the server judges whole-cache on purpose and the script had no layout guard.
 
-**Measured, not assumed — encoder priming.** A single fresh render of a 4K HDR/AMF chunk (3840×2160 HEVC, 24fps) reproducibly loses exactly **15 frames (0.625s) at the head of the window**, and the loss is **identical for 60s, 61s and 65s windows** — fixed decode-pipeline priming, not a seek-position error. Seeking 1s earlier and extending `-t` by 1s recovers it (1440 → 1449 frames). This is why a strict 2-frame tolerance produced an **unbounded re-render loop** over the same chunk ids; repeated serial repair converges it away, which is why that loop eventually stopped.
+**Measured, not assumed â€” encoder priming.** A single fresh render of a 4K HDR/AMF chunk (3840Ã—2160 HEVC, 24fps) reproducibly loses exactly **15 frames (0.625s) at the head of the window**, and the loss is **identical for 60s, 61s and 65s windows** â€” fixed decode-pipeline priming, not a seek-position error. Seeking 1s earlier and extending `-t` by 1s recovers it (1440 â†’ 1449 frames). This is why a strict 2-frame tolerance produced an **unbounded re-render loop** over the same chunk ids; repeated serial repair converges it away, which is why that loop eventually stopped.
 
-**Whole-cache ceiling added.** Per-chunk allowances multiply: 17 frames × 157 chunks is ~111s a feature could shed with nothing tripping. Bounded to `max(10s, 0.1% of runtime)`, applied to **both** layouts so dense and strided are judged identically. It fires only when no chunk was flagged. Verified all 7 dense caches measure 1 frame or negative, so tightening from 73–115s to 10s triggers no re-renders.
+**Whole-cache ceiling added.** Per-chunk allowances multiply: 17 frames Ã— 157 chunks is ~111s a feature could shed with nothing tripping. Bounded to `max(10s, 0.1% of runtime)`, applied to **both** layouts so dense and strided are judged identically. It fires only when no chunk was flagged. Verified all 7 dense caches measure 1 frame or negative, so tightening from 73â€“115s to 10s triggers no re-renders.
 
-**Accepted shortfall is now recorded.** `_finalize()` writes `hls.loss.json` (frames, seconds, chunks, both thresholds, timestamp, reason) when sealing a short cache — not into `hls.progress`, which is ffmpeg's own `-progress` file.
+**Accepted shortfall is now recorded.** `_finalize()` writes `hls.loss.json` (frames, seconds, chunks, both thresholds, timestamp, reason) when sealing a short cache â€” not into `hls.progress`, which is ffmpeg's own `-progress` file.
 
 **Also fixed:** `hls_restore_endlist.py` passed `source_video_duration(media, fallback=0.0)`. Any non-`None` fallback disables that function's container-duration fallback, so a title whose video end cannot be measured returns `0`, `plan_chunks(0)` is `[]`, and the cache is judged **vacuously complete**. This is why *28 Weeks Later* sat 101/101 rendered and frame-complete but unsealed; `hls_frame_audit.py:_video_end` had the same defect and silently skipped such titles.
 
-**Measured outcome, 4K HDR reference film (Project.Hail.Mary):** 157/157 chunks rendered, chunk **seams clean** (0–3 frames, ~0.46s across 10 boundaries), residual ~133 frames (5.5s over 156 min) scattered as **1–4 frame (42–167 ms)** shortfalls inside individual segments. No stall is possible — no data is missing from the playlist — and no cut is visible at that scale. Verified on the Fire TV Stick over LAN.
+**Measured outcome, 4K HDR reference film (Project.Hail.Mary):** 157/157 chunks rendered, chunk **seams clean** (0â€“3 frames, ~0.46s across 10 boundaries), residual ~133 frames (5.5s over 156 min) scattered as **1â€“4 frame (42â€“167 ms)** shortfalls inside individual segments. No stall is possible â€” no data is missing from the playlist â€” and no cut is visible at that scale. Verified on the Fire TV Stick over LAN.
 
 **Verified:** `py_compile` clean; **361 passed / 1 skipped**; 18 new tests in `tests/test_hls_frame_accounting.py`.
 
 **Library state after the work:** all 21 caches sealed with ENDLIST, none re-rendering, 0 frame loss on 20 of 21. *Teenage Sex and Death at Camp Miasma* (user upload) transcoded first-pass at 6721.6s of 6721.6s with zero deficit.
 
-### 2026-10-04 — Flutter test isolation from the live server; media_kit temp-state accumulation
+### 2026-10-04 â€” Flutter test isolation from the live server; media_kit temp-state accumulation
 
 **Deliverable:** `scripts/run_flutter_tests.ps1`; network guard in `flutter_client/test/support/test_network_guard.dart`.
 
-Two live-server leaks closed. (1) `app_shell_test.dart` mounted the real router, whose `/player` route falls back to a hard-coded production origin, and wired `serverBaseUrlProvider` to `https://media.anisparvez.in`. (2) `runtime_player_3b_test.dart` nulled `HttpOverrides.global` unconditionally and left its first test ungated, so **every full-suite run made real GETs to `http://127.0.0.1:8000`** — the running service — and passed only because production answered.
+Two live-server leaks closed. (1) `app_shell_test.dart` mounted the real router, whose `/player` route falls back to a hard-coded production origin, and wired `serverBaseUrlProvider` to `https://media.anisparvez.in`. (2) `runtime_player_3b_test.dart` nulled `HttpOverrides.global` unconditionally and left its first test ungated, so **every full-suite run made real GETs to `http://127.0.0.1:8000`** â€” the running service â€” and passed only because production answered.
 
 The guard installs an allowlist `HttpOverrides` that refuses any non-sentinel host. The sentinel is `http://test.invalid:8000`, deliberately **non-loopback**: `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests needing a live server stay behind `liveServerSkip`.
 
-**Never run a bare `flutter test`.** `NativeReferenceHolder` writes a reference-buffer address to `…NativeReferenceHolder.$pid`, creates it empty before writing, and never deletes it. Windows recycles PIDs, so a new test process inherits a dead run's file and either parses `''` or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` awaiting the never-completed `_completer` — a whole file reports "did not complete". Measured 415 orphans (70 empty) over 10 days causing 2 failures in 6 runs **including one `--concurrency=1` run**, so serial is **not** a fix. The script purges before and after; after it, repeated runs leave 0.
+**Never run a bare `flutter test`.** `NativeReferenceHolder` writes a reference-buffer address to `â€¦NativeReferenceHolder.$pid`, creates it empty before writing, and never deletes it. Windows recycles PIDs, so a new test process inherits a dead run's file and either parses `''` or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` awaiting the never-completed `_completer` â€” a whole file reports "did not complete". Measured 415 orphans (70 empty) over 10 days causing 2 failures in 6 runs **including one `--concurrency=1` run**, so serial is **not** a fix. The script purges before and after; after it, repeated runs leave 0.
 
-### 2026-10-02 — Playback Overlay State Management (Phase 4 Complete)
+### 2026-10-02 â€” Playback Overlay State Management (Phase 4 Complete)
 
 **Deliverable:** Resolved clashing, stacked, and lingering playback status overlays on the video canvas (Issue 3). Unified independent boolean layers (`isOpening`, `_isBuffering`, `_isHudVisible`, Center Play/Pause) into a single, mutually exclusive state model:
 1. **`PlaybackOverlayStatus` & `PlaybackOverlayType`:** Created a dedicated domain model (`none`, `opening`, `buffering`, `seeking`, `toast`) with deterministic priority ordering: user-initiated actions (`seeking` / `toast`) take precedence over background stream states (`opening` / `buffering`).
 2. **Buffering Suppression During Seeking:** While the user is actively seeking (remote D-pad Left/Right, media keys Rewind/Fast-Forward), the "Buffering Stream" loading indicator is suppressed, displaying only the seek feedback pill and eliminating stacked cards. If buffering persists after the 1000ms seek settle window, it transitions smoothly to "Buffering Stream".
-3. **Accumulated Seek Delta:** Rapid successive seek inputs accumulate delta (`+10 sec` → `+20 sec` → `+30 sec`) and refresh the settle timer in a single unified HUD toast.
+3. **Accumulated Seek Delta:** Rapid successive seek inputs accumulate delta (`+10 sec` â†’ `+20 sec` â†’ `+30 sec`) and refresh the settle timer in a single unified HUD toast.
 4. **Center Play/Pause Suppression:** Passed `isOverlayActive: overlayStatus.isVisible` to `PlayerControlsOverlay`, preventing center play/pause collision with active toasts or seek indicators.
 5. **Timeline Scrubbing Protection:** Suppressed buffering indicator while user is actively scrubbing the timeline scrubber.
 6. **Automated Verification:** Added 13 unit and widget tests in `test/features/player/player_overlay_state_test.dart`. All 102 player tests and 261 total client tests pass with 0 static analysis issues.
 
-### 2026-10-02 — Android TV & Fire TV Player Back Behaviour (Phase 3 Complete)
+### 2026-10-02 â€” Android TV & Fire TV Player Back Behaviour (Phase 3 Complete)
 
 **Deliverable:** Resolved the TV Back button regression during video playback where pressing Back immediately terminated playback and exited to library/details. Re-established the intuitive 2-step TV remote transport model:
 1. **First Back Press (Controls Hidden):** When controls are hidden during active playback, pressing Back (`LogicalKeyboardKey.escape`, `LogicalKeyboardKey.goBack`, or Android OS `PopScope`) reveals the player controls, resets the auto-hide timer, restores player focus to the timeline scrubber (`_tvFocusZone = TvPlayerFocusZone.timeline`), and consumes the event without stopping playback or exiting.
 2. **Second Back Press (Controls Visible):** When controls are already visible, pressing Back executes the standard player exit lifecycle: cancels timers, flushes/disposes watch progress, stops the media controller, and pops the player route cleanly.
 3. **Removed Force-Exit Bypass:** Eliminated `forceExit: isTv` from `PopScope` and `onHandleBack(forceExit: true)` from `PlayerKeyDispatcher` when controls are hidden. All 248 Flutter tests pass with zero analyzer issues.
 
-### 2026-10-02 — 2D Weighted Spatial Focus Traversal Policy (Phase 2 Complete)
+### 2026-10-02 â€” 2D Weighted Spatial Focus Traversal Policy (Phase 2 Complete)
 
 **Deliverable:** Fixed intermittent D-pad Up/Down navigation skipping where visually adjacent focusable elements were bypassed due to Flutter's default 1D band-culling in `DirectionalFocusTraversalPolicyMixin`.
-1. **`TvSpatialFocusTraversalPolicy`:** Created a custom 2D directional traversal policy (`lib/core/navigation/tv_spatial_focus_traversal_policy.dart`) implementing weighted vector scoring (`score = Δprimary * 4.0 + Δorthogonal * 1.0 + Δalign * 0.25`) with a 60% row/column visual overlap gate.
+1. **`TvSpatialFocusTraversalPolicy`:** Created a custom 2D directional traversal policy (`lib/core/navigation/tv_spatial_focus_traversal_policy.dart`) implementing weighted vector scoring (`score = Î”primary * 4.0 + Î”orthogonal * 1.0 + Î”align * 0.25`) with a 60% row/column visual overlap gate.
 2. **App-Wide Registration:** Attached policy to `MediaServerApp` root builder in `app.dart` and `tvContentFocusScopeProvider` in `app_shell.dart`. Upgraded preset server chips in `connection_screen.dart` to `TvFocusable`. All spatial focus tests pass.
 
-### 2026-10-01 — Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention
+### 2026-10-01 â€” Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention
 
-**Deliverable:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`), enabling zero-stutter hardware-accelerated playback across all standard and non-16-byte-aligned video files (e.g. *Scary Movie* at 1916×800) alongside automatic dynamic software decoding (CPU fallback).
+**Deliverable:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`), enabling zero-stutter hardware-accelerated playback across all standard and non-16-byte-aligned video files (e.g. *Scary Movie* at 1916Ã—800) alongside automatic dynamic software decoding (CPU fallback).
 
 **Key Architectural Changes:**
 1. **`mediacodec-copy` Decoupled Pipeline:** Configured `VideoControllerConfiguration(hwdec: 'mediacodec-copy')` on Android in `MediaKitPlayerAdapter`. By copying decoded frames rather than sharing raw zero-copy `SurfaceTexture` hardware buffers with EGL, PowerVR texture inconsistency (`E IMGSRV : IsTextureConsistent: IMGEGLImage is not consistent`) and MediaTek MDP fence lockups (`E MDP : wait input fence[353] timeout`) are eliminated completely.
 2. **Dynamic Software Fallback (`fallbackToSoftwareDecoder`):** If hardware decoding encounters any driver errors or if the first video frame is not rendered within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`), the adapter dynamically sets `hwdec: 'no'` (libavcodec CPU decoding) and flushes decoder buffers via a position seek without interrupting audio or requiring an app restart.
 3. **Broadened Driver Error Keyword Detection:** Catch and recover from `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface` errors from the mpv stream error dispatcher.
-4. **Physical Verification:** Verified full-screen hardware-accelerated video playback on physical Amazon Fire TV Stick 4K (`192.168.1.70:5555`) with *Batman: Knightfall* (1920×1080) and *Scary Movie* (1916×800) with zero dropped frames. Built and deployed APK `1.2.12` (build 132). Unit tests: 205 passed, 0 analyzer issues.
+4. **Physical Verification:** Verified full-screen hardware-accelerated video playback on physical Amazon Fire TV Stick 4K (`192.168.1.70:5555`) with *Batman: Knightfall* (1920Ã—1080) and *Scary Movie* (1916Ã—800) with zero dropped frames. Built and deployed APK `1.2.12` (build 132). Unit tests: 205 passed, 0 analyzer issues.
 
-### 2026-10-01 — PlayerScreen Architecture Segregation & Modularization (2,283 → 1,232 lines)
+### 2026-10-01 â€” PlayerScreen Architecture Segregation & Modularization (2,283 â†’ 1,232 lines)
 
 **Deliverable:** Modularized the monolithic `player_screen.dart` (which exceeded 2,280 lines) into dedicated, highly focused domain, infrastructure, and presentation components. Extracted 5 decoupled modules, reducing `player_screen.dart` by over 1,050 lines (~46% line reduction) while preserving 100% backward compatibility, mobile portrait split-view, and 10-foot Fire TV / Android TV borderless fullscreen cinema invariants.
 
@@ -216,7 +216,7 @@ The guard installs an allowlist `HttpOverrides` that refuses any non-sentinel ho
 - All 118 shell, library, cast, home, intro, settings, devices, updater tests passed (`flutter test ...`).
 - `flutter analyze`: 0 issues found across all Dart packages.
 
-### 2026-10-01 — Fire TV Stick 4K & Android TV (Pass 2 Refinements: Focus Traversal, Debounced Exit & 10-Foot Leanback UI)
+### 2026-10-01 â€” Fire TV Stick 4K & Android TV (Pass 2 Refinements: Focus Traversal, Debounced Exit & 10-Foot Leanback UI)
 
 **Deliverable:** A polished second-pass leanback experience on the universal Android APK (`in.anisparvez.media_server_client`), hardening D-pad remote navigation, edge-to-rail focus transitions, exit confirmation debouncing, and TV Settings UI on physical Amazon Fire TV Stick 4K (`AFTMM`) connected to a 4K TV.
 
@@ -228,43 +228,43 @@ The guard installs an allowlist `HttpOverrides` that refuses any non-sentinel ho
 5. **TV Remote Player Polish:** Bound 2-zone remote transport model; D-pad Up/Down volume manipulation was eliminated to avoid conflicting with TV hardware CEC volume and vertical navigation.
 6. **Automated Verification:** 99/99 shell and player tests passed, 47/47 library tests passed, 0 analyzer issues across `flutter_client`.
 
-### 2026-09-30 — Fire TV Stick 4K & Universal Android APK (10-Foot Leanback UI)
+### 2026-09-30 â€” Fire TV Stick 4K & Universal Android APK (10-Foot Leanback UI)
 
 **Deliverable:** A single universal APK (`in.anisparvez.media_server_client`) operating seamlessly across both Android mobile phones (touch UI + persistent bottom navigation + portrait player) and Amazon Fire TV Stick 4K / Android TV (10-foot D-pad remote UI + collapsible obsidian side rail + borderless fullscreen cinema player). Zero separate APKs, zero Android product flavors.
 
 **Key Architecture & Invariants:**
 1. **Device Capability Model:** Runtime detection via native platform channel (`in.anisparvez.media_server_client/device_mode`) in `MainActivity.kt` inspecting `android.software.leanback`, Amazon Fire TV model signatures (`Build.MODEL.startsWith("AFT")`), UI mode type (`Configuration.UI_MODE_TYPE_TELEVISION`), and absence of touch screen. Exposes `deviceCapabilitiesProvider`, `isTvModeProvider`, and `isFireTvProvider`. Includes a debug "Force TV UI Mode" switch in Settings for phone/tablet testing.
 2. **TV Navigation Shell:** Collapsible obsidian left rail (`TvSideNavigationRail`, 68dp collapsed / 220dp expanded) with brand-red glowing focus pill and D-pad navigation. Replaces mobile bottom navigation completely on TV (`isTv == true`).
-3. **10-Foot Cinema Details:** Two-column 16:9 layout on TV with poster/specs pills on left and title/synopsis/cast on right. Primary action ("▶ Resume" or "▶ Play Movie") is autofocus-highlighted in brand red (`autofocus: true`), enabling instant one-click playback upon opening any movie details.
-4. **TV Fullscreen Player & Remote Transport:** Video player automatically enforces 100% borderless fullscreen on TV, eliminating portrait split view. Redundant Cast and Fullscreen buttons are completely hidden on TV. Back key state machine dismisses controls overlay first if visible; otherwise flushes progress and returns to Movie Details. D-pad Center, Up/Down (volume), Left/Right (seek ±10s), Play/Pause, Rewind/Fast Forward keys mapped for remote responsiveness.
+3. **10-Foot Cinema Details:** Two-column 16:9 layout on TV with poster/specs pills on left and title/synopsis/cast on right. Primary action ("â–¶ Resume" or "â–¶ Play Movie") is autofocus-highlighted in brand red (`autofocus: true`), enabling instant one-click playback upon opening any movie details.
+4. **TV Fullscreen Player & Remote Transport:** Video player automatically enforces 100% borderless fullscreen on TV, eliminating portrait split view. Redundant Cast and Fullscreen buttons are completely hidden on TV. Back key state machine dismisses controls overlay first if visible; otherwise flushes progress and returns to Movie Details. D-pad Center, Up/Down (volume), Left/Right (seek Â±10s), Play/Pause, Rewind/Fast Forward keys mapped for remote responsiveness.
 5. **Physical Device Verification:** Built release APK (97.3 MB) and installed on physical Amazon Fire TV Stick 4K (`AFTMM` on `192.168.1.70:5555`) connected to a 4K Samsung TV. Tested D-pad navigation, card focus, details autofocus, and fullscreen playback of *Batman: Knightfall*. Installed identical APK on physical Vivo phone (`192.168.1.13:38595`), confirming 100% preservation of mobile touch UI and bottom bar.
 6. **Automated Verification:** 233/233 tests passed, 0 analyzer issues across entire repository.
 
-### 2026-09-30 — Opening sequence (brand sting): delivered, wired, and prompt-free autoplay
+### 2026-09-30 â€” Opening sequence (brand sting): delivered, wired, and prompt-free autoplay
 
-**Deliverable:** a 3.00-second branded opening — build-up → logo impact → two-note motif → wordmark →
-curtain — for the server, with an original synthesized score (no samples, nothing licensed). The outro
+**Deliverable:** a 3.00-second branded opening â€” build-up â†’ logo impact â†’ two-note motif â†’ wordmark â†’
+curtain â€” for the server, with an original synthesized score (no samples, nothing licensed). The outro
 is an **overlay over the running app**: when the curtain parts what is revealed is the app's own page,
-already loaded and already interactive — its header, its posters and its live telemetry, not a copy of
+already loaded and already interactive â€” its header, its posters and its live telemetry, not a copy of
 them.
 
 **Prompt-Free Autoplay & In-App Integration:** Delivered and wired into the app. The click-to-start `#gate` prompt card ("Play with sound") was eliminated so the animation runs fully and automatically upon entry without requiring user clicks (`mode = 'auto'`). `#gate` is hidden by default and preserved solely for explicit manual testing (`?intro=gate`). Web Audio API playback starts immediately with transparent one-time interaction listeners (`pointerdown`, `keydown`, `touchstart`) to resume suspended audio contexts without delaying visual playback. The overlay is gated once per browser session via `sessionStorage` in `templates/library.html`, and `?intro=off` cleanly omits all overlay DOM nodes in Jinja. Artifacts reside in `docs/opening-sequence/`. Full detail in [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
 
-**Android Mobile Client Opening Sequence (Flutter):** Delivered to the Android Flutter client (`flutter_client/`). Bundled the synthesized 1080×1920 portrait MP4 ident (`assets/videos/intro-demo-portrait.mp4`), implemented Riverpod `IntroController` (`IntroState` session gating once per app launch), edge-to-edge `BrandIntroOverlay` with `media_kit` hardware video & audio decode, tap-anywhere / skip pill dismissal with 300ms fadeout, and unconstrained underlying `AppShell` mount. Added "Replay Brand Intro" control in Settings (`SettingsContent`). Passed full test suite (210/210 passed, 0 analyzer issues), compiled `v1.2.2+122`, and installed & launched on connected Vivo I2217 (Android 16).
+**Android Mobile Client Opening Sequence (Flutter):** Delivered to the Android Flutter client (`flutter_client/`). Bundled the synthesized 1080Ã—1920 portrait MP4 ident (`assets/videos/intro-demo-portrait.mp4`), implemented Riverpod `IntroController` (`IntroState` session gating once per app launch), edge-to-edge `BrandIntroOverlay` with `media_kit` hardware video & audio decode, tap-anywhere / skip pill dismissal with 300ms fadeout, and unconstrained underlying `AppShell` mount. Added "Replay Brand Intro" control in Settings (`SettingsContent`). Passed full test suite (210/210 passed, 0 analyzer issues), compiled `v1.2.2+122`, and installed & launched on connected Vivo I2217 (Android 16).
 
-**Verification:** `verify_overlay.py` — 12 behavioural checks against the running server, all pass: the
+**Verification:** `verify_overlay.py` â€” 12 behavioural checks against the running server, all pass: the
 app's DOM is present under the layer (12 cards, 11 posters), the AudioContext reaches `running` on a real
 click, the veils cover the app at 1.35 s, the layer removes itself by 3.2 s, **a real click afterwards
 reaches the app's own search field**, capture mode stops the app's clock, and the 0.25 s tail hold is
 byte-identical while the sequence itself is not. Both rendered videos `ffprobe` at 90 frames and
-`duration 3.000000` with a real AAC track (RMS −18.88 dB, peak −3.08 dB).
+`duration 3.000000` with a real AAC track (RMS âˆ’18.88 dB, peak âˆ’3.08 dB).
 
 **Three defects found and fixed while rebuilding:** the capture mode was filming the click-to-start gate
 instead of the sequence (90 identical frames); the layer's `html,body` CSS was overriding the app's body
 background and stopping its scrolling; and `Emulation.*` needs a page session before it can set a
-viewport. The capture/render lessons that generalise are recorded in §8 of the doc.
+viewport. The capture/render lessons that generalise are recorded in Â§8 of the doc.
 
-### 2026-09-28 — Casting to DLNA TVs and Chromecast (web player + Android app)
+### 2026-09-28 â€” Casting to DLNA TVs and Chromecast (web player + Android app)
 
 **Feature:** a Cast button in the web player and in the app's player that hands the current movie to
 a device on the LAN: DLNA/UPnP renderers and Chromecast (the family's Samsung DU7000 answers both).
@@ -291,7 +291,7 @@ position (`<LAN IP>:<port>/media/<file>`), never for the caller's origin.
   is inside the existing block, the picker reuses the `.sub-modal` styles).
 - The cast bar shows the device's live position while playback runs and only falls back to an error when
   nothing is playing, because this TV refuses every seek (UPnP 701) and the refusal would otherwise hide
-  the position for the whole cast. Its label separator had been double-encoded as `Â·` on the app side -
+  the position for the whole cast. Its label separator had been double-encoded as `Ã‚Â·` on the app side -
   fixed, and a widget test (`player_cast_bar_test.dart`, 3 cases) pins the label rule.
 
 **Verification:** `tests/test_cast_api.py` (44) and `tests/test_cast_dlna_integration.py` (6, driving
@@ -300,78 +300,78 @@ the real SOAP flow against a stub UPnP renderer that mimics the TV's faults); se
 player script. Live discovery found the real TV: `UA43DU7000KLXL` at 192.168.1.8 with AVTransport +
 RenderingControl, announced as a Cast device too.
 
-**Hardware acceptance (real Samsung DU7000):** discover → cast → the TV reports `playing` with its own
-position advancing → pause → play → volume → stop, all with `last_error` empty. Two hardware-only
+**Hardware acceptance (real Samsung DU7000):** discover â†’ cast â†’ the TV reports `playing` with its own
+position advancing â†’ pause â†’ play â†’ volume â†’ stop, all with `last_error` empty. Two hardware-only
 defects were found and fixed in the process:
 
 - **SSDP left the wrong interface.** This host is dual-homed (Ethernet 192.168.1.16, Wi-Fi 192.168.1.12
-  plus link-local virtuals) and an unbound multicast socket took the OS default route — the M-SEARCH
+  plus link-local virtuals) and an unbound multicast socket took the OS default route â€” the M-SEARCH
   went out over Wi-Fi and discovery found nothing, even though the TV answered a ping and its DLNA
   description on the Ethernet address. `discover_dlna()` now sends from every usable IPv4 interface
   (`_multicast_interfaces()`, loopback/link-local excluded), which finds the TV immediately.
 - **A Seek sent before Play aborted the entire cast.** The renderer answers UPnP **701 (Transition not
-  available)** to a seek while its transport is stopped; the old `SetAVTransportURI → Seek → Play`
+  available)** to a seek while its transport is stopped; the old `SetAVTransportURI â†’ Seek â†’ Play`
   order therefore 500'd and the load never started, so casting with a resume point silently did
-  nothing. The order is now `SetAVTransportURI → Play → (wait for transport) → Seek`.
-- **This TV refuses Seek altogether** (701 on every form — `REL_TIME`, `ABS_TIME`, `REL_COUNT`; it does
+  nothing. The order is now `SetAVTransportURI â†’ Play â†’ (wait for transport) â†’ Seek`.
+- **This TV refuses Seek altogether** (701 on every form â€” `REL_TIME`, `ABS_TIME`, `REL_COUNT`; it does
   not accept `SeekMode` either, answering 402), so a cast on this model starts at the beginning and its
   own remote is needed to jump. Chromecast handles seek natively, so that path is unaffected. UPnP
-  faults are now translated (`UPNP_FAULTS`) instead of surfacing as a bare "HTTP 500" — 701 reads
+  faults are now translated (`UPNP_FAULTS`) instead of surfacing as a bare "HTTP 500" â€” 701 reads
   "This TV does not allow seeking from another app - use its own remote to jump ahead." 
 
 **Live means now:** the /api/cast/* endpoints run against the real TV from the owner's restarted
-service (192.168.1.16:8000) — discovery locates `TV (UA43DU7000KLXL)`, /api/cast/play hands it the
-media and the TV reports `buffering` → `playing` with its own position advancing, /api/cast/stop ends
-it. The app's picker lists the TV, clicking it plays, the cast bar appears (`TV · Starting…` → `TV · 0:01`)
+service (192.168.1.16:8000) â€” discovery locates `TV (UA43DU7000KLXL)`, /api/cast/play hands it the
+media and the TV reports `buffering` â†’ `playing` with its own position advancing, /api/cast/stop ends
+it. The app's picker lists the TV, clicking it plays, the cast bar appears (`TV Â· Startingâ€¦` â†’ `TV Â· 0:01`)
 and its stop button ends the cast; the cast button itself shows `is-casting`. The web player does the
 same on both surfaces, through the live API.
 
-### 2026-09-28 — Player swipe controls (volume & brightness) + progress persistence (`a0877ce`)
+### 2026-09-28 â€” Player swipe controls (volume & brightness) + progress persistence (`a0877ce`)
 
-**Gestures:** swiping up/down on the video surface drives the phone's own levels — **left half =
-brightness, right half = system media volume** — with a HUD readout (`N% Brightness` / `N% Volume`).
+**Gestures:** swiping up/down on the video surface drives the phone's own levels â€” **left half =
+brightness, right half = system media volume** â€” with a HUD readout (`N% Brightness` / `N% Volume`).
 A full-height swipe covers the whole range; the value at drag start is captured and the drag
 fraction is applied as an offset, so the mapping stays absolute however many events arrive.
 
 - Vertical drags are **opt-in** on `DoubleTapSeekDetector` (`onVerticalDragBegin/Delta/End`): a drag
-  never satisfies the tap (toggle controls) or double-tap (seek ±10 s) recognizers, and the detector
+  never satisfies the tap (toggle controls) or double-tap (seek Â±10 s) recognizers, and the detector
   reports the cumulative fraction `(dragStartY - currentY) / surfaceHeight` (positive = up), not one
   frame of movement.
-- Two new MethodChannels in `MainActivity.kt`, no permissions needed: `…/screen_brightness` →
+- Two new MethodChannels in `MainActivity.kt`, no permissions needed: `â€¦/screen_brightness` â†’
   `WindowManager.LayoutParams.screenBrightness` (clamped 0.01-1.0; `-1` hands brightness back to the
-  system when the player goes away) and `…/media_volume` → `AudioManager.STREAM_MUSIC` — the level
+  system when the player goes away) and `â€¦/media_volume` â†’ `AudioManager.STREAM_MUSIC` â€” the level
   the volume keys control and the level actually heard. The app's own player volume stays at full so
   the HUD matches what is audible. Both services swallow every failure (a desktop host or a widget
   test has no plugin): a gesture must never break playback.
 - A volume drag re-reads the system volume at drag start, so it continues from where the phone's
   volume keys left it instead of from a stale mirror.
-- The gesture HUD renders **outside `PlayerControlsOverlay`** — that overlay fades to opacity 0 when
+- The gesture HUD renders **outside `PlayerControlsOverlay`** â€” that overlay fades to opacity 0 when
   the controls auto-hide, which used to hide the readout of a swipe that had already changed the
   value. `PlayerHudToast` wraps itself in `IgnorePointer`, and the loading/buffering indicator now
   does too (it used to swallow swipes while the stream probed). The rotate button is gone.
 
 **Progress persistence (leaving the player wrote 0):** the app read the resume point but never wrote
 it, and the back path flushed *after* `stop()` had already reset the position. New
-`PlaybackProgressReporter` (`lib/features/player/application/`) mirrors the web player's cadence —
+`PlaybackProgressReporter` (`lib/features/player/application/`) mirrors the web player's cadence â€”
 autosave on a 10 s playback delta, on pause, on seek (2 s debounce so scrubbing writes once), on end,
 and on leaving the player; positions under 1 s are never persisted, and `onEnded()` marks *watched*
 (0) only when the position really is at the end (media_kit reports `completed` for torn-down streams
-too). `dispose()` deliberately does not flush — a save started during teardown leaves Dio's
-scheduling timer pending ("A Timer is still pending…" in widget tests); the exit save belongs to
+too). `dispose()` deliberately does not flush â€” a save started during teardown leaves Dio's
+scheduling timer pending ("A Timer is still pendingâ€¦" in widget tests); the exit save belongs to
 `_handleBack`, before the controller is stopped.
 
 **Reactive `serverBaseUrlProvider`:** repositories call `updateBaseUrl()` only after reading the
-saved server, and the first frame renders before that — sampling `dio.options.baseUrl` once pinned
+saved server, and the first frame renders before that â€” sampling `dio.options.baseUrl` once pinned
 artwork to the loopback default (the phone itself), so every poster fell back to a letter avatar
 while API calls kept working. The provider now listens to the client's `baseUrlNotifier` and
 invalidates itself on change.
 
 **Continue Watching rail refresh:** the rail and grid resume from their own `MovieItem`, so after
-playback the library list is reloaded (`loadLibrary(isRefresh: true)`) on return from the player —
+playback the library list is reloaded (`loadLibrary(isRefresh: true)`) on return from the player â€”
 otherwise the next tap replays the position the list was loaded with.
 
-**Also:** `kotlin.incremental=false` in `flutter_client/android/gradle.properties` — Kotlin's
-memory-mapped incremental caches fail on the USB volume (`Could not close incremental caches …`),
+**Also:** `kotlin.incremental=false` in `flutter_client/android/gradle.properties` â€” Kotlin's
+memory-mapped incremental caches fail on the USB volume (`Could not close incremental caches â€¦`),
 and neither clearing the cache nor `flutter clean` helps.
 
 **Verification:** new `test/features/player/player_gesture_controls_test.dart` (7 cases: left/right
@@ -380,21 +380,21 @@ double-tap still work with drags enabled, inert without a callback), plus
 `playback_progress_reporter_test.dart`, `playback_progress_persistence_test.dart`,
 `player_screen_test.dart`, `server_base_url_provider_test.dart`, `library_screen_test.dart` and
 `movie_details_screen_test.dart`; `flutter analyze lib test` 0 issues. On the Vivo I2217 a
-right-half swipe moves the system media volume (`dumpsys audio` → `VOLUME GROUP AUDIO_STREAM_MUSIC`),
+right-half swipe moves the system media volume (`dumpsys audio` â†’ `VOLUME GROUP AUDIO_STREAM_MUSIC`),
 and leaving the player persists the position the web player then resumes from.
 
-### 2026-09-28 — Watch progress is per device (resume no longer bleeds across devices)
+### 2026-09-28 â€” Watch progress is per device (resume no longer bleeds across devices)
 
-**Symptom:** seeking in the laptop's web player moved the phone app's resume point — whichever
+**Symptom:** seeking in the laptop's web player moved the phone app's resume point â€” whichever
 device played last set the position for every device.
 
 **Cause:** reads were global. `/api/progress` POST already wrote the shared `progress` row *and*
 `device_watch_history` (per-device rows were correct all along), but `GET /api/progress` and
-`media_service.movie()` — hence `/api/movies`, the details page and the player page — read only the
+`media_service.movie()` â€” hence `/api/movies`, the details page and the player page â€” read only the
 shared row, so every client saw the last writer's position.
 
 **Fix (server-side only; both clients already identify themselves):**
-- `device_service.current_device_id()` — the request's device id, `None` outside a request.
+- `device_service.current_device_id()` â€” the request's device id, `None` outside a request.
 - `movie(path, db, device_id=None)` / `get_movies(device_id=None)` read the calling device's
   `device_watch_history` row (relative path or basename), with **no cross-device fallback**: a device
   that never watched a title starts at 0. Callers without a request (scripts, tools) still read the
@@ -410,17 +410,17 @@ fails exactly those two: `2 failed, 6 passed`); full pytest **252 passed / 1 ski
 untouched by the suite. Live on the restarted service, same title across four devices:
 1602.000 / 4332.411 / 3543.375 / 0.000 with per-device "continue watching" rails (2 / 1 / 1 / 0).
 
-### 2026-09-27 — Flutter device presence + authoritative playback mode
+### 2026-09-27 â€” Flutter device presence + authoritative playback mode
 
 **Device presence (the phone now registers itself):**
-- `DeviceIdentityService` produced a stable `dev_…` id and `DeviceAuthInterceptor` sent it as
-  `X-Device-Id`, but `ApiEndpoints.deviceHeartbeat` had **no caller** — so the client never appeared in
+- `DeviceIdentityService` produced a stable `dev_â€¦` id and `DeviceAuthInterceptor` sent it as
+  `X-Device-Id`, but `ApiEndpoints.deviceHeartbeat` had **no caller** â€” so the client never appeared in
   the Connected Devices dashboard (playback alone registers nothing; only `/api/devices/heartbeat`
   creates a row).
 - Added `features/devices/data/repositories/device_repository.dart` (`sendHeartbeat`, failures
-  swallowed — presence is telemetry and must never disturb playback),
+  swallowed â€” presence is telemetry and must never disturb playback),
   `presentation/controllers/device_presence_controller.dart` (registration ping on start, then one
-  every **45 s** — the web client's cadence — paused while backgrounded, immediate ping on resume, no
+  every **45 s** â€” the web client's cadence â€” paused while backgrounded, immediate ping on resume, no
   overlapping requests, timer cancelled on dispose) and `presentation/widgets/device_presence_scope.dart`
   (mounted once in `main.dart`, forwards `didChangeAppLifecycleState`; widget tests that build
   `MediaServerApp` directly never open a heartbeat timer).
@@ -431,7 +431,7 @@ untouched by the suite. Live on the restarted service, same title across four de
 
 **Authoritative playback mode (the badge was guessing):**
 - The badge was `subtitle?.toLowerCase().contains('direct')`, but `subtitle` is the details screen's
-  display string (`'2026 • 1h 43m'`) — it can never contain "direct", so every stream showed
+  display string (`'2026 â€¢ 1h 43m'`) â€” it can never contain "direct", so every stream showed
   "HLS STREAM". Label *and* stream URL now come from the server's `direct_play` flag in
   `/api/media-info` via `features/player/domain/playback_mode.dart`; an unresolved mode renders a
   neutral `STREAM` badge rather than a claim.
@@ -439,7 +439,7 @@ untouched by the suite. Live on the restarted service, same title across four de
   (`/hls/<file>/playlist.m3u8`); direct-playable MP4/M4V/WebM keeps RFC 7233 byte-range `/media/<file>`.
 - **Cold-start origin fix (found only on the device):** the player built its API/HLS origin from the
   *media* URL, which is the route's `http://127.0.0.1:8000` default when the player is opened without
-  an explicit `server` — so on a cold start the mode probe (and the subtitle/preview calls and the HLS
+  an explicit `server` â€” so on a cold start the mode probe (and the subtitle/preview calls and the HLS
   URL) hit the phone itself: `DioException [connection error]: Connection refused` in `adb logcat`.
   `_resolveApiOrigin()` now prefers the saved/active server over a loopback media origin (mirroring
   `_resolveEffectiveMediaUrl`), every call goes through the shared `apiClientProvider` client, and the
@@ -452,23 +452,23 @@ untouched by the suite. Live on the restarted service, same title across four de
 1.0.6-dev.106** on the Vivo I2217 and confirmed the phone registers in `devices` (one row, refreshed)
 while playing.
 
-### 2026-09-27 — Flutter release hardening, test isolation, and end-to-end device verification
+### 2026-09-27 â€” Flutter release hardening, test isolation, and end-to-end device verification
 
 **Release integrity (the APK is the source of truth):**
 - `scripts/publish_update.py` now reads `packageId`/`versionCode`/`versionName`/`minSdk`/`targetSdk`
   back out of the built APK with `aapt2 dump badging` and **refuses to publish** if they disagree
   with the manifest it is about to write (`ApkIdentityError`, fail-closed). `--min-supported-code`
   publishes the enforced floor. Build-tools 36 prints `minSdkVersion:` (legacy `sdkVersion:`), both
-  spellings are parsed — a real APK round-trip test caught that.
-- New `scripts/release_android.py` makes build and publish one step: allocate versionCode → build
-  with `--build-name/--build-number` → re-read the APK identity → publish. `pubspec.yaml` is pinned
+  spellings are parsed â€” a real APK round-trip test caught that.
+- New `scripts/release_android.py` makes build and publish one step: allocate versionCode â†’ build
+  with `--build-name/--build-number` â†’ re-read the APK identity â†’ publish. `pubspec.yaml` is pinned
   to the `1.0.3+103` floor so a bare `flutter build apk` cannot outrun the registry.
 - Published through that path: **developer `1.0.4-dev.104`** and **developer `1.0.5-dev.105`**
-  (`updates/version_registry.json` → `lastVersionCode: 105`).
+  (`updates/version_registry.json` â†’ `lastVersionCode: 105`).
 
 **Signing:**
 - The hardcoded keystore password was removed from `build.gradle.kts`. Credentials now come from
-  git-ignored `flutter_client/android/key.properties` → env vars → **fail closed** (no silent
+  git-ignored `flutter_client/android/key.properties` â†’ env vars â†’ **fail closed** (no silent
   debug-signed release). The literal remains in git history; the `.jks` was never committed (see
   the Signing section of `docs/FLUTTER_CLIENT_STATUS.md`).
 
@@ -480,44 +480,44 @@ while playing.
 - `tests/test_selenium_multi_seek_coyote.py` no longer drives the live port-8000 service: it starts
   its own in-process server on port 0 and skips honestly when no Coyote segments exist in the
   isolated cache.
-- Proof, not assertion: the full suite ran with the production DB snapshotted before/after —
+- Proof, not assertion: the full suite ran with the production DB snapshotted before/after â€”
   `movies` / `devices` / `device_watch_history` / `progress` / `settings` were **byte-identical**.
 - Results: Python **250 passed, 1 skipped** (72.7 s); Flutter **128 passed, 10 skipped**, analyzer
   clean.
 
 **Update-floor enforcement:**
-- `minSupportedVersionCode` is now enforced client-side (install below the floor ⇒ mandatory update,
+- `minSupportedVersionCode` is now enforced client-side (install below the floor â‡’ mandatory update,
   the prompt cannot be dismissed) and `minAndroidSdk` is taken from the APK (24), not the stale 26.
 
 **Fixture cleanup (via the application's own purge route):**
-- `POST /api/media/delete/...` removed the two leaked test fixtures — a 23-byte
+- `POST /api/media/delete/...` removed the two leaked test fixtures â€” a 23-byte
   `Mayday (2026).mkv` stub (under the media root as it was configured then, recorded as `C:\Flicks` in the original notes) and the file-less `Moana.2016.mp4` DB row. Library went
-  **14 → 12 rows**; no collateral (the real `Mayday 2026 … BONE.mkv` kept its 1656-segment cache,
+  **14 â†’ 12 rows**; no collateral (the real `Mayday 2026 â€¦ BONE.mkv` kept its 1656-segment cache,
   every other cached title intact). The transcoder had been re-probing that stub every ~30 s
   (5542 log lines); **zero retries after the purge**.
 
 **Service + device verification:**
 - `MediaServer` restarted (new PID) so the live process serves `/api/app/*`: `/api/app/update?channel=developer`
-  returns the 104→105 manifest (sha256 matches the APK byte-for-byte), `?channel=production` 404s
+  returns the 104â†’105 manifest (sha256 matches the APK byte-for-byte), `?channel=production` 404s
   (channel isolation), `/api/app/download` returns 206 + `application/vnd.android.package-archive`.
-- On the physical device (vivo I2217, Android 16): 104 installed over 103 → 4.6 shell verified live
-  (`Home — Tab 1 of 3` / `Library — Tab 2 of 3` / `Settings — Tab 3 of 3`, Continue Watching ×6,
+- On the physical device (vivo I2217, Android 16): 104 installed over 103 â†’ 4.6 shell verified live
+  (`Home â€” Tab 1 of 3` / `Library â€” Tab 2 of 3` / `Settings â€” Tab 3 of 3`, Continue Watching Ã—6,
   Recently Added); the app's **own** update path found 105, downloaded, verified the hash and
-  installed it → the app reports `Version 1.0.5-dev.105 / Build 105` and then
+  installed it â†’ the app reports `Version 1.0.5-dev.105 / Build 105` and then
   `Your application is up to date`; the device id (`dev_e15e113a80629ba6`) survived the update.
-- Playback on the device: direct-play MP4 streamed over `/media/…` byte ranges (position advanced
-  5:31 → 5:54 in 20 s), and the HEVC MKV played via **HLS from its existing cache** (playlist
+- Playback on the device: direct-play MP4 streamed over `/media/â€¦` byte ranges (position advanced
+  5:31 â†’ 5:54 in 20 s), and the HEVC MKV played via **HLS from its existing cache** (playlist
   `atime` = 14:37:42, cache untouched, no re-render).
 
-**Newly observed (not fixed — outside this pass's scope):**
+**Newly observed (not fixed â€” outside this pass's scope):**
 - The Flutter client defines `ApiEndpoints.deviceHeartbeat` but **never calls it**, and only
-  `POST /api/devices/heartbeat` creates a device row — so the phone never appears in the Connected
+  `POST /api/devices/heartbeat` creates a device row â€” so the phone never appears in the Connected
   Devices dashboard.
 - `player_screen.dart:1125` derives its DIRECT PLAY / HLS STREAM label from a *subtitle string*
   heuristic (`contains('direct') ?? true`) instead of the server's `direct_play` flag: the direct-played
   MP4 was labelled `HLS STREAM`.
 
-### 2026-09-27 — Phase 4.6 Complete: Persistent Mobile Navigation Shell (Home, Library, Settings)
+### 2026-09-27 â€” Phase 4.6 Complete: Persistent Mobile Navigation Shell (Home, Library, Settings)
 
 - **Persistent Bottom Navigation Shell (`AppShell`):**
   - Integrated GoRouter `StatefulShellRoute.indexedStack` managing three primary branches:
@@ -541,13 +541,13 @@ while playing.
   - Flutter analyze: **0 issues found** across `lib/` and `test/`.
   - Python backend tests: **239 / 239 passed**.
 
-### 2026-09-26 — Phase 4 Complete: Library Browsing, Movie Details, & Multi-Channel Update Architecture
+### 2026-09-26 â€” Phase 4 Complete: Library Browsing, Movie Details, & Multi-Channel Update Architecture
 
-- **Phase 4 Library & Movie Details (Milestones 4.1–4.4):**
+- **Phase 4 Library & Movie Details (Milestones 4.1â€“4.4):**
   - Added `GET /api/movies` and `GET /api/movie/<filename>` Flask API endpoints for Flutter client consumption.
   - Built complete Flutter library feature: `LibraryScreen` with responsive poster grid, `MovieDetailsScreen` with TMDb metadata/cast/specs, `ContinueWatchingRail`, search/sort/filter bottom sheet.
-  - All search/sort/filter is client-side (300ms debounced search, A→Z/Year/Rating sort, genre multi-select).
-  - Direct playback handshake: Movie Details → Player → Back navigation chain verified on physical device.
+  - All search/sort/filter is client-side (300ms debounced search, Aâ†’Z/Year/Rating sort, genre multi-select).
+  - Direct playback handshake: Movie Details â†’ Player â†’ Back navigation chain verified on physical device.
 - **Phase 4.5 Multi-Channel Distribution & In-App Update Architecture:**
   - Implemented production/developer update channels with single Android package ID (`in.anisparvez.media_server_client`).
   - Global monotonic versionCode shared across channels (registry: `updates/version_registry.json`).
@@ -562,16 +562,16 @@ while playing.
   - Python backend tests: **239/239 passed**.
   - Player feature directory: **zero changes** (invariant preserved).
 - **Physical Device Verification:**
-  - Full flow verified on Vivo I2217 (Android 16): Library → Details → Player → Back → Settings → Channel Selection.
+  - Full flow verified on Vivo I2217 (Android 16): Library â†’ Details â†’ Player â†’ Back â†’ Settings â†’ Channel Selection.
   - APK built, signed, installed, and update subsystem tested.
 
-### 2026-09-25 — Player Controls Transparency, Equidistant Timeline Layout, & Direct Intent Routing
+### 2026-09-25 â€” Player Controls Transparency, Equidistant Timeline Layout, & Direct Intent Routing
 
 - **Controls Transparency & Timeline Layout:**
   - Removed opaque solid slate container gradient (`Color(0xEE0D111A)`); replaced with subtle translucent gradient (`Colors.black.withValues(alpha: 0.50)` fading to `Colors.transparent`) so video frames and subtitles behind controls remain fully visible.
   - Symmetrical equidistant vertical spacing: balanced ~6dp clearance above and below the seekbar track.
   - Dual-time anchors: Elapsed time on the left (`0:00`), total runtime / remaining time on the right (`1:18:37`, tap-to-toggle `-remaining`) via `MainAxisAlignment.spaceBetween`.
-  - Reordered controls row: Replay `↺` button first, followed by Play/Pause `⏸`/`▶`, Mute `🔊`, Speed `1×`, Audio, and Subtitles.
+  - Reordered controls row: Replay `â†º` button first, followed by Play/Pause `â¸`/`â–¶`, Mute `ðŸ”Š`, Speed `1Ã—`, Audio, and Subtitles.
   - Pure white circular scrubber thumb with elevation shadow matching web player aesthetic.
 - **Direct-to-Player Intent Routing & Live Testing Optimization:**
   - Added `getInitialRoute()` and `getDartEntrypointArgs()` overrides in `MainActivity.kt` and `--route`, `--server`, and `--media-url` parsers in `lib/main.dart`.
@@ -583,37 +583,37 @@ while playing.
   - Static analysis: **0 issues found** via `flutter analyze lib test`.
   - Live hardware verification: validated on physical Vivo I2217 (Android 16) with instant intent routing and live playback.
 
-### 2026-09-24 — Phase 3C: Audio & Subtitle Track Selectors, Playback Speed, & Controls Polish
+### 2026-09-24 â€” Phase 3C: Audio & Subtitle Track Selectors, Playback Speed, & Controls Polish
 
 - **Android-First Modal Sheets:**
-  - Added `PlaybackSpeedSheet` for variable rate playback (0.5×–2.0×) with \(\ge 52\)dp touch targets.
+  - Added `PlaybackSpeedSheet` for variable rate playback (0.5Ã—â€“2.0Ã—) with \(\ge 52\)dp touch targets.
   - Added `AudioTrackSheet` for live multi-audio track switching with channels, codec, and language tags.
   - Added `SubtitleTrackSheet` supporting subtitle disable, demuxed embedded streams, and sidecar WebVTT files via `GET /api/subtitles/<path:filename>` (`EXT` badge indicator).
 - **Controls & HUD Polish:**
   - Integrated `PlayerHudToast` transient HUD pill for instant state feedback (speed, volume, mute, seek, subtitles).
-  - Replay `↺` button for instant restart to `0:00`.
+  - Replay `â†º` button for instant restart to `0:00`.
   - Responsive mobile clamping: volume slider automatically hidden on compact widths (< 620dp) where hardware buttons govern volume.
   - System back navigation handled via `PopScope`, exiting native fullscreen, aborting cancel tokens, stopping playback, and preventing timer leaks.
 - **Verification:**
   - Automated tests: **58 / 58 tests passed** across `flutter test`.
   - Static analysis: **0 issues found** via `flutter analyze lib test`.
 
-### 2026-09-24 — Waitress process-inspection optimization (~240x speedup) & Android native media_kit setup
+### 2026-09-24 â€” Waitress process-inspection optimization (~240x speedup) & Android native media_kit setup
 
 - **Root Cause of Unbrowsable / Timeout Behavior:**
-  On Windows, `find_ffmpeg_info_for_path()` called `psutil.process_iter(['pid', 'name', 'cmdline'])` eagerly querying `cmdline` across every running system process (~2.1s per invocation). In `get_active_transcodes()`, this ran sequentially for every video file needing transcoding (~10 files), locking Waitress worker threads for 21–25 seconds per full HTML render (`/`, `/movie/<filename>`, `/watch/<filename>`).
-  With 8 Waitress worker threads, concurrent browser requests caused task queue depth warnings (`Task queue depth is 33`) and triggered `"The operation has timed out"` on any client/health probe with standard 4–6s timeouts.
+  On Windows, `find_ffmpeg_info_for_path()` called `psutil.process_iter(['pid', 'name', 'cmdline'])` eagerly querying `cmdline` across every running system process (~2.1s per invocation). In `get_active_transcodes()`, this ran sequentially for every video file needing transcoding (~10 files), locking Waitress worker threads for 21â€“25 seconds per full HTML render (`/`, `/movie/<filename>`, `/watch/<filename>`).
+  With 8 Waitress worker threads, concurrent browser requests caused task queue depth warnings (`Task queue depth is 33`) and triggered `"The operation has timed out"` on any client/health probe with standard 4â€“6s timeouts.
 - **Resolution:**
   1. Implemented `get_active_ffmpeg_processes()` in `app/services/transcode_service.py` filtering by process name (`'ffmpeg' in name`) *before* accessing command-line memory (`proc.cmdline()`).
   2. Batched inspection in `get_active_transcodes()` to query active FFmpeg processes once per cycle rather than once per video file, immediately skipping remaining files if no FFmpeg process is running.
   3. Increased `WAITRESS_THREADS=16` in `.env` for expanded concurrent range streaming headroom.
-  4. Benchmark: `get_active_transcodes()` reduced from 21.0s to **0.088s** (~240× speedup).
+  4. Benchmark: `get_active_transcodes()` reduced from 21.0s to **0.088s** (~240Ã— speedup).
   5. Test suite verification: **226 / 226 tests passed** (0 failures).
 - **Android Physical Device Runtime Setup:**
   Integrated `media_kit_libs_android_video: ^1.3.8` to provide native `libmpv.so` (arm64-v8a) on Android 16 / SDK 36 for the Vivo I2217 physical test device. Verified clean `MediaKit.ensureInitialized()` runtime lifecycle.
 
 
-### 2026-09-22 — root cause found: segment-index collision between chunks (content loss)
+### 2026-09-22 â€” root cause found: segment-index collision between chunks (content loss)
 
 **Correction to the first version of this entry.** It claimed the AMF encoders "mislabel" the first
 segment of every chunk and that a measurement-based label rewrite fixed it. That was wrong, and
@@ -703,24 +703,24 @@ byte-identical) - but going live surfaced two more defects, both now fixed and t
 Lesson recorded in `AGENTS.md`: frame measurement must respect the layout, and stripping ENDLIST
 is not a heal on its own.
 ### Incident investigated: mass transcode-cache deletion
-- ~25.7 GB of `cache/hls` (9 directories, incl. the `Punjab.95.Satluj` cache) vanished around 15:45–15:46 while the service was running. **No media file was affected** (all 9 MKVs in `D:\Flicks` intact); the server rebuilt the caches automatically.
-- Root-cause class identified in code: orphan detection was **fail-open**. `audit_orphaned_caches()` wrapped `video_paths()` in `try/except` and set `active_videos = []` on any exception, and skipped individual files whose cache key raised — so a transient error (e.g. `database is locked`; SQLite here has no WAL and no `busy_timeout` under 8 Waitress threads) marked *every* directory orphaned. Two automatic non-dry-run purges consume that result: `cleanup_cache_on_startup()` (every service start) and `cache-maintenance-worker` (every 2 hours). The log holds 92 historical `Purged orphaned cache directory` events including multi-GB ones (`3536856922`, `3041758276`, `2811899673` bytes), i.e. this failure mode is recurring, not new.
+- ~25.7 GB of `cache/hls` (9 directories, incl. the `Punjab.95.Satluj` cache) vanished around 15:45â€“15:46 while the service was running. **No media file was affected** (all 9 MKVs in `D:\Flicks` intact); the server rebuilt the caches automatically.
+- Root-cause class identified in code: orphan detection was **fail-open**. `audit_orphaned_caches()` wrapped `video_paths()` in `try/except` and set `active_videos = []` on any exception, and skipped individual files whose cache key raised â€” so a transient error (e.g. `database is locked`; SQLite here has no WAL and no `busy_timeout` under 8 Waitress threads) marked *every* directory orphaned. Two automatic non-dry-run purges consume that result: `cleanup_cache_on_startup()` (every service start) and `cache-maintenance-worker` (every 2 hours). The log holds 92 historical `Purged orphaned cache directory` events including multi-GB ones (`3536856922`, `3041758276`, `2811899673` bytes), i.e. this failure mode is recurring, not new.
 - Evidence limits: the app log had **no timestamps** (see below), so individual purge events could not be dated; no single purge of ~25 GB was logged, so the exact trigger of this instance remains unproven. The service was not restarted manually around the event.
 
 ### Safety fixes applied
 - `audit_orphaned_caches()` now **fails closed**: enumeration exceptions, per-file cache-key failures, and "no videos found while cache directories exist" all set `degraded` + `degraded_reasons`, and the orphan lists are returned **empty** rather than complete.
-- `purge_orphaned_caches()` **refuses to delete** when the audit is degraded (`refused: True`, `reason`), and skips directories holding `hls.progress`/`playlist.m3u8` written within `RECENT_CACHE_GRACE_SECONDS` (600 s) — previously a purge could delete a directory an FFmpeg worker was still writing, producing `failed to rename ... Operation not permitted` storms.
+- `purge_orphaned_caches()` **refuses to delete** when the audit is degraded (`refused: True`, `reason`), and skips directories holding `hls.progress`/`playlist.m3u8` written within `RECENT_CACHE_GRACE_SECONDS` (600 s) â€” previously a purge could delete a directory an FFmpeg worker was still writing, producing `failed to rename ... Operation not permitted` storms.
 - `cleanup_cache_on_startup()` no longer purges orphans; it only clears `.part` files and enforces the transcode-cache cap. Opt in with `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
-- `run_production.py` configures logging with `force=True` and `%(asctime)s` — `create_app()`'s earlier `basicConfig` had won, so service logs carried no timestamps and incident timelines were unreconstructable.
+- `run_production.py` configures logging with `force=True` and `%(asctime)s` â€” `create_app()`'s earlier `basicConfig` had won, so service logs carried no timestamps and incident timelines were unreconstructable.
 
 ### Resolved: the disappearances were caused by the test suite, not by the app or the OS
 - **Root cause proven.** `cache/hls` was being deleted by `pytest` runs on this host. Cache isolation was done by rebinding Python attributes at import, and two other modules silently undo that:
   - `tests/test_app.py::MediaServerTests.tearDownClass` restores the environment and then calls `importlib.reload(app.config)`, so `app.config.CACHE_DIR` becomes the live `E:\MediaServer\cache` again;
   - `tests/test_selenium_multi_seek_coyote.py` then executes `app_module.CACHE_DIR = app_module.config.CACHE_DIR`, rebinding the app back to the live cache and defeating `tests/test_storage_retention.py`'s import-time patch.
   From that point the non-dry-run purge tests in `test_storage_retention.py` walked the **live** cache, treated every directory as orphaned (the "active" set is derived from a temporary `MEDIA_ROOT`), and deleted real transcodes.
-- **Reproduced deterministically**, not inferred: a 1-second cache watchdog caught the suite deleting four real directories at 18:43:48 (`372fdd0e`, `512dd05c`, `71f81790`, `9bf62fc5` gone; `f3ec5869` shrunk 1826 → 262 MB) while test-created directories (`ActiveDualGpuPur…`, `orphan_hls_fakehash…`, `orphan_enum_error`) appeared **inside the live cache**. The service log has no purge line in that window, so the deletions were not the service's.
-- This also accounts for the **17:27:52** loss of the 3.3 GB `c4d01521…` (Moana) directory: it coincided with a full-suite run, and no application purge was logged at that time.
-- The **15:45** loss of ~25.7 GB is the *service-side* mechanism: `audit_orphaned_caches()` was fail-open, so a transient enumeration failure marked every directory orphaned and the automatic non-dry-run purges removed them (92 `Purged orphaned cache directory` events are in the log, including multi-GB ones). The suite shares the production database after `test_app`'s teardown reloads `app.config`, so DB contention from a concurrent test run is a plausible trigger — that part remains inference, but the fail-open path itself is proven and fixed.
+- **Reproduced deterministically**, not inferred: a 1-second cache watchdog caught the suite deleting four real directories at 18:43:48 (`372fdd0e`, `512dd05c`, `71f81790`, `9bf62fc5` gone; `f3ec5869` shrunk 1826 â†’ 262 MB) while test-created directories (`ActiveDualGpuPurâ€¦`, `orphan_hls_fakehashâ€¦`, `orphan_enum_error`) appeared **inside the live cache**. The service log has no purge line in that window, so the deletions were not the service's.
+- This also accounts for the **17:27:52** loss of the 3.3 GB `c4d01521â€¦` (Moana) directory: it coincided with a full-suite run, and no application purge was logged at that time.
+- The **15:45** loss of ~25.7 GB is the *service-side* mechanism: `audit_orphaned_caches()` was fail-open, so a transient enumeration failure marked every directory orphaned and the automatic non-dry-run purges removed them (92 `Purged orphaned cache directory` events are in the log, including multi-GB ones). The suite shares the production database after `test_app`'s teardown reloads `app.config`, so DB contention from a concurrent test run is a plausible trigger â€” that part remains inference, but the fail-open path itself is proven and fixed.
 - Corrections to earlier notes in this section: the deletions were **not** attributable to Storage Sense, `SilentCleanup`, Defender or the recycle bin (no events, no records, and the USN journals on `C:` cover only ~15 minutes so they cannot reach the incident). `RefreshCache` is a `\Flighting\OneSettings\` telemetry task, unrelated to disk cleanup. Kernel object-access auditing and 1-second cache watching were installed during the investigation and are what produced the proof.
 - The `MEDIA_SERVER_PURGE_ON_STARTUP` recommendation is unaffected: relocating `cache/` to `D:` remains a reasonable hardening step, but it is no longer needed to explain or stop these losses.
 
@@ -732,13 +732,13 @@ is not a heal on its own.
 - Verified: full suite **184 passed** with `cache/hls` byte-identical before and after (5 directories / 11 GB), zero watchdog events and zero violations; the guard's teeth were confirmed by a temporary probe that attempted to delete a planted file and directory inside the live cache and was refused both times.
 
  ### Second leak fixed: the suite also wrote into the live library and database
- - The upload fixtures in `tests/test_app.py` (`Upload_Test_Movie.2025.mp4` 22 bytes, `Mayday (2026).mkv` 23 bytes) were written into the real media library (recorded as `C:\Flicks` in the original notes; the media root is now `D:\Flicks`), because `app/config.py::_resolve_upload_dirs()` returns `MEDIA_ROOT` while pytest is running and no upload target is configured. Fixture rows also went straight into the production database — `Mock.mkv` (tmdb 999999) is inserted by `tests/test_app.py`, plus `RichMovie.2026.mp4` and `Moana.2016.mp4`.
+ - The upload fixtures in `tests/test_app.py` (`Upload_Test_Movie.2025.mp4` 22 bytes, `Mayday (2026).mkv` 23 bytes) were written into the real media library (recorded as `C:\Flicks` in the original notes; the media root is now `D:\Flicks`), because `app/config.py::_resolve_upload_dirs()` returns `MEDIA_ROOT` while pytest is running and no upload target is configured. Fixture rows also went straight into the production database â€” `Mock.mkv` (tmdb 999999) is inserted by `tests/test_app.py`, plus `RichMovie.2026.mp4` and `Moana.2016.mp4`.
  - `tests/conftest.py` now redirects the database, upload target/staging, archive and deleted directories onto the throwaway tree **through the environment before the app is imported**, so an `importlib.reload(app.config)` recomputes throwaway paths instead of live ones; `pytest_runtest_setup` re-asserts every cache, database and upload path before each test and fails the test if the live cache or the live database is ever resolved.
  - Verified after the change: library **35 files**, production database **18 rows** and live cache **11 dirs / 17,957 segments** all hash-identical before and after a full **186-test** run. The artefacts were then removed through the application's own `purge_media()` (files, stub HLS/transcode caches, subtitle cache, metadata and database rows), leaving **13** real movie rows.
 
  ### Playback duration honesty: report the video stream's end for HLS
- - `/api/media-info` used the container duration, so a mux whose audio/subtitles outlive the picture advertised a seek-bar tail that can never play — the same "83 % complete" wall as the transcode denominator bug, but on the player side. It now returns `_source_progress_duration(path)` (video stream's end) for HLS playback and keeps the container duration for direct play, where the browser's own timeline comes from the file.
- - Motivating case: `Punjab.95.Satluj.2026.1080p.WEBRip.DD+5.1.Atmos.x264-KIN.mkv` — the **video track ends at 8254.6 s** while audio (9839.04 s), both subtitle streams (9839.07 s) and the container (9839.07 s) run to 2:43:59, and TMDb gives the runtime as 164 min. The container matches the intended length, so the **video track itself is truncated**; the HLS cache is complete and faithful (2064 segments covering all 8254.6 s of picture), and playback correctly stops where the picture ends.
+ - `/api/media-info` used the container duration, so a mux whose audio/subtitles outlive the picture advertised a seek-bar tail that can never play â€” the same "83 % complete" wall as the transcode denominator bug, but on the player side. It now returns `_source_progress_duration(path)` (video stream's end) for HLS playback and keeps the container duration for direct play, where the browser's own timeline comes from the file.
+ - Motivating case: `Punjab.95.Satluj.2026.1080p.WEBRip.DD+5.1.Atmos.x264-KIN.mkv` â€” the **video track ends at 8254.6 s** while audio (9839.04 s), both subtitle streams (9839.07 s) and the container (9839.07 s) run to 2:43:59, and TMDb gives the runtime as 164 min. The container matches the intended length, so the **video track itself is truncated**; the HLS cache is complete and faithful (2064 segments covering all 8254.6 s of picture), and playback correctly stops where the picture ends.
 
 
 ### Security finding (fixed): unauthenticated arbitrary file deletion via /api/media/delete
@@ -749,9 +749,9 @@ is not a heal on its own.
 ### Transcode completeness fix (container vs video duration)
 - `source_video_duration()` measures the **video stream's end** (`ffprobe -read_intervals <midpoint>%+99999`, ~0.3 s, memoised per path/size/mtime) instead of trusting `format.duration`.
 - `DualGPUTranscodeJob` plans chunks and validates coverage against that value. `cleanup_cache_on_startup`/`transcode_status` report it too.
-- `_finalize()` writes `#EXT-X-ENDLIST` **only when coverage validates** (≥ `MIN_COVERAGE_RATIO`, 0.98 of video duration); a failed validation leaves an EVENT playlist plus `progress=error`, bounded by `MAX_VALIDATION_ATTEMPTS` (3) so the auto-transcoder cannot re-encode the same tail forever.
+- `_finalize()` writes `#EXT-X-ENDLIST` **only when coverage validates** (â‰¥ `MIN_COVERAGE_RATIO`, 0.98 of video duration); a failed validation leaves an EVENT playlist plus `progress=error`, bounded by `MAX_VALIDATION_ATTEMPTS` (3) so the auto-transcoder cannot re-encode the same tail forever.
 - Per-chunk underproduction detection: a chunk that exits 0 while rendering < `MIN_CHUNK_YIELD_RATIO` (0.5) of its expected duration retires that GPU for the job and the chunk is retried on a healthy worker.
-- Motivating case: a WEBRip whose audio/subtitles run ~26 min past the last video frame (video ends 8254.6 s inside a 9839.1 s container) was scored 83.9 % complete forever — every tail chunk could only emit a zero-duration segment.
+- Motivating case: a WEBRip whose audio/subtitles run ~26 min past the last video frame (video ends 8254.6 s inside a 9839.1 s container) was scored 83.9 % complete forever â€” every tail chunk could only emit a zero-duration segment.
 
 ---
 
@@ -767,40 +767,40 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Application entry points
 
-- `app.py` — lightweight executable entry point.
-- `app/__init__.py` — application factory, route registration, and compatibility exports.
-- `app/config.py` — environment-driven paths, limits, and runtime settings.
-- `app/db.py` — SQLite connection, schema, and migration support.
-- `run_production.py` — production WSGI entry point (Waitress on Windows, Gunicorn on Linux).
+- `app.py` â€” lightweight executable entry point.
+- `app/__init__.py` â€” application factory, route registration, and compatibility exports.
+- `app/config.py` â€” environment-driven paths, limits, and runtime settings.
+- `app/db.py` â€” SQLite connection, schema, and migration support.
+- `run_production.py` â€” production WSGI entry point (Waitress on Windows, Gunicorn on Linux).
 
 ### HTTP routes
 
-- `app/routes/pages.py` — HTML pages and page navigation (`/`, `/library`, `/details/<file>`, `/watch/<file>`, `/devices`, `/manage`).
-- `app/routes/api.py` — JSON/API endpoints including devices, metadata, seek preview thumbnails, transcode progress, and playback state.
-- `app/routes/media.py` — media streaming, RFC 7233 byte-range delivery, and HLS segment serving.
-- `app/routes/subtitles.py` — local subtitle/WebVTT delivery and format conversion.
-- `app/routes/upload.py` — resumable/chunked upload workflow with smoothed ETA.
+- `app/routes/pages.py` â€” HTML pages and page navigation (`/`, `/library`, `/details/<file>`, `/watch/<file>`, `/devices`, `/manage`).
+- `app/routes/api.py` â€” JSON/API endpoints including devices, metadata, seek preview thumbnails, transcode progress, and playback state.
+- `app/routes/media.py` â€” media streaming, RFC 7233 byte-range delivery, and HLS segment serving.
+- `app/routes/subtitles.py` â€” local subtitle/WebVTT delivery and format conversion.
+- `app/routes/upload.py` â€” resumable/chunked upload workflow with smoothed ETA.
 
 ### Services
 
-- `chunk_transcode_service.py` — dynamic multi-GPU chunked transcoding engine dividing source media across multiple GPU workers.
-- `gpu_service.py` — hardware GPU capability detection, adapter binding, and engine utilization telemetry.
-- `transcode_service.py` — FFmpeg/HLS transcoding, hardware acceleration (AMF/VAAPI), caching, resume, and cleanup.
-- `preview_service.py` — video seek hover preview thumbnail extraction and caching.
-- `media_service.py` — media probing, paths, and media operations.
-- `media_resolver.py` — automatic/forensic media identification and TMDb matching.
-- `scanner_service.py` — library discovery and ingestion.
-- `tmdb_service.py` — TMDb API integration.
-- `subtitles_service.py` — subtitle discovery/conversion/processing.
-- `device_service.py` — client/device identification, telemetry, heartbeats, and device history.
-- `worker_service.py` — background worker coordination.
-- `system_service.py` — system-level status/telemetry functionality and multi-GPU utilization reporting.
+- `chunk_transcode_service.py` â€” dynamic multi-GPU chunked transcoding engine dividing source media across multiple GPU workers.
+- `gpu_service.py` â€” hardware GPU capability detection, adapter binding, and engine utilization telemetry.
+- `transcode_service.py` â€” FFmpeg/HLS transcoding, hardware acceleration (AMF/VAAPI), caching, resume, and cleanup.
+- `preview_service.py` â€” video seek hover preview thumbnail extraction and caching.
+- `media_service.py` â€” media probing, paths, and media operations.
+- `media_resolver.py` â€” automatic/forensic media identification and TMDb matching.
+- `scanner_service.py` â€” library discovery and ingestion.
+- `tmdb_service.py` â€” TMDb API integration.
+- `subtitles_service.py` â€” subtitle discovery/conversion/processing.
+- `device_service.py` â€” client/device identification, telemetry, heartbeats, and device history.
+- `worker_service.py` â€” background worker coordination.
+- `system_service.py` â€” system-level status/telemetry functionality and multi-GPU utilization reporting.
 
 ### Utilities
 
-- `filesystem.py` — safe filesystem/path helpers.
-- `formatting.py` — display formatting helpers.
-- `subtitles.py` — subtitle parsing/conversion helpers.
+- `filesystem.py` â€” safe filesystem/path helpers.
+- `formatting.py` â€” display formatting helpers.
+- `subtitles.py` â€” subtitle parsing/conversion helpers.
 
 ---
 
@@ -828,7 +828,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 - **Resumable & Smoothed ETA:** Chunked transfers with exponential moving average speed smoothing.
 
 ### Player UX & controls polish
-- **Hold-to-Speed Removal:** Completely removed hold-to-accelerate (2×) gesture from player pointer events and removed its entry from `#shortcutsModal` while preserving the standard speed dropdown.
+- **Hold-to-Speed Removal:** Completely removed hold-to-accelerate (2Ã—) gesture from player pointer events and removed its entry from `#shortcutsModal` while preserving the standard speed dropdown.
 - **Dark Mode Native Selects:** Fixed broken white-on-white dropdown popups on Windows Chromium by applying `color-scheme: dark !important;` and custom dark option backgrounds to `#speed` and `#controls select`.
 - **Control Button Focus Boundary:** Added vertical padding (`padding: 4px 0 !important;`) to `.controls-row` to prevent hover lift (`translateY(-1px)`) and focus outlines from getting truncated at the top boundary.
 - **Circular Geometries & Icon Prominence:** Enforced uniform 36px circular button geometries and enlarged SVG icons from 18px to 21px for touch and desktop accessibility.
@@ -840,7 +840,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 - **In-Progress Transcode HLS Timeline Synchronization:** Enforced `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` during active chunked transcoding, monotonic `-output_ts_offset` preventing PTS resets, and dynamic `#EXTINF` duration parsing to resolve timeline drift and mid-stream stalling.
 - **Subdirectory Subtitles & Language Auto-Detection:** Resolved Werkzeug route collision (`<path:filename>/<name>`) for media in subdirectories, and integrated `detect_subtitle_language()` heuristic for local `.srt`/`.vtt` content language classification and local default precedence over OpenSubtitles.
 - **Purge Worker Termination Safety:** Thread-safe chunk worker tracking (`DualGPUTranscodeJob.get_active_pids()`) and process self-termination guards ensuring background FFmpeg workers terminate cleanly without affecting the server process.
-- **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Implemented automated daemon worker (`metadata-refresh-worker`) in `worker_service.py` to refresh TMDb metadata (ratings, vote averages, runtime, tagline, certifications, cast, artwork) every 4 hours, added `last_metadata_refresh` schema migration in SQLite, and synchronized manual UI "↻ Scan" trigger to refresh both filesystem additions and existing metadata.
+- **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Implemented automated daemon worker (`metadata-refresh-worker`) in `worker_service.py` to refresh TMDb metadata (ratings, vote averages, runtime, tagline, certifications, cast, artwork) every 4 hours, added `last_metadata_refresh` schema migration in SQLite, and synchronized manual UI "â†» Scan" trigger to refresh both filesystem additions and existing metadata.
 - **Server-Wide Manual Subtitle Upload with Language Auto-Detection:** Built full subtitle upload interfaces on `/movie/<filename>` and directly inside the in-player Subtitle Settings modal (`#subSettingsModal`). Auto-detects subtitle language from content text via script heuristics and stop-word frequency analysis, persisting files in canonical format `<short_movie_name>_<detected_language>_<incremental_number>.<ext>` alongside media, with dynamic `<track>` DOM creation and track dropdown selection without requiring page reload or interrupting playback.
 - Local `.srt` and `.vtt` discovery, delivery, and in-memory WebVTT conversion with dual-axis positioning (horizontal and vertical elevation).
 - **Cross-Root Mirror Subtitle Discovery & Route Authorization:** Enhanced `tracks()` in `subtitles_service.py` and `subtitle()` in `routes/subtitles.py` to resolve mirror subdirectories across all active media roots (stripping `.archive` prefix paths), ensuring original sidecar subtitles residing in primary roots are automatically discovered and authorized for playback when media is archived to secondary volumes (e.g. *The Odyssey*).
@@ -868,19 +868,19 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 - **Multi-Root Dynamic Media Discovery:** Implemented `config.get_media_roots()` returning all active roots (`[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`). Updated `video_paths()`, `safe_path()`, `movie()`, and `poster_for()` to discover and serve media seamlessly regardless of which configured drive volume it resides on.
 - **Cross-Volume Cache Key Continuity:** Enhanced `hls_cache_dir()` and `preview_dir()` to compute relative paths against alternative roots (`root / rel`). When media files move between roots (e.g. `D:\Flicks` to `D:\Flicks\.archive`, or across volumes), their cache keys remain 100% deterministic and active, preventing cache invalidation, playback 404s, or false-positive orphaned directory deletion.
 - **Cross-Volume Subtitle Discovery & Authorization:** Updated `tracks()` in `subtitles_service.py` to compute relative filenames against all active roots and search both `path.parent` and `config.MEDIA_ROOT` for sidecar `.srt`/`.vtt` files. Hardened `/subtitles/<path:filename>/<name>` to verify filesystem authorization across all configured media roots.
-- **Host Headroom Reclaimed:** Reclaimed over **24.2 GB of SSD space** on the then-primary SSD, increasing free headroom from 14.3 GB to **38.59 GB** while all 4 library titles (*Coyote vs. Acme*, *Moana*, *Star Wars*, *The Odyssey*) remain fully playable with complete subtitle coverage. *(Drive recorded as `C:` when this was measured; the primary runtime SSD is now `E:` — see `docs/DEVELOPMENT_STATUS.md`. The measurement itself is historical and unchanged.)*
+- **Host Headroom Reclaimed:** Reclaimed over **24.2 GB of SSD space** on the then-primary SSD, increasing free headroom from 14.3 GB to **38.59 GB** while all 4 library titles (*Coyote vs. Acme*, *Moana*, *Star Wars*, *The Odyssey*) remain fully playable with complete subtitle coverage. *(Drive recorded as `C:` when this was measured; the primary runtime SSD is now `E:` â€” see `docs/DEVELOPMENT_STATUS.md`. The measurement itself is historical and unchanged.)*
 - **Multi-Chunk HLS Discontinuity Alignment & Monotonic Timestamp Preservation:** Eliminated playback resets to `0:00` during forward seeking across chunk boundaries on transcoded media (*Coyote vs. Acme*). Removed `-avoid_negative_ts make_zero` in `chunk_transcode_service.py` ensuring `-output_ts_offset` preserves timeline timestamps, integrated RFC 8216 `#EXT-X-DISCONTINUITY` insertion between chunk boundaries in `_update_master_playlist()`, and added automatic on-the-fly disk playlist reconciliation (`reconcile_hls_playlist_discontinuities()`) in `app/routes/media.py`. Hardened `templates/player.html` error listeners to preserve seek positions on fallback. Verified via 163-test pytest suite, Selenium forward-seek test, and live Chrome DevTools MCP inspection with zero `DEMUXER_ERROR_COULD_NOT_PARSE` events.
 
 ### Unified navigation header, custom select pickers & mobile rail polish
 - **Frosted Obsidian Glass Header:** Redesigned top navigation header across all 5 primary pages (`/`, `/movie/<filename>`, `/player/<filename>`, `/manage`, `/devices`) with frosted glass background (`rgba(11, 15, 23, 0.88)` with `backdrop-filter: blur(24px)`), translucent border, and ambient shadow.
-- **3D Glossy Play Brand Identity:** High-fidelity vector SVG brand icon with multi-stop crimson linear gradients, radial specular highlights, and ambient drop shadows, paired with two-tone typography (**Anis'** + **Home Media Server**) and brand subtitle (**PLAY • ORGANIZE • ENJOY**).
+- **3D Glossy Play Brand Identity:** High-fidelity vector SVG brand icon with multi-stop crimson linear gradients, radial specular highlights, and ambient drop shadows, paired with two-tone typography (**Anis'** + **Home Media Server**) and brand subtitle (**PLAY â€¢ ORGANIZE â€¢ ENJOY**).
 - **Responsive Mobile Action Rail:** Replaced non-functional hamburger menus on mobile viewports (\(\le 768\text{px}\)) with touch-friendly, horizontal swipeable action rails (`overscroll-behavior-x: contain; touch-action: pan-x; -webkit-overflow-scrolling: touch;`), allowing instant single-tap access to primary actions.
 - **Desktop & Mobile Search Density Polish:** Completely removed the redundant A-Z sort dropdown across both desktop and mobile views in favor of natural library browsing and direct search input filtering.
 - **Home Page Section Hierarchy (Telemetry at Footer):** Repositioned the System Telemetry HUD (`#systemTelemetryCard`) to the footer of the home page (strictly after "All Movies"), prioritizing user media and continue-watching cards while keeping technical stats accessible at the bottom.
 - **Universal Top-Layer Customizable `<select>` Popovers:** Adopted modern Customizable Select API (`appearance: base-select` and `select::picker(select)`) to replace sharp, bright blue Windows system menus with top-layer frosted obsidian glass popovers (`rgba(18, 22, 32, 0.96)`, `backdrop-filter: blur(24px)`), rounded corners (`12px`), brand red active highlights (`#e50914`), white checkmarks (`select option::checkmark`), and smooth rotating chevrons (`select:open::picker-icon`). Applied universally across `/manage` storage retention policy, playback speed (`#speed`), and in-player subtitle settings modal dropdowns.
 - **Chromium Hls.js Precedence Invariant:** Enforced `window.Hls && Hls.isSupported()` precedence over native `canPlayType` before falling back in `templates/player.html`. Resolves broken multi-chunk discontinuity seeking on Windows Chromium browsers where `canPlayType` evaluates to `"maybe"` (truthy) but cannot demux multi-chunk timeline offsets. Verified via automated Selenium multi-seek test across 5 seek points (60s, 180s, 360s, 450s, 600s).
-- **Mobile Player Controls Expansion & Dedicated Seekbar Spacing:** Restored primary player controls (`↺` Restart, `▶`/`⏸` Play, `🔊` Mute, `1×` Speed, `CC ⚙` Subtitles/Settings, Aspect Ratio, Rotate Screen, PiP, Nerd Stats) on mobile viewports within a swipeable non-overflowing rail (`overflow-x: auto`), cleanly hid desktop-only controls (`#volume` and `#shortcutsBtn`), explicitly hid redundant `-10s`/`+10s` buttons on mobile in favor of seekbar/double-tap gestures, and eliminated the dead space between `.seek-time-row` and seekbar (`margin-bottom: -9px !important`).
-- **Unified "Anis' Home Media Server" Branding & In-App User Manual:** Standardized brand identity across all pages to **Anis' Home Media Server** with fluid clamp typography preventing text wrapping or horizontal clipping on compact mobile devices (320px–480px). Implemented comprehensive in-app User Manual (`/manual`) with quick category navigation pills, full shortcut cheatsheet, multi-GPU streaming explanations, and added "How to use" link across all site footers. Authored offline markdown manual (`docs/MANUAL.md`).
+- **Mobile Player Controls Expansion & Dedicated Seekbar Spacing:** Restored primary player controls (`â†º` Restart, `â–¶`/`â¸` Play, `ðŸ”Š` Mute, `1Ã—` Speed, `CC âš™` Subtitles/Settings, Aspect Ratio, Rotate Screen, PiP, Nerd Stats) on mobile viewports within a swipeable non-overflowing rail (`overflow-x: auto`), cleanly hid desktop-only controls (`#volume` and `#shortcutsBtn`), explicitly hid redundant `-10s`/`+10s` buttons on mobile in favor of seekbar/double-tap gestures, and eliminated the dead space between `.seek-time-row` and seekbar (`margin-bottom: -9px !important`).
+- **Unified "Anis' Home Media Server" Branding & In-App User Manual:** Standardized brand identity across all pages to **Anis' Home Media Server** with fluid clamp typography preventing text wrapping or horizontal clipping on compact mobile devices (320pxâ€“480px). Implemented comprehensive in-app User Manual (`/manual`) with quick category navigation pills, full shortcut cheatsheet, multi-GPU streaming explanations, and added "How to use" link across all site footers. Authored offline markdown manual (`docs/MANUAL.md`).
 
 
 ---
@@ -940,21 +940,38 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **`tests/test_storage_retention.py:68` writes into the live library.** It does
-   `app.config.MEDIA_ROOT / "TestActiveMovie.2026.mkv"` — that is `D:\Flicks` — and the running
-   server then creates a cache dir for the file, which the test deletes, orphaning it.
-   `purge_orphaned_caches()` reclaims it on its next pass (observed doing so at 21:45 on 2026-10-03),
-   but every suite run plants a fresh one. Use a fixture path under the temp tree.
-2. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
-   shared measurement, but on the 4 legacy dense caches per-chunk windows are meaningless by design
-   (the server judges whole-cache there on purpose). It should fall back to whole-cache accounting or
-   say so explicitly instead of reporting per-chunk figures that read as real deficits.
-3. **ADB direct-intent: `--es mediaUrl` does not survive the shell.** Verified working form is
-   `--es route '/movie-details?filename=<name>'` (extras with query params work; a URL *value* is
-   mangled in transit, so `/player` silently falls back to its hard-coded Batman entry). Worth
-   recording in `GEMINI.md` §21 alongside the existing rapid-device-testing guidance.
-4. **E: is removable media.** `E:\MediaServer` (app, `media.db`, entire HLS cache, previews, venv) is a
-   `Micro PS SD` reader, while `D:` is a 1TB HDD and `C:` a 256GB SSD. Volume reports healthy and
-   dirty-bit clear, and throughput is SSD-like, but database and cache on removable media means
-   ejection/contact risk and no SMART signal. Worth a deliberate decision.
-5. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote stream latency and Cloudflare tunnel limits.
+> **Resolved 2026-10-11 on `fix/test-isolation-vectors` (`064a9b3`), not yet merged to `main`.** Both
+> suite ordering defects are fixed there: 18 `test_write_guard.py` failures (resolving `conftest` by
+> module name when `tests/conftest.py` and `tests/integration/conftest.py` collide on that name, so the
+> guard silently used its own path set) and 36 `test_app.py` failures (a test module setting
+> `MEDIA_SERVER_MEDIA_ROOT` at import time before `import app`, so it only worked when it happened to be
+> the first module to import the app). Both were order-dependence landmines that every subset run hid.
+> That branch is now **602 passed, 0 failed**. Details in `AGENTS.md` and the commit message.
+
+1. **Merge `fix/test-isolation-vectors`.** It carries the four isolation vectors (what stopped tests
+   writing 23-byte fixtures into `D:\Flicks`), the write-guard handoff fix, and the `test_app.py`
+   order-independence fix. It builds on the migration/cache-safety chain, so it merges after
+   `review/migration-status-cache-safety`.
+2. **`CachePurgeSafetyTests` (`tests/test_storage_retention.py:407-408`) still runs against the shared
+   session cache root**, with live purges at `:460` and `:482`, rather than a dedicated one. Lower
+   priority now the suite is green, but it remains the one place a purge can reach beyond its own
+   fixtures. Related: `tests/test_storage_retention.py:68` writes `config.MEDIA_ROOT /
+   "TestActiveMovie.2026.mkv"`, which under the corrected service environment is still `D:\Flicks`.
+3. **A zero-duration tail chunk spuriously retires GPU workers.** When a source duration divides
+   exactly, `plan_chunks` emits a final chunk with `duration 0.0`; `MIN_CHUNK_YIELD_RATIO` trips on it
+   and each affected worker is retired for the job. Cosmetic, no content impact, but it produces
+   alarming error lines in an otherwise healthy run.
+4. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
+    shared measurement, but on the 4 legacy dense caches per-chunk windows are meaningless by design
+    (the server judges whole-cache there on purpose). It should fall back to whole-cache accounting or
+    say so explicitly instead of reporting per-chunk figures that read as real deficits.
+5. **ADB direct-intent: `--es mediaUrl` does not survive the shell.** Verified working form is
+    `--es route '/movie-details?filename=<name>'` (extras with query params work; a URL *value* is
+    mangled in transit, so `/player` silently falls back to its hard-coded Batman entry). Worth
+    recording in ``GEMINI.md`` A21 alongside the existing rapid-device-testing guidance.
+6. **E: is removable media.** `E:\MediaServer` (app, `media.db`, entire HLS cache, previews, venv) is a
+    `Micro PS SD` reader, while `D:` is a 1TB HDD and `C:` a 256GB SSD. Volume reports healthy and
+    dirty-bit clear, and throughput is SSD-like, but database and cache on removable media means
+    ejection/contact risk and no SMART signal. Worth a deliberate decision.
+7. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote
+    stream latency and Cloudflare tunnel limits.
