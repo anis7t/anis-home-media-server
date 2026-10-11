@@ -21,23 +21,27 @@ from app.services.transcode_service import (
     purge_transcode_caches_for_media,
 )
 
-# Module-private scratch directory. Still used for the dummy MEDIA files the tests
-# below create - a media file is not cache data.
+# Module-private scratch directory. Used for the dummy MEDIA files the tests below
+# create - a media file is not cache data.
 #
-# The cache assignments that follow are NOT what isolates these tests.
-# tests/conftest.py::_point_app_at_temp() re-imposes the shared session cache
-# (conftest's `_CACHE`, via `_CACHE_ATTRS`) before EVERY test, so anything set at
-# import time here is overwritten before a test body runs. The live purge in
-# test_audit_and_purge_orphaned_caches would then be able to remove any orphaned
-# directory present in that shared tree, not just this module's fixtures.
-# Isolation is therefore established per test by _dedicated_cache_root() at the
-# start of the test body, which runs after every hook and fixture.
+# The cache assignments that follow are NOT what isolates these tests, and they are not
+# even load-bearing: tests/conftest.py::_point_app_at_temp() re-imposes the shared session
+# cache (conftest's `_CACHE`, via `_CACHE_ATTRS`) before EVERY test, so anything set at
+# import time here is already overwritten before a test body runs. They are left in place
+# only because _CACHE_TMP is still needed for the media fixtures below.
+#
+# Isolation is therefore established PER TEST, in setUp, which runs after every hook and
+# fixture. This matters most for any test that calls purge_orphaned_caches(dry_run=False):
+# a live purge deletes every cache directory under the active root that no enumerated media
+# maps to, so pointing it at the shared session root lets it remove directories belonging to
+# other tests. That happened - a directory planted in the shared root by an unrelated test was
+# destroyed by CachePurgeSafetyTests' purges while the whole suite stayed green, because the
+# planted directory's owner had no assertion about its own survival.
+#
+# See StorageRetentionTests.test_audit_and_purge_orphaned_caches and
+# CachePurgeSafetyTests.setUp for the two call sites, and tests/test_cache_purge_isolation.py
+# for the regression coverage.
 _CACHE_TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-app.CACHE_DIR = Path(_CACHE_TMP.name) / "cache"
-app.config.CACHE_DIR = app.CACHE_DIR
-(app.CACHE_DIR / "hls").mkdir(parents=True, exist_ok=True)
-(app.CACHE_DIR / "previews").mkdir(parents=True, exist_ok=True)
-
 
 
 def _enumeration(paths, complete=True):
@@ -454,8 +458,33 @@ class CachePurgeSafetyTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.hls_base = get_cache_dir() / "hls"
+        # Every test here drives a LIVE purge (purge_orphaned_caches(dry_run=False)), and a purge
+        # deletes whatever the audit calls orphaned - which is every cache directory under the
+        # active root that no enumerated media maps to. Pointing that at the shared session cache
+        # root therefore lets these tests delete directories they did not create: reproduced, a
+        # directory planted in the shared root by an unrelated test was destroyed by these purges
+        # while the whole suite stayed green.
+        #
+        # Isolation is established HERE, in setUp, rather than at import time: conftest's
+        # _point_app_at_temp() re-imposes the shared session cache before EVERY test, so a
+        # module-level assignment would already be overwritten before any test body runs.
+        self._previous_cache = app.CACHE_DIR
+        self._previous_config_cache = app.config.CACHE_DIR
+        dedicated = _dedicated_cache_root("purge_safety")
+        # Validate BEFORE the app is pointed at it and before any purge-capable call, so a failure
+        # leaves the process as found and nothing has been deleted.
+        _assert_dedicated_cache_root(self, dedicated, self._previous_cache)
+        self._dedicated_root = dedicated
+        app.CACHE_DIR = dedicated
+        app.config.CACHE_DIR = dedicated
+        self.hls_base = dedicated / "hls"
         self.hls_base.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        # Restore first: a teardown failure must not leave the app pointed at a deleted tree.
+        app.CACHE_DIR = self._previous_cache
+        app.config.CACHE_DIR = self._previous_config_cache
+        shutil.rmtree(self._dedicated_root.parent, ignore_errors=True)
 
     def _make_dir(self, name, files):
         d = self.hls_base / name

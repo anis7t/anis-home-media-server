@@ -202,6 +202,48 @@ cache without checking frames.
 Suite after this fix: **716 passed, 28 skipped, 0 failed**. Library file list (90), production
 `movies` rows (44) and `cache/hls` listing (22 dirs) remained bit-identical across three full runs.
 
+### 2026-10-11 (later still) — `CachePurgeSafetyTests` could purge another test's fixtures
+
+Queue item 2 is closed. Every test in `CachePurgeSafetyTests` drives a **live** purge
+(`purge_orphaned_caches(dry_run=False)`), and a purge deletes every cache directory under the active
+root that no enumerated media maps to. `setUp` took that root from `get_cache_dir()` — the **shared
+session cache** — so those four purges could remove directories belonging to other tests.
+
+**Reproduced before fixing.** A directory planted in the shared root by an unrelated test was
+destroyed by `CachePurgeSafetyTests`' purges, with the whole run reporting `16 passed`. Nothing
+failed, because the planted directory's owner had no assertion about its own survival: **a green
+suite was the symptom, not the reassurance.** After the fix the same sequence leaves the directory
+and its contents intact.
+
+Fixed by establishing isolation in `setUp` via the module's existing `_dedicated_cache_root()` and
+`_assert_dedicated_cache_root()`, restoring in `tearDown` and removing the tree. **`setUp`, not
+import time** — conftest's `_point_app_at_temp()` re-imposes the shared session cache before every
+test, so the module's import-time `app.CACHE_DIR` assignment was already dead code before any test
+body ran. That assignment and its two orphaned `mkdir` calls have been removed rather than left as
+a trap for the next reader. The validator runs **before** the app is pointed at the new root and
+before any purge-capable call, so a failure leaves the process as it found it.
+
+`tests/test_cache_purge_isolation.py` (4 tests) pins the blast radius by **snapshotting** the
+shared root around the whole class and asserting it is byte-identical — a single planted directory
+would miss a purge that removes several things. **Proven to catch the defect:** with the fix
+reverted, all 4 fail and the headline test reports
+`{'hls/BELONGS_TO_ANOTHER_TEST': [...]} != {}` — the shared root emptied. Also pinned: each test
+gets a distinct root, the root does not outlive its test, and `tearDown` restores both `app.CACHE_DIR`
+and `app.config.CACHE_DIR`. Verified order-independent across 3 random seeds plus both files alone.
+
+**The related `:68` item is already resolved** and needed no change: `TestActiveMovie.2026.mkv` is
+written under `_CACHE_TMP`, not `config.MEDIA_ROOT`. The only remaining `MEDIA_ROOT` references in
+the file are a read-only comment and a `get_media_roots` patch.
+
+**Pre-existing leak found, not fixed:** `test_audit_and_purge_orphaned_caches` creates a dedicated
+root with no matching cleanup — **40 `mscache_purge_orphans_*` trees** had accumulated in `%TEMP%`
+(all from real runs, dates back to 13:54). Harmless but unbounded. Left alone to keep this change
+scoped; recorded in `AGENTS.md`.
+
+Suite after this fix: **720 passed, 28 skipped, 0 failed**. Zero `purge_safety` roots leaked.
+Library file list (90), production `movies` rows (44) and `cache/hls` listing (22 dirs) remained
+bit-identical.
+
 ### 2026-10-05 â€” Site-wide Android APK download flow and production release
 
 **Deliverable:** Added the responsive `/download` page titled **Install the
@@ -1011,7 +1053,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (744 tests: 716 passed, 28 skipped, 70 subtests)
+# Full automated test suite (748 tests: 720 passed, 28 skipped, 70 subtests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -1038,11 +1080,14 @@ Manual playback & telemetry verification:
 > **707 passed, 28 skipped**.
 
 1. ~~**Merge `fix/test-isolation-vectors`.**~~ **DONE** — merged to `main` in `987f182`.
-2. **`CachePurgeSafetyTests` (`tests/test_storage_retention.py:407-408`) still runs against the shared
-   session cache root**, with live purges at `:460` and `:482`, rather than a dedicated one. Lower
-   priority now the suite is green, but it remains the one place a purge can reach beyond its own
-   fixtures. Related: `tests/test_storage_retention.py:68` writes `config.MEDIA_ROOT /
-   "TestActiveMovie.2026.mkv"`, which under the corrected service environment is still `D:\Flicks`.
+2. ~~**`CachePurgeSafetyTests` still runs against the shared session cache root.**~~ **CLOSED
+   2026-10-11.** Its four live purges could delete other tests' fixtures — reproduced, with the
+   suite still green. Isolation now established in `setUp` with restore in `tearDown`;
+   `tests/test_cache_purge_isolation.py` snapshots the shared root around the class and is proven to
+   fail without the fix. The related `TestActiveMovie.2026.mkv` write was already isolated. See §0.
+   **Residual, not fixed:** `test_audit_and_purge_orphaned_caches` leaks its dedicated root — 40
+   `mscache_purge_orphans_*` trees had built up in `%TEMP%`. Harmless, unbounded, and in the same
+   file if you want it swept.
 3. ~~**A zero-duration tail chunk spuriously retires GPU workers.**~~ **CLOSED 2026-10-11.** Fixed in
    `plan_chunks` with `MIN_PLANNABLE_CHUNK_SECONDS = 1e-3`; the companion guard in
    `_chunk_output_ok` covers other routes. Index stability is asserted in
