@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from app import config
-from app.services.gpu_service import GPUWorkerConfig, get_gpu_workers, is_dual_gpu_enabled
+from app.services.gpu_service import (
+    GPUWorkerConfig,
+    get_gpu_workers,
+    is_dual_gpu_enabled,
+    adaptive_strategy_enabled,
+    expand_workers,
+    select_amf_strategy,
+)
 from app.services.media_service import probe_media
 
 logger = logging.getLogger(__name__)
@@ -220,6 +227,12 @@ class DualGPUTranscodeJob:
         self.progress_file = self.hls_dir / 'hls.progress'
         self.workers = get_gpu_workers()
 
+        #: Whether chunk renders run the vpp_amf scaling stage. True is the
+        #: historical behaviour and the default; the adaptive strategy clears
+        #: it only for 8-bit sources that need no resize. Resolved by
+        #: _apply_strategy() once per job, never per chunk.
+        self._use_vpp_amf = True
+
         self._cancelled = threading.Event()
         self._finished = threading.Event()
         self._returncode: Optional[int] = None
@@ -314,7 +327,7 @@ class DualGPUTranscodeJob:
 
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
         init_args = worker.get_ffmpeg_init_args()
-        video_args = worker.get_ffmpeg_video_args()
+        video_args = worker.get_ffmpeg_video_args(use_vpp_amf=self._use_vpp_amf)
 
         # Probe media audio codec to select copy vs aac encode
         streams = probe_media(self.path).get('streams', [])
@@ -430,6 +443,40 @@ class DualGPUTranscodeJob:
                          "it as unrendered", chunk.get('chunk_id'), len(names), expected, planned)
             return False
         return produced >= expected * MIN_CHUNK_YIELD_RATIO
+
+    def _apply_strategy(self) -> None:
+        """Resolve the per-source pipeline and worker count, once per job.
+
+        No-op unless MEDIA_SERVER_TRANSCODE_STRATEGY=adaptive, so the default
+        path is exactly what it was. Any failure here falls back to the
+        historical pipeline rather than risking a job: a mis-selected strategy
+        would surface as a failed encode, and transcoding is not worth failing
+        for a speedup.
+        """
+        if not adaptive_strategy_enabled():
+            return
+        try:
+            from app.services.media_service import probe_media
+            streams = (probe_media(self.path) or {}).get('streams') or []
+            video = next((s for s in streams if s.get('codec_type') == 'video'), {})
+            use_vpp, count = select_amf_strategy(video)
+            self._use_vpp_amf = use_vpp
+            base = get_gpu_workers()
+            if base and base[0].backend == 'cpu':
+                return  # CPU fallback: worker sizing is meaningless
+            self.workers = expand_workers(base, count)
+            logger.info(
+                "Adaptive strategy for %s: vpp_amf=%s, %d worker(s) [%s]",
+                self.filename, use_vpp, len(self.workers),
+                ','.join(w.name for w in self.workers),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Adaptive strategy unavailable for %s (%s); using the standard pipeline",
+                self.filename, exc,
+            )
+            self._use_vpp_amf = True
+            self.workers = get_gpu_workers()
 
     def _mark_worker_unhealthy(self, worker: GPUWorkerConfig) -> None:
         """Retire a GPU for the remainder of this job after it produced unusable output."""
@@ -1011,6 +1058,10 @@ class DualGPUTranscodeJob:
             self._start_wall_time = time.time()
 
             logger.info(f"Starting Multi-GPU Transcoding for {self.filename} ({len(pending_chunks)} chunks remaining)")
+
+            # Resolved before the worker threads below are built, so the thread
+            # count and the filter chain come from the same decision.
+            self._apply_strategy()
 
             # Multi-GPU worker assignment: every worker pulls from one shared queue. A worker that
             # fails a chunk (or reports success while rendering almost nothing) is retired for this
