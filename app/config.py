@@ -274,3 +274,62 @@ def is_amf_enabled():
     """Check whether AMD AMF hardware encoding is enabled by configuration."""
     return os.environ.get("MEDIA_SERVER_ENABLE_AMF", "0").lower() in {"1", "true", "yes"}
 
+
+# --------------------------------------------------------------------------- #
+# Authentication (Phase A foundation)
+#
+# Phase A adds the machinery and gates the control plane, but ENFORCEMENT IS OFF
+# by default, so the running server behaves exactly as it did before. That is the
+# whole point of this phase: land the wiring in a commit that provably changes
+# nothing, so turning enforcement on later can never be confused with a wiring
+# mistake.
+#
+# The escape hatch follows the pattern already used by
+# MEDIA_SERVER_PURGE_ON_STARTUP and MEDIA_SERVER_TEST_POSTGRES_URL: one variable
+# returns the server to its previous behaviour with no code revert.
+#
+# Read at CALL time (like is_amf_enabled above) rather than frozen at import, so
+# tests can drive it by setting the environment without reloading this module.
+# --------------------------------------------------------------------------- #
+
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def auth_enabled():
+    """Whether request authentication is ENFORCED. Default: off.
+
+    Phase A ships the decorator and the protected blueprints but leaves this
+    false. Phase B adds Google Sign-In, Phase C API tokens, Phase F flips the
+    default to on.
+
+    When this is true but no credential provider is configured,
+    `auth_service.resolve_identity()` returns None and every protected route
+    answers 401 - fail closed. That is deliberate: a half-enabled state must
+    never degrade into "auth is on but the destructive routes are open".
+    """
+    return (os.environ.get("MEDIA_SERVER_AUTH", "0") or "0").strip().lower() in _TRUTHY
+
+
+def secret_key():
+    """The signing key for sessions and media URLs, or None when unset.
+
+    Must be supplied through the NSSM service environment - never committed, and
+    never written to a tracked .env. Absent is a legitimate state in Phase A
+    because nothing signs anything yet; `auth_service` refuses to enforce
+    without it rather than falling back to a predictable default.
+    """
+    return (os.environ.get("MEDIA_SERVER_SECRET_KEY") or "").strip() or None
+
+
+def auth_allowlist():
+    """E-mail addresses permitted to authenticate. Empty means nobody.
+
+    This exists because the server is reachable from the internet, so Google
+    Sign-In alone would admit every Google account on earth. An empty allowlist
+    admits nobody: the safe default, and the reason Phase B must not be enabled
+    before this is populated.
+    """
+    raw = os.environ.get("MEDIA_SERVER_AUTH_ALLOWLIST", "") or ""
+    parts = raw.replace(";", ",").replace("\n", ",").split(",")
+    return frozenset(part.strip().lower() for part in parts if part.strip())
+

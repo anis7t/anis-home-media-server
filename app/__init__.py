@@ -161,6 +161,22 @@ def create_app(test_config=None):
     app_instance.register_blueprint(api_bp)
     app_instance.register_blueprint(cast_bp)
 
+    # Authentication gate (Phase A). Registered as an app-wide before_request
+    # rather than per blueprint because a blueprint's before_request must be
+    # attached BEFORE registration, and scoping is done inside
+    # `check_control_plane_request()` by blueprint name.
+    #
+    # With MEDIA_SERVER_AUTH unset this returns None for every request, so the
+    # server behaves exactly as it did before this change. The media blueprint is
+    # intentionally outside the gate - Cast and DLNA cannot authenticate.
+    from app.services.auth_service import (
+        check_control_plane_request,
+        startup_auth_diagnostics,
+    )
+
+    app_instance.before_request(check_control_plane_request)
+    startup_auth_diagnostics()
+
     # Alias bare endpoint names so url_for('details'), url_for('poster'), etc. work seamlessly
     for rule in list(app_instance.url_map.iter_rules()):
         if '.' in rule.endpoint:

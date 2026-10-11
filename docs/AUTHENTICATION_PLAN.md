@@ -220,6 +220,58 @@ phase that enforces it has been verified against the real device.
 | Phase | Work | Gate before proceeding |
 |---|---|---|
 | **A — Foundation (no enforcement)** | `SECRET_KEY` + NSSM env; `users`/`auth_tokens` tables; allowlist; `require_auth(role)` decorator; **every** protected route wrapped but gated behind `MEDIA_SERVER_AUTH=off` (default `off`). | 720-test suite green with enforcement off; decorator proven by new tests |
+
+### Phase A — delivered 2026-10-12
+
+Branch `feat/react-web-frontend`. Enforcement is **off**, so the running service is
+unchanged.
+
+| Piece | Where |
+|---|---|
+| `auth_enabled()`, `secret_key()`, `auth_allowlist()` | `app/config.py` |
+| `require_auth()`, `check_control_plane_request()`, `resolve_identity()`, `role_satisfies()`, `warn_if_media_plane_anonymous()`, `startup_auth_diagnostics()` | `app/services/auth_service.py` |
+| Gate registration | `app/__init__.py` (`before_request`) |
+| `users` + `auth_tokens` (SQLite) | `app/db.py` `init_db()` |
+| `users` + `auth_tokens` (PostgreSQL) | `app/db.py` `POSTGRES_MIGRATIONS` version **2** |
+| 52 tests | `tests/test_auth_foundation.py` |
+
+**Deliberate properties**
+
+- **Inert by default.** With `MEDIA_SERVER_AUTH` unset, every protected route
+  behaves exactly as before. `config.auth_enabled()` reads the environment at
+  *call* time (like `is_amf_enabled`), so the same client exercises both states.
+- **Fail closed.** With enforcement on and no credential provider (the Phase A
+  state), every protected route answers **401** with a message naming the
+  recovery step (`MEDIA_SERVER_AUTH=0`). A half-enabled auth system that left the
+  destructive routes reachable would be worse than none, because it would look
+  protected.
+- **The media plane is not gated.** Cast and DLNA receivers fetch `/media` and
+  `/hls` themselves and cannot authenticate. `warn_if_media_plane_anonymous()`
+  logs that gap at startup rather than leaving it to be discovered. Phase E
+  closes it with signed URLs.
+- **Scoping is by blueprint name, not URL prefix.** A new route on `api`,
+  `pages`, `subtitles` or `cast` is protected by default, without anyone
+  remembering to decorate it. `cast` additionally requires `admin`.
+
+**Verification**
+
+- **772 passed / 28 skipped** (720 baseline + 52 new).
+- Library files (100), production `movies` rows (44) and the `cache/hls` tree
+  (42 757 entries) were **hash-identical before and after** the full run.
+- The schema change was rehearsed against a *copy* of the production database:
+  8 → 10 tables, exactly `auth_tokens` and `users` created, nothing removed, every
+  pre-existing table byte-identical. The live service picks the tables up on its
+  next restart; it has not been restarted.
+
+**Not done in Phase A, by design**
+
+- No credential provider (`resolve_identity()` always returns `None`).
+- Per-route `admin` mapping for the destructive endpoints (delete / storage /
+  scan / upload / devices). Safe to defer *because* the fail-closed path makes
+  those routes unreachable rather than over-permissive until a provider exists.
+  Phase B.
+- The service has **not** been restarted and `MEDIA_SERVER_SECRET_KEY` has **not**
+  been set. Neither is needed while enforcement is off.
 | **B — Google Sign-In** | OIDC flow, JWKS verification, session issuance, allowlist enforcement, CSRF, logout. React login page. | Sign-in works against the live server; **an unlisted Google account is rejected** (must be tested explicitly) |
 | **C — API token system** | Mint/list/revoke; `Authorization: Bearer` resolution; hashed-at-rest storage; token shown once. | Tokens issue, verify, and revoke correctly; suite green |
 | **D — Clients** | Flutter/Fire TV token enrolment; web UI to mint tokens + QR/pairing link. Flutter suite via `scripts\run_flutter_tests.ps1`. | Flutter suite green; TV client connects and resumes |

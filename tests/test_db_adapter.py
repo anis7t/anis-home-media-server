@@ -517,19 +517,34 @@ class TestPostgresMigrationsRunner(unittest.TestCase):
         self.assertEqual(version_record_calls[0][0][1], (1,))
 
     def test_migration_runner_skips_already_applied_migrations(self):
-        """run_postgres_migrations must be idempotent and skip already-recorded versions."""
-        from app.db import run_postgres_migrations
+        """run_postgres_migrations must be idempotent and skip already-recorded versions.
 
-        # Simulate version 1 already present in schema_migrations
-        self.mock_cursor.fetchall.return_value = [{"version": 1}]
+        Written against ``POSTGRES_MIGRATIONS[0]`` rather than a hardcoded
+        version, and asserting BOTH halves of idempotency. The previous version
+        of this test assumed version 1 was the only migration and asserted that
+        nothing at all ran; once a second migration existed that premise was
+        false, and the assertion silently stopped checking the half that matters
+        most - that pending migrations really are applied.
+        """
+        from app.db import POSTGRES_MIGRATIONS, run_postgres_migrations
+
+        already_applied = POSTGRES_MIGRATIONS[0][0]
+        self.mock_cursor.fetchall.return_value = [{"version": already_applied}]
 
         run_postgres_migrations(self.mock_db)
 
         executed_sqls = [call[0][0] for call in self.mock_db.execute.call_args_list]
 
-        # No CREATE TABLE movies or INSERT INTO schema_migrations should be run
+        # The already-recorded migration must not be re-executed.
         self.assertFalse(any("CREATE TABLE IF NOT EXISTS movies" in s for s in executed_sqls))
-        self.assertFalse(any("INSERT INTO schema_migrations" in s for s in executed_sqls))
+
+        # Every PENDING migration must be applied and recorded exactly once.
+        recorded = [
+            call[0][1]
+            for call in self.mock_db.execute.call_args_list
+            if "INSERT INTO schema_migrations" in call[0][0]
+        ]
+        self.assertEqual(recorded, [(v,) for v, _, _ in POSTGRES_MIGRATIONS[1:]])
 
     def test_migration_runner_rolls_back_and_does_not_record_version_on_failure(self):
         """If a migration fails midway, rollback must be called and the version must not be recorded."""
