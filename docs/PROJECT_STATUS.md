@@ -171,16 +171,36 @@ Isolation verified the hard way: library file list (90 files), production `movie
 `cache/hls` listing (22 dirs) with per-directory content hashes were **bit-identical** before and
 after the full run.
 
-**Latent bug found while verifying, NOT fixed (separate item).** `_record_accepted_loss()`
-(`chunk_transcode_service.py:815`) references `chunk_content_deficits` with **no import** in its
-scope — the three sibling call sites (`:580`, `:783`, `:879`) each do a local import and this one
-does not — and the name is not a module global (verified at runtime). It is called from
-`_finalize()` (`:887`), the exact path this document and `AGENTS.md` describe as writing
-`hls.loss.json`. The resulting `NameError` is swallowed by a broad `except` logged at `debug`, so it
-fails silently. **The accepted-shortfall record has therefore never actually been written**, and
-"no `hls.loss.json`" as an acceptance signal is weaker than it reads: a cache can seal short and
-produce no loss file at all. Left alone deliberately — outside this item's scope, and it changes
-seal-time behaviour.
+**Latent bug found while verifying, now FIXED (2026-10-11, same session).**
+`_record_accepted_loss()` (`chunk_transcode_service.py:815`) called `chunk_content_deficits` with
+**no import in its scope** — the three sibling call sites (`:580`, `:783`, `:879`) each do a
+function-local import and this one did not. A module-level import would be circular, since
+`transcode_service` imports from `chunk_transcode_service`, so the import belongs inside the
+function. The resulting `NameError` was swallowed by a blanket `except` logged at `debug`, so it
+failed silently. **The accepted-shortfall record this document and `AGENTS.md` describe as being
+written had therefore never actually been written.**
+
+Fixed by adding the function-local import. The record now appears with every documented field
+(`media`, `recorded_utc`, `missing_frames`, `missing_s`, `chunks_measured`,
+`per_chunk_tolerance_frames`, `aggregate_ceiling_frames`, `reason`) and announces itself at `INFO`
+rather than failing at `debug`.
+
+**How the verification was done.** `tests/test_accepted_loss_record.py` (9 tests) asserts on the
+*file*, not on the absence of an exception — because the defect was invisible by design: the method
+returned `None` on the buggy path exactly as it does on success. The regression test was
+**proven to catch the bug**: with the import removed (stashed to the committed version), 4 of the 9
+fail; with it restored, all 9 pass. Also pinned: a clean cache writes nothing, a negative
+measurement (rounding surplus) writes nothing, an accounting failure still does not block sealing,
+and the end-to-end `_finalize` path records the shortfall when a cache is sealed within tolerance.
+
+**Standing caveat, now that it is fixed but still true of the `except`.** The blanket `except
+Exception` is deliberate — accounting must never prevent sealing — but it means a future typo in
+this area would again fail quietly. Assert on the file, never on the absence of an exception.
+Recorded in `AGENTS.md` so the next person does not trust "no `hls.loss.json`" as proof of a clean
+cache without checking frames.
+
+Suite after this fix: **716 passed, 28 skipped, 0 failed**. Library file list (90), production
+`movies` rows (44) and `cache/hls` listing (22 dirs) remained bit-identical across three full runs.
 
 ### 2026-10-05 â€” Site-wide Android APK download flow and production release
 
@@ -991,7 +1011,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (735 tests: 707 passed, 28 skipped, 70 subtests)
+# Full automated test suite (744 tests: 716 passed, 28 skipped, 70 subtests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -1028,14 +1048,13 @@ Manual playback & telemetry verification:
    `_chunk_output_ok` covers other routes. Index stability is asserted in
    `tests/test_chunk_tail_chunk.py`; verified on real renders (tail frames present, 0 retirement
    lines). See §0.
-4. **`_record_accepted_loss()` never writes `hls.loss.json`** (found 2026-10-11 while verifying the
-   above, not yet fixed). `chunk_transcode_service.py:815` calls `chunk_content_deficits` with no
-   import in its scope, while its three sibling call sites (`:580`, `:783`, `:879`) each do a local
-   import. The `NameError` is swallowed by a broad `except` logged at `debug`. So the
-   accepted-shortfall record described in §0 and `AGENTS.md` has never been written, and a cache that
-   seals short produces no loss file. Worth fixing, and worth asserting that it actually writes one —
-   the acceptance criterion "no `hls.loss.json`" cannot distinguish a clean cache from a broken
-   recorder today.
+4. ~~**`_record_accepted_loss()` never writes `hls.loss.json`.**~~ **FIXED 2026-10-11.** It called
+   `chunk_content_deficits` with no import in its scope; the `NameError` was swallowed by the blanket
+   `except` at `debug`, so the accepted-shortfall record was never written and "no `hls.loss.json`"
+   could not distinguish a clean cache from a broken recorder. Fixed with a function-local import
+   (module-level would be circular); `tests/test_accepted_loss_record.py` pins the file appears with
+   every documented field, proven to fail without the import. See §0. **Residual caveat:** the blanket
+   `except` remains by design, so a future typo here fails quietly — assert on the file.
 5. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
     shared measurement, but on the 4 legacy dense caches per-chunk windows are meaningless by design
     (the server judges whole-cache there on purpose). It should fall back to whole-cache accounting or

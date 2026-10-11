@@ -826,6 +826,11 @@ class DualGPUTranscodeJob:
         """
         try:
             from datetime import datetime, timezone
+            # Imported here, like every other call site (_update_master_playlist,
+            # _repair_deficient_chunks, _finalize), because transcode_service imports from this
+            # module - a module-level import would be circular. This line was MISSING, which made
+            # the call below raise NameError and silently write nothing at all.
+            from app.services.transcode_service import chunk_content_deficits
             totals = {}
             chunk_content_deficits(self.hls_dir, self.total_duration,
                                     source_path=getattr(self, 'path', None), totals=totals)

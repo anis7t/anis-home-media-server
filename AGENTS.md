@@ -303,6 +303,16 @@ The current project includes:
   - **`_finalize()` records the accepted shortfall** to `hls.loss.json` (frames, seconds, chunks, both
     thresholds, timestamp, reason) when it seals a short cache. Not into `hls.progress` — that is ffmpeg's
     own `-progress` file.
+  - **That record was silently never written until 2026-10-11.** `_record_accepted_loss()` called
+    `chunk_content_deficits` with **no import in its scope**, while its three sibling call sites each do
+    a function-local one (a module-level import would be circular — `transcode_service` imports from
+    `chunk_transcode_service`). The `NameError` was absorbed by the blanket `except` at `debug`.
+    **So "no `hls.loss.json`" is not by itself evidence that a cache is clean** — a broken recorder
+    produces the same absence, which is how this hid. Frame counts are the load-bearing measure.
+    `tests/test_accepted_loss_record.py` pins that the record appears with every documented field, that a
+    clean cache still writes nothing, and that the name resolves with no swallowed error. The blanket
+    `except` stays (accounting must never block sealing), so a future typo would still fail quietly:
+    in this area, assert on the **file**, never on the absence of an exception.
 - **Never call `source_video_duration(path, fallback=<anything but None>)`.** Any non-`None` fallback
   disables that function's own container-duration fallback, so a title whose video end cannot be measured
   returns a hard `0`; `plan_chunks(0)` is then `[]` and the cache is judged **vacuously complete**. Use the
