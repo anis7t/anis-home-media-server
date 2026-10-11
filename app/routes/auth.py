@@ -142,6 +142,13 @@ def google_callback():
     # --- 5. Only now does a user row exist. ---------------------------
     user = google_auth.upsert_user(claims)
     google_auth.issue_session(user)
+    # Log successes as well as refusals. An auth system that records only the
+    # failures cannot answer "who signed in, and when" - which is the first
+    # question asked after a suspected compromise.
+    log.info(
+        "AUTH: sign-in succeeded sub=%s email=%s role=%s",
+        claims.get("sub"), user["email"], user["role"],
+    )
 
     destination = request.args.get("next") or "/"
     # Only same-site relative paths, so `next` cannot be used as an open
@@ -153,7 +160,10 @@ def google_callback():
 
 @auth_bp.route("/auth/logout", methods=["POST", "GET"])
 def logout():
+    identity = auth_service.resolve_identity()
     google_auth.clear_session()
+    if identity is not None:
+        log.info("AUTH: sign-out subject=%s", identity.subject)
     return redirect("/")
 
 
