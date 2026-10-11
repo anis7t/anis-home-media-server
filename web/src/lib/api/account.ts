@@ -4,6 +4,8 @@ import type { ApiError } from './client';
 export interface AccountResponse {
   readonly authenticated: boolean;
   readonly email?: string;
+  readonly name?: string;
+  readonly picture?: string;
   readonly role?: string;
 }
 

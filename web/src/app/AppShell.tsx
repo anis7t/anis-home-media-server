@@ -1,7 +1,9 @@
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import type { ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
+import Avatar from '../components/Avatar';
 import LoginScreen from '../components/LoginScreen';
 
 function BrandMark() {
@@ -25,7 +27,7 @@ function BrandMark() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { authenticated, email, locked, signIn } = useAuth();
+  const { authenticated, email, name, locked, signIn, signOut } = useAuth();
   const location = useLocation();
 
   /*
@@ -35,6 +37,18 @@ export function AppShell({ children }: { children: ReactNode }) {
    * screen then would be wrong - the app is usable.
    */
   const showLogin = locked && !authenticated;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  /* Close the dropdown when anything outside is clicked. */
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onOutside = () => setMenuOpen(false);
+    window.addEventListener('click', onOutside);
+    return () => window.removeEventListener('click', onOutside);
+  }, [menuOpen]);
+
+  const stop = useCallback(() => setMenuOpen(false), []);
 
   return (
     <div className="min-h-screen">
@@ -69,18 +83,72 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {/* Hidden on the player, where a stray nav click would interrupt playback. */}
             {location.pathname.startsWith('/watch/') ? null : authenticated ? (
-              <NavLink
-                to="/account"
-                className={({ isActive }) =>
-                  `rounded-full px-4 py-2 text-sm transition ${
-                    isActive
-                      ? 'bg-white/10 font-semibold text-white'
-                      : 'text-white/60 hover:bg-white/5 hover:text-white'
-                  }`
-                }
-              >
-                {email ?? 'Account'}
-              </NavLink>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label="Open account menu"
+                  className="card-ring flex h-9 w-9 items-center justify-center rounded-full overflow-hidden border border-white/15 transition hover:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  onMouseEnter={stop}
+                  onMouseLeave={stop}
+                  onFocus={stop}
+                  onBlur={stop}
+                >
+                  <Avatar size="md" label={name ?? 'User'} />
+                </button>
+
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-white/15 bg-obsidian-800 shadow-xl"
+                    onMouseEnter={stop}
+                    onMouseLeave={stop}
+                    onFocus={stop}
+                    onBlur={stop}
+                  >
+                    <div className="border-b border-white/10 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar size="sm" label={name ?? 'User'} />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white">
+                            {name ?? 'Account'}
+                          </p>
+                          <p className="truncate text-xs text-white/50">{email}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-2 py-1" onClick={stop}>
+                      <NavLink
+                        to="/account"
+                        className={({ isActive }) =>
+                          `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                            isActive
+                              ? 'bg-brand-500/20 text-brand-300'
+                              : 'text-white/80 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        Device tokens & settings
+                      </NavLink>
+                    </div>
+                    <div className="border-t border-white/10 px-2 py-1">
+                      <button
+                        type="button"
+                        onClick={signOut}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/5 hover:text-white"
+                        onMouseEnter={stop}
+                        onMouseLeave={stop}
+                        onFocus={stop}
+                        onBlur={stop}
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <button
                 type="button"

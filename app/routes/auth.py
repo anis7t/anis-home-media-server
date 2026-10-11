@@ -182,9 +182,12 @@ def whoami():
     identity = auth_service.resolve_identity()
     if identity is None:
         return jsonify({"authenticated": False}), 200
+    user = google_auth.get_user_by_sub(identity.subject)
     return jsonify({
         "authenticated": True,
         "email": identity.subject,
+        "name": user.get("name"),
+        "picture": user.get("picture_url"),
         "role": identity.role,
     })
 

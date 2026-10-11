@@ -9,6 +9,8 @@ export { AUTH_LOCKED_EVENT, notifyAuthLocked } from './authEvents';
 export interface Account {
   readonly authenticated: boolean;
   readonly email: string | null;
+  readonly name: string | null;
+  readonly picture: string | null;
   readonly role: string | null;
 }
 
@@ -21,7 +23,7 @@ interface AuthState extends Account {
   readonly signOut: () => void;
 }
 
-const UNKNOWN: Account = { authenticated: false, email: null, role: null };
+const UNKNOWN: Account = { authenticated: false, email: null, name: null, picture: null, role: null };
 
 const AuthContext = createContext<AuthState | null>(null);
 
@@ -38,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccount({
         authenticated: body.authenticated,
         email: body.email ?? null,
+        name: body.name ?? null,
+        picture: body.picture ?? null,
         role: body.role ?? null,
       });
     } catch {

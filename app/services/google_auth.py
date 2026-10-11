@@ -328,4 +328,23 @@ def session_identity() -> Optional[auth_service.Identity]:
 
     role = session.get("role") or auth_service.ROLE_VIEWER
     subject = session.get("email") or "session"
-    return auth_service.Identity(subject=subject, role=role)
+def get_user_by_sub(sub: str) -> dict:
+    """Fetch the profile row (name, picture) for a logged-in user.
+
+    The session holds only uid/email/role; the profile data lives in the
+    users table and is fetched here so /api/auth/me can report name and
+    avatar without re-issuing a session.
+    """
+    from app.db import get_db
+
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT name, picture_url FROM users WHERE google_sub=?",
+            (sub,),
+        ).fetchone()
+    except Exception:
+        return {"name": None, "picture_url": None}
+    if row is None:
+        return {"name": None, "picture_url": None}
+    return {"name": row["name"], "picture_url": row["picture_url"]}
