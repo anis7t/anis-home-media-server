@@ -27,6 +27,7 @@ from flask import Blueprint, jsonify, redirect, request, session, url_for
 from app import config
 from app.services import auth_service, google_auth
 from app.services.auth_service import require_auth
+from app.services import oauth_store
 
 log = logging.getLogger(__name__)
 
@@ -74,10 +75,17 @@ def google_start():
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
 
-    session[_STATE_KEY] = state
-    session[_NONCE_KEY] = nonce
-    session[_VERIFIER_KEY] = verifier
-    session[f"{_STATE_KEY}_at"] = int(time.time())
+    # Server-side only — browsers drop session cookies across the redirect
+    # from accounts.google.com (Safari ITP, Firefox ETP, Chrome 3P). The
+    # session cookie no longer carries the OAuth binding; only our session
+    # cookie (post-sign-in) remains.
+    oauth_store.store(
+        state, nonce, verifier,
+        _redirect_uri(),
+        request.args.get("next") or "/",
+    )
+    # Purge stale attempts on each attempt so the table stays bounded.
+    oauth_store.purge_older_than()
 
     return redirect(google_auth.build_authorize_url(
         _redirect_uri(), state, nonce, challenge
@@ -95,20 +103,19 @@ def google_callback():
     if request.args.get("error"):
         return _fail(f"Google returned an error: {request.args['error']}", 400)
 
-    expected_state = session.pop(_STATE_KEY, None)
-    # The nonce must be carried through to verification. Dropping it here would
-    # silently skip that check, which is one of the three things binding the
-    # callback to the request WE started.
-    expected_nonce = session.pop(_NONCE_KEY, None)
-    verifier = session.pop(_VERIFIER_KEY, None)
-    started_at = session.pop(f"{_STATE_KEY}_at", None)
-
     # --- 2. state: binds the callback to OUR authorization request ------
-    if not expected_state or not request.args.get("state"):
+    # Read from the server-side store, not the session cookie. Browsers drop
+    # the cookie across the accounts.google.com -> this-origin redirect (Safari
+    # ITP, Firefox ETP, Chrome third-party), which is what produced
+    # "Sign-in state is missing" on every affected browser.
+    state_arg = request.args.get("state")
+    if not state_arg:
         return _fail("Sign-in state is missing. Start again from the sign-in link.", 400)
-    if not secrets.compare_digest(str(expected_state), str(request.args["state"])):
-        return _fail("Sign-in state mismatch. Start again from the sign-in link.", 400)
-    if not started_at or (int(time.time()) - int(started_at)) > _ATTEMPT_TTL_SECONDS:
+    attempt = oauth_store.get_and_clear(state_arg)
+    if attempt is None:
+        return _fail("Sign-in state is missing. Start again from the sign-in link.", 400)
+    nonce, verifier, redirect_uri, next_path, started_at, used = attempt
+    if (int(time.time()) - int(started_at)) > _ATTEMPT_TTL_SECONDS:
         return _fail("Sign-in attempt expired. Start again from the sign-in link.", 400)
     if not verifier:
         return _fail("Sign-in attempt is incomplete. Start again.", 400)
@@ -119,13 +126,13 @@ def google_callback():
 
     # --- 3. Exchange and VERIFY. Nothing below trusts the payload. ------
     try:
-        tokens = google_auth.exchange_code(code, _redirect_uri(), verifier)
+        tokens = google_auth.exchange_code(code, redirect_uri, verifier)
     except Exception as exc:
         log.warning("AUTH: token exchange failed: %s", exc)
         return _fail("Could not complete sign-in with Google.", 502)
 
     try:
-        claims = google_auth.verify_id_token(tokens["id_token"], expected_nonce)
+        claims = google_auth.verify_id_token(tokens["id_token"], nonce)
     except Exception as exc:
         log.warning("AUTH: id_token verification failed: %s", exc)
         return _fail("Google sign-in could not be verified.", 401)
@@ -151,9 +158,10 @@ def google_callback():
         claims.get("sub"), user["email"], user["role"],
     )
 
-    destination = request.args.get("next") or "/"
-    # Only same-site relative paths, so `next` cannot be used as an open
-    # redirect to an attacker's site after a successful sign-in.
+    # The DB stored the client's `next` at start; that avoids relying on the
+    # URL query after Google rewrites it, and avoids open-redirect checks
+    # against untrustworthy inputs.
+    destination = next_path or "/"
     if not destination.startswith("/") or destination.startswith("//"):
         destination = "/"
     return redirect(destination)

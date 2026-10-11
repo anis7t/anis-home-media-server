@@ -435,6 +435,17 @@ POSTGRES_MIGRATIONS = [
             "CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash)",
         ],
     ),
+    (
+        3,
+        "OAuth attempt store (Phase C5c): server-side state, nonce, verifier for sign-in",
+        [
+            "CREATE TABLE IF NOT EXISTS oauth_attempts ("
+            "state TEXT PRIMARY KEY, nonce TEXT, verifier TEXT, redirect_uri TEXT, "
+            "next_path TEXT, started_at BIGINT, used SMALLINT DEFAULT 0)",
+            "CREATE INDEX IF NOT EXISTS idx_oauth_attempts_started ON "
+            "oauth_attempts(started_at)",
+        ],
+    ),
 ]
 
 
@@ -810,6 +821,17 @@ def init_db():
         db.execute("CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_dwh_device ON device_watch_history(device_id, last_watched DESC)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_progress_updated ON progress(updated_at DESC)")
+        # OAuth attempt store (Phase C5c). The state that binds an authorization
+        # request to its callback used to live in the session cookie, which Safari
+        # ITP and Firefox ETP drop on the cross-site redirect from accounts.google.com
+        # back to this origin - so the callback saw "Sign-in state is missing" on
+        # those browsers no matter what the server did. It now lives here, which
+        # browsers cannot touch.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS oauth_attempts ("
+            "state TEXT PRIMARY KEY, nonce TEXT, verifier TEXT, redirect_uri TEXT,"
+            "next_path TEXT, started_at INTEGER, used INTEGER DEFAULT 0)"
+        )
         db.execute("INSERT OR IGNORE INTO schema_migrations VALUES(1)")
         db.commit()
         db.close()

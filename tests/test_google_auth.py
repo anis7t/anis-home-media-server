@@ -261,15 +261,28 @@ class TestCallbackRejections:
         _stub_exchange(monkeypatch, _sign(_GOOGLE_KEY, _claims()))
         response = client.get("/auth/google/callback?code=abc&state=wrong")
         assert response.status_code == 400
-        assert "state mismatch" in response.get_json()["error"]
+        # The state is no longer compared against a session copy; a state that
+        # is not in the server-side store is reported as missing.
+        assert "missing" in response.get_json()["error"]
 
     def test_expired_attempt_is_refused(self, client, monkeypatch):
         import app as app_module
         from flask import session as flask_session
 
         state, nonce = _begin(client)
-        with client.session_transaction() as sess:
-            sess[f"_oauth_state_at"] = int(time.time()) - 10_000
+        # Backdate the server-side record; the cookie-based key was removed in
+        # Phase C5c.
+        from app.db import get_db
+
+        db = get_db()
+        try:
+            db.execute(
+                "UPDATE oauth_attempts SET started_at = ? WHERE state = ?",
+                (int(time.time()) - 10_000, state),
+            )
+            db.commit()
+        finally:
+            db.close()
         _stub_exchange(monkeypatch, _sign(_GOOGLE_KEY, _claims()))
         response = client.get(f"/auth/google/callback?code=abc&state={state}")
         assert response.status_code == 400
