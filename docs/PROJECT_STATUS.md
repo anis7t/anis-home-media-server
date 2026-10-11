@@ -84,8 +84,35 @@ literally `dummy-mkv-video-content`) written into the deployed library by the
 isolation defect were cascaded out through `/api/media/delete`; the real
 `Mayday 2026 ... BONE.mkv` and its cache were verified untouched.
 
-Suite on `main` after these changes: **402 passed, 0 failed** (38 new tests across
-three new files).
+Suite on `main` after these changes: **410 passed, 0 failed** (46 new tests across four
+new files).
+
+### 2026-10-11 (later) — adaptive strategy enabled, and two invisible configs made visible
+
+The adaptive transcode strategy described above is now **live in the deployed service**
+(`mode=adaptive workers(10-bit/oversized)=4 workers(8-bit)=2`, confirmed in the startup log).
+
+Getting there surfaced a Windows service trap worth recording: **an empty entry in NSSM's
+`AppEnvironmentExtra` silently truncates every variable stored after it.** The three new
+variables were correctly present in the registry and the service still reported
+`mode=legacy`. Compounding it, `Restart-Service` is *not* sufficient — the NSSM wrapper
+survives and keeps the environment block it built at its own launch. A full
+`Stop-Service` + `Start-Service` is required; **no machine reboot is ever needed.** Both
+facts are now in `AGENTS.md` and the transcode write-up.
+
+Also enabled: `media_root_health()` (`app/services/media_service.py`), called at startup
+from `run_production.py`. The service ran with `MEDIA_SERVER_MEDIA_ROOT` on an empty
+`C:\Flicks` for an unknown period and nothing said so, because the library still resolved
+through `get_media_roots()`'s fallback — a misconfiguration that appears to work is the
+dangerous kind. It now reports missing, non-directory, unreadable and empty roots, and is
+diagnostic only.
+
+**Corrected a claim rather than propagating it.** The note "h264_amf cannot encode 10-bit
+on drivers < 23.30" repeated ffmpeg's wording, which reads like a stale-driver problem.
+Re-measured on both adapters: the driver is current (`31.0.21923.1000`, June 2025) and
+10-bit input is still rejected (`exit=-1313558101`). The check is against the **AMF
+runtime**, and H.264 High10 is unavailable on this VCN hardware regardless of driver age.
+The conclusion (`vpp_amf` required for 10-bit) stands; the stated reason did not.
 
 ### 2026-10-05 — Site-wide Android APK download flow and production release
 
@@ -896,7 +923,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (403 tests: 402 passed, 1 skipped)
+# Full automated test suite (411 tests: 410 passed, 1 skipped)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -913,27 +940,7 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **Engage the adaptive transcode strategy (optional, validated, not yet enabled).**
-   `MEDIA_SERVER_TRANSCODE_STRATEGY=adaptive` with
-   `MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=4` and `MEDIA_SERVER_TRANSCODE_WORKERS_8BIT=2`
-   is worth ~15% on 10-bit/4K and ~19% on 8-bit with byte-identical output, and every
-   worker count was verified to lose zero frames. It is **deliberately off by default**;
-   the only thing separating it from being on is a deliberate decision to set three
-   variables in the service environment. The 8-bit class in particular was measured in
-   isolation, not in the full sweep, so enable `MAIN10=4` first if you want one step.
-2. **`MEDIA_SERVER_MEDIA_ROOT` in the service environment was wrong and is now fixed,
-   but nothing guards it.** It pointed at an empty `C:\Flicks` for an unknown period,
-   and the library resolved only by accident via `get_media_roots()` falling back to
-   `UPLOAD_TARGET_DIR`. A startup assertion that the configured media root exists and is
-   non-empty — or at least that logs a loud warning when it does not — would have caught
-   this immediately, and would catch the next one.
-3. **Pre-existing ordering defects in the test suite** (present on the review branch,
-   not on `main`): 36 failures in `test_app.py` (`test_api_contracts.py` imports `app`
-   before `test_app.py` establishes isolation) and 18 in `test_write_guard.py` (the
-   guard is not refusing writes to production paths once other files have run first —
-   "DID NOT RAISE RuntimeError" — which is worth understanding before trusting that
-   suite as a safety net).
-4. **`tests/test_storage_retention.py:68` writes into the live library.** It does
+1. **`tests/test_storage_retention.py:68` writes into the live library.** It does
    `app.config.MEDIA_ROOT / "TestActiveMovie.2026.mkv"` — that is `D:\Flicks` — and the running
    server then creates a cache dir for the file, which the test deletes, orphaning it.
    `purge_orphaned_caches()` reclaims it on its next pass (observed doing so at 21:45 on 2026-10-03),

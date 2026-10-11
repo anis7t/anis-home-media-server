@@ -372,9 +372,13 @@ The current project includes:
 Full write-up, with the measurements behind every number: `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`.
 
 - **`vpp_amf` is a depth converter first and a scaler second.** For a 10-bit source it is the only
-  thing that converts to 8-bit, because `h264_amf` rejects 10-bit on drivers older than 23.30 and the
-  encode fails outright. For an 8-bit source no taller than the 1080p profile it does no resize and no
-  conversion at all — a full GPU round-trip for nothing. `select_amf_strategy()` picks per source and
+  thing that converts to 8-bit, because `h264_amf` **rejects 10-bit input on this host** — measured on
+  *both* adapters (`exit=-1313558101`, `10-bit encoder is not supported`), and the driver is current
+  (`31.0.21923.1000`, June 2025). Do not read ffmpeg's "drivers versions lower than 23.30" text as
+  "update the driver": it is checked against the AMF runtime, and H.264 High10 is not available on this
+  VCN hardware regardless of driver age. The encode fails outright rather than degrading.
+  For an 8-bit source no taller than the 1080p profile, `vpp_amf` performs no
+  resize and no conversion at all — a full GPU round-trip for nothing. `select_amf_strategy()` picks per source and
   **fails safe: an unprobed source always keeps `vpp_amf`**, because guessing "no resize needed" from
   missing data is the one mistake that would silently emit a wrong stream.
 - **`scale_d3d11` / `scale_d3d12` are not a substitute on this hardware.** Both fail with

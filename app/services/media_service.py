@@ -43,6 +43,59 @@ def probe_media(path):
         return {}
 
 
+def media_root_health() -> list:
+    """Report configured media roots that are missing, empty, or on an unexpected volume.
+
+    Purely diagnostic - never raises and never mutates. The deployed service ran for
+    an unknown period with MEDIA_SERVER_MEDIA_ROOT pointing at an empty C:\\Flicks
+    while .env and the docs said D:\\Flicks, and nothing said so: the library still
+    resolved, because get_media_roots() falls back to UPLOAD_TARGET_DIR, which
+    hardcodes D: when the drive exists. A misconfiguration that still appears to
+    work is the dangerous kind, so it is checked for explicitly at startup.
+
+    Returns a list of human-readable problem strings; empty means healthy.
+    """
+    problems = []
+    try:
+        roots = list(config.get_media_roots()) if hasattr(config, "get_media_roots") \
+            else [config.MEDIA_ROOT]
+    except Exception as exc:
+        return [f"media roots unreadable: {exc}"]
+
+    if not roots:
+        return ["no media roots configured"]
+
+    for root in roots:
+        try:
+            if not root.exists():
+                problems.append(f"configured media root does not exist: {root}")
+                continue
+            if not root.is_dir():
+                problems.append(f"configured media root is not a directory: {root}")
+                continue
+            # A root that exists but holds no media is legal (an empty library is
+            # legal) but is almost always a wrong path, so say so loudly.
+            try:
+                entries = list(root.iterdir())
+            except PermissionError as exc:
+                problems.append(f"configured media root is not readable: {root} ({exc})")
+                continue
+            if not entries:
+                problems.append(
+                    f"configured media root is EMPTY: {root} - the library will resolve "
+                    f"only via a fallback root, which hides this misconfiguration"
+                )
+        except OSError as exc:
+            problems.append(f"media root {root} could not be inspected: {exc}")
+
+    if problems:
+        problems.append(
+            "configured MEDIA_ROOT resolves to: "
+            f"{getattr(config, 'MEDIA_ROOT', '<unset>')}"
+        )
+    return problems
+
+
 def video_paths():
     """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
     global _paths

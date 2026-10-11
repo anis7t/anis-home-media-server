@@ -141,6 +141,32 @@ def is_dual_gpu_enabled() -> bool:
     return len(gpus) >= 2
 
 
+def log_transcode_configuration() -> None:
+    """Log the resolved transcode strategy once at startup.
+
+    The strategy is driven entirely by environment variables that the service
+    inherits from NSSM, which makes it invisible from the UI: a wrong or missing
+    value looks exactly like a slow transcode. Saying what the process actually
+    resolved turns "why isn't this faster" into a log-line question, and makes
+    verifying a deployment a read rather than an inference.
+    """
+    mode = "adaptive" if adaptive_strategy_enabled() else "legacy"
+    main10 = os.environ.get("MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10", "3")
+    eight_bit = os.environ.get("MEDIA_SERVER_TRANSCODE_WORKERS_8BIT", "2")
+    # Also report a variable NSSM has always set, so "my override did not arrive"
+    # is distinguishable from "the service inherited no environment at all".
+    inherited = os.environ.get("MEDIA_SERVER_BASE_DIR", "<absent>")
+    logger.info(
+        "Transcode strategy: mode=%s workers(10-bit/oversized)=%s workers(8-bit)=%s "
+        "service_env(BASE_DIR)=%s service_env(MEDIA_ROOT)=%s [%s]",
+        mode, main10, eight_bit, inherited,
+        os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "<absent>"),
+        "vpp_amf required for 10-bit: h264_amf rejects 10-bit input here (measured on "
+        "BOTH adapters with driver 31.0.21923.1000, so it is not a stale driver)"
+        if mode == "adaptive" else "adaptive disabled; deployed pipeline unchanged",
+    )
+
+
 def get_gpu_workers() -> List[GPUWorkerConfig]:
     """Return the ordered list of GPU workers for chunk assignment."""
     gpus = detect_available_gpus()

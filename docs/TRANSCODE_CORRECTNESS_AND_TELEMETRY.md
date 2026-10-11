@@ -111,8 +111,22 @@ than 23.30`.
 ### Why the filter chain must vary by source
 
 `vpp_amf` is not only a scaler. For a **10-bit** source it is the only thing that
-converts depth to 8-bit, because `h264_amf` rejects 10-bit on drivers older than
-23.30 — measured, and the encode fails outright rather than degrading.
+converts depth to 8-bit, because `h264_amf` **rejects 10-bit input on this host**.
+
+That rejection is worth stating precisely, because ffmpeg's own message misleads:
+`10-bit encoder is not supported by AMD GPU drivers versions lower than 23.30` reads
+like a stale-driver problem. It is not. Re-measured directly on both adapters with the
+driver currently installed:
+
+```
+RX 560X  31.0.21923.1000 (2025-06-03)   exit=-1313558101  10-bit encoder is not supported
+Vega 8   31.0.21923.1000 (2025-06-03)   exit=-1313558101  10-bit encoder is not supported
+```
+
+The driver is current, and the check is against the **AMF runtime**, not the Windows driver
+version. H.264's High10 profile is not available on this VCN hardware regardless of driver
+age. Do not spend time chasing a driver update over this; the encode fails outright rather
+than degrading, which is the safe failure mode.
 
 For an **8-bit** source no taller than the 1080p profile, `vpp_amf` performs no
 resize and no conversion. It is a full GPU round-trip for nothing, and dropping it
@@ -223,8 +237,38 @@ Cross-check at 67.4 %: 38m29s remaining at 7.3x is 316 s, and 5m15s was reported
 
 ---
 
-## Rule for measuring this pipeline
+### Enabling it, and a registry trap worth knowing
 
+Activation is three variables in the service environment (NSSM `AppEnvironmentExtra`):
+
+```
+MEDIA_SERVER_TRANSCODE_STRATEGY=adaptive
+MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=4      # measured optimum (default 3)
+MEDIA_SERVER_TRANSCODE_WORKERS_8BIT=2       # also enables the no-vpp_amf path
+```
+
+Confirmed live in the service log:
+`Transcode strategy: mode=adaptive workers(10-bit/oversized)=4 workers(8-bit)=2`
+
+**Two traps, both hit here:**
+
+1. **An empty entry in `AppEnvironmentExtra` silently truncates everything after it.** The stored
+   `REG_MULTI_SZ` carried an empty string at index 5 — it predated this session. The three new
+   variables were correctly in the registry, and the service still reported `mode=legacy`. NSSM stops
+   applying entries at the empty string. The value was rebuilt without it. Verify with a startup log
+   line rather than by reading the registry.
+
+2. **`Restart-Service` is not enough; the NSSM wrapper must be torn down.** A restart keeps
+   `nssm.exe` alive and it keeps serving the environment block it built at its own launch, so the new
+   variables were still not visible. `Stop-Service` (which exits the wrapper) followed by
+   `Start-Service` is what made them appear. A machine reboot is never required for this — only a
+   newly launched service process.
+
+That is why `log_transcode_configuration()` now logs the resolved mode, the worker counts, and a
+variable NSSM has always set, so "my override did not arrive" is distinguishable from "the service
+inherited no environment at all".
+
+## Rule for measuring this pipeline
 Do not benchmark a transcode pipeline while another transcode is running, and never
 accept a wall-clock number without confirming the run completed. A failed ffmpeg
 invocation exits in under a second and reads as a very fast encode. Verify with
@@ -245,5 +289,40 @@ invocation exits in under a second and reads as a very fast encode. Verify with
   worker expansion, unique names, fail-safe on unprobed sources.
 - `tests/test_transcode_rate_telemetry.py` — 9 tests, windowed rate, withheld speed,
   lifetime-average regression, the dense-walk bug, ETA arithmetic.
+- `tests/test_media_root_health.py` — 8 tests, startup media-root diagnostics.
 
-Suite on `main` after these changes: **402 passed, 0 failed**.
+Suite on `main` after these changes: **410 passed, 0 failed**.
+
+---
+
+## 4. Startup diagnostics
+
+Two configuration problems were invisible from the UI for an extended period. Both are
+now reported at startup.
+
+### A wrong media root that still appeared to work
+
+`MEDIA_SERVER_MEDIA_ROOT` pointed at `C:\Flicks` — an **empty** directory — while `.env`
+and the project documentation both said `D:\Flicks`. Nothing looked broken, because
+`get_media_roots()` falls back to `UPLOAD_TARGET_DIR`, which hardcodes `D:` when the drive
+exists. The library resolved, the UI worked, and the misconfiguration was undetectable.
+
+`media_root_health()` now checks every configured root at startup and reports missing,
+non-directory, unreadable, and **empty** roots — the empty case explicitly noting that
+the library will resolve only via a fallback, which is what hides it. It is diagnostic
+only: never raises, never mutates, returns problem strings rather than booleans so the log
+can say what is actually wrong.
+
+### The transcode strategy is environment-driven and therefore invisible
+
+`log_transcode_configuration()` reports the resolved mode, worker counts, and a variable
+NSSM has always set, so a missing override is distinguishable from an inherited-empty
+environment. This is what caught the `AppEnvironmentExtra` truncation described above —
+reading the registry would have said everything was configured correctly.
+
+### Windows service configuration
+
+- `AppEnvironmentExtra` must not contain an empty entry; everything after it is ignored.
+- `Restart-Service` does not pick up registry changes — the NSSM wrapper survives and keeps
+  its original environment block. Use `Stop-Service` then `Start-Service`. No machine reboot
+  is ever required.

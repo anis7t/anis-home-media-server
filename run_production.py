@@ -35,6 +35,23 @@ def init_runtime():
     SUBTITLE_EMBEDDED_CACHE.mkdir(parents=True, exist_ok=True)
     SUBTITLE_ONLINE_CACHE.mkdir(parents=True, exist_ok=True)
 
+    # Say what transcode strategy this process actually resolved. It comes from
+    # environment variables inherited from NSSM, so it is otherwise invisible -
+    # a missing or wrong value looks exactly like a slow transcode.
+    from app.services.gpu_service import log_transcode_configuration
+    log_transcode_configuration()
+
+    # A media root that is wrong but still "works" is invisible from the UI: the
+    # library resolves through get_media_roots()'s fallback, so nothing looks
+    # broken. That is exactly how MEDIA_SERVER_MEDIA_ROOT sat on an empty C:\Flicks
+    # unnoticed. Say so at startup instead.
+    try:
+        from app.services.media_service import media_root_health
+        for problem in media_root_health():
+            logging.getLogger("root").warning("Media root check: %s", problem)
+    except Exception as exc:
+        logging.getLogger("root").warning("Media root check could not run: %s", exc)
+
     cleanup_cache_on_startup()
     init_db()
     start_auto_transcoder_worker()
