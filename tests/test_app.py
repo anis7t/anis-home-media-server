@@ -12,6 +12,39 @@ os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
 os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
 import app
 
+import _isolation_paths
+
+
+def _validate_isolation_targets():
+    """Refuse a media root / database that is not provably isolated.
+
+    Used before the teardown reload and before init_db() (Phase 3.5 MEDIUM-2):
+    both read the environment, so a production value surviving a reload would
+    otherwise be used to create or modify production objects.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    production = _isolation_paths.build_production_paths(
+        repo_root, extra=(repo_root / "cache", repo_root / "media.db")
+    )
+    for name in ("MEDIA_SERVER_MEDIA_ROOT", "MEDIA_SERVER_DATABASE"):
+        raw = os.environ.get(name)
+        if not raw:
+            raise RuntimeError(
+                f"TEST ISOLATION VIOLATION: {name} is unset; refusing to reload "
+                "configuration or initialise the database against an unknown target."
+            )
+        resolved = Path(raw).resolve()
+        if _isolation_paths.is_production_path(resolved, production):
+            raise RuntimeError(
+                f"TEST ISOLATION VIOLATION: {name} points at a deployed "
+                f"location ({resolved}); refusing to continue."
+            )
+
+# Capture conftest's throwaway locations so tearDownClass can restore the
+# isolation environment instead of the deployed one (see tearDownClass).
+_conftest_media_root = Path(os.environ["MEDIA_SERVER_MEDIA_ROOT"])
+_conftest_database = Path(os.environ["MEDIA_SERVER_DATABASE"])
+
 class MediaServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -22,6 +55,16 @@ class MediaServerTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # Restore the isolation environment, NOT the deployed one.
+        #
+        # This used to pop MEDIA_SERVER_MEDIA_ROOT / MEDIA_SERVER_DATABASE and
+        # reload app.config, which made config.MEDIA_ROOT fall back to D:\Flicks
+        # and config.DATABASE to the live media.db, then called app.init_db()
+        # against production. Every test that ran afterwards - notably
+        # test_api_upload_with_custom_title_override, whose /api/upload handler
+        # writes straight to config.MEDIA_ROOT - created real files in the real
+        # library and real rows in the live database. Restoring the values that
+        # were captured at import time keeps the throwaway tree in force.
         if _orig_media_root_env is not None:
             os.environ["MEDIA_SERVER_MEDIA_ROOT"] = _orig_media_root_env
         else:
@@ -30,11 +73,23 @@ class MediaServerTests(unittest.TestCase):
             os.environ["MEDIA_SERVER_DATABASE"] = _orig_database_env
         else:
             os.environ.pop("MEDIA_SERVER_DATABASE", None)
+        # The class ran against this module's own TMP tree; put the conftest
+        # throwaway tree back so later test classes stay isolated. No `import
+        # conftest` here: tests/integration/conftest.py is registered under the
+        # same module name, so that import can resolve to the wrong module. The
+        # next test's pytest_runtest_setup re-points the app regardless.
+        os.environ["MEDIA_SERVER_MEDIA_ROOT"] = str(_conftest_media_root)
+        os.environ["MEDIA_SERVER_DATABASE"] = str(_conftest_database)
+        # Fail closed BEFORE the reload and before init_db(): both consume the
+        # environment above, and init_db() would otherwise create tables in
+        # whatever DATABASE resolves to. Validated via tests/_isolation_paths
+        # rather than `import conftest`, which would hit the module-name clash
+        # with tests/integration/conftest.py.
+        _validate_isolation_targets()
         import importlib
         import app.config
         importlib.reload(app.config)
-        app.config.MEDIA_ROOT = app.config.MEDIA_ROOT
-        app.config.DATABASE = app.config.DATABASE
+        _validate_isolation_targets()
         app.init_db()
     def test_library_and_pwa(self):
         self.assertEqual(self.client.get('/').status_code, 200)

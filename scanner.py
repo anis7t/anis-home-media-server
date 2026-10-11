@@ -7,6 +7,7 @@ import time
 import json
 from dotenv import load_dotenv
 from posters import download_poster
+from app.db import get_db, get_backend
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
 ENV_FILE = BASE_DIR / ".env"
@@ -110,6 +111,13 @@ def parse_filename(path):
 # ---------------------------------------------------------
 
 def setup_database(conn):
+    try:
+        from app.db import get_backend
+        if get_backend() == "postgres":
+            return
+    except Exception:
+        pass
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS movies (
             filename TEXT PRIMARY KEY,
@@ -126,15 +134,17 @@ def setup_database(conn):
         )
     """)
 
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(movies)")}
-    if "release_date" not in columns:
-        conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
-    if "details_json" not in columns:
-        conn.execute("ALTER TABLE movies ADD COLUMN details_json TEXT")
-    if "last_metadata_refresh" not in columns:
-        conn.execute("ALTER TABLE movies ADD COLUMN last_metadata_refresh INTEGER")
-
-    conn.commit()
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(movies)")}
+        if "release_date" not in columns:
+            conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
+        if "details_json" not in columns:
+            conn.execute("ALTER TABLE movies ADD COLUMN details_json TEXT")
+        if "last_metadata_refresh" not in columns:
+            conn.execute("ALTER TABLE movies ADD COLUMN last_metadata_refresh INTEGER")
+        conn.commit()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------
@@ -282,6 +292,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         print("    TMDB_API_TOKEN not found.")
         return None
 
+    path = Path(path)
     try:
         from app.utils.filesystem import get_rel_path
         relative = get_rel_path(path)
@@ -295,8 +306,8 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
 
     close_conn = False
     if conn is None:
-        conn = sqlite3.connect(DB_PATH)
-        setup_database(conn)
+        from app.db import get_db
+        conn = get_db()
         close_conn = True
 
     close_session = False
@@ -305,6 +316,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         close_session = True
 
     try:
+        setup_database(conn)
         title, year = parse_filename(path)
         print(f"Scanning: {title}" + (f" ({year})" if year else ""))
 
@@ -325,7 +337,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
             now_ts = int(time.time())
             conn.execute(
                 """
-                INSERT OR IGNORE INTO movies (
+                INSERT INTO movies (
                     filename,
                     title,
                     year,
@@ -342,6 +354,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                     last_metadata_refresh
                 )
                 VALUES (?, ?, ?, NULL, 'No TMDB metadata found', '', '', 0, '', 0.0, ?, ?, '{}', ?)
+                ON CONFLICT (filename) DO NOTHING
                 """,
                 (relative, title, year, now_ts, str(year) if year else "", now_ts),
             )
@@ -393,7 +406,7 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         now_ts = int(time.time())
         conn.execute(
             """
-            INSERT OR REPLACE INTO movies (
+            INSERT INTO movies (
                 filename,
                 title,
                 year,
@@ -410,6 +423,20 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
                 last_metadata_refresh
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (filename) DO UPDATE SET
+                title=excluded.title,
+                year=excluded.year,
+                tmdb_id=excluded.tmdb_id,
+                overview=excluded.overview,
+                poster_path=excluded.poster_path,
+                backdrop_path=excluded.backdrop_path,
+                runtime=excluded.runtime,
+                genres=excluded.genres,
+                vote_average=excluded.vote_average,
+                updated_at=excluded.updated_at,
+                release_date=excluded.release_date,
+                details_json=excluded.details_json,
+                last_metadata_refresh=excluded.last_metadata_refresh
             """,
             (
                 relative,
@@ -457,63 +484,75 @@ def scan_unindexed(media_root=None, db_path=None, token=None):
     try:
         from app import config
         roots = config.get_media_roots() if media_root is None else [Path(media_root).resolve()]
-        db_path = Path(db_path or config.DATABASE).resolve()
+        default_db = getattr(config, 'DATABASE', DB_PATH)
     except Exception:
         roots = [Path(media_root or MEDIA_ROOT).resolve()]
-        db_path = Path(db_path or DB_PATH).resolve()
+        default_db = DB_PATH
 
-    conn = sqlite3.connect(db_path)
-    setup_database(conn)
-
-    video_files = []
-    seen = set()
-    for root in roots:
-        if not root.exists():
-            continue
-        for path in sorted(root.rglob("*")):
-            if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
-                if path.name not in seen:
-                    seen.add(path.name)
-                    video_files.append(path)
-
-    indexed = {
-        row[0]
-        for row in conn.execute(
-            "SELECT filename FROM movies"
-        ).fetchall()
-    }
+    resolved_db_path = Path(db_path or default_db).resolve()
+    if db_path is not None and resolved_db_path != Path(default_db).resolve():
+        conn = sqlite3.connect(resolved_db_path)
+    else:
+        conn = get_db()
 
     try:
-        from app.utils.filesystem import get_rel_path
-    except Exception:
-        get_rel_path = None
+        setup_database(conn)
 
-    unindexed = []
-    for p in video_files:
-        rel = get_rel_path(p) if get_rel_path else p.name
-        if rel not in indexed and p.name not in indexed:
-            unindexed.append(p)
+        video_files = []
+        seen = set()
+        for root in roots:
+            if not root.exists():
+                continue
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
+                    if path.name not in seen:
+                        seen.add(path.name)
+                        video_files.append(path)
 
-    if not unindexed:
-        conn.close()
-        return []
+        def _extract_filename(row):
+            if hasattr(row, 'keys') or isinstance(row, dict):
+                return row['filename']
+            return row[0]
 
-    print(f"Found {len(unindexed)} unindexed video files out of {len(video_files)} total.")
+        indexed = {
+            _extract_filename(row)
+            for row in conn.execute(
+                "SELECT filename FROM movies"
+            ).fetchall()
+        }
 
-    session = requests.Session()
-    scanned = []
-    for p in unindexed:
         try:
-            res = scan_single_file(p, conn=conn, session=session, token=token, media_root=media_root)
-            if res:
-                scanned.append(res)
-        except Exception as e:
-            print(f"Error scanning {p.name}: {e}")
-        time.sleep(1)
+            from app.utils.filesystem import get_rel_path
+        except Exception:
+            get_rel_path = None
 
-    session.close()
-    conn.close()
-    return scanned
+        unindexed = []
+        for p in video_files:
+            rel = get_rel_path(p) if get_rel_path else p.name
+            if rel not in indexed and p.name not in indexed:
+                unindexed.append(p)
+
+        if not unindexed:
+            return []
+
+        print(f"Found {len(unindexed)} unindexed video files out of {len(video_files)} total.")
+
+        session = requests.Session()
+        scanned = []
+        try:
+            for p in unindexed:
+                try:
+                    res = scan_single_file(p, conn=conn, session=session, token=token, media_root=media_root)
+                    if res:
+                        scanned.append(res)
+                except Exception as e:
+                    print(f"Error scanning {p.name}: {e}")
+                time.sleep(1)
+            return scanned
+        finally:
+            session.close()
+    finally:
+        conn.close()
 
 
 def scan():

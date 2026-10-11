@@ -1,6 +1,7 @@
 """Media inspection, technical specifications, and library metadata service."""
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 from app import config
 from app.db import get_db, value
 from app.utils.filesystem import get_rel_path, is_video, safe_path
-from app.utils.formatting import clean_title, format_bytes_display
+from app.utils.formatting import clean_title, format_bytes_display, format_db_timestamp
 
 # Cached video paths (timestamp, list_of_paths)
 _paths = (0, [])
@@ -96,30 +97,130 @@ def media_root_health() -> list:
     return problems
 
 
+
+def _walk_media(root, errors):
+    """Yield every file under *root*, recording directories that cannot be read.
+
+    pathlib's rglob() swallows PermissionError. When a root exists and is a
+    directory but a subdirectory below it cannot be read, rglob returns a short
+    list and raises nothing at all - which is exactly the shape that made an
+    incomplete enumeration indistinguishable from a complete library, and is how
+    a live cache directory came to be classified as orphaned.
+
+    This walks with os.scandir explicitly so the failure is recorded instead of
+    being lost. Symlinked directories are not followed, matching rglob.
+    """
+    stack = [Path(root)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError as exc:
+                        errors.append((str(current), f"{type(exc).__name__}: {exc}"))
+                        continue
+                    if is_dir:
+                        stack.append(Path(entry.path))
+                    else:
+                        yield Path(entry.path)
+        except OSError as exc:
+            errors.append((str(current), f"{type(exc).__name__}: {exc}"))
+
+
+def _discover_media(roots):
+    """Walk every configured root and report what the walk actually proved.
+
+    Returns ``(sorted_paths, status)``.
+
+    ``status['complete']`` is True only when every configured root was walked to
+    the end without an error and no distinct file was lost to basename
+    deduplication. It asserts nothing about how much media exists - there is no
+    coverage threshold in this function. It only says "the walk succeeded", so
+    that a caller which deletes data can tell the difference between "there is
+    nothing to purge" and "I could not see the library".
+    """
+    discovered = []
+    seen = set()
+    deduped = []
+    skipped_uploads = 0
+    root_status = []
+    walk_errors = []
+
+    for root in roots:
+        errors = []
+        found = 0
+        try:
+            missing = not root.exists() or not root.is_dir()
+        except OSError as exc:
+            missing = True
+            errors.append((str(root), f"{type(exc).__name__}: {exc}"))
+
+        if not missing:
+            for p in _walk_media(root, errors):
+                if any(part.startswith('.uploads') for part in p.parts):
+                    skipped_uploads += 1
+                    continue
+                try:
+                    if not is_video(p):
+                        continue
+                except OSError as exc:
+                    # A file that vanished between listing and stat must not
+                    # abort the walk, but it does mean the walk is not clean.
+                    errors.append((str(p), f"{type(exc).__name__}: {exc}"))
+                    continue
+                found += 1
+                rel_key = p.name.lower()
+                if rel_key in seen:
+                    # Two distinct files collapse to a single entry here, so the
+                    # loser's cache directory would look orphaned. Fail closed.
+                    deduped.append(str(p))
+                    continue
+                seen.add(rel_key)
+                discovered.append(p)
+
+        root_status.append({
+            'path': str(root),
+            'ok': not missing and not errors,
+            'missing': missing,
+            'errors': [f"{where}: {what}" for where, what in errors],
+            'count': found,
+        })
+        walk_errors.extend(f"{where}: {what}" for where, what in errors)
+
+    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
+    status = {
+        'complete': all(r['ok'] for r in root_status) and not walk_errors and not deduped,
+        'roots': root_status,
+        'walk_errors': walk_errors,
+        'deduped': deduped,
+        'skipped_uploads': skipped_uploads,
+    }
+    return current, status
+
+
+def enumerate_media_with_status():
+    """Return ``(paths, status)`` for one media enumeration.
+
+    video_paths() delegates here, so every existing caller keeps its signature
+    and the 30-second change-detection behaviour, while a caller that must not
+    act on an unproven enumeration can read ``status['complete']`` for the very
+    walk that produced those paths.
+    """
+
 def video_paths():
     """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
     global _paths
+
     if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
         app_paths = sys.modules['app']._paths
         if app_paths != _paths:
             _paths = app_paths
 
     roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
-    discovered = []
-    seen = set()
-    for root in roots:
-        if not root.exists():
-            continue
-        for p in root.rglob('*'):
-            if any(part.startswith('.uploads') for part in p.parts):
-                continue
-            if is_video(p):
-                rel_key = p.name.lower()
-                if rel_key not in seen:
-                    seen.add(rel_key)
-                    discovered.append(p)
+    current, status = _discover_media(roots)
 
-    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
     if (
         time.monotonic() - _paths[0] > 30
         or len(current) != len(_paths[1])
@@ -131,7 +232,13 @@ def video_paths():
         _paths = (time.monotonic(), current)
         if 'app' in sys.modules:
             sys.modules['app']._paths = _paths
-    return _paths[1]
+
+    return _paths[1], status
+
+
+def video_paths():
+    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
+    return enumerate_media_with_status()[0]
 
 
 def poster_for(path, row):
@@ -201,7 +308,7 @@ def movie(path, db, device_id=None):
         position=pos,
         duration=dur,
         percent=min(100, pos / dur * 100) if dur else 0,
-        updated_at=value(progress, 'updated_at', ''),
+        updated_at=format_db_timestamp(value(progress, 'updated_at', '')),
         backdrop_path=value(meta, 'backdrop_path', ''),
         details_json=value(meta, 'details_json', ''),
         last_metadata_refresh=value(meta, 'last_metadata_refresh')
@@ -365,8 +472,11 @@ def purge_media(filename):
     rel_filename = get_rel_path(path)
 
     db = get_db()
-    movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
-    progress_row = db.execute("SELECT * FROM progress WHERE filename=?", (rel_filename,)).fetchone()
+    try:
+        movie_row = db.execute("SELECT * FROM movies WHERE filename=?", (rel_filename,)).fetchone()
+        progress_row = db.execute("SELECT * FROM progress WHERE filename=?", (rel_filename,)).fetchone()
+    finally:
+        db.close()
     tmdb_id = value(movie_row, 'tmdb_id')
     poster_path = value(movie_row, 'poster_path')
 
@@ -401,46 +511,66 @@ def purge_media(filename):
     purged_subs = purge_subtitles_for_media(path)
 
     # 3b. Purge seek preview thumbnail cache
+    #
+    # Phase 3.8D: this deletes cache data, so it must pass the same cache-root
+    # boundary as the orphan purge. It previously ran under a bare
+    # `except Exception: pass`, which made a refusal indistinguishable from success.
+    purged_cache_dirs = []
+    refused_cache_deletes = []
     try:
         from app.services.preview_service import preview_dir
         import shutil
-        p_dir = preview_dir(path)
+        p_dir = config.require_within_cache_root(
+            preview_dir(path), 'purge_media(preview)')
         if p_dir.exists():
             shutil.rmtree(p_dir, ignore_errors=True)
-    except Exception:
-        pass
+            purged_cache_dirs.append(str(p_dir))
+    except config.CacheRootUnsafe as exc:
+        logger.error("REFUSING to purge preview cache for %s: %s", path, exc)
+        refused_cache_deletes.append({'path': str(path), 'reason': str(exc)})
+    except Exception as exc:
+        logger.warning("Preview cache purge failed for %s: %s", path, exc)
 
     # 4. Purge TMDb posters and backdrops if not referenced by other items
     purged_posters = []
-    if tmdb_id:
-        other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
-        if not other:
-            cached_p = config.POSTER_CACHE / f"{tmdb_id}.jpg"
-            if cached_p.is_file():
-                cached_p.unlink(missing_ok=True)
-                purged_posters.append(str(cached_p))
-            cached_b = config.BACKDROP_CACHE / f"{tmdb_id}.jpg"
-            if cached_b.is_file():
-                cached_b.unlink(missing_ok=True)
-                purged_posters.append(str(cached_b))
+    db = get_db()
+    try:
+        if tmdb_id:
+            other = db.execute("SELECT 1 FROM movies WHERE tmdb_id=? AND filename != ?", (tmdb_id, rel_filename)).fetchone()
+            if not other:
+                # Poster/backdrop caches are deletions too: validate the actual file
+                # before unlinking, and surface a refusal instead of swallowing it.
+                for attr, label in (('POSTER_CACHE', 'poster'), ('BACKDROP_CACHE', 'backdrop')):
+                    try:
+                        cached = config.require_within_cache_root(
+                            getattr(config, attr) / f"{tmdb_id}.jpg",
+                            f'purge_media({label})')
+                        if cached.is_file():
+                            cached.unlink(missing_ok=True)
+                            purged_posters.append(str(cached))
+                    except config.CacheRootUnsafe as exc:
+                        logger.error("REFUSING to purge %s cache for %s: %s", label, rel_filename, exc)
+                        refused_cache_deletes.append({'path': f'{label}:{tmdb_id}', 'reason': str(exc)})
+                    except OSError as exc:
+                        logger.warning("Could not purge %s cache %s: %s", label, tmdb_id, exc)
 
-    if poster_path and str(poster_path).startswith('local:'):
-        try:
-            local_poster = config.MEDIA_ROOT / poster_path[6:]
-            if local_poster.is_file():
-                local_poster.unlink(missing_ok=True)
-                purged_posters.append(str(local_poster))
-        except Exception:
-            pass
+        if poster_path and str(poster_path).startswith('local:'):
+            try:
+                local_poster = config.MEDIA_ROOT / poster_path[6:]
+                if local_poster.is_file():
+                    local_poster.unlink(missing_ok=True)
+                    purged_posters.append(str(local_poster))
+            except Exception:
+                pass
 
-    if path.parent.is_dir():
-        for ext in config.POSTER_EXTENSIONS:
-            local_ext = path.with_suffix(ext)
-            if local_ext.is_file():
-                local_ext.unlink(missing_ok=True)
-                purged_posters.append(str(local_ext))
+        if path.parent.is_dir():
+            for ext in config.POSTER_EXTENSIONS:
+                local_ext = path.with_suffix(ext)
+                if local_ext.is_file():
+                    local_ext.unlink(missing_ok=True)
+                    purged_posters.append(str(local_ext))
 
-    # 5. Purge database records (per-device rows key on the same filename, and a
+        # 5. Purge database records (per-device rows key on the same filename, and a
         #    client may have stored the basename rather than the relative path)
         db.execute("DELETE FROM movies WHERE filename=?", (rel_filename,))
         db.execute("DELETE FROM progress WHERE filename=?", (rel_filename,))
@@ -449,7 +579,8 @@ def purge_media(filename):
             [(k,) for k in {rel_filename, path.name}],
         )
         db.commit()
-    db.close()
+    finally:
+        db.close()
 
     # 6. Delete media file on disk and any upload part files
     file_deleted = False
@@ -488,6 +619,8 @@ def purge_media(filename):
         'purged_transcodes': transcode_purge_info,
         'purged_subtitles': purged_subs,
         'purged_posters': purged_posters,
+        'purged_cache_dirs': purged_cache_dirs,
+        'refused_cache_deletes': refused_cache_deletes,
         'tmdb_purged': bool(tmdb_id),
         'db_rows_purged': bool(movie_row or progress_row)
     }

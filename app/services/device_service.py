@@ -12,7 +12,7 @@ from flask import request
 from app import config
 from app.db import get_db, value
 from app.utils.filesystem import safe_path
-from app.utils.formatting import clean_title
+from app.utils.formatting import clean_title, format_db_timestamp, parse_db_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -436,10 +436,10 @@ def lookup_geoip_and_isp(ip, connection_type):
         }
 
     # Check ip_cache in database
+    db = None
     try:
         db = get_db()
         row = db.execute("SELECT * FROM ip_cache WHERE ip=?", (ip,)).fetchone()
-        db.close()
         if row and value(row, 'isp'):
             return {
                 "isp": value(row, 'isp'),
@@ -448,6 +448,9 @@ def lookup_geoip_and_isp(ip, connection_type):
             }
     except Exception as e:
         logger.debug(f"ip_cache read error: {e}")
+    finally:
+        if db:
+            db.close()
 
     # Fallback default values
     default_res = {
@@ -476,15 +479,17 @@ def lookup_geoip_and_isp(ip, connection_type):
 
                 # Persist into ip_cache
                 db = get_db()
-                db.execute(
-                    "INSERT INTO ip_cache(ip, isp, org, city, country, updated_at) "
-                    "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
-                    "ON CONFLICT(ip) DO UPDATE SET "
-                    "isp=excluded.isp, org=excluded.org, city=excluded.city, country=excluded.country, updated_at=CURRENT_TIMESTAMP",
-                    (ip, isp_val, data.get('org') or isp_val, city_val, country_val)
-                )
-                db.commit()
-                db.close()
+                try:
+                    db.execute(
+                        "INSERT INTO ip_cache(ip, isp, org, city, country, updated_at) "
+                        "VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
+                        "ON CONFLICT(ip) DO UPDATE SET "
+                        "isp=excluded.isp, org=excluded.org, city=excluded.city, country=excluded.country, updated_at=CURRENT_TIMESTAMP",
+                        (ip, isp_val, data.get('org') or isp_val, city_val, country_val)
+                    )
+                    db.commit()
+                finally:
+                    db.close()
                 return {
                     "isp": isp_val,
                     "city": city_val,
@@ -544,6 +549,7 @@ def register_device_request(req):
     mac = resolve_mac_address(client_ip, conn_type)
     geo = lookup_geoip_and_isp(public_ip or client_ip, conn_type)
 
+    db = None
     try:
         db = get_db()
         db.execute(
@@ -595,9 +601,11 @@ def register_device_request(req):
             )
         )
         db.commit()
-        db.close()
     except Exception as e:
         logger.warning(f"Error registering device {device_id}: {e}")
+    finally:
+        if db:
+            db.close()
 
     return device_id, is_new
 
@@ -680,6 +688,7 @@ def record_device_watch(device_id, filename, position, duration):
 
     completed = 1 if (dur > 0 and (pos >= dur * 0.9 or (dur - pos) <= 15)) else 0
 
+    db = None
     try:
         db = get_db()
         db.execute(
@@ -696,34 +705,38 @@ def record_device_watch(device_id, filename, position, duration):
             (device_id, filename, pos, dur, completed)
         )
         db.commit()
-        db.close()
     except Exception as e:
         logger.warning(f"Error recording device watch for {device_id}: {e}")
+    finally:
+        if db:
+            db.close()
 
 
-def format_time_ago(ts_str):
-    """Format an ISO/SQLite timestamp into a human-friendly relative string."""
-    if not ts_str:
+def format_time_ago(ts):
+    """Format a database timestamp into a human-friendly relative string.
+
+    Accepts either backend's shape: a SQLite ``'YYYY-MM-DD HH:MM:SS'`` string or
+    the ``datetime`` psycopg returns for PostgreSQL ``TIMESTAMPTZ``. Unparseable
+    values are returned unchanged, as before.
+    """
+    if not ts:
         return "Unknown"
-    try:
-        # SQLite timestamps are UTC 'YYYY-MM-DD HH:MM:SS'
-        clean_ts = ts_str.replace('T', ' ').split('.')[0]
-        dt = datetime.strptime(clean_ts, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        diff = max(0.0, (now - dt).total_seconds())
-        if diff < 60:
-            return "Just now"
-        elif diff < 3600:
-            mins = int(diff // 60)
-            return f"{mins}m ago"
-        elif diff < 86400:
-            hours = int(diff // 3600)
-            return f"{hours}h ago"
-        else:
-            days = int(diff // 86400)
-            return f"{days}d ago"
-    except Exception:
-        return ts_str
+    dt_utc = parse_db_timestamp(ts)
+    if dt_utc is None:
+        return ts
+    now = datetime.now(timezone.utc)
+    diff = max(0.0, (now - dt_utc).total_seconds())
+    if diff < 60:
+        return "Just now"
+    elif diff < 3600:
+        mins = int(diff // 60)
+        return f"{mins}m ago"
+    elif diff < 86400:
+        hours = int(diff // 3600)
+        return f"{hours}h ago"
+    else:
+        days = int(diff // 86400)
+        return f"{days}d ago"
 
 
 def format_clock_time(seconds):
@@ -750,15 +763,11 @@ def get_all_devices(current_device_id=None):
 
         for d in dev_rows:
             dev_id = d['device_id']
-            last_seen_str = d['last_seen'] or ''
             is_active = False
-            try:
-                clean_ts = last_seen_str.replace('T', ' ').split('.')[0]
-                dt = datetime.strptime(clean_ts, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            dt = parse_db_timestamp(d['last_seen'])
+            if dt is not None:
                 diff = max(0.0, (now - dt).total_seconds())
                 is_active = (diff <= 180)  # Active if seen in last 3 minutes (180s)
-            except Exception:
-                is_active = False
 
             # Query watch history for this device
             hist_rows = db.execute(
@@ -802,7 +811,7 @@ def get_all_devices(current_device_id=None):
                     "duration_str": format_clock_time(dur),
                     "percent": pct,
                     "completed": bool(h['completed']),
-                    "last_watched": h['last_watched'],
+                    "last_watched": format_db_timestamp(h['last_watched']),
                     "last_watched_ago": format_time_ago(h['last_watched']),
                     "poster_url": poster_url,
                 })
@@ -845,8 +854,8 @@ def get_all_devices(current_device_id=None):
                 "isp": d['isp'],
                 "city": d['city'],
                 "country": d['country'],
-                "first_seen": d['first_seen'],
-                "last_seen": d['last_seen'],
+                "first_seen": format_db_timestamp(d['first_seen']),
+                "last_seen": format_db_timestamp(d['last_seen']),
                 "last_seen_ago": format_time_ago(d['last_seen']),
                 "is_active": is_active,
                 "is_current": (dev_id == current_device_id),

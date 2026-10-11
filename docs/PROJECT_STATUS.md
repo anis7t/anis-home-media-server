@@ -2,7 +2,23 @@
 
 Last reviewed: 2026-10-05
 Repository: `anis7t/media-server`
-Working branch: `feat/flutter-production-player`
+Working branch: `feat/rust-react-postgres-migration`
+
+---
+
+## Media Server Modernization (React + Rust + PostgreSQL)
+
+Full handoff document: **[`docs/MIGRATION_STATUS.md`](MIGRATION_STATUS.md)**  
+Authoritative roadmap: **[`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)**  
+Active branch: `feat/rust-react-postgres-migration`
+
+| Phase | Title | Status |
+|:---:|---|:---:|
+| 0 | Architecture Audit | ✅ COMPLETE — [`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md) |
+| 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
+| 2 | React Web Frontend | ⏳ PENDING AUTHORIZATION — Vite + React + TS under `web/` |
+| 3 | PostgreSQL Migration | 📋 Planned |
+| 4 | Rust API Foundation | 📋 Planned |
 
 ---
 

@@ -1,0 +1,2252 @@
+openapi: 3.1.0
+info:
+  title: "Anis' Home Media Server API"
+  version: 1.2.19
+  description: |
+    Comprehensive, authoritative OpenAPI 3.1 contract specification for Anis' Home Media Server.
+    Documented during Phase 1 of the Flask to Rust / React / PostgreSQL modernization initiative.
+    Covers all registered HTTP and JSON endpoints, streaming byte-range protocols, dynamic HLS delivery,
+    device presence and watch tracking, subtitle pipelines, transcode queue orchestration, DLNA/Chromecast casting,
+    and mobile/Fire TV app distribution.
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development / Host NSSM Waitress WSGI
+  - url: https://media.anisparvez.in
+    description: Production Named Cloudflare Tunnel ingress
+
+paths:
+  /:
+    get:
+      summary: Web Home & Library Browser
+      description: Renders the primary media catalog view with search, sorting, continue-watching rail, and system telemetry HUD.
+      operationId: getHome
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search filter query matching title, year, or genre.
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [title, recent]
+            default: title
+          description: Sort ordering for media items.
+        - name: intro
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [auto, gate, "off"]
+          description: Intro overlay mode switch (?intro=off bypasses brand sting entirely).
+      responses:
+        "200":
+          description: HTML page response for library catalog.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Sets persistent ms_device_id tracking cookie if not present.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /movie/{filename}:
+    get:
+      summary: Movie Details Page
+      description: Renders movie details hero, technical specifications, cast rail, and subtitle management.
+      operationId: getMovieDetailsPage
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Relative media file path (URL encoded).
+      responses:
+        "200":
+          description: HTML movie details page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Media item not found or unsupported format.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /watch/{filename}:
+    get:
+      summary: Cinema Player Page
+      description: Renders fullscreen video player container enforcing single-script invariant and HTML5 custom controls.
+      operationId: getWatchPlayerPage
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Relative media file path.
+      responses:
+        "200":
+          description: HTML cinema player page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Media item not found.
+
+  /manage:
+    get:
+      summary: Library & Storage Management Page
+      description: "Dashboard for storage pool governance (D: and E: drives), retention policy configuration, and orphan cache purging."
+      operationId: getManagePage
+      responses:
+        "200":
+          description: HTML management dashboard.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /library:
+    get:
+      summary: Library Management Alias
+      description: Alias route to /manage.
+      operationId: getLibraryAlias
+      responses:
+        "200":
+          description: HTML management dashboard.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /devices:
+    get:
+      summary: Connected Devices Dashboard
+      description: Dashboard displaying active and offline client devices, network metadata, and watch progress.
+      operationId: getDevicesPage
+      responses:
+        "200":
+          description: HTML devices dashboard.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /clients:
+    get:
+      summary: Connected Devices Alias
+      description: Alias route to /devices.
+      operationId: getClientsAlias
+      responses:
+        "200":
+          description: HTML devices dashboard.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /manual:
+    get:
+      summary: User Manual & Shortcuts Guide
+      description: Renders in-app user guide, touch gesture documentation, and keyboard shortcuts cheat sheet.
+      operationId: getManualPage
+      responses:
+        "200":
+          description: HTML manual view.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /help:
+    get:
+      summary: Manual Alias (/help)
+      description: Alias route to /manual.
+      operationId: getHelpAlias
+      responses:
+        "200":
+          description: HTML manual view.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /how-to-use:
+    get:
+      summary: Manual Alias (/how-to-use)
+      description: Alias route to /manual.
+      operationId: getHowToUseAlias
+      responses:
+        "200":
+          description: HTML manual view.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /download:
+    get:
+      summary: Android APK Download Page
+      description: Public landing page to download the latest signed production Android / Fire TV APK.
+      operationId: getDownloadPage
+      responses:
+        "200":
+          description: HTML download page.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /manifest.webmanifest:
+    get:
+      summary: PWA Web App Manifest
+      description: Returns JSON metadata defining Progressive Web App installation parameters.
+      operationId: getWebManifest
+      responses:
+        "200":
+          description: JSON PWA manifest.
+          content:
+            application/manifest+json:
+              schema:
+                $ref: '#/components/schemas/PwaManifest'
+
+  /sw.js:
+    get:
+      summary: Service Worker Script
+      description: Returns lightweight client service worker script for caching and offline claim.
+      operationId: getServiceWorker
+      responses:
+        "200":
+          description: JavaScript service worker code.
+          headers:
+            Service-Worker-Allowed:
+              schema:
+                type: string
+              example: "/"
+          content:
+            application/javascript:
+              schema:
+                type: string
+
+  /icon.svg:
+    get:
+      summary: App Branding Vector Icon
+      description: Returns vector SVG branding icon with 3D glossy play motif.
+      operationId: getAppIcon
+      responses:
+        "200":
+          description: Vector SVG image.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+
+  /api/movies:
+    get:
+      summary: List All Library Movies & Continue Watching Items
+      description: Returns complete catalog of discovered movies and in-progress items scoped per calling device.
+      operationId: getApiMovies
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Movie catalog and watch history payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieListResponse'
+
+  /api/movie/{filename}:
+    get:
+      summary: Single Movie Metadata & Technical Specifications
+      description: Returns deep metadata, TMDb enriched cast/crew, technical stream specs, and transcode readiness for one movie.
+      operationId: getApiMovieDetails
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Relative path to media file.
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Detailed movie payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieDetailsResponse'
+        "404":
+          description: Video not found or path traversal refused.
+
+  /api/media-info/{filename}:
+    get:
+      summary: Probe Media Stream & Determine Authoritative Playback Mode
+      description: Returns container metadata, dimensions, codecs, and the authoritative direct_play flag consumed by Flutter and web player.
+      operationId: getApiMediaInfo
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Media stream probe report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaInfoResponse'
+        "404":
+          description: Media file not found.
+
+  /api/media-readiness/{filename}:
+    get:
+      summary: Query Media Playback Readiness
+      description: Checks whether media is directly playable or requires waiting for HLS transcode completion.
+      operationId: getApiMediaReadiness
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Media readiness status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaReadinessResponse'
+        "404":
+          description: File not found.
+
+  /api/scan:
+    get:
+      summary: Trigger Library Scan (GET)
+      description: Asynchronously initiates filesystem library scan, TMDb metadata refresh, and missing transcode pass.
+      operationId: getApiScan
+      responses:
+        "200":
+          description: Scanner trigger status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanStatusResponse'
+    post:
+      summary: Trigger Library Scan (POST)
+      description: Idempotent POST trigger for library scan.
+      operationId: postApiScan
+      responses:
+        "200":
+          description: Scanner trigger status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanStatusResponse'
+
+  /api/media/{filename}:
+    delete:
+      summary: Delete Media File & Cascade Purge
+      description: Permanently unlinks media file from disk, removes SQLite records, and purges all associated HLS and preview caches.
+      operationId: deleteApiMedia
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Media purge report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurgeMediaResponse'
+        "500":
+          description: File deletion failure.
+
+  /api/media/delete/{filename}:
+    post:
+      summary: Delete Media File (POST Alternative)
+      description: Form/POST alternative for environments where HTTP DELETE is restricted.
+      operationId: postApiDeleteMedia
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Media purge report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurgeMediaResponse'
+        "500":
+          description: Deletion error.
+
+  /api/progress:
+    get:
+      summary: Retrieve Playback Progress
+      description: Returns saved watch position and total duration for a movie, scoped by device.
+      operationId: getApiProgress
+      parameters:
+        - name: filename
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Saved playback progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProgressGetResponse'
+        "404":
+          description: File not found.
+    post:
+      summary: Persist Playback Progress
+      description: Upserts current playback timestamp and marks device watch history.
+      operationId: postApiProgress
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProgressSetRequest'
+      responses:
+        "200":
+          description: Progress saved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                required: [success]
+        "400":
+          description: Invalid progress payload.
+        "404":
+          description: Video file not found.
+
+  /api/transcode-status/{filename}:
+    get:
+      summary: High-Frequency Transcode Progress Status
+      description: Returns real-time percentage, encoding speed, FPS, and smoothed ETA for an in-flight or completed transcode.
+      operationId: getApiTranscodeStatus
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [hls, compat, direct]
+      responses:
+        "200":
+          description: Transcode telemetry status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscodeStatusResponse'
+        "404":
+          description: Media file not found.
+
+  /api/transcode/start/{filename}:
+    post:
+      summary: Explicitly Start or Resume Transcoding
+      description: Queues and initiates background HLS transcoding for untranscoded media.
+      operationId: postApiTranscodeStart
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transcode initiation status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [building, queued, ready]
+                  message:
+                    type: string
+                required: [status, message]
+        "404":
+          description: Media file not found.
+
+  /api/transcodes:
+    get:
+      summary: List Active Background Transcodes
+      description: Returns array of all currently running GPU chunk transcode jobs.
+      operationId: getApiTranscodes
+      responses:
+        "200":
+          description: Active transcode list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transcodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ActiveTranscodeItem'
+                required: [transcodes]
+
+  /api/devices:
+    get:
+      summary: List Tracked Client Devices
+      description: Returns all client devices, network classification, hardware models, and watch history.
+      operationId: getApiDevices
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Device list payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesResponse'
+
+  /api/devices/heartbeat:
+    get:
+      summary: Device Keepalive Ping (GET)
+      description: Updates device last_seen timestamp.
+      operationId: getApiDeviceHeartbeat
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Heartbeat ack.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+    post:
+      summary: Device Keepalive Ping (POST)
+      description: Updates device last_seen timestamp.
+      operationId: postApiDeviceHeartbeat
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      responses:
+        "200":
+          description: Heartbeat ack.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+
+  /api/devices/client-hints:
+    post:
+      summary: Submit High-Entropy Client Hints
+      description: Receives Chromium userAgentData model and platform values to decode hardware make and model.
+      operationId: postApiDeviceClientHints
+      parameters:
+        - $ref: '#/components/parameters/XDeviceIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: [string, "null"]
+                platform:
+                  type: [string, "null"]
+                platformVersion:
+                  type: [string, "null"]
+      responses:
+        "200":
+          description: Client hints accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  updated:
+                    type: boolean
+                  device_id:
+                    type: string
+                required: [success, updated, device_id]
+
+  /api/devices/rename:
+    post:
+      summary: Rename Client Device
+      description: Sets a custom friendly name for a device.
+      operationId: postApiDeviceRename
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                name:
+                  type: string
+              required: [device_id, name]
+      responses:
+        "200":
+          description: Device renamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+        "400":
+          description: Missing device_id.
+
+  /api/devices/delete:
+    post:
+      summary: Forget Device
+      description: Removes device record and watch history from SQLite database.
+      operationId: postApiDeviceDelete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+              required: [device_id]
+      responses:
+        "200":
+          description: Device deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+        "400":
+          description: Missing device_id.
+
+  /api/system-status:
+    get:
+      summary: Real-Time Hardware & Storage Telemetry
+      description: Returns live metrics for CPU, RAM, dual-drive Storage Pool (D+E), and discrete/integrated GPU utilization.
+      operationId: getApiSystemStatus
+      responses:
+        "200":
+          description: System telemetry payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemTelemetryResponse'
+
+  /api/storage/audit:
+    get:
+      summary: Audit Transcode & Preview Caches
+      description: Audits all directories under cache/hls/ and cache/previews/, reporting active vs orphaned directories.
+      operationId: getApiStorageAudit
+      responses:
+        "200":
+          description: Cache audit report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageAuditResponse'
+
+  /api/storage/purge-orphans:
+    post:
+      summary: Purge Orphaned Caches
+      description: Safely removes orphaned HLS and preview cache directories without affecting active media.
+      operationId: postApiStoragePurgeOrphans
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+      responses:
+        "200":
+          description: Purge outcome report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoragePurgeResponse'
+
+  /api/storage/settings:
+    get:
+      summary: Read Storage Retention Policy
+      description: Reads current post-transcode retention policy ('keep', 'archive', 'purge_cache', 'delete_source').
+      operationId: getApiStorageSettings
+      responses:
+        "200":
+          description: Retention settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageSettingsResponse'
+    post:
+      summary: Update Storage Retention Policy
+      description: Persists new post-transcode retention policy in SQLite settings table.
+      operationId: postApiStorageSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retention_policy:
+                  type: string
+                  enum: [keep, archive, purge_cache, delete_source, delete_raw, delete_original]
+              required: [retention_policy]
+      responses:
+        "200":
+          description: Setting updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  retention_policy:
+                    type: string
+                required: [success, retention_policy]
+        "400":
+          description: Invalid retention policy value.
+
+  /api/storage/archive/{filename}:
+    post:
+      summary: Manually Archive Media Source
+      description: Moves original media file to D:\Flicks\.archive preserving relative subpaths if its HLS cache is verified complete.
+      operationId: postApiStorageArchive
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Archival succeeded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    type: object
+                required: [success, result]
+        "400":
+          description: Transcode incomplete or ineligible.
+        "404":
+          description: Media file not found.
+
+  /api/upload:
+    post:
+      summary: Single-File Media Upload
+      description: Multipart video upload with atomic staging (.upload_*.part) and automatic metadata scanning.
+      operationId: postApiUpload
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                  description: Optional custom title override.
+                overwrite:
+                  type: string
+                  enum: ["0", "1", "true", "false"]
+              required: [file]
+      responses:
+        "200":
+          description: Upload succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSuccessResponse'
+        "400":
+          description: No file provided or unsupported format.
+        "500":
+          description: Disk write error.
+
+  /api/upload/chunk/init:
+    post:
+      summary: Initialize Resumable Chunked Upload Session
+      description: Initiates a reverse-proxy-safe chunked upload session for large files up to 20 GiB.
+      operationId: postApiUploadChunkInit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                size:
+                  type: integer
+                  description: Total declared upload size in bytes.
+                title:
+                  type: string
+                overwrite:
+                  type: boolean
+              required: [filename, size]
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkInitResponse'
+        "400":
+          description: Invalid filename or size.
+        "413":
+          description: Size exceeds 20 GiB safety limit.
+
+  /api/upload/chunk/{upload_id}:
+    get:
+      summary: Query Chunked Upload Offset
+      description: Returns current received byte offset for resuming interrupted uploads.
+      operationId: getApiUploadChunk
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current offset report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkStatusResponse'
+        "404":
+          description: Session not found.
+    post:
+      summary: Upload Slice at Byte Offset
+      description: Appends raw binary chunk at declared X-Upload-Offset.
+      operationId: postApiUploadChunk
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Upload-Offset
+          in: header
+          required: true
+          schema:
+            type: integer
+          description: Byte offset matching current server state.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Chunk accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChunkStatusResponse'
+        "400":
+          description: Offset mismatch or chunk exceeds declared total size.
+        "404":
+          description: Session not found.
+    delete:
+      summary: Abort Chunked Upload Session
+      description: Cancels upload session and unlinks temporary staging files.
+      operationId: deleteApiUploadChunk
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                required: [success]
+
+  /api/upload/chunk/{upload_id}/complete:
+    post:
+      summary: Finalize and Assemble Chunked Upload
+      description: Verifies complete byte transfer, atomically promotes file to library root, and triggers scanning.
+      operationId: postApiUploadChunkComplete
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upload promoted and indexed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSuccessResponse'
+        "404":
+          description: Session not found.
+        "409":
+          description: Upload byte count incomplete.
+
+  /api/upload-subtitle/{filename}:
+    post:
+      summary: Upload Subtitle File with NLP Language Detection
+      description: Receives .srt or .vtt file, automatically identifies language from text characters, and stores alongside media.
+      operationId: postApiUploadSubtitle
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                subtitle:
+                  type: string
+                  format: binary
+              required: [subtitle]
+      responses:
+        "200":
+          description: Subtitle saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubtitleUploadResponse'
+        "400":
+          description: Missing file.
+        "404":
+          description: Target media file not found.
+        "415":
+          description: Unsupported subtitle extension (only .srt and .vtt allowed).
+
+  /api/subtitles/{filename}:
+    get:
+      summary: List Subtitle Tracks
+      description: Returns JSON array of sidecar, embedded, and online subtitle tracks for a movie.
+      operationId: getApiSubtitles
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subtitle tracks list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tracks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubtitleTrackItem'
+                required: [tracks]
+        "404":
+          description: Media not found.
+
+  /subtitles/{filename}/{name}:
+    get:
+      summary: Deliver Sidecar Subtitle Stream
+      description: Serves sidecar subtitle converted on-the-fly to WebVTT with caching headers.
+      operationId: getSubtitlesSidecar
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: WebVTT text stream.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              example: text/vtt; charset=utf-8
+            Cache-Control:
+              schema:
+                type: string
+              example: private, max-age=3600
+          content:
+            text/vtt:
+              schema:
+                type: string
+        "404":
+          description: Subtitle file not found or unauthorized.
+
+  /subtitles/embedded/{filename}/{stream_idx}.vtt:
+    get:
+      summary: Extract & Stream Embedded Subtitle Track
+      description: Demuxes embedded subtitle stream via FFmpeg and serves as WebVTT.
+      operationId: getSubtitlesEmbedded
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stream_idx
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: WebVTT stream.
+          content:
+            text/vtt:
+              schema:
+                type: string
+        "404":
+          description: Subtitle stream extraction failed or not found.
+
+  /subtitles/online/{filename}.vtt:
+    get:
+      summary: Fetch & Stream Online Subtitle
+      description: Downloads OpenSubtitles match and serves as WebVTT.
+      operationId: getSubtitlesOnline
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: WebVTT stream.
+          content:
+            text/vtt:
+              schema:
+                type: string
+        "404":
+          description: Online subtitle unavailable.
+
+  /media/{filename}:
+    get:
+      summary: RFC 7233 Byte-Range Media Stream
+      description: Zero-copy progressive media delivery supporting Range requests, DLNA TimeSeekRange, and Cast receiver CORS.
+      operationId: getMediaStream
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+          example: bytes=0-1048575
+        - name: TimeSeekRange.dlna.org
+          in: header
+          required: false
+          schema:
+            type: string
+          example: npt=300-
+      responses:
+        "200":
+          description: Full media container stream.
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+              example: bytes
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+              example: "*"
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            video/x-matroska:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content byte-range slice.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes 0-1048575/104857600
+            Accept-Ranges:
+              schema:
+                type: string
+              example: bytes
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+              example: "*"
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Media file not found.
+        "416":
+          description: Requested range not satisfiable.
+
+  /transcode/{filename}:
+    get:
+      summary: Direct Compat Transcode Stream
+      description: Fallback progressive MP4 transcoding stream.
+      operationId: getTranscodeStream
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transcoded MP4 stream.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+
+  /hls/{filename}/playlist.m3u8:
+    get:
+      summary: Dynamic HLS Master / Event Playlist
+      description: Dynamic HLS playlist assembly enforcing monotonic PTS offsets and live event synchronization.
+      operationId: getHlsPlaylist
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: HLS M3U8 playlist.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              example: application/vnd.apple.mpegurl
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+              example: "*"
+            CDN-Cache-Control:
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+        "404":
+          description: HLS stream not found.
+
+  /hls/{filename}/{segment}:
+    get:
+      summary: Deliver HLS Video Segment
+      description: Serves individual MPEG-TS (.ts) video chunk with edge caching headers.
+      operationId: getHlsSegment
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: string
+          example: segment_000000.ts
+      responses:
+        "200":
+          description: HLS transport stream chunk.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              example: video/mp2t
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+              example: "*"
+            Cache-Control:
+              schema:
+                type: string
+              example: public, max-age=86400
+          content:
+            video/mp2t:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Segment not found.
+
+  /api/seek-preview-meta/{filename}:
+    get:
+      summary: Seek Hover Preview Grid Metadata
+      description: Returns duration, sampling interval (5.0s), frame count, and dimensions for scrub previews.
+      operationId: getApiSeekPreviewMeta
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Seek preview sampling metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeekPreviewMetaResponse'
+        "404":
+          description: Media file not found.
+
+  /seek-preview/{filename}/{thumb}:
+    get:
+      summary: Deliver Seek Thumbnail Frame
+      description: Serves JPEG frame extracted on-demand and cached in cache/previews/.
+      operationId: getSeekPreviewThumbnail
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: thumb
+          in: path
+          required: true
+          schema:
+            type: string
+          example: thumb_0000.jpg
+      responses:
+        "200":
+          description: JPEG thumbnail image.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: public, max-age=86400
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Thumbnail not found or frame invalid.
+
+  /poster/{filename}:
+    get:
+      summary: Deliver Local Media Poster
+      description: Serves local poster image from media root directory.
+      operationId: getPoster
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Poster image file.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: public, max-age=86400
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Poster not found.
+
+  /tmdb-poster/{tmdb_id}:
+    get:
+      summary: Deliver Cached TMDb Poster
+      description: Serves cached TMDb movie poster, downloading on-demand if missing.
+      operationId: getTmdbPoster
+      parameters:
+        - name: tmdb_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: JPEG poster image.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Artwork not found.
+
+  /tmdb-backdrop/{tmdb_id}:
+    get:
+      summary: Deliver Cached TMDb Backdrop
+      description: Serves cached 16:9 movie backdrop hero artwork.
+      operationId: getTmdbBackdrop
+      parameters:
+        - name: tmdb_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: JPEG backdrop image.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Backdrop not found.
+
+  /api/cast/devices:
+    get:
+      summary: Discover LAN Cast Devices
+      description: Scans local network via SSDP (DLNA) and mDNS (Chromecast), returning cached discovery registry.
+      operationId: getApiCastDevices
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "true", "yes"]
+          description: Force active network rescan.
+      responses:
+        "200":
+          description: Discovered cast targets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastDevicesResponse'
+
+  /api/cast/play:
+    post:
+      summary: Remote Cast Play Command
+      description: Instructs remote DLNA or Chromecast receiver to load and play media.
+      operationId: postApiCastPlay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                filename:
+                  type: string
+                position:
+                  type: [number, "null"]
+                origin:
+                  type: [string, "null"]
+              required: [device_id, filename]
+      responses:
+        "200":
+          description: Play command issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastCommandResult'
+        "400":
+          description: Missing required fields or device rejected command.
+
+  /api/cast/control:
+    post:
+      summary: Remote Cast Playback Transport Control
+      description: Commands active cast session (play, pause, stop, seek, volume).
+      operationId: postApiCastControl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: string
+                action:
+                  type: string
+                  enum: [play, pause, stop, seek, volume]
+                value:
+                  type: [number, "null"]
+                  description: Required for seek (seconds) and volume (0-100).
+              required: [device_id, action]
+      responses:
+        "200":
+          description: Transport action applied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastCommandResult'
+        "400":
+          description: Invalid action or value out of bounds.
+
+  /api/cast/status:
+    get:
+      summary: Query Cast Session Status
+      description: Queries active transport state, position, duration, and error reporting for a device.
+      operationId: getApiCastStatus
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cast transport telemetry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastStatusResponse'
+        "400":
+          description: Missing device_id.
+
+  /api/app/update:
+    get:
+      summary: Query Android App Update Manifest
+      description: Returns version codes, minSupportedVersionCode, download URLs, and release notes for requested update channel.
+      operationId: getApiAppUpdate
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [production, developer]
+      responses:
+        "200":
+          description: In-app update manifest.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: no-cache, no-store, must-revalidate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUpdateManifest'
+        "400":
+          description: Invalid channel specified.
+        "404":
+          description: Manifest file not found for requested channel.
+
+  /api/app/download:
+    get:
+      summary: Download Android Client APK Binary
+      description: Streams signed universal release APK binary with byte-range and download resume support.
+      operationId: getApiAppDownload
+      parameters:
+        - name: channel
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [production, developer]
+            default: production
+      responses:
+        "200":
+          description: Full APK binary download.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              example: application/vnd.android.package-archive
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename=media-server-production.apk
+          content:
+            application/vnd.android.package-archive:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Resumed partial APK download.
+          headers:
+            Content-Range:
+              schema:
+                type: string
+          content:
+            application/vnd.android.package-archive:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid channel.
+        "404":
+          description: APK artifact not found.
+
+components:
+  parameters:
+    XDeviceIdHeader:
+      name: X-Device-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Unique client identifier (e.g. dev_a1b2c3d4) scoping watch progress and presence.
+
+  schemas:
+    PwaManifest:
+      type: object
+      properties:
+        name:
+          type: string
+        short_name:
+          type: string
+        start_url:
+          type: string
+        display:
+          type: string
+        background_color:
+          type: string
+        theme_color:
+          type: string
+        icons:
+          type: array
+          items:
+            type: object
+            properties:
+              src:
+                type: string
+              sizes:
+                type: string
+              type:
+                type: string
+      required: [name, short_name, start_url, display]
+
+    MovieSummaryItem:
+      type: object
+      properties:
+        filename:
+          type: string
+        title:
+          type: string
+        year:
+          type: [integer, "null"]
+          description: Nullable integer release year.
+        tmdb_id:
+          type: [integer, "null"]
+        overview:
+          type: [string, "null"]
+        poster_path:
+          type: [string, "null"]
+        backdrop_path:
+          type: [string, "null"]
+        runtime:
+          type: [integer, "null"]
+        genres:
+          type: [string, "null"]
+        vote_average:
+          type: [number, "null"]
+        rating:
+          type: [number, "null"]
+          description: Nullable float TMDb vote average rating.
+        updated_at:
+          type: [integer, string, "null"]
+        release_date:
+          type: [string, "null"]
+        added_at:
+          type: [integer, "null"]
+        position:
+          type: number
+          description: Watch progress position in seconds.
+        duration:
+          type: number
+          description: Total media runtime in seconds.
+        percent:
+          type: number
+          description: Watch completion percentage (0-100).
+        remaining_mins:
+          type: [integer, "null"]
+        needs_transcode:
+          type: boolean
+        can_transcode:
+          type: boolean
+        is_transcoding:
+          type: boolean
+        transcode_progress:
+          type: [number, "null"]
+        transcode_fps:
+          type: [number, "null"]
+        transcode_speed:
+          type: [number, string, "null"]
+        transcode_eta:
+          type: [string, "null"]
+      required: [filename, title, position, duration, percent]
+
+    MovieListResponse:
+      type: object
+      properties:
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieSummaryItem'
+        watching:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieSummaryItem'
+        total:
+          type: integer
+      required: [movies, watching, total]
+
+    TechnicalSpecs:
+      type: object
+      properties:
+        resolution:
+          type: [string, "null"]
+        video_codec:
+          type: [string, "null"]
+        audio_codec:
+          type: [string, "null"]
+        audio_channels:
+          type: [string, "null"]
+        aspect_ratio:
+          type: [string, "null"]
+        bitrate:
+          type: [string, "null"]
+        filesize:
+          type: [string, "null"]
+
+    MovieDetailsResponse:
+      type: object
+      properties:
+        movie:
+          $ref: '#/components/schemas/MovieSummaryItem'
+        specs:
+          $ref: '#/components/schemas/TechnicalSpecs'
+        extended:
+          type: object
+          description: TMDb details_json dictionary containing cast, crew, and certifications.
+        formatted_runtime:
+          type: [string, "null"]
+        backdrop_tmdb_id:
+          type: [integer, "null"]
+        transcode_info:
+          type: [object, "null"]
+        needs_transcode:
+          type: boolean
+        is_transcode_ready:
+          type: boolean
+      required: [movie, specs, needs_transcode, is_transcode_ready]
+
+    MediaInfoResponse:
+      type: object
+      properties:
+        container:
+          type: string
+        duration:
+          type: number
+        video_codec:
+          type: string
+        width:
+          type: [integer, "null"]
+        height:
+          type: [integer, "null"]
+        direct_play:
+          type: boolean
+          description: Authoritative flag dictating direct byte-range vs HLS master playlist playback.
+        needs_transcode:
+          type: boolean
+        is_transcode_ready:
+          type: boolean
+        ffprobe_available:
+          type: boolean
+        transcoding_available:
+          type: boolean
+        title:
+          type: [string, "null"]
+        year:
+          type: [integer, "null"]
+        overview:
+          type: [string, "null"]
+        genres:
+          type: [string, "null"]
+        rating:
+          type: [number, "null"]
+        runtime:
+          type: [integer, "null"]
+        reason:
+          type: string
+      required: [container, duration, direct_play, needs_transcode, is_transcode_ready]
+
+    MediaReadinessResponse:
+      type: object
+      properties:
+        filename:
+          type: string
+        direct_playable:
+          type: boolean
+        needs_transcode:
+          type: boolean
+        is_ready:
+          type: boolean
+        is_running:
+          type: boolean
+        status:
+          type: string
+          enum: [direct, ready, building, idle]
+        transcode_info:
+          type: [object, "null"]
+      required: [filename, direct_playable, needs_transcode, is_ready, status]
+
+    ScanStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [scanning, idle]
+        busy:
+          type: boolean
+        transcodes_queued:
+          type: integer
+        transcodes_started:
+          type: integer
+        transcodes_skipped:
+          type: integer
+        transcodes_errors:
+          type: integer
+      required: [status, busy, transcodes_queued, transcodes_started]
+
+    PurgeMediaResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        filename:
+          type: string
+        deleted_source:
+          type: boolean
+        purged_hls:
+          type: boolean
+        purged_previews:
+          type: boolean
+        purged_subtitles:
+          type: boolean
+        deleted_db_record:
+          type: boolean
+      required: [success]
+
+    ProgressGetResponse:
+      type: object
+      properties:
+        position:
+          type: number
+        duration:
+          type: number
+      required: [position, duration]
+
+    ProgressSetRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+        position:
+          type: number
+        duration:
+          type: number
+      required: [filename, position, duration]
+
+    TranscodeStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, building, idle, partial]
+        bytes:
+          type: integer
+        percent:
+          type: number
+        remaining:
+          type: [number, "null"]
+        encoded:
+          type: number
+        duration:
+          type: number
+        speed:
+          type: number
+      required: [status, percent, encoded, duration, speed]
+
+    ActiveTranscodeItem:
+      type: object
+      properties:
+        filename:
+          type: string
+        percent:
+          type: number
+        speed:
+          type: [string, number]
+        fps:
+          type: number
+        eta:
+          type: [string, "null"]
+        eta_seconds:
+          type: [integer, "null"]
+        status:
+          type: string
+      required: [filename, percent, status]
+
+    DeviceItem:
+      type: object
+      properties:
+        device_id:
+          type: string
+        custom_name:
+          type: [string, "null"]
+        device_name:
+          type: [string, "null"]
+        device_type:
+          type: [string, "null"]
+        device_os:
+          type: [string, "null"]
+        device_model:
+          type: [string, "null"]
+        browser:
+          type: [string, "null"]
+        connection_type:
+          type: [string, "null"]
+        client_ip:
+          type: [string, "null"]
+        public_ip:
+          type: [string, "null"]
+        isp:
+          type: [string, "null"]
+        city:
+          type: [string, "null"]
+        country:
+          type: [string, "null"]
+        first_seen:
+          type: string
+        last_seen:
+          type: string
+        is_active:
+          type: boolean
+        watch_history:
+          type: array
+          items:
+            type: object
+      required: [device_id, first_seen, last_seen]
+
+    DevicesResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceItem'
+        stats:
+          type: object
+          properties:
+            total_devices:
+              type: integer
+            active_now:
+              type: integer
+            offline_count:
+              type: integer
+            cloudflare_count:
+              type: integer
+            lan_count:
+              type: integer
+            localhost_count:
+              type: integer
+          required: [total_devices, active_now, offline_count]
+        current_device_id:
+          type: string
+      required: [devices, stats, current_device_id]
+
+    HeartbeatResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        device_id:
+          type: string
+      required: [success, device_id]
+
+    SystemTelemetryResponse:
+      type: object
+      properties:
+        cpu:
+          type: object
+          properties:
+            percent:
+              type: number
+            cores:
+              type: integer
+          required: [percent]
+        gpu:
+          type: object
+        memory:
+          type: object
+          properties:
+            total:
+              type: integer
+            used:
+              type: integer
+            free:
+              type: integer
+            percent:
+              type: number
+          required: [total, used, percent]
+        storage:
+          type: object
+          properties:
+            total:
+              type: integer
+            free:
+              type: integer
+            used:
+              type: integer
+            percent:
+              type: number
+            drives:
+              type: array
+              items:
+                type: object
+          required: [total, free, percent]
+        disk_io:
+          type: object
+        network:
+          type: object
+      required: [cpu, memory, storage]
+
+    StorageAuditResponse:
+      type: object
+      properties:
+        storage:
+          type: object
+        audit:
+          type: object
+          properties:
+            active_hls:
+              type: array
+              items:
+                type: object
+            orphaned_hls:
+              type: array
+              items:
+                type: object
+            active_previews:
+              type: array
+              items:
+                type: object
+            orphaned_previews:
+              type: array
+              items:
+                type: object
+            total_orphaned_dirs:
+              type: integer
+            total_orphaned_bytes:
+              type: integer
+          required: [total_orphaned_dirs, total_orphaned_bytes]
+      required: [audit]
+
+    StoragePurgeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        result:
+          type: object
+          properties:
+            dry_run:
+              type: boolean
+            purged_count:
+              type: integer
+            freed_bytes:
+              type: integer
+            purged_dirs:
+              type: array
+              items:
+                type: string
+          required: [dry_run, purged_count, freed_bytes]
+      required: [success, result]
+
+    StorageSettingsResponse:
+      type: object
+      properties:
+        retention_policy:
+          type: string
+        allowed_policies:
+          type: array
+          items:
+            type: string
+        archive_dir:
+          type: string
+      required: [retention_policy, allowed_policies, archive_dir]
+
+    UploadSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        filename:
+          type: string
+        title:
+          type: string
+        year:
+          type: [integer, "null"]
+        needs_transcode:
+          type: boolean
+        details_url:
+          type: string
+      required: [success, filename, title, needs_transcode, details_url]
+
+    ChunkInitResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        upload_id:
+          type: string
+        filename:
+          type: string
+        size:
+          type: integer
+        offset:
+          type: integer
+        chunk_size:
+          type: integer
+      required: [success, upload_id, filename, size, offset, chunk_size]
+
+    ChunkStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        upload_id:
+          type: string
+        filename:
+          type: string
+        size:
+          type: integer
+        offset:
+          type: integer
+        chunk_size:
+          type: integer
+      required: [success, upload_id, filename, size, offset, chunk_size]
+
+    SubtitleUploadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        filename:
+          type: string
+        language:
+          type: string
+        path:
+          type: string
+      required: [success, filename, language, path]
+
+    SubtitleTrackItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        language:
+          type: string
+        src:
+          type: string
+        kind:
+          type: string
+          default: subtitles
+        is_default:
+          type: boolean
+          default: false
+      required: [id, title, language, src]
+
+    SeekPreviewMetaResponse:
+      type: object
+      properties:
+        duration:
+          type: number
+        interval:
+          type: number
+          example: 5.0
+        count:
+          type: integer
+        width:
+          type: integer
+          example: 160
+        height:
+          type: integer
+          example: 90
+        aspect_ratio:
+          type: number
+        format:
+          type: string
+          example: jpg
+      required: [duration, interval, count, width, height, aspect_ratio, format]
+
+    CastDeviceItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [dlna, chromecast]
+        location:
+          type: [string, "null"]
+      required: [id, name, type]
+
+    CastDevicesResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/CastDeviceItem'
+        scanning:
+          type: boolean
+      required: [devices, scanning]
+
+    CastCommandResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: [string, "null"]
+      required: [ok]
+
+    CastStatusResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        device_id:
+          type: string
+        state:
+          type: string
+          enum: [PLAYING, PAUSED, STOPPED, IDLE, UNKNOWN]
+        position:
+          type: [number, "null"]
+        duration:
+          type: [number, "null"]
+        volume:
+          type: [number, "null"]
+        last_error:
+          type: [string, "null"]
+      required: [ok, device_id, state]
+
+    AppUpdateManifest:
+      type: object
+      properties:
+        latestVersion:
+          type: string
+        latestVersionCode:
+          type: integer
+        minSupportedVersionCode:
+          type: integer
+        downloadUrl:
+          type: string
+        releaseNotes:
+          type: [string, "null"]
+        fileSizeBytes:
+          type: [integer, "null"]
+        sha256:
+          type: [string, "null"]
+      required: [latestVersion, latestVersionCode, minSupportedVersionCode, downloadUrl]

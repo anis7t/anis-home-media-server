@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 import psutil
 
-from app.config import MEDIA_ROOT, CACHE_DIR
+from app.config import MEDIA_ROOT
 from app.utils.formatting import format_bytes_display
 
 

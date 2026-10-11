@@ -69,8 +69,10 @@ def subtitle_online(filename):
     if not is_video(video):
         abort(404)
     db = get_db()
-    m = movie(video, db)
-    db.close()
+    try:
+        m = movie(video, db)
+    finally:
+        db.close()
     vtt = fetch_online_subtitle(video, m)
     if not vtt or not vtt.is_file():
         abort(404)
@@ -84,7 +86,9 @@ def api_subtitles(filename):
     if not is_video(video):
         abort(404)
     db = get_db()
-    m = movie(video, db)
-    db.close()
+    try:
+        m = movie(video, db)
+    finally:
+        db.close()
     return jsonify(tracks=tracks(video, m))
 

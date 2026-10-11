@@ -64,13 +64,24 @@ def audit(media):
     # here and visible there - the same cache, two verdicts.
     from app.services.chunk_transcode_service import (
         expected_frames_for_window, plan_chunks, SEGMENTS_PER_CHUNK_STRIDE,
-        chunk_boundary_frame_tolerance)
+        chunk_boundary_frame_tolerance, cache_uses_strided_layout)
     cache = hls_cache_dir(media)
     if not (cache / "playlist.m3u8").is_file():
         return None
     fps = source_fps(media)
     if fps <= 0:
         return {"media": media.name, "fps": fps, "error": "unusable frame rate - not judged"}
+    if not cache_uses_strided_layout(cache):
+        from app.services.transcode_service import chunk_content_deficits
+        deficits = chunk_content_deficits(cache, _video_end(media), source_path=media)
+        return {
+            "media": media.name,
+            "fps": round(fps, 3),
+            "layout": "dense (legacy)",
+            "deficient_chunks": len(deficits),
+            "deficits": deficits,
+            "note": "Legacy dense cache judged via whole-cache aggregate accounting"
+        }
     plan = plan_chunks(_video_end(media))
     segs = sorted(cache.glob("segment_*.ts"))
     # Deliberately conservative. This audit counts packets over tens of GB and can run while the

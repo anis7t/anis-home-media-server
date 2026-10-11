@@ -171,7 +171,15 @@ def cache_maintenance_loop():
         try:
             from app.services.transcode_service import purge_orphaned_caches
             res = purge_orphaned_caches(dry_run=False)
-            if res.get('purged_count', 0) > 0:
+            if res.get('refused'):
+                # Phase 3.8D: a zero purged_count can mean "nothing to purge" OR
+                # "refused because safety could not be established". Say which, so
+                # a persistent refusal is never read as a healthy cache.
+                logger.error(
+                    "Periodic cache maintenance REFUSED to purge: %s",
+                    res.get('reason') or 'cache audit degraded',
+                )
+            elif res.get('purged_count', 0) > 0:
                 logger.info(
                     f"Periodic cache maintenance purged {res['purged_count']} orphaned directories ({res['freed_bytes']} bytes freed)"
                 )
