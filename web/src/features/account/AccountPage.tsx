@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
+import Avatar from '../../components/Avatar';
 import {
   listTokens,
   mintToken,
@@ -24,7 +25,7 @@ function statusOf(token: TokenRecord): { label: string; className: string } {
 }
 
 export function AccountPage() {
-  const { email, role, signOut } = useAuth();
+  const { email, name, role, signOut } = useAuth();
   const [tokens, setTokens] = useState<TokenRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState('');
@@ -82,15 +83,23 @@ export function AccountPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
-        <h1 className="text-2xl font-bold text-white">Account</h1>
-        <p className="mt-1 text-sm text-white/55">
-          Signed in as <span className="text-white/80">{email ?? 'unknown'}</span>
-          {role ? (
-            <span className="ml-2 rounded bg-white/10 px-2 py-0.5 text-xs uppercase text-white/60">
-              {role}
-            </span>
-          ) : null}
-        </p>
+        <div className="flex items-center gap-3">
+          <Avatar size="md" label={name ?? 'Account'} />
+          <div>
+            <h1 className="text-2xl font-bold text-white">Account</h1>
+            <p className="mt-1 text-sm text-white/55">
+              Signed in as <span className="text-white/80">
+                {name ?? email ?? 'unknown'}
+              </span>
+              {role ? (
+                <span className="ml-2 rounded bg-white/10 px-2 py-0.5 text-xs uppercase text-white/60">
+                  {role}
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-xs text-white/40">{email}</p>
+          </div>
+        </div>
       </header>
 
       <section aria-labelledby="tokens-heading" className="space-y-4">

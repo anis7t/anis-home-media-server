@@ -27,7 +27,12 @@ beforeEach(() => {
    */
   fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
     if (String(input) === '/api/auth/me') {
-      return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
+      return jsonResponse({
+        authenticated: true,
+        email: 'owner@example.com',
+        name: 'Anis Parvez',
+        role: 'admin',
+      });
     }
     return jsonResponse({ tokens: [] });
   });
@@ -50,6 +55,7 @@ function renderAccount() {
 describe('AccountPage', () => {
   it('shows the signed-in identity', async () => {
     renderAccount();
+    expect(await screen.findByText('Anis Parvez')).toBeInTheDocument();
     expect(await screen.findByText('owner@example.com')).toBeInTheDocument();
   });
 
