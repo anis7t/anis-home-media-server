@@ -7,7 +7,34 @@ Add access control before wider public sharing"), roadmap §5 non-negotiable rul
 (authentication is a compatibility requirement) and the roadmap's requirement for an
 explicit **authz matrix**.
 
+**Decision taken 2026-10-12:** the scheme is a **Google Sign-In (OIDC)** front door for
+humans on browsers, backed by a first-class **API token system** for programmatic
+clients, with **signed media URLs** for the devices that can do neither.
+
 ---
+
+## 0. The risk that decides the whole design
+
+The server is reachable from the internet at `media.anisparvez.in` with no
+authentication. **Google Sign-In does not fix that on its own: anyone on earth with a
+Google account can sign in.**
+
+Adding a Google button without an account allowlist is *worse than no authentication*
+in one specific respect — it creates a false impression that the server is private
+while remaining just as open, and it produces a clean, plausible-looking audit trail
+of who did what.
+
+So an allowlist is **not an optional refinement of this design; it is a precondition.**
+The first design I proposed did not need one (a single shared password), which is why
+this is called out at the top rather than buried in "open decisions".
+
+- Sign-in is permitted only for e-mail addresses on an explicit allowlist.
+- New/unlisted accounts are rejected **after** a successful Google exchange — the
+  server must not create a user row for an unknown identity.
+- Bootstrap: the allowlist lives in the `settings` table (or the NSSM environment);
+  it is not editable from the UI. An admin adding an address is a deliberate act.
+- There is **no "first sign-in becomes admin" rule.** On a publicly reachable server
+  that rule is a race an attacker wins by loading the page first.
 
 ## 1. Current state
 
@@ -28,17 +55,17 @@ transcodes, and stream every file.
 ## 2. Threat model — three independent paths
 
 Authentication is only as good as the *narrowest* path to the app. There are three,
-and they must each be considered:
+and each must be considered:
 
 | # | Path | Reaches | Can carry credentials? |
 |---|---|---|---|
 | 1 | **Public** — Cloudflare tunnel, `media.anisparvez.in` | From the internet | Browsers: yes. API clients: yes. Cast/DLNA receivers: **no**. |
 | 2 | **Tailnet** — `media-server.tail7d5bf9.ts.net` | Tailscale members | Same as above. |
-| 3 | **LAN** — `http://<lan_ip>:8000` | Anyone on the home LAN/ Wi-Fi, and **every Cast/DLNA receiver** | **No.** |
+| 3 | **LAN** — `http://<lan_ip>:8000` | Anyone on the home LAN, and **every Cast/DLNA receiver** | **No.** |
 
-**Path 3 is the one that constrains the design.** `build_media_url()`
-(`app/services/cast_service.py:287-293`) constructs media URLs on the *LAN address*
-and hands them to Cast and DLNA devices, which fetch them themselves:
+**Path 3 is the constraint that shapes the media plane.** `build_media_url()`
+(`app/services/cast_service.py:287-293`) builds media URLs on the *LAN address* and
+hands them to Cast and DLNA devices, which fetch them themselves:
 
 ```python
 base = validate_origin(origin or '') or f'http://{lan_ip()}:{server_port}'
@@ -46,152 +73,248 @@ return f'{base}/media/{urllib.parse.quote(rel)}'
 ```
 
 A Samsung TV reading a DIDL-Lite `<res>` URL, or a Cast receiver running its own
-loader, **cannot log in**. It cannot answer a challenge, hold a cookie, or attach
-an `Authorization` header. Any design that requires interactive authentication on
-`/media` and `/hls` will break casting and DLNA playback — both of which have
-cost significant effort and carry hard-won invariants in `AGENTS.md` §6.
+loader, **cannot log in**. It cannot complete an OAuth redirect, hold a session
+cookie it did not obtain, or attach an `Authorization` header. Any design that puts an
+interactive login in front of `/media` and `/hls` breaks casting and DLNA — and
+`AGENTS.md` §6 records how much hard-won behaviour depends on exactly those paths.
 
-**Stated plainly:** the LAN path cannot be fully protected against an attacker
-already on the home network. The goal is to make the *internet* path safe and to
-keep the LAN path working for devices that cannot authenticate, while recording
-that residual risk explicitly rather than implying it away.
+**Stated plainly:** the LAN path cannot be fully protected from an attacker already
+on the home network. The goal is to make the *internet* path require a real
+credential and to keep the LAN path working for devices that cannot authenticate,
+while recording the residual risk rather than implying it away.
 
-## 3. Design — three credential classes, one media plane
+## 3. The three credential classes
 
-The rule that resolves the tension: **the media plane accepts any credential
-class, including a signed URL.** Control-plane routes require a real credential.
+### 3.1 Google Sign-In → server session cookie (humans, browsers)
 
-### 3.1 Session cookie — for the React web frontend
-- Signed, `HttpOnly`, `Secure` (when public), `SameSite=Lax`, short idle + absolute TTL.
-- Requires introducing `SECRET_KEY` (generated once, stored outside the repo, injected
-  into the NSSM service environment).
-- CSRF: double-submit token or synchronizer pattern for all mutating requests.
-  `SameSite=Lax` alone does not cover same-origin XSS-read forms of the problem.
+- OIDC authorization-code flow with **PKCE** and a validated `state` parameter.
+- Scopes: `openid email profile`. Nothing more — no Drive, no Gmail.
+- The Google ID token is **verified, not trusted**: signature against Google's JWKS
+  (`https://openidconnect.googleapis.com/v1certs`), plus `aud` == our client id,
+  `iss`, `exp`, and nonce. Then discarded.
+- **The session is ours, not Google's.** The ID token lives ~1 hour; a signed
+  `HttpOnly; Secure; SameSite=Lax` cookie with our own idle + absolute TTL is issued
+  instead. Storing the ID token as the session would log people out hourly and would
+  put a third-party credential in a cookie.
+- CSRF protection on every mutating request (double-submit or synchronizer token).
+  `SameSite=Lax` alone is not sufficient.
+- Revocation via `https://oauth2.googleapis.com/revoke` plus our own session deny-list.
 
-### 3.2 Bearer token — for Flutter/Fire TV and XHR
-- Long-lived, per-device, **hashed at rest** (store only a hash, like a password),
-  revocable, with a visible label (" living room TV").
+**Secret handling.** The client id/secret go into the **NSSM `AppEnvironmentExtra`**,
+never the repo and never a committed `.env`. `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`
+§4 records an existing NSSM environment trap; that failure mode applies here too, and
+a silently-missing secret must fail loudly at startup rather than at first login.
+
+**Redirect URIs must be registered exactly** in the Google Cloud console — one per
+reachable origin, e.g. `https://media.anisparvez.in/auth/google/callback`,
+`http://media-server.tail7d5bf9.ts.net:8000/auth/google/callback`, and a localhost
+URI for development. Google rejects mismatches, and a missed tailnet URI would break
+sign-in specifically on the path that is supposed to be the fast one.
+
+### 3.2 API token system (programmatic clients)
+
+A first-class, managed token system — not a shared password.
+
+- Long-lived, per-device, human-labelled ("Living room TV", "Pixel 8").
+- **Generated with ≥256 bits of entropy, shown exactly once, stored only as a hash**
+  (SHA-256 is sufficient here — the token is high-entropy random, not a user-chosen
+  password, so no slow KDF is warranted; passwords would need one).
 - Carried as `Authorization: Bearer <token>`.
-- Aligns with the existing device model: the Flutter client already attaches a
-  cryptographically persistent `X-Device-Id` on every request
-  (`flutter_client/lib/core/api/api_interceptors.dart`), so a token can be issued
-  once per device and rotated independently of that id.
+- Revocable individually, with `created_at`, `last_used_at`, `expires_at`, `revoked_at`.
+- Token **creation requires a session** — so a token can only be minted by someone who
+  has already passed Google sign-in *and* the allowlist.
 
-### 3.3 Signed media URL — for Cast, DLNA and any client that cannot send headers
+This is where the two halves of the design meet: **sign in with Google on the web, then
+mint a token for the TV.** That solves the awkward part of Fire TV enrolment, which in
+the first draft was listed as an open problem (typed token entry is poor UX on a
+10-foot interface). It is now a QR code or a one-time pairing link rendered by the
+already-authenticated web UI. `docs/PHASE_2_REACT_STATUS.md` notes the React app has
+no token UI yet; that is Phase D work.
+
+**`X-Device-Id` is an identifier, not a credential.** The Flutter client already
+attaches a persistent one (`flutter_client/lib/core/api/api_interceptors.dart:36`).
+It must never be treated as authenticating anything — it is attacker-controlled and
+must remain so in the code, i.e. it may scope *data* (watch history) but never grant
+*access*.
+
+### 3.3 Signed media URLs (Cast, DLNA — the devices that can do neither)
+
 - `GET /media/<path>?exp=<unix>&sig=<hmac-sha256(secret, path|exp|scope)>`
 - Scope is narrow: `media` for `/media` and `/hls`; nothing else.
-- Short TTL (suggest 30–60 min), refreshed on each cast.
-- This is the only mechanism Cast/DLNA can satisfy, and it is safe to issue to a
-  device that cannot authenticate, because the URL itself is the credential and
-  it expires.
-- **Unguessable and non-enumerable:** the signature covers the exact path, so a
-  token for one title cannot be edited into another.
+- Short TTL (30–60 min), refreshed on each cast.
+- The only mechanism Cast/DLNA can satisfy, and safe to issue to a device that cannot
+  authenticate, because the URL itself is the credential and it expires.
+- The signature covers the **exact path**, so a token for one title cannot be edited
+  into another.
 
-## 4. Authz matrix
+## 4. Schema additions
 
-The roadmap asks for this explicitly. Roles are deliberately minimal.
+```sql
+CREATE TABLE users (
+  id            INTEGER PRIMARY KEY,
+  google_sub    TEXT NOT NULL UNIQUE,   -- Google's stable subject id
+  email         TEXT NOT NULL,
+  name          TEXT,
+  picture_url   TEXT,
+  role          TEXT NOT NULL DEFAULT 'viewer',   -- 'viewer' | 'admin'
+  created_at    TEXT NOT NULL,
+  last_login_at TEXT
+);
 
-| Surface | Route(s) | Anonymous | Viewer | Admin |
+CREATE TABLE auth_tokens (
+  id            INTEGER PRIMARY KEY,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label         TEXT NOT NULL,
+  token_hash    TEXT NOT NULL UNIQUE,   -- never store the token itself
+  created_at    TEXT NOT NULL,
+  last_used_at  TEXT,
+  expires_at    TEXT,
+  revoked_at    TEXT
+);
+```
+
+Plus a `denylist`/`revoked_sessions` table if session revocation must be immediate
+rather than bounded by the session TTL.
+
+**Both tables are new.** There is currently no user concept at all, and this is the
+first schema change of its kind since the PostgreSQL migration work — see §7.
+
+## 5. Authz matrix
+
+The roadmap asks for this explicitly. Roles are deliberately minimal: a
+single-household server does not need per-user sharing profiles.
+
+| Surface | Route(s) | Anonymous | Allowed Google user | Token holder |
 |---|---|---|---|---|
-| Login | `POST /api/auth/login` | ✅ | — | — |
+| Google sign-in | `GET /auth/google`, `GET /auth/google/callback` | ✅ (the door) | — | — |
 | Library read | `GET /api/movies`, `/api/movie/<f>`, `/api/media-info/<f>` | ❌ | ✅ | ✅ |
 | Watch progress | `GET`/`POST /api/progress` | ❌ | ✅ | ✅ |
 | **Media plane** | `/media/*`, `/hls/*` | ❌ | ✅ | ✅ |
+| **Cast/DLNA media** | `/media/*`, `/hls/*` with a valid `sig` | ✅ *(signed URL only)* | ✅ | ✅ |
 | Seek previews | `/api/seek-preview-meta/*`, `/seek-preview/*` | ❌ | ✅ | ✅ |
-| **Cast/DLNA media** | `/media/*`, `/hls/*` with valid `sig` | ✅ *(signed URL only)* | ✅ | ✅ |
-| Devices | `/api/devices*` | ❌ | ❌ | ✅ |
-| **Destructive** | `POST /api/media/delete`, `/api/storage/*`, `/api/scan`, `/api/upload*` | ❌ | ❌ | ✅ |
+| **Devices** | `/api/devices*` | ❌ | admin | ✅ |
+| **Cast control** | `/api/cast/*` | ❌ | admin | ❌ |
+| **Destructive** | `POST /api/media/delete`, `/api/storage/*`, `/api/scan`, `/api/upload*` | ❌ | **admin** | ❌ |
+| **Token minting** | `POST /api/auth/tokens` | ❌ | admin | ❌ |
 | Subtitles | `/subtitles/*` | ❌ | ✅ | ✅ |
 | System status | `/api/system-status`, `/api/transcodes` | ❌ | ✅ | ✅ |
 
-Two decisions worth stating explicitly:
+Three decisions worth stating explicitly:
 
-- **`/api/media/delete` is Admin-only, always.** It deletes files, and it currently
-  returns HTTP 200 with `'success': True` **even when the purge recorded refusals**
-  (`media_service.py:455` vs `:463`; risk item 6 in `MIGRATION_STATUS.md`). That
-  defect is worth fixing in the same change: once a delete is the most
-  security-relevant operation on the server, "success" must mean success.
-- **Cast/DLNA receive media, never control.** `/api/cast/*` stays Admin-only; a
-  signed media URL must not confer the ability to cast, scan or delete.
+- **`/api/media/delete` is admin-only, always.** It deletes files, and it currently
+  returns HTTP 200 `'success': True` **even when the purge recorded refusals**
+  (`media_service.py:455` vs `:463`; risk item 6 in `MIGRATION_STATUS.md`). Fix that
+  in the same change: once delete is the most security-relevant operation on the
+  server, "success" must mean success.
+- **A signed media URL confers playback only.** It must never authorise cast, scan or
+  delete — those need a real credential.
+- **Tokens are viewer-scoped by default.** A token should not be able to mint more
+  tokens, delete media, or see the device fleet. Otherwise one leaked TV token is
+  equivalent to admin.
 
-## 5. Phased rollout
+## 6. Phased rollout
 
-Every phase is independently reviewable and independently revertible. Nothing is
-enforced until the phase that enforces it has been verified on the real device.
+Every phase is independently reviewable and revertible. Nothing is enforced until the
+phase that enforces it has been verified against the real device.
 
 | Phase | Work | Gate before proceeding |
 |---|---|---|
-| **A — Foundation (no enforcement)** | `SECRET_KEY` config + NSSM env; `auth_tokens` table; `require_auth(role)` decorator; **every** protected route wrapped but gated behind `MEDIA_SERVER_AUTH=off` (default `off`). Full 720-test suite still green. | Suite green with enforcement off; decorator proven by new tests |
-| **B — Control plane** | Enable auth on `/api/*` + pages. Login endpoint, session issuance, CSRF. React login page. | React login works against the live server; Flutter still connects via existing path |
-| **C — Clients** | Flutter token issuance + storage; `/login`-style token entry for Fire TV; token revocation UI. | Flutter suite green; TV client connects; cast still works |
-| **D — Media plane** | Signed URLs from `build_media_url`; media-plane credential resolution accepting session **or** bearer **or** signature. | **Cast and DLNA verified on the real TV** — not mocked |
-| **E — Enforcement** | Default `MEDIA_SERVER_AUTH=on`; anonymous media access removed. | Full suite + Flutter suite + live Cast/DLNA all green |
+| **A — Foundation (no enforcement)** | `SECRET_KEY` + NSSM env; `users`/`auth_tokens` tables; allowlist; `require_auth(role)` decorator; **every** protected route wrapped but gated behind `MEDIA_SERVER_AUTH=off` (default `off`). | 720-test suite green with enforcement off; decorator proven by new tests |
+| **B — Google Sign-In** | OIDC flow, JWKS verification, session issuance, allowlist enforcement, CSRF, logout. React login page. | Sign-in works against the live server; **an unlisted Google account is rejected** (must be tested explicitly) |
+| **C — API token system** | Mint/list/revoke; `Authorization: Bearer` resolution; hashed-at-rest storage; token shown once. | Tokens issue, verify, and revoke correctly; suite green |
+| **D — Clients** | Flutter/Fire TV token enrolment; web UI to mint tokens + QR/pairing link. Flutter suite via `scripts\run_flutter_tests.ps1`. | Flutter suite green; TV client connects and resumes |
+| **E — Media plane** | Signed URLs from `build_media_url`; media-plane resolution accepting session **or** bearer **or** signature. | **Cast and DLNA verified on the real TV** — not mocked |
+| **F — Enforcement** | Default `MEDIA_SERVER_AUTH=on`; anonymous media access removed; secret rotation documented. | Full suite + Flutter suite + live Cast/DLNA all green |
 
-**Rollback:** every phase is behind `MEDIA_SERVER_AUTH`. Setting it back to `off`
-restores today's behaviour without a code revert — the same escape-hatch pattern
-already used by `MEDIA_SERVER_PURGE_ON_STARTUP` and
-`MEDIA_SERVER_TEST_POSTGRES_URL`.
+**Rollback:** every phase sits behind `MEDIA_SERVER_AUTH`. Setting it to `off` restores
+today's behaviour with no code revert — the same escape-hatch pattern already used by
+`MEDIA_SERVER_PURGE_ON_STARTUP` and `MEDIA_SERVER_TEST_POSTGRES_URL`.
 
-## 6. Testing requirements
+## 7. Testing requirements
 
 Per `AGENTS.md` §7 and the roadmap's testing gates:
 
-- **Contract tests** — `tests/test_api_contracts.py` must gain auth cases, and
-  **must be updated for the 401/403 responses**. Note it currently has 15 test
-  definitions against 65 operations (see `PHASE_2_REACT_STATUS.md`); the
-  unauthenticated surface it pins is about to change deliberately.
-- **Unit** — decorator logic, token hashing/verification, CSRF, signature
-  generation and its rejection cases (expired, tampered path, wrong scope).
-- **Regression (mandatory)** — the **existing 720-test suite must stay green** with
-  auth off, and the isolation guarantees in `AGENTS.md` §7 (library file list,
-  `movies` rows, `cache/hls` listing unchanged before/after) must hold with auth on.
+- **Contract tests** — `tests/test_api_contracts.py` must gain auth cases and be
+  updated for the new 401/403 responses. Note it currently has **15 test definitions
+  against 65 operations** (`docs/PHASE_2_REACT_STATUS.md`); the unauthenticated
+  surface it pins is about to change deliberately.
+- **Unit** — decorator logic, token hashing/verification, CSRF, signature generation
+  and its rejection cases (expired, tampered path, wrong scope), and the allowlist
+  rejection path.
+- **Google exchange must be mocked in CI** — JWKS, token endpoint and identity are all
+  faked. Live Google verification sits behind the existing `liveServerSkip` pattern
+  (`MEDIA_SERVER_LIVE_TESTS=1`), which must not be flipped on in normal runs.
+- **Regression (mandatory)** — the existing **720-test suite must stay green** with
+  auth off, and the isolation guarantees in `AGENTS.md` §7 (library file list, `movies`
+  rows, `cache/hls` listing unchanged before/after) must hold with auth on.
 - **Flutter suite** — via `scripts\run_flutter_tests.ps1`, never bare `flutter test`.
-- **Hardware / real-device (cannot be mocked)** — Cast and DLNA against the
-  Samsung DU7000. `AGENTS.md` §6 records that these behave in ways mocks do not
-  predict; a green suite is not evidence here.
+- **Hardware / real-device (cannot be mocked)** — Cast and DLNA against the Samsung
+  DU7000. `AGENTS.md` §6 records these behaving in ways mocks do not predict; a green
+  suite is not evidence here.
+- **Service worker** — `library.html` registers `/sw.js`. If a service worker ever
+  caches `/api/*` responses, authenticated data becomes readable from a shared cache.
+  Verify the media/API plane is excluded from any Cache Storage policy.
 
-## 7. Edge hardening (defence in depth, optional)
+## 8. Interaction with the PostgreSQL migration
 
-**Cloudflare Access** in front of `media.anisparvez.in` would give browser
-protection almost immediately with no application code. It is **not sufficient on
-its own**:
+`users` and `auth_tokens` would be the **first new tables since the PostgreSQL adapter
+landed**, and `MIGRATION_STATUS.md` records that the Phase 3 exit gate is still unmet —
+no demonstrated data transfer or recovery, and no backup/restore drill exists.
 
-- It cannot authenticate a Cast receiver or a DLNA renderer — they would be
-  blocked or forced through a browser flow they cannot complete.
+Two consequences:
+
+1. Adding tables to SQLite now means they must also be carried across in the eventual
+   transfer. Cheap now, expensive if deferred until after cutover.
+2. **Authentication must not depend on PostgreSQL.** It must work against the current
+   SQLite store, or the server becomes un-authenticatable in exactly the incident where
+   the database is the thing that broke.
+
+## 9. Explicit non-goals and open decisions
+
+- **No per-user accounts or sharing profiles.** Two roles are enough for a
+  single-household server. Multi-user adds surface with no user.
+- **Open decision — admin bootstrap.** The allowlist must exist before the first sign-in
+  is enabled. Decide where it lives (NSSM environment vs `settings` table) and who
+  edits it. There is deliberately no "first account becomes admin" rule (§0).
+- **Open decision — token expiry.** A TV token with no expiry is convenient; a token
+  with a short expiry needs a re-pairing flow on a device that may be switched off for
+  weeks. Suggest long-lived (90 days) with visible expiry in the UI.
+- **Open decision — LAN binding.** Waitress listens on `0.0.0.0:8000`. Once auth is
+  enforced this is mostly acceptable, but it should be a deliberate choice, not a
+  default. Binding loopback + Tailscale only — with the LAN address still served for
+  Cast/DLNA via signed URLs — is the strongest option if the signed-URL model proves
+  sufficient.
+- **Open decision — account de-authorisation.** When someone is removed from the
+  allowlist, their already-issued tokens keep working until expiry unless explicitly
+  revoked. Decide whether removal cascades to token revocation.
+
+## 10. Cloudflare Access (defence in depth, optional)
+
+**Cloudflare Access** in front of `media.anisparvez.in` would add browser protection
+with almost no application code. It is **not sufficient on its own**:
+
+- It cannot authenticate a Cast receiver or DLNA renderer — they would be blocked or
+  forced through a flow they cannot complete.
 - It does not cover path 3 (LAN) at all.
 - Flutter would need an OAuth device flow to obtain a token.
 
-Its appropriate role is defence in depth on the **browser** surface, layered on top
-of application auth, with the API/media paths explicitly passed through. Worth
-doing; not worth doing *instead*.
-
-## 8. Explicit non-goals and open decisions
-
-- **No per-user accounts or sharing profiles.** This is a single-household server;
-  two roles (viewer/admin) are enough. Multi-user adds surface with no user.
-- **No OAuth/SSO.** Adds an external dependency and a failure mode for a
-  single-user service. Revisit only if sharing outside the household is real.
-- **Open decision — LAN binding.** Waitress listens on `0.0.0.0:8000`. Once auth
-  is enforced this is mostly fine, but it should be a deliberate choice, not a
-  default: consider binding loopback + Tailscale only, and letting Cast/DLNA reach
-  the LAN address explicitly, if the signed-URL model proves sufficient.
-- **Open decision — token storage for Fire TV.** Typed entry is workable but poor.
-  Options: QR code containing a one-time enrolment link, or a device-pairing flow
-  initiated from the web UI.
-- **Open decision — what to do about the existing `X-Device-Id` model.** Device ids
-  are *identifiers*, not credentials, and must not be treated as either. The token
-  must be the thing that authenticates.
+Its role is defence in depth on the **browser** surface, layered under application
+auth, with API/media paths explicitly passed through. Worth doing; not worth doing
+*instead* — and redundant with Google Sign-In for the same surface.
 
 ---
 
 ## Summary
 
-The single most important constraint is that **Cast and DLNA receivers cannot
-authenticate** (`app/services/cast_service.py:287-293` hands them LAN URLs they
-fetch themselves). Any design that gates `/media` and `/hls` behind an interactive
-login will break them. The signed-URL approach keeps them working while making the
-internet path require a real credential.
+The two decisive constraints are:
 
-Work should start at **Phase A**, which adds all the machinery but enforces
-nothing, so the existing 720-test suite stays green and the change is provably
-inert before any behaviour changes.
+1. **The server is publicly reachable, so Google Sign-In without an allowlist is not
+   security** — it is a login form in front of an open door. The allowlist is a
+   precondition, not a refinement.
+2. **Cast and DLNA receivers cannot authenticate** (`app/services/cast_service.py:287-293`
+   hands them LAN URLs they fetch themselves), so the media plane needs signed URLs
+   even while the control plane moves behind sessions and tokens.
+
+Start at **Phase A**, which adds all the machinery but enforces nothing, so the
+existing 720-test suite stays green and the change is provably inert before any
+behaviour changes. Phase B should not be enabled until the allowlist exists.

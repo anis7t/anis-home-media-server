@@ -1114,3 +1114,11 @@ Manual playback & telemetry verification:
     ejection/contact risk and no SMART signal. Worth a deliberate decision.
 8. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote
     stream latency and Cloudflare tunnel limits.
+9. **Playwright E2E writes to the production `media.db`.** `web/e2e/journey.spec.ts` asserts that a
+    resume point is persisted, which necessarily POSTs `/api/progress` against the live server, so each
+    run leaves a row in `progress` and/or `device_watch_history`. Labelling it with a distinct
+    `X-Device-Id` does **not** isolate it: `register_device_request()` normalises the supplied id into a
+    server-generated `dev_*` value, so the E2E label never reaches the table. Either make the spec
+    self-cleaning (record the rows it creates and delete them in an `afterAll`), or accept the write as
+    realistic coverage and stop treating the database as read-only for E2E. Parked by user decision
+    2026-10-12; raised while building `web/`.
