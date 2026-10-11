@@ -1019,13 +1019,20 @@ def measure_segment_frame_count(path) -> int:
     path = Path(path)
     key = _segment_cache_key(path)
     if key is None:
-        return 0
+        # -1, never 0. _segment_cache_key returns None for an unreadable file AND for a
+        # segment ffmpeg finished writing less than _SEGMENT_PROBE_FRESH_SECONDS ago - the
+        # guard that stops the 1Hz progress updater reading a half-written file. Returning 0
+        # here turned that guard into an invented deficit: a chunk re-rendered by the serial
+        # repair measured its own brand-new segments as empty, ENDLIST was refused, and the
+        # cache sat "incomplete" while measuring complete minutes later. It hits every
+        # pipeline equally - the 8-bit and 10-bit validation runs failed identically here.
+        return -1                      # unmeasurable: not the same as holding no frames
     hit = _probe_cache_get(key, 'frames')
     if hit is not None:
         return int(hit)
     ffprobe = _ffprobe_bin()
     if not ffprobe:
-        return 0
+        return -1                      # no ffprobe available: unknown, not "empty"
     try:
         out = subprocess.run(
             [ffprobe, '-v', 'error', '-select_streams', 'v:0', '-count_packets',
