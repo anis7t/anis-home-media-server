@@ -308,6 +308,28 @@ The current project includes:
   returns a hard `0`; `plan_chunks(0)` is then `[]` and the cache is judged **vacuously complete**. Use the
   bare call. This silently skipped 28 Weeks Later in `hls_restore_endlist.py`, and every such title in
   `hls_frame_audit.py`.
+- **A planned chunk window must be able to hold a frame.** `plan_chunks` drops any final window shorter
+  than `MIN_PLANNABLE_CHUNK_SECONDS` (`1e-3`) instead of emitting it. The threshold is
+  **zero-frames-at-any-rate**, not a round number: `plan_chunks` has no frame rate, but at the highest
+  plausible rate (120fps) one frame lasts 8.3ms, so any window under ~1ms holds zero frames at every
+  rate and is unrenderable by construction. **Do not raise it toward a rounder value** — `0.5s` would
+  silently discard half a second of real video from the tail of every source that has one. The residue
+  is not lost: it is absorbed into the final *genuine* chunk's `duration`, so coverage stays exact.
+  - Why it matters: `expected_segs` is `max(1, round(dur/4))`, so a ~1e-13s window still **claimed one
+    segment**. No render could satisfy it, `_chunk_output_ok` failed, and the caller **retired the GPU
+    worker for the job** — a cascade at the very end of an otherwise healthy run, after all real work
+    was done. Symptom: ENDLIST written and zero deficits, alongside alarming
+    `GPU worker ... retiring it for this job` lines. Worst case the last chunk cannot be produced by any
+    healthy worker and the job aborts. The residue is float drift on a duration that divides exactly
+    (`600.0000000000002`), and the degenerate window is **always the last one**.
+  - **Dropping it cannot shift a segment index**, and this is asserted rather than assumed:
+    `start_seg = chunk_id * SEGMENTS_PER_CHUNK_STRIDE`, so ending the loop leaves ids contiguous
+    `0..N-1` and changes no existing chunk's range. An off-by-one here would corrupt the strided
+    layout — the cause of real past data loss — so `tests/test_chunk_tail_chunk.py` pins structural
+    identity against the clean duration across a residue sweep. `_chunk_output_ok` also carries a
+    companion guard (judge nothing for a zero-frame window) so a degenerate chunk reaching the check by
+    another route cannot retire a worker; that companion is **not** the fix, `plan_chunks` is, because
+    the defect is upstream.
 - **`_finalize()` only runs at the end of a transcode job**, so a cache refused ENDLIST is never
   re-evaluated on its own — it simply sits there. `scripts/hls_restore_endlist.py` re-checks and seals such
   caches using the fixed measurement (restoring only what measures complete, backing up the playlist

@@ -35,6 +35,17 @@ SEGMENT_TARGET_DURATION = 4.0   # seconds per HLS segment
 # is a hard failure (see _chunk_output_ok) rather than silent corruption.
 SEGMENTS_PER_CHUNK_STRIDE = 32
 
+# The shortest window a chunk may be planned for. Below this the window provably contains zero
+# video frames at ANY frame rate, so emitting such a chunk can only ever be a bug.
+#
+# The threshold is justified without knowing the source frame rate, because plan_chunks has no
+# access to it: at the highest plausible rate (120fps) a single frame lasts 1/120s = 8.3ms. Any
+# window shorter than ~1ms therefore holds zero frames at every rate, and a chunk planned for one
+# is unrenderable by construction. Do NOT raise this toward a rounder or "safer" value: 0.5s would
+# silently discard half a second of real content from the tail of every source that has one, which
+# is strictly worse than the artifact this constant exists to remove.
+MIN_PLANNABLE_CHUNK_SECONDS = 1e-3
+
 # Progress telemetry. The trailing window the reported speed is measured over, and the minimum
 # span that window must cover before a speed is published at all. Below that span the divisor is
 # so small that ordinary jitter produces a confident-looking multiple, which is how the UI came to
@@ -106,7 +117,22 @@ TAIL_RERENDER_FRACTION = 0.95
 
 
 def plan_chunks(total_duration: float, chunk_duration: float = DEFAULT_CHUNK_DURATION) -> List[Dict]:
-    """Divide media duration into contiguous chunk specifications."""
+    """Divide media duration into contiguous chunk specifications.
+
+    A final window shorter than MIN_PLANNABLE_CHUNK_SECONDS is dropped rather than emitted.
+    It arises from float residue when the duration divides (near-)exactly - `600.0000000000002`
+    plans an eleventh chunk of 2.3e-13s - and such a window provably contains no frames. Emitting
+    it is what produced a retirement cascade: `expected_segs` is `max(1, ...)`, so the degenerate
+    chunk still claims a segment, no render can satisfy it, `_chunk_output_ok` fails, and the worker
+    is retired for the job - after all real work is done, leaving alarming GPU-fault error lines in
+    an otherwise healthy run that still sealed ENDLIST with zero deficits.
+
+    Dropping the tail cannot shift a segment index. The degenerate window is always the last one
+    (it is the leftover of the final `min()`), and `start_seg` is `chunk_id * SEGMENTS_PER_CHUNK_STRIDE`,
+    so ending the loop leaves chunk ids contiguous 0..N-1 and changes no existing chunk's range.
+    That invariant is asserted directly in tests rather than assumed - an off-by-one here would
+    corrupt the strided layout, which AGENTS.md records as the cause of real past data loss.
+    """
     if total_duration <= 0:
         return []
 
@@ -116,6 +142,9 @@ def plan_chunks(total_duration: float, chunk_duration: float = DEFAULT_CHUNK_DUR
 
     while current_time < total_duration:
         dur = min(chunk_duration, total_duration - current_time)
+        if dur < MIN_PLANNABLE_CHUNK_SECONDS:
+            # Zero-frame window (see MIN_PLANNABLE_CHUNK_SECONDS): unrenderable by construction.
+            break
         # Strided, collision-proof segment indices: every chunk owns its own index range
         # (chunk_id * SEGMENTS_PER_CHUNK_STRIDE). A chunk's render does not necessarily emit
         # exactly the planned number of segments - a 60s chunk can produce 15, 16 or even 1
@@ -437,6 +466,14 @@ class DualGPUTranscodeJob:
         expected = float(chunk.get('duration') or 0.0)
         if expected <= 0:
             return produced > 0
+        if expected < MIN_PLANNABLE_CHUNK_SECONDS:
+            # Companion guard, not the fix: plan_chunks no longer emits a zero-frame window, so
+            # this is unreachable through the normal path. It stays because the alternative to
+            # reaching it is far worse - the yield ratio below would fail a window that provably
+            # contains no frames, and the caller retires the GPU for it, which is a false
+            # hardware fault report on a healthy adapter. Judging nothing is correct here: the
+            # window has no content to lose.
+            return True
         # A chunk must stay inside its planned segment range. One segment too many is exactly how
         # a chunk used to overwrite the next chunk's first segment and destroy ~1.25s of the
         # previous chunk's tail (h264_amf's 90-frame default GOP vs the 4.0s plan), so overflow is

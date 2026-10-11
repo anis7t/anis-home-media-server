@@ -130,6 +130,58 @@ Re-measured on both adapters: the driver is current (`31.0.21923.1000`, June 202
 runtime**, and H.264 High10 is unavailable on this VCN hardware regardless of driver age.
 The conclusion (`vpp_amf` required for 10-bit) stands; the stated reason did not.
 
+### 2026-10-11 (later still) — a zero-frame tail chunk spuriously retired GPU workers
+
+Queue item 3 is closed. `plan_chunks` emitted a final chunk with `duration ~1e-13s` whenever the
+source duration divided (near-)exactly — `600.0000000000002` planned an eleventh chunk of 2.3e-13s.
+Because `expected_segs` is `max(1, round(dur/4))`, that unrenderable window still **claimed one
+segment**; no render could satisfy it, `_chunk_output_ok` failed, and the caller retired the worker
+for the job. A cascade at the very end of a run, after all real work was done — which is why the
+worker sweeps completed with ENDLIST and zero deficits and *still* logged four alarming
+`GPU worker ... retiring it for this job` lines. Worst case the last chunk cannot be produced by any
+healthy worker and the job aborts.
+
+Fixed in `plan_chunks` (the defect is upstream — the yield-ratio check is correct as written for any
+chunk that has a real window, it was being handed a degenerate one). A final window shorter than
+`MIN_PLANNABLE_CHUNK_SECONDS = 1e-3` is dropped rather than emitted. The threshold is
+**zero-frames-at-any-rate**, not a round number: `plan_chunks` has no frame rate, but at 120fps one
+frame lasts 8.3ms, so any window under ~1ms holds zero frames at every rate. It is deliberately not
+`0.5s`, which would silently discard half a second of real video from the tail of every source that
+has one. The residue is not lost — it is absorbed into the final *genuine* chunk's `duration`, so
+coverage stays exact. `_chunk_output_ok` carries a companion guard as a second line of defence.
+
+**Index safety, asserted rather than assumed.** The degenerate window is always last (it is the
+leftover of the final `min()`), and `start_seg = chunk_id * SEGMENTS_PER_CHUNK_STRIDE`, so ending
+the loop leaves ids contiguous `0..N-1` and changes no existing chunk's range. An off-by-one here
+would corrupt the strided layout — the cause of real past data loss — so
+`tests/test_chunk_tail_chunk.py` (50 tests) pins structural identity against the clean duration
+across a residue sweep.
+
+**Verified on real renders** (isolated throwaway tree, idle machine, no production cache touched):
+
+| source | plan | tail frames | ENDLIST | `hls.loss.json` |
+|---|---|---|---|---|
+| 120.0s (exact 2x60s) | 2 chunks, no tail | **1500/1500** (exactly 60s @25fps) | yes | no |
+| 125.5s (genuine 5.5s tail) | 3 chunks, tail preserved | **137/137** (exactly 5.48s @25fps) | yes | no |
+| 120.000000000000014 (residue) | 2 chunks, was 3 | **3000/3000**, 0 retirement lines | yes | no |
+
+Frames asserted present, not merely that ENDLIST was written — the standard that let a 99.88%
+"repair" once mask 277s of missing frames. Suite on `main`: **707 passed, 28 skipped, 0 failed**.
+Isolation verified the hard way: library file list (90 files), production `movies` rows (44) and
+`cache/hls` listing (22 dirs) with per-directory content hashes were **bit-identical** before and
+after the full run.
+
+**Latent bug found while verifying, NOT fixed (separate item).** `_record_accepted_loss()`
+(`chunk_transcode_service.py:815`) references `chunk_content_deficits` with **no import** in its
+scope — the three sibling call sites (`:580`, `:783`, `:879`) each do a local import and this one
+does not — and the name is not a module global (verified at runtime). It is called from
+`_finalize()` (`:887`), the exact path this document and `AGENTS.md` describe as writing
+`hls.loss.json`. The resulting `NameError` is swallowed by a broad `except` logged at `debug`, so it
+fails silently. **The accepted-shortfall record has therefore never actually been written**, and
+"no `hls.loss.json`" as an acceptance signal is weaker than it reads: a cache can seal short and
+produce no loss file at all. Left alone deliberately — outside this item's scope, and it changes
+seal-time behaviour.
+
 ### 2026-10-05 â€” Site-wide Android APK download flow and production release
 
 **Deliverable:** Added the responsive `/download` page titled **Install the
@@ -939,7 +991,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (411 tests: 410 passed, 1 skipped)
+# Full automated test suite (735 tests: 707 passed, 28 skipped, 70 subtests)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -956,38 +1008,45 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-> **Resolved 2026-10-11 on `fix/test-isolation-vectors` (`064a9b3`), not yet merged to `main`.** Both
-> suite ordering defects are fixed there: 18 `test_write_guard.py` failures (resolving `conftest` by
-> module name when `tests/conftest.py` and `tests/integration/conftest.py` collide on that name, so the
-> guard silently used its own path set) and 36 `test_app.py` failures (a test module setting
-> `MEDIA_SERVER_MEDIA_ROOT` at import time before `import app`, so it only worked when it happened to be
-> the first module to import the app). Both were order-dependence landmines that every subset run hid.
-> That branch is now **602 passed, 0 failed**. Details in `AGENTS.md` and the commit message.
+> **Merged 2026-10-11 into `main` (`987f182`, "merge: fold the cache-safety review and isolation
+> branches into main").** Both suite ordering defects are fixed: 18 `test_write_guard.py` failures
+> (resolving `conftest` by module name when `tests/conftest.py` and `tests/integration/conftest.py`
+> collide on that name, so the guard silently used its own path set) and 36 `test_app.py` failures (a
+> test module setting `MEDIA_SERVER_MEDIA_ROOT` at import time before `import app`, so it only worked
+> when it happened to be the first module to import the app). Both were order-dependence landmines
+> that every subset run hid. Details in `AGENTS.md` and the commit message. Suite is now
+> **707 passed, 28 skipped**.
 
-1. **Merge `fix/test-isolation-vectors`.** It carries the four isolation vectors (what stopped tests
-   writing 23-byte fixtures into `D:\Flicks`), the write-guard handoff fix, and the `test_app.py`
-   order-independence fix. It builds on the migration/cache-safety chain, so it merges after
-   `review/migration-status-cache-safety`.
+1. ~~**Merge `fix/test-isolation-vectors`.**~~ **DONE** — merged to `main` in `987f182`.
 2. **`CachePurgeSafetyTests` (`tests/test_storage_retention.py:407-408`) still runs against the shared
    session cache root**, with live purges at `:460` and `:482`, rather than a dedicated one. Lower
    priority now the suite is green, but it remains the one place a purge can reach beyond its own
    fixtures. Related: `tests/test_storage_retention.py:68` writes `config.MEDIA_ROOT /
    "TestActiveMovie.2026.mkv"`, which under the corrected service environment is still `D:\Flicks`.
-3. **A zero-duration tail chunk spuriously retires GPU workers.** When a source duration divides
-   exactly, `plan_chunks` emits a final chunk with `duration 0.0`; `MIN_CHUNK_YIELD_RATIO` trips on it
-   and each affected worker is retired for the job. Cosmetic, no content impact, but it produces
-   alarming error lines in an otherwise healthy run.
-4. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
+3. ~~**A zero-duration tail chunk spuriously retires GPU workers.**~~ **CLOSED 2026-10-11.** Fixed in
+   `plan_chunks` with `MIN_PLANNABLE_CHUNK_SECONDS = 1e-3`; the companion guard in
+   `_chunk_output_ok` covers other routes. Index stability is asserted in
+   `tests/test_chunk_tail_chunk.py`; verified on real renders (tail frames present, 0 retirement
+   lines). See §0.
+4. **`_record_accepted_loss()` never writes `hls.loss.json`** (found 2026-10-11 while verifying the
+   above, not yet fixed). `chunk_transcode_service.py:815` calls `chunk_content_deficits` with no
+   import in its scope, while its three sibling call sites (`:580`, `:783`, `:879`) each do a local
+   import. The `NameError` is swallowed by a broad `except` logged at `debug`. So the
+   accepted-shortfall record described in §0 and `AGENTS.md` has never been written, and a cache that
+   seals short produces no loss file. Worth fixing, and worth asserting that it actually writes one —
+   the acceptance criterion "no `hls.loss.json`" cannot distinguish a clean cache from a broken
+   recorder today.
+5. **`scripts/hls_frame_audit.py` still has no layout guard.** It now shares the strided window and the
     shared measurement, but on the 4 legacy dense caches per-chunk windows are meaningless by design
     (the server judges whole-cache there on purpose). It should fall back to whole-cache accounting or
     say so explicitly instead of reporting per-chunk figures that read as real deficits.
-5. **ADB direct-intent: `--es mediaUrl` does not survive the shell.** Verified working form is
+6. **ADB direct-intent: `--es mediaUrl` does not survive the shell.** Verified working form is
     `--es route '/movie-details?filename=<name>'` (extras with query params work; a URL *value* is
     mangled in transit, so `/player` silently falls back to its hard-coded Batman entry). Worth
     recording in ``GEMINI.md`` A21 alongside the existing rapid-device-testing guidance.
-6. **E: is removable media.** `E:\MediaServer` (app, `media.db`, entire HLS cache, previews, venv) is a
+7. **E: is removable media.** `E:\MediaServer` (app, `media.db`, entire HLS cache, previews, venv) is a
     `Micro PS SD` reader, while `D:` is a 1TB HDD and `C:` a 256GB SSD. Volume reports healthy and
     dirty-bit clear, and throughput is SSD-like, but database and cache on removable media means
     ejection/contact risk and no SMART signal. Worth a deliberate decision.
-7. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote
+8. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote
     stream latency and Cloudflare tunnel limits.
