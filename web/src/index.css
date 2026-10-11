@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens carried over from the existing Flask-rendered UI so the two
+ * frontends read as one product: obsidian surfaces, a red brand gradient
+ * (#ff334b -> #e50914 -> #990014), frosted glass header.
+ */
+@theme {
+  --color-obsidian-950: #090b10;
+  --color-obsidian-900: #0d1017;
+  --color-obsidian-850: #11151d;
+  --color-obsidian-800: #141822;
+  --color-obsidian-700: #1b2130;
+
+  --color-brand-400: #ff334b;
+  --color-brand-500: #e50914;
+  --color-brand-600: #990014;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-obsidian-950);
+    color: #e8eaf0;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Keyboard focus must stay visible. The brand accent is used so the ring
+   * reads as part of the design rather than a browser default, but it is never
+   * removed - only restyled.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Frosted obsidian glass, matching the server-rendered header. */
+  .glass-header {
+    background: color-mix(in srgb, var(--color-obsidian-900) 72%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  .brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      var(--color-brand-400) 0%,
+      var(--color-brand-500) 45%,
+      var(--color-brand-600) 100%
+    );
+  }
+
+  /* Visible focus ring for keyboard users on dark poster art. */
+  .card-ring:focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 3px;
+  }
+}
