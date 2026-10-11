@@ -352,11 +352,42 @@ class StorageRetentionTests(unittest.TestCase):
         self.client.post("/api/storage/settings", json={"retention_policy": "keep"})
 
         # 5. POST /api/storage/purge-orphans (dry-run)
-        res = self.client.post("/api/storage/purge-orphans?dry_run=true")
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertTrue(data["success"])
-        self.assertTrue(data["result"]["dry_run"])
+        #
+        # This assertion used the whole session's shared cache root and the real
+        # media roots, so the outcome depended on what other test files happened
+        # to leave behind. With a populated shared cache and an empty disposable
+        # library, audit_orphaned_caches() correctly refuses (empty enumeration +
+        # populated cache == degraded) and the purge returns success=False. The
+        # test passed alone and failed in any combination - an order dependence,
+        # not an enumeration bug, and the failure text blamed the audit for
+        # doing the right thing.
+        #
+        # Bind it to a dedicated cache root AND a dedicated library root holding
+        # one real video, so the audit has a defined, non-degraded answer on every
+        # branch. Both seams (get_cache_dir, config.get_media_roots) are shared
+        # by the legacy and enumeration-complete audit paths.
+        previous_cache = app.CACHE_DIR
+        dedicated = _dedicated_cache_root("storage_endpoints")
+        _assert_dedicated_cache_root(self, dedicated, previous_cache)  # before any mutation
+        dedicated_library = dedicated.parent / "library"
+        dedicated_library.mkdir(parents=True, exist_ok=True)
+        (dedicated_library / "LibraryProbe.2026.mkv").write_bytes(b"x" * 32)
+        app.config.CACHE_DIR = dedicated
+        app.CACHE_DIR = dedicated
+        app._paths = (0, [])
+        try:
+            with patch("app.config.get_media_roots", return_value=[dedicated_library]):
+                app._paths = (0, [])
+                res = self.client.post("/api/storage/purge-orphans?dry_run=true")
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertTrue(data["success"], data)
+                self.assertTrue(data["result"]["dry_run"])
+        finally:
+            app._paths = (0, [])
+            app.config.CACHE_DIR = previous_cache
+            app.CACHE_DIR = previous_cache
+            shutil.rmtree(dedicated.parent, ignore_errors=True)
 
     def test_manage_page_storage_governance_render(self):
         """Verify /manage and /library render storage governance UI without template errors."""

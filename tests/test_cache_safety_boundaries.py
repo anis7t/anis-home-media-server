@@ -560,7 +560,22 @@ def test_purge_media_refuses_preview_poster_backdrop_outside_root():
     assert (foreign_preview / "thumb_0000.jpg").is_file()
     assert (foreign_poster / "123.jpg").is_file()
     assert (foreign_backdrop / "123.jpg").is_file()
-    database.commit.assert_not_called()
+
+    # A cache refusal must NOT abort the purge. purge_media() deletes the media
+    # file and its database rows unconditionally (media_service.py:415-421) and
+    # only the *cache* deletion is boundary-checked, so refusing a cache leaves
+    # the cache orphaned but still removes the library entry. This assertion
+    # previously asserted the opposite - that commit() was never called - which
+    # was never the function's contract and made this test fail on every run
+    # since ce9baa4 was written. What matters is that the two behaviours are
+    # independent, so assert the row deletion still went through:
+    delete_stmts = [
+        c.args[0] for c in database.execute.call_args_list
+        if c.args and isinstance(c.args[0], str)
+    ]
+    assert any("DELETE FROM movies" in s for s in delete_stmts), delete_stmts
+    assert any("DELETE FROM progress" in s for s in delete_stmts), delete_stmts
+    database.commit.assert_called()
 
 
 def test_purge_subtitles_for_media_refuses_caches_outside_root():
@@ -912,8 +927,18 @@ def test_enumeration_completeness_is_not_observable():
     truncated_inventory = [str(media_b)]
     assert len(complete_inventory) != len(truncated_inventory)
 
+    # The live cache directory must be created INSIDE point_app_at: hls_cache_dir()
+    # resolves against the application's CURRENT cache root, so building it before
+    # this block places it in the shared conftest tree instead of the disposable
+    # root the audit will look in. That is the same shared-cache hazard as the
+    # CachePurgeSafetyTests defect, and it made this test fail.
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[root_a, root_b]):
+        live_cache = transcode_service.hls_cache_dir(media_a)
+        live_cache.mkdir(parents=True, exist_ok=True)
+        (live_cache / "playlist.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+        (live_cache / "segment_000000.ts").write_bytes(b"L" * 32)
+
         with mock.patch.object(transcode_service, "video_paths",
                                return_value=complete_inventory):
             audit_complete = transcode_service.audit_orphaned_caches()
