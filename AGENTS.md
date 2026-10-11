@@ -288,6 +288,18 @@ The current project includes:
     **only when no chunk was flagged** — its purpose is the case the per-chunk check cannot see.
   - **Unknown is never empty.** A frame count of `-1` means unmeasurable and the chunk is skipped; only a
     genuinely-read 0 counts as zero. Returning 0 for an unreadable segment caused unbounded re-rendering.
+    **This bit twice more inside `measure_segment_frame_count`, and both are now fixed:** the freshness
+    guard that refuses to probe a segment younger than `_SEGMENT_PROBE_FRESH_SECONDS` returned `0`, not
+    `-1`, so a chunk re-rendered by the serial repair measured its own brand-new segments as empty, was
+    reported as ~15s short, and had its ENDLIST refused — after which the repair re-rendered a chunk
+    that was never short. Cost was roughly **half the elapsed time** on every affected transcode (26.2s
+    -> 13.7s on a fixed 96s clip). The `no ffprobe` branch had the same defect. Any new early return in
+    that function must be `-1`.
+  - **Never walk segment indices densely from 0** — not for accounting, and **not for counting what a
+    resumed cache already holds.** `chunk_transcode_service.py` computed `_initial_cached_sec` with
+    `while (hls_dir / f"segment_{i:06d}.ts").is_file(): i += 1`, which stops at the first inter-chunk
+    gap on the strided layout: a resumed cache holding 2447s reported 60s. "Newly encoded" then became
+    the entire cache and the UI reported **16.84x on a job actually running near 2x**. Glob and count.
   - **`_finalize()` records the accepted shortfall** to `hls.loss.json` (frames, seconds, chunks, both
     thresholds, timestamp, reason) when it seals a short cache. Not into `hls.progress` — that is ffmpeg's
     own `-progress` file.
@@ -354,6 +366,45 @@ The current project includes:
   every cache), `scripts/hls_frame_audit.py` (per-chunk frame accounting), `scripts/hls_gop_matrix.py`
   (real dual-GPU pipeline over synthetic keyframe cadences), `scripts/final_verification_battery.py`,
   `scripts/snapshot_live_data.py`.
+
+### Transcode strategy and telemetry
+
+Full write-up, with the measurements behind every number: `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`.
+
+- **`vpp_amf` is a depth converter first and a scaler second.** For a 10-bit source it is the only
+  thing that converts to 8-bit, because `h264_amf` rejects 10-bit on drivers older than 23.30 and the
+  encode fails outright. For an 8-bit source no taller than the 1080p profile it does no resize and no
+  conversion at all — a full GPU round-trip for nothing. `select_amf_strategy()` picks per source and
+  **fails safe: an unprobed source always keeps `vpp_amf`**, because guessing "no resize needed" from
+  missing data is the one mistake that would silently emit a wrong stream.
+- **`scale_d3d11` / `scale_d3d12` are not a substitute on this hardware.** Both fail with
+  `Could not create the texture (80070057)` — the driver will not create a texture from `p010le` on
+  these cards. Do not re-test them without a driver change.
+- **More workers must never cost content.** The acceptance criterion for any worker-count change is a
+  finished transcode with **zero missing frames**, ENDLIST written and no `hls.loss.json`; throughput is
+  reported alongside, but a faster render that drops content is worthless. Measured on a 600s clip:
+  2→4.55x, 3→5.16x, **4→5.26x**, 6→5.05x — all four PASS, and every run produced **byte-identical
+  output layout** (151 segments, index 0..320, 170 inter-chunk gaps). Worker count changes speed, not
+  content. A *negative* missing-frame count is a rounding surplus at a chunk boundary, not a failure —
+  the criterion is `missing_frames <= 0`, never `== 0`.
+- **Duplicated GPU workers need distinct names.** The scheduler retires a GPU for a whole job *by
+  name*, so shared names would take down every duplicate of that adapter at once and defeat the
+  fallback path.
+- **Gated behind `MEDIA_SERVER_TRANSCODE_STRATEGY`, default `legacy`.** Set `adaptive`, plus
+  `MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=4` (measured optimum) and
+  `MEDIA_SERVER_TRANSCODE_WORKERS_8BIT=2`, to engage. The deployed pipeline is unchanged until then.
+- **A progress number is a rate over a stated window, not a lifetime average.** `hls.progress` now
+  carries `rate_window_s` and `eta_s`; the job owns the ETA because it is the only thing that knows both
+  the current rate and how much was already cached when it resumed. Consumers must not re-derive an ETA
+  from a rate alone.
+- **Withhold the number when the window is too short to mean anything** (`MIN_RATE_WINDOW_S = 20`). The
+  UI shows "Calculating..." instead of a confident wrong figure. This is not polish: a two-sample rate
+  over half a second is how the UI came to claim 5.3x with a 7m53s ETA on a job really averaging
+  ~2.2x with ~16 minutes left.
+- **Never benchmark this pipeline while another transcode is running**, and never accept a wall-clock
+  number without confirming the run completed — a failed ffmpeg invocation exits in under a second and
+  reads as a very fast encode. Verify with `-progress` (`progress=end` plus a final `frame=`) or a frame
+  count. A contention artifact is what produced the false conclusion "CPU beats the GPU" here.
 
 ## 7. Testing protocol
 

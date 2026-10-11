@@ -29,6 +29,64 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-11 — Transcode correctness, throughput and telemetry
+
+Full detail and the measurements behind every number:
+`docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`. Three separate defects:
+
+**1. Frame accounting reported "unknown" as "empty" (throughput and correctness).**
+`measure_segment_frame_count()` documented `-1` for unmeasurable and `0` only for a
+segment ffprobe actually read and found empty. It returned `0` in two of those three
+cases. The damaging one was the freshness guard that deliberately refuses to probe a
+segment younger than `_SEGMENT_PROBE_FRESH_SECONDS` — so a chunk re-rendered by the
+serial repair measured its own brand-new segments as empty, was reported ~15s short,
+had its ENDLIST refused, and was then re-rendered again despite being complete.
+Measured cost on a fixed 96s clip: **26.2s -> 13.7s**. This is the `AGENTS.md`
+"Unknown is never empty" invariant, which the code did not implement at the one place
+that decides it. It reproduced identically on both filter paths, which is what made
+it look like a pipeline regression rather than a measurement fault.
+
+**2. Per-source pipeline and chunk worker sizing (throughput).** Concurrency was
+capped at two because the scheduler started one thread per detected GPU.
+`select_amf_strategy()` now picks the filter chain from the probed source: `vpp_amf`
+is a *depth converter* first (h264_amf rejects 10-bit on drivers older than 23.30,
+and the encode fails outright), so 10-bit and oversized sources keep it, while an
+8-bit source within the 1080p profile skips it — worth ~19% on its own.
+`expand_workers()` sizes the pool per class, discrete-weighted, with distinct names so
+retiring one duplicate cannot take down its siblings. Verified aggregate throughput on
+an idle machine with frame-checked runs: 4K10 1.62x->1.86x, 1080p10 4.01x->4.51x,
+1080p8 6.06x->7.19x. Gated behind `MEDIA_SERVER_TRANSCODE_STRATEGY`, default
+`legacy`, so the deployed pipeline is unchanged until explicitly enabled.
+
+Worker-count acceptance criterion is **completeness, not speed**: a finished transcode
+with zero missing frames, ENDLIST written, no `hls.loss.json`. A 2/3/4/6-worker sweep
+on a 600s clip passed all four (peak 5.26x at 4 workers) and every run produced a
+**byte-identical output layout** — worker count changes speed, never content.
+
+**3. Speed and ETA telemetry (user-visible).** `_initial_cached_sec` walked segment
+indices densely from 0, stopping at the first inter-chunk gap on the strided layout: a
+resumed cache holding 2447s reported 60s, so the UI showed **16.84x on a job running
+near 2x**. Speed was also a lifetime average, and no ETA was emitted, so the API
+divided the remainder by an instantaneous number. Observed on the live job: claimed
+5.3x with a 7m53s ETA against a real ~2.2x and ~16 minutes. Speed is now a trailing
+90s window rate, the job publishes its own `eta_s`/`rate_window_s`, and the figure is
+withheld entirely until the window spans 20s — the UI shows "Calculating..." rather
+than a confident wrong number. Live after: speed holds 7.2-7.5x and the ETA falls
+monotonically.
+
+Also in this pass: the deployed service environment pointed `MEDIA_SERVER_MEDIA_ROOT`
+at `C:\Flicks`, an **empty** directory, while `.env` and the project docs both say
+`D:\Flicks`. `app/config.py` resolves the library only because `get_media_roots()`
+falls back to `UPLOAD_TARGET_DIR`, which hardcodes `D:`. Corrected to `D:\Flicks` in
+the NSSM `AppEnvironmentExtra` (backup kept, other entries byte-identical); `.env`
+was not touched. Seven 23/57-byte test artifacts (`Mayday (2026)*.mkv`, contents
+literally `dummy-mkv-video-content`) written into the deployed library by the
+isolation defect were cascaded out through `/api/media/delete`; the real
+`Mayday 2026 ... BONE.mkv` and its cache were verified untouched.
+
+Suite on `main` after these changes: **402 passed, 0 failed** (38 new tests across
+three new files).
+
 ### 2026-10-05 — Site-wide Android APK download flow and production release
 
 **Deliverable:** Added the responsive `/download` page titled **Install the
@@ -838,7 +896,7 @@ Before committing or deploying changes:
 # Compile validation
 python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
 
-# Full automated test suite (164 tests)
+# Full automated test suite (403 tests: 402 passed, 1 skipped)
 .\venv\Scripts\python.exe -m pytest tests/
 ```
 
@@ -855,7 +913,27 @@ Manual playback & telemetry verification:
 
 ## 7. Immediate work queue
 
-1. **`tests/test_storage_retention.py:68` writes into the live library.** It does
+1. **Engage the adaptive transcode strategy (optional, validated, not yet enabled).**
+   `MEDIA_SERVER_TRANSCODE_STRATEGY=adaptive` with
+   `MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=4` and `MEDIA_SERVER_TRANSCODE_WORKERS_8BIT=2`
+   is worth ~15% on 10-bit/4K and ~19% on 8-bit with byte-identical output, and every
+   worker count was verified to lose zero frames. It is **deliberately off by default**;
+   the only thing separating it from being on is a deliberate decision to set three
+   variables in the service environment. The 8-bit class in particular was measured in
+   isolation, not in the full sweep, so enable `MAIN10=4` first if you want one step.
+2. **`MEDIA_SERVER_MEDIA_ROOT` in the service environment was wrong and is now fixed,
+   but nothing guards it.** It pointed at an empty `C:\Flicks` for an unknown period,
+   and the library resolved only by accident via `get_media_roots()` falling back to
+   `UPLOAD_TARGET_DIR`. A startup assertion that the configured media root exists and is
+   non-empty — or at least that logs a loud warning when it does not — would have caught
+   this immediately, and would catch the next one.
+3. **Pre-existing ordering defects in the test suite** (present on the review branch,
+   not on `main`): 36 failures in `test_app.py` (`test_api_contracts.py` imports `app`
+   before `test_app.py` establishes isolation) and 18 in `test_write_guard.py` (the
+   guard is not refusing writes to production paths once other files have run first —
+   "DID NOT RAISE RuntimeError" — which is worth understanding before trusting that
+   suite as a safety net).
+4. **`tests/test_storage_retention.py:68` writes into the live library.** It does
    `app.config.MEDIA_ROOT / "TestActiveMovie.2026.mkv"` — that is `D:\Flicks` — and the running
    server then creates a cache dir for the file, which the test deletes, orphaning it.
    `purge_orphaned_caches()` reclaims it on its next pass (observed doing so at 21:45 on 2026-10-03),

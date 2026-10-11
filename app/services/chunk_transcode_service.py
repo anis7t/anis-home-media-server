@@ -13,7 +13,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from app import config
 from app.services.gpu_service import (
@@ -34,6 +34,13 @@ SEGMENT_TARGET_DURATION = 4.0   # seconds per HLS segment
 # segments more than planned still cannot reach the next chunk's range. Over this much of a chunk
 # is a hard failure (see _chunk_output_ok) rather than silent corruption.
 SEGMENTS_PER_CHUNK_STRIDE = 32
+
+# Progress telemetry. The trailing window the reported speed is measured over, and the minimum
+# span that window must cover before a speed is published at all. Below that span the divisor is
+# so small that ordinary jitter produces a confident-looking multiple, which is how the UI came to
+# claim 5x and a 7-minute ETA on a job that was really averaging ~2x with ~16 minutes left.
+RATE_WINDOW_S = 90.0
+MIN_RATE_WINDOW_S = 20.0
 
 # Stamped into a cache directory once its segments are numbered on the strided grid. Its absence
 # means the segments are still on the legacy dense grid (round(start/4)), where a chunk's window
@@ -251,6 +258,16 @@ class DualGPUTranscodeJob:
         self.encoded_duration = 0.0
         self._start_wall_time = time.time()
         self._initial_cached_sec = 0.0
+
+        # (wall_time, rendered_seconds) samples for a RECENT-window rate.
+        #
+        # Speed used to be a lifetime average: newly_encoded / elapsed-since-start.
+        # That is wrong twice over. A resumed job already holds thousands of
+        # segments on disk, so "newly encoded" is small and the average collapses;
+        # and a lifetime average cannot represent a job that stalled or is racing
+        # through a fast region. The number the user sees is supposed to mean "how
+        # fast is it going NOW".
+        self._rate_samples: List[Tuple[float, float]] = []
 
     @property
     def pid(self) -> int:
@@ -624,20 +641,78 @@ class DualGPUTranscodeJob:
                 pass
 
         self.encoded_duration = total_sec
-        elapsed = max(0.5, time.time() - self._start_wall_time)
-        newly_encoded = max(0.0, total_sec - self._initial_cached_sec)
-        speed = round(newly_encoded / elapsed, 2) if (newly_encoded > 0 and elapsed > 0.5) else 0.0
 
         # Write progress report for UI telemetry
+        self._write_progress_file(total_sec, is_complete)
+
+    def _write_progress_file(self, total_sec: float, is_complete: bool) -> None:
+        """Publish progress, the trailing-window speed, and this job's own ETA.
+
+        The API used to divide the remaining duration by `speed`, which is why a
+        resumed job reported a wildly optimistic finish time. ETA belongs with
+        the process that knows both the rate and how much was already cached.
+        """
+        speed, window_span, remaining = self._recent_rate_and_eta(total_sec, is_complete)
         try:
-            self.progress_file.write_text(
-                f"out_time_us={int(total_sec * 1_000_000)}\n"
-                f"out_time_ms={int(total_sec * 1_000_000)}\n"
-                f"speed={speed:.2f}x\n"
-                f"progress={'end' if is_complete else 'continue'}\n"
-            )
+            fields = [
+                f"out_time_us={int(total_sec * 1_000_000)}",
+                f"out_time_ms={int(total_sec * 1_000_000)}",
+                f"speed={speed:.2f}x",
+                f"progress={'end' if is_complete else 'continue'}",
+                # Confidence: how much wall time the published rate is based on.
+                f"rate_window_s={window_span:.1f}",
+                f"eta_s={'' if remaining is None else int(remaining)}",
+            ]
+            self.progress_file.write_text("\n".join(fields) + "\n")
         except OSError:
             pass
+
+    def _recent_rate_and_eta(self, total_sec: float, is_complete: bool):
+        """Return (speed_x, window_span_s, eta_seconds_or_None) from recent samples.
+
+        The rate is measured over a trailing window rather than since job start,
+        so a resume, a stall or a burst is reflected within a minute instead of
+        being averaged away over the whole run.
+
+        Returns speed 0 while there is not yet enough signal to be honest about
+        it: fewer than MIN_RATE_WINDOW_S seconds of span, or no measurable
+        progress across the window. A confident-looking number computed from two
+        samples half a second apart is exactly the kind of figure that made the
+        original ETA useless.
+        """
+        now = time.time()
+        # Defensive: several call paths (including tests that build a job with
+        # object.__new__ to exercise a single method) never run __init__. Progress
+        # telemetry must never be the thing that raises inside _finalize().
+        samples = getattr(self, '_rate_samples', None)
+        if samples is None:
+            samples = []
+            self._rate_samples = samples
+        samples.append((now, float(total_sec)))
+        # Bound the buffer: ~2 minutes at the 1 Hz updater, with headroom.
+        if len(samples) > 300:
+            del samples[:-300]
+
+        if is_complete:
+            return 0.0, 0.0, 0.0
+
+        cutoff = now - RATE_WINDOW_S
+        base_t, base_s = samples[0]
+        for t, s in samples:
+            if t >= cutoff:
+                base_t, base_s = t, s
+                break
+
+        span = now - base_t
+        delta = float(total_sec) - base_s
+        if span < MIN_RATE_WINDOW_S or delta <= 0:
+            return 0.0, span, None
+
+        speed = delta / span
+        remaining = None
+        if self.total_duration > 0:
+            remaining = max(0.0, (self.total_duration - float(total_sec)) / speed)
+        return round(speed, 2), span, remaining
 
     def _measure_coverage(self):
         """Return (rendered_seconds, has_segments, coverage_ratio) for the assembled playlist."""
@@ -1051,9 +1126,18 @@ class DualGPUTranscodeJob:
                 self._finished.set()
                 return
 
-            init_segs = 0
-            while (self.hls_dir / f"segment_{init_segs:06d}.ts").is_file():
-                init_segs += 1
+            # Count what is actually on disk. This used to walk indices DENSELY from 0:
+            #
+            #     init_segs = 0
+            #     while (hls_dir / f"segment_{init_segs:06d}.ts").is_file():
+            #         init_segs += 1
+            #
+            # On the strided layout that loop stops at the FIRST inter-chunk gap, so a
+            # resumed cache holding 2447s reported 15 segments -> 60s. "Newly encoded"
+            # was then the whole cache, and dividing by real elapsed time produced a
+            # speed of 16.84x on a job actually running near 2x. Glob and count instead;
+            # AGENTS.md records the same dense-walk trap for segment accounting.
+            init_segs = len(list(self.hls_dir.glob("segment_*.ts")))
             self._initial_cached_sec = init_segs * SEGMENT_TARGET_DURATION
             self._start_wall_time = time.time()
 

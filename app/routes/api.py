@@ -208,8 +208,23 @@ def transcode_status(filename):
         speed = float(values.get('speed', '0x').rstrip('x'))
     except (TypeError, ValueError):
         speed = 0
+    # The job measures its own trailing-window rate and ETA, because it is the only
+    # thing that knows how much was already cached when it resumed and how fast it
+    # is going right now. Trust that over dividing the remainder by `speed`.
+    eta_from_job = None
+    if values.get('eta_s', '') not in ('', None):
+        try:
+            eta_from_job = max(0.0, float(values['eta_s']))
+        except (TypeError, ValueError):
+            eta_from_job = None
     percent = min(99, round(encoded / duration * 100, 1)) if duration else 0
-    remaining = max(0, (duration - encoded) / speed) if speed else None
+    remaining = eta_from_job
+    if remaining is None and speed:
+        remaining = max(0, (duration - encoded) / speed)
+    if not speed:
+        # No trustworthy rate yet. Say so rather than publishing a number derived
+        # from a window too short to mean anything.
+        remaining = None
 
     if is_hls:
         bytes_val = sum(p.stat().st_size for p in hls_dir.glob('segment_*.*')) if hls_dir.is_dir() else 0
@@ -228,7 +243,8 @@ def transcode_status(filename):
         remaining=remaining,
         encoded=encoded,
         duration=duration,
-        speed=speed
+        speed=speed,
+        speed_window_s=float(values.get('rate_window_s', 0) or 0),
     )
 
 

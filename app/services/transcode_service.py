@@ -1742,17 +1742,33 @@ def get_active_transcodes():
         except (TypeError, ValueError):
             speed = 0
 
+        # Fallback for pipelines that do not publish a windowed rate (the compat
+        # encoder, for instance). It divides by the age of the FIRST segment, which
+        # is only meaningful while the job is young: on a resumed cache that segment
+        # can be days old, so elapsed is enormous and the result collapses toward
+        # zero. Gate it rather than let it publish a confident wrong number.
         if speed <= 0 and encoded > 0 and playlist_file and playlist_file.is_file():
             try:
                 first_seg = playlist_file.parent / "segment_000000.ts"
                 ref_time = first_seg.stat().st_mtime if first_seg.is_file() else playlist_file.parent.stat().st_ctime
-                elapsed = max(1.0, time.time() - ref_time)
-                speed = round(encoded / elapsed, 2)
+                elapsed = time.time() - ref_time
+                if 0 < elapsed <= 3600:
+                    speed = round(encoded / elapsed, 2)
             except Exception:
                 pass
 
         percent = min(99.9, round(encoded / duration * 100, 1)) if duration > 0 else 0
-        remaining = max(0, (duration - encoded) / speed) if speed > 0 else None
+
+        # Prefer the ETA the job computed from its own trailing window. Dividing the
+        # remainder by `speed` here is what produced an ETA that never fell.
+        remaining = None
+        if values.get('eta_s', '') not in ('', None):
+            try:
+                remaining = max(0.0, float(values['eta_s']))
+            except (TypeError, ValueError):
+                remaining = None
+        if remaining is None and speed > 0:
+            remaining = max(0, (duration - encoded) / speed)
 
         encoded_str = f"{int(encoded // 60)}:{int(encoded % 60):02d}"
         duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "--:--"
