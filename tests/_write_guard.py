@@ -55,10 +55,33 @@ _orig = {}
 _patched = []
 #: Attribute names another plugin replaced after us; see uninstall().
 _conflicts = []
+#: The production-path set, handed over explicitly by conftest at session start.
+#:
+#: It used to be looked up as ``sys.modules["conftest"]._PRODUCTION_PATHS``. That lookup
+#: is ambiguous: two conftest.py files with the same basename and no __init__.py
+#: (tests/conftest.py and tests/integration/conftest.py) are BOTH registered by pytest
+#: under the module name "conftest", and whichever is imported last wins. The guard
+#: then read a module that has no _PRODUCTION_PATHS at all, silently fell back to its
+#: own set, and ignored every path the owning module added through
+#: temporary_production_paths() - so the refusal tests reported "DID NOT RAISE" while
+#: the guard was installed, working, and correctly classifying D:/Flicks.
+#:
+#: The owner now passes the set in explicitly. A LIVE reference is stored, not a copy:
+#: temporary_production_paths() mutates this very object and the guard must see the
+#: additions immediately.
+_PRODUCTION_PATHS_OVERRIDE = None
+
+
+def set_production_paths(paths) -> None:
+    """Register the live production-path set owned by conftest."""
+    global _PRODUCTION_PATHS_OVERRIDE
+    _PRODUCTION_PATHS_OVERRIDE = paths
 
 
 def _production_paths():
-    """The active deployed-path set, taken from conftest when available."""
+    """The active deployed-path set: conftest's, else a self-built fallback."""
+    if _PRODUCTION_PATHS_OVERRIDE:
+        return _PRODUCTION_PATHS_OVERRIDE
     conftest = sys.modules.get("conftest")
     paths = getattr(conftest, "_PRODUCTION_PATHS", None)
     if paths:

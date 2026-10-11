@@ -436,6 +436,14 @@ Path.rmdir = _guarded_path_rmdir
 def pytest_sessionstart(session):
     """Install the pre-write guard at the start of a real pytest session."""
     _write_guard.install()
+    # Hand the guard OUR set explicitly. It used to look it up as
+    # sys.modules["conftest"]._PRODUCTION_PATHS, which is ambiguous: tests/conftest.py
+    # and tests/integration/conftest.py share a basename and have no __init__.py, so
+    # pytest registers BOTH under the module name "conftest". The guard then read a
+    # module with no _PRODUCTION_PATHS, fell back to its own set, and never saw the
+    # paths temporary_production_paths() added - so every refusal test that used that
+    # helper failed with "DID NOT RAISE" while the guard was installed and working.
+    _write_guard.set_production_paths(_PRODUCTION_PATHS)
 
 
 def pytest_unconfigure(config):

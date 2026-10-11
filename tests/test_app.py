@@ -7,9 +7,32 @@ from unittest.mock import MagicMock, patch
 
 _orig_media_root_env = os.environ.get("MEDIA_SERVER_MEDIA_ROOT")
 _orig_database_env = os.environ.get("MEDIA_SERVER_DATABASE")
-TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
-os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
+
+# Capture conftest's throwaway locations BEFORE anything else can overwrite them.
+_conftest_media_root = Path(os.environ["MEDIA_SERVER_MEDIA_ROOT"])
+_conftest_database = Path(os.environ["MEDIA_SERVER_DATABASE"])
+
+
+class _ConfiguredRoot:
+    """Stand-in for tempfile.TemporaryDirectory that names an EXISTING root.
+
+    This module used to create its own TemporaryDirectory and point
+    MEDIA_SERVER_MEDIA_ROOT at it at import time, immediately before `import app`.
+    That only worked when this file was the first module to import `app`: pytest
+    collects test_api_contracts.py before test_app.py, and that module imports
+    `app` first, so config.MEDIA_ROOT was already bound to conftest's root and this
+    file's later import was a no-op. Its fixtures then landed in a directory nothing
+    pointed at and 36 tests failed with 404s - while the same file passed 58/58 when
+    run alone. Import order must not decide where a test writes.
+
+    Using the root the app is actually pointed at makes the file order-independent.
+    """
+
+    def __init__(self, path):
+        self.name = str(path)
+
+
+TMP = _ConfiguredRoot(_conftest_media_root)
 import app
 
 import _isolation_paths
@@ -39,11 +62,6 @@ def _validate_isolation_targets():
                 f"TEST ISOLATION VIOLATION: {name} points at a deployed "
                 f"location ({resolved}); refusing to continue."
             )
-
-# Capture conftest's throwaway locations so tearDownClass can restore the
-# isolation environment instead of the deployed one (see tearDownClass).
-_conftest_media_root = Path(os.environ["MEDIA_SERVER_MEDIA_ROOT"])
-_conftest_database = Path(os.environ["MEDIA_SERVER_DATABASE"])
 
 class MediaServerTests(unittest.TestCase):
     @classmethod
