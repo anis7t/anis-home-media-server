@@ -319,7 +319,51 @@ captured beforehand.
   Phase B.
 - The service has **not** been restarted and `MEDIA_SERVER_SECRET_KEY` has **not**
   been set. Neither is needed while enforcement is off.
-| **B — Google Sign-In** | OIDC flow, JWKS verification, session issuance, allowlist enforcement, CSRF, logout. React login page. | Sign-in works against the live server; **an unlisted Google account is rejected** (must be tested explicitly) |
+### Phase B — code complete 2026-10-12, awaiting Google credentials
+
+B1 (allowlist store) and B2 (Google Sign-In) are implemented and tested. **Enforcement
+remains off and the live service is unchanged.** The last mile needs credentials only
+you can create; see *Not yet done*.
+
+| Piece | Where |
+|---|---|
+| Allowlist store: union of `settings` table + environment, normalisation, fail-closed reads | `app/services/auth_service.py` |
+| Admin-only allowlist route (`GET`/`POST /api/auth/allowlist`) | `app/routes/api.py` |
+| OIDC flow, PKCE, JWKS verification, `users` upsert, our own session | `app/services/google_auth.py` |
+| `/auth/google`, `/auth/google/callback`, `/auth/logout`, `/api/auth/me` | `app/routes/auth.py` |
+| `app.secret_key` wired from `MEDIA_SERVER_SECRET_KEY` | `app/__init__.py` |
+| 64 tests across three files | `tests/test_auth_allowlist.py`, `tests/test_google_auth.py`, `tests/test_auth_foundation.py` |
+
+**Security properties, each pinned by a test**
+
+- The Google ID token is **verified then discarded**; the session is our own
+  signed cookie. Storing Google's token would log people out hourly and put a
+  third-party credential in a cookie.
+- `state`, `nonce` and PKCE (S256) are all validated. `nonce` is carried into
+  `verify_id_token` — an earlier draft dropped it, which would have silently
+  skipped that check.
+- Signature verification is exercised with **real RSA keys**, not a mocked
+  verifier: a token signed by an untrusted key is rejected, as is an unknown
+  `kid`, a foreign `aud`/`iss`, and an expired token.
+- **The allowlist is enforced at the callback, after full verification**, so an
+  unlisted identity is refused *and no `users` row and no session ever exist for
+  it*. The refusal message does not confirm whether the address exists.
+- `?next=` cannot redirect off-site (open-redirect guard).
+- The allowlist route is admin-only and **cannot be reached while enforcement is
+  on without a credential** — otherwise anyone could enrol themselves.
+
+**Not yet done — needs credentials you must create**
+
+- **No Google OAuth client exists.** `gcloud` is installed (586.0.0) but has **no
+  credentialed accounts**, and Web-application OAuth clients are a Cloud Console
+  operation rather than a `gcloud` command.
+- Until those exist, `/auth/google` answers **503** with the reason logged, and
+  `MEDIA_SERVER_SECRET_KEY` is still unset.
+- **Enforcement must stay off** until a real sign-in has been completed
+  end-to-end. Turning it on earlier would 401 the entire server including
+  artwork, with no way to sign in.
+- React login page and the admin allowlist editor UI are not built yet; the
+  endpoints they will call are.
 | **C — API token system** | Mint/list/revoke; `Authorization: Bearer` resolution; hashed-at-rest storage; token shown once. | Tokens issue, verify, and revoke correctly; suite green |
 | **D — Clients** | Flutter/Fire TV token enrolment; web UI to mint tokens + QR/pairing link. Flutter suite via `scripts\run_flutter_tests.ps1`. | Flutter suite green; TV client connects and resumes |
 | **E — Media plane** | Signed URLs from `build_media_url`; media-plane resolution accepting session **or** bearer **or** signature. | **Cast and DLNA verified on the real TV** — not mocked |

@@ -12,6 +12,7 @@ from shutil import which as shutil_which
 from flask import Blueprint, abort, jsonify, request, send_file
 
 from app import config
+from app.services.auth_service import require_auth
 from app.db import get_db, value
 
 logger = logging.getLogger(__name__)
@@ -779,6 +780,47 @@ def storage_settings():
         'retention_policy': current_policy,
         'allowed_policies': sorted(list(config.ALLOWED_RETENTION_POLICIES)),
         'archive_dir': str(config.ARCHIVE_DIR),
+    })
+
+
+@api_bp.route('/api/auth/allowlist', methods=['GET', 'POST'])
+@require_auth('admin')
+def auth_allowlist_route():
+    """Read or replace the e-mail allowlist permitted to sign in.
+
+    Admin-only, deliberately. This is the single most security-relevant setting
+    on the server: a route that could add arbitrary addresses would let anyone
+    who can reach it enrol themselves and make the allowlist decorative. It is
+    therefore its own key and its own route rather than a generic "set any
+    settings key" endpoint.
+
+    The environment half (`MEDIA_SERVER_AUTH_ALLOWLIST`) is reported for
+    visibility but never rewritten - it is the break-glass identity.
+    """
+    from app.services import auth_service
+
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        emails = data.get('emails')
+        if emails is None:
+            emails = []
+        if not isinstance(emails, list) or not all(isinstance(e, str) for e in emails):
+            return jsonify({
+                'success': False,
+                'error': "'emails' must be a list of strings.",
+            }), 400
+        stored = auth_service.store_allowlist(emails)
+        return jsonify({
+            'success': True,
+            'stored': sorted(stored),
+            'environment': sorted(config.auth_allowlist()),
+            'effective': sorted(auth_service.effective_allowlist()),
+        })
+
+    return jsonify({
+        'stored': sorted(auth_service.stored_allowlist()),
+        'environment': sorted(config.auth_allowlist()),
+        'effective': sorted(auth_service.effective_allowlist()),
     })
 
 

@@ -8,6 +8,7 @@ from markupsafe import Markup, escape
 
 from app import config
 from app.routes.api import api_bp
+from app.routes.auth import auth_bp
 from app.routes.cast import cast_bp
 from app.routes.media import media_bp
 from app.routes.pages import pages_bp
@@ -152,6 +153,14 @@ def create_app(test_config=None):
     )
     app_instance.config['TEMPLATES_AUTO_RELOAD'] = True
 
+    # Flask signs the session cookie with this. It is read from the service
+    # environment, never committed. Left None when unset: that is a legitimate
+    # state while enforcement is off, and any attempt to use the session then
+    # fails loudly rather than producing an UNSIGNED cookie that anybody could
+    # forge. `auth_service.startup_auth_diagnostics()` errors if enforcement is
+    # on without it.
+    app_instance.secret_key = config.secret_key()
+
     logging.basicConfig(level=config.LOG_LEVEL)
 
     # Register blueprints
@@ -160,6 +169,7 @@ def create_app(test_config=None):
     app_instance.register_blueprint(subtitles_bp)
     app_instance.register_blueprint(api_bp)
     app_instance.register_blueprint(cast_bp)
+    app_instance.register_blueprint(auth_bp)
 
     # Authentication gate (Phase A). Registered as an app-wide before_request
     # rather than per blueprint because a blueprint's before_request must be

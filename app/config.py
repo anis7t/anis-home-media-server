@@ -333,3 +333,23 @@ def auth_allowlist():
     parts = raw.replace(";", ",").replace("\n", ",").split(",")
     return frozenset(part.strip().lower() for part in parts if part.strip())
 
+
+def google_client_id():
+    """Google OAuth client id. Supplied through the service environment only."""
+    return (os.environ.get("MEDIA_SERVER_GOOGLE_CLIENT_ID") or "").strip() or None
+
+
+def google_client_secret():
+    """Google OAuth client secret. Never committed, never logged."""
+    return (os.environ.get("MEDIA_SERVER_GOOGLE_CLIENT_SECRET") or "").strip() or None
+
+
+def google_redirect_uri():
+    """Explicit callback URI, or None to derive it from the incoming request.
+
+    Needed only when a proxy makes the externally visible URL differ from what
+    Flask sees. Google requires an exact match, so whichever is used here must be
+    registered in the Cloud console.
+    """
+    return (os.environ.get("MEDIA_SERVER_GOOGLE_REDIRECT_URI") or "").strip() or None
+

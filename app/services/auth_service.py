@@ -72,6 +72,12 @@ ANONYMOUS_RULES = frozenset({
     # Seek-preview thumbnails are fetched by the player element the same way
     # media is, so they travel on the same anonymous path.
     "/seek-preview/<path:filename>/<thumb>",
+    # Sign-in itself. Listed as exact rules, never as an "/auth/*" prefix: a
+    # prefix would silently exempt anything ever added under that namespace.
+    "/auth/google",
+    "/auth/google/callback",
+    "/auth/logout",
+    "/api/auth/me",
 })
 
 #: Blueprints whose routes require a credential once enforcement is on.
@@ -109,10 +115,94 @@ def role_satisfies(actual: str, required: str) -> bool:
 def resolve_identity() -> Optional[Identity]:
     """Return the caller's identity, or None.
 
-    Always None in Phase A: there is no credential provider to resolve. Phase B
-    adds the session cookie, Phase C the bearer token.
+    Phase B: reads OUR OWN signed session cookie, issued at the Google callback
+    by `google_auth.issue_session()`. The Google ID token is never stored - it
+    expires in about an hour and it is a third-party credential.
+
+    Phase C adds bearer-token resolution for the Flutter/Fire TV client, which
+    cannot do a browser redirect.
+
+    Returns None when there is no session, when the session has expired, or when
+    Google is not configured - all of which fail closed.
     """
-    return None
+    try:
+        from app.services import google_auth
+    except Exception:  # pragma: no cover - import-time guard
+        log.exception("AUTH: could not import the Google provider")
+        return None
+    try:
+        return google_auth.session_identity()
+    except Exception:  # pragma: no cover - a broken session must not 500
+        log.exception("AUTH: session could not be read")
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Allowlist store (Phase B1)
+#
+# The allowlist lives in the `settings` table so addresses can be added without
+# a service restart, and the environment variable is kept as a break-glass
+# administrator. The EFFECTIVE list is the union of the two: the table is
+# reachable by anyone who can load the web UI, the environment variable only by
+# someone with machine access, so unioning means clearing the table by accident
+# cannot lock the operator out.
+# --------------------------------------------------------------------------- #
+
+#: `settings` key holding the operator-managed allowlist.
+ALLOWLIST_SETTING_KEY = "auth_allowlist"
+
+
+def _split_emails(raw) -> frozenset:
+    parts = str(raw or "").replace(";", ",").replace("\n", ",").split(",")
+    return frozenset(part.strip().lower() for part in parts if part.strip())
+
+
+def stored_allowlist() -> frozenset:
+    """The allowlist held in the `settings` table.
+
+    A read failure must not silently widen access, so it falls back to "nobody"
+    and logs. Failing open here would turn a database blip into an
+    authentication bypass.
+    """
+    from app.db import get_setting
+
+    try:
+        raw = get_setting(ALLOWLIST_SETTING_KEY, "") or ""
+    except Exception:  # pragma: no cover - defensive; the table always exists
+        log.exception("AUTH: could not read the stored allowlist")
+        return frozenset()
+    return _split_emails(raw)
+
+
+def effective_allowlist() -> frozenset:
+    """Addresses allowed to sign in: the UNION of the table and the environment."""
+    return config.auth_allowlist() | stored_allowlist()
+
+
+def store_allowlist(emails) -> frozenset:
+    """Replace the stored allowlist; returns the normalised set.
+
+    The environment half of the effective list is deliberately NOT rewritten -
+    it is the break-glass identity and is not ours to remove.
+    """
+    from app.db import set_setting
+
+    normalised = frozenset(
+        str(email).strip().lower() for email in emails if str(email).strip()
+    )
+    set_setting(ALLOWLIST_SETTING_KEY, ", ".join(sorted(normalised)))
+    return normalised
+
+
+def is_allowed(email) -> bool:
+    """Whether *email* may authenticate. Case-insensitive, fails closed.
+
+    An absent or empty address is never allowed, so a provider that fails to
+    return an e-mail fails closed rather than admitting an anonymous identity.
+    """
+    if not email:
+        return False
+    return str(email).strip().lower() in effective_allowlist()
 
 
 _PROVIDER_MISSING = (
