@@ -389,7 +389,13 @@ class TestSuccessfulSignIn:
 
         db = get_db()
         try:
-            count = db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+            # Scoped to this test's identity, not a global count: another test
+            # module may legitimately have left a user row behind in the shared
+            # test database, and asserting on the total made this an
+            # order-dependent landmine.
+            count = db.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE email=?", ("owner@example.com",)
+            ).fetchone()["n"]
         finally:
             db.close()
         assert count == 1

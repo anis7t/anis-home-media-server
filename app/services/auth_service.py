@@ -77,6 +77,7 @@ ANONYMOUS_RULES = frozenset({
     "/auth/google",
     "/auth/google/callback",
     "/auth/logout",
+    "/auth/pair",
     "/api/auth/me",
 })
 
@@ -115,25 +116,46 @@ def role_satisfies(actual: str, required: str) -> bool:
 def resolve_identity() -> Optional[Identity]:
     """Return the caller's identity, or None.
 
-    Phase B: reads OUR OWN signed session cookie, issued at the Google callback
-    by `google_auth.issue_session()`. The Google ID token is never stored - it
-    expires in about an hour and it is a third-party credential.
+    Two credential classes resolve to the SAME Identity type, which is what lets
+    one signed-in person be one person across the browser, the phone and the TV:
 
-    Phase C adds bearer-token resolution for the Flutter/Fire TV client, which
-    cannot do a browser redirect.
+      1. our own signed session cookie, issued at the Google callback
+         (`google_auth.issue_session()`); then
+      2. `Authorization: Bearer <token>` for clients that cannot do a browser
+         redirect - the Flutter/Fire TV app (`token_service`).
 
-    Returns None when there is no session, when the session has expired, or when
-    Google is not configured - all of which fail closed.
+    The Google ID token is never stored anywhere: it expires in about an hour
+    and it is a third-party credential.
+
+    A token's role comes from its user, so a token can never exceed the person
+    who issued it.
+
+    Returns None when there is no credential, when it is unknown, revoked or
+    expired, or when the session has aged out - all of which fail closed.
     """
     try:
         from app.services import google_auth
-    except Exception:  # pragma: no cover - import-time guard
-        log.exception("AUTH: could not import the Google provider")
-        return None
-    try:
-        return google_auth.session_identity()
+        identity = google_auth.session_identity()
+        if identity is not None:
+            return identity
     except Exception:  # pragma: no cover - a broken session must not 500
         log.exception("AUTH: session could not be read")
+
+    try:
+        from app.services import token_service
+
+        token = token_service.extract_bearer(request.headers.get("Authorization"))
+        if not token:
+            return None
+        record = token_service.resolve_token(token)
+        if record is None:
+            return None
+        return Identity(
+            subject=record["email"],
+            role=record["role"],
+        )
+    except Exception:  # pragma: no cover - a broken token must not 500
+        log.exception("AUTH: bearer token could not be resolved")
         return None
 
 

@@ -26,6 +26,7 @@ from flask import Blueprint, jsonify, redirect, request, session, url_for
 
 from app import config
 from app.services import auth_service, google_auth
+from app.services.auth_service import require_auth
 
 log = logging.getLogger(__name__)
 
@@ -178,3 +179,128 @@ def whoami():
         "email": identity.subject,
         "role": identity.role,
     })
+
+
+# --------------------------------------------------------------------------- #
+# API tokens (Phase C)
+#
+# Minting is admin-only and the plaintext is returned exactly once. Everything
+# else here is metadata: the token itself is unrecoverable.
+# --------------------------------------------------------------------------- #
+
+
+@auth_bp.route("/api/auth/tokens", methods=["GET", "POST"])
+@require_auth("admin")
+def api_tokens():
+    from app.services import token_service
+
+    identity = auth_service.resolve_identity()
+    # `require_auth` is a pass-through while enforcement is off, so this view
+    # must refuse an absent identity itself rather than dereferencing None.
+    if identity is None:
+        return jsonify({"error": "Sign in as an administrator to manage tokens."}), 403
+
+    if request.method == "GET":
+        return jsonify({"tokens": token_service.list_tokens()})
+
+    data = request.get_json(silent=True) or {}
+    label = (data.get("label") or "").strip()
+    if not label:
+        # A bare token in a list of opaque ids is how you end up revoking the
+        # wrong one.
+        return jsonify({"error": "A label is required so the token can be identified later."}), 400
+    validity = data.get("validity_days", token_service.DEFAULT_VALIDITY_DAYS)
+    try:
+        validity = int(validity) if validity is not None else None
+        if validity is not None and validity <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "validity_days must be a positive integer or null."}), 400
+
+    from app.db import get_db
+
+    db = get_db()
+    try:
+        row = db.execute("SELECT id FROM users WHERE email=?", (identity.subject,)).fetchone()
+    finally:
+        db.close()
+    if row is None:
+        return jsonify({"error": "The signed-in account no longer exists."}), 403
+
+    plaintext, record = token_service.create_token(row["id"], label, validity)
+    pairing = token_service.pairing_payload(plaintext, request.host_url)
+
+    log.info("AUTH: token minted for user_id=%s label=%r", row["id"], label)
+    return jsonify({
+        # Shown ONCE. Not recoverable afterwards.
+        "token": plaintext,
+        "pairing_url": pairing,
+        "id": record["id"],
+        "label": record["label"],
+        "expires_at": record["expires_at"],
+        "warning": "This token is displayed once and cannot be retrieved again.",
+    }), 201
+
+
+@auth_bp.route("/api/auth/tokens/<int:token_id>", methods=["DELETE"])
+@require_auth("admin")
+def revoke_api_token(token_id):
+    from app.services import token_service
+
+    if not token_service.revoke_token(token_id):
+        return jsonify({"error": "No such active token."}), 404
+    log.info("AUTH: token revoked id=%s", token_id)
+    return jsonify({"revoked": token_id})
+
+
+@auth_bp.route("/auth/pair")
+def pair_device():
+    """Exchange a pairing link's fragment token for a session cookie.
+
+    The token arrives in the URL FRAGMENT, which browsers do not put in a
+    request line - so it is never written to Cloudflare or Waitress access logs.
+    A server-rendered page then moves it into the body for the POST below.
+    """
+    from flask import render_template_string
+
+    return render_template_string(
+        "<!doctype html><meta charset=utf-8>"
+        "<title>Pair this device</title>"
+        "<body style='font-family:system-ui;background:#090b10;color:#e8eaf0;padding:2rem'>"
+        "<h1>Pairing this device</h1>"
+        "<p id='msg'>Completing&hellip;</p>"
+        "<form id='f' method='post' action='/auth/pair'></form>"
+        "<script>"
+        "const t=location.hash.slice(1);"
+        "if(!t){document.getElementById('msg').textContent='No pairing token in the link.';}"
+        "else{const f=document.getElementById('f');"
+        "const i=document.createElement('input');i.name='token';i.value=decodeURIComponent(t);"
+        "f.appendChild(i);f.submit();}"
+        "</script></body>"
+    )
+
+
+@auth_bp.route("/auth/pair", methods=["POST"])
+def pair_device_submit():
+    """Exchange a pairing token for a session cookie on this browser.
+
+    A device that opens the pairing link gets a session scoped to the USER the
+    token belongs to. That is the step that makes "Anis Parvez on the TV" the
+    same person as "Anis Parvez in the browser", which is what carries watch
+    history and player settings across devices.
+    """
+    from app.services import token_service
+
+    plaintext = (request.form.get("token") or "").strip()
+    record = token_service.resolve_token(plaintext) if plaintext else None
+    if record is None:
+        # Do not distinguish "unknown", "revoked" and "expired" to the caller.
+        return jsonify({"error": "That pairing token is not valid."}), 401
+
+    google_auth.issue_session({
+        "id": record["user_id"],
+        "email": record["email"],
+        "role": record["role"],
+    })
+    log.info("AUTH: device paired sub=%s email=%s", record["email"], record["email"])
+    return redirect("/")

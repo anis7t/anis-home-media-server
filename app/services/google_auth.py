@@ -291,24 +291,41 @@ def issue_session(user: dict) -> None:
 
 
 def clear_session() -> None:
+    """Drop our session.
+
+    Tolerates the no-secret-key state: Flask raises on any session access when
+    SECRET_KEY is unset, and a logout endpoint that 500s in that state is worse
+    than one that quietly clears nothing. It also means an unsigned session can
+    never be *produced*, which is the property that actually matters.
+    """
     from flask import session
 
-    session.clear()
+    try:
+        session.clear()
+    except Exception:  # pragma: no cover - only when SECRET_KEY is unset
+        log.warning("AUTH: logout ignored - no signing key is configured")
 
 
 def session_identity() -> Optional[auth_service.Identity]:
-    """Identity from our own session cookie, honouring both TTLs."""
+    """Identity from our own session cookie, honouring the absolute TTL.
+
+    Returns None when there is no session, when SECRET_KEY is unset, or when the
+    session has aged past SESSION_ABSOLUTE_SECONDS. Never raises: an unreadable
+    session is an unauthenticated caller, not a 500.
+    """
     from flask import session
 
-    now = int(time.time())
-    issued = session.get("issued_at")
+    try:
+        issued = session.get("issued_at")
+    except Exception:  # pragma: no cover - only when SECRET_KEY is unset
+        return None
     if not issued:
         return None
-    if now - issued > SESSION_ABSOLUTE_SECONDS:
+
+    now = int(time.time())
+    if now - int(issued) > SESSION_ABSOLUTE_SECONDS:
         return None
-    # Idle timeout is approximated by re-stamping issued_at on activity below;
-    # without middleware there is no reliable last-seen, so the absolute TTL is
-    # the binding constraint. Documented rather than silently different.
+
     role = session.get("role") or auth_service.ROLE_VIEWER
-    sub = session.get("email") or "session"
-    return auth_service.Identity(subject=sub, role=role)
+    subject = session.get("email") or "session"
+    return auth_service.Identity(subject=subject, role=role)

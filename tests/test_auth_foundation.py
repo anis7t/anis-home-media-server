@@ -198,11 +198,19 @@ class TestRouteClassification:
         Anything not in ANONYMOUS_RULES must be refused under enforcement. This
         is the invariant the blueprint-scoped version silently violated.
 
-        Requests use a method the rule actually allows: Flask raises the routing
-        error (404/405) BEFORE `before_request` runs, so probing a POST-only
-        route with GET would report "not gated" for every one of them and the
-        sweep would pass while proving nothing.
+        Two subtleties this had to learn the hard way:
+
+        * Requests use a method the rule actually allows. Flask raises the
+          routing error (404/405) BEFORE `before_request` runs, so probing a
+          POST-only route with GET reports "not gated" for all of them and the
+          sweep would pass while proving nothing.
+        * The check is on the GATE'S response body, not merely the status code.
+          An exempt route may legitimately return 401 from its own view - a
+          pairing POST with no token is invalid, and that is correct behaviour.
+          Asserting "exempt routes never 401" confuses the view's answer with the
+          gate's and produces a false gap.
         """
+        gate_marker = "no credential provider"
         problems = []
         for rule in app.app.url_map.iter_rules():
             path = _concrete_path(rule.rule)
@@ -213,12 +221,22 @@ class TestRouteClassification:
                 continue
             method = sorted(methods)[0]
             response = client.open(path, method=method)
+
+            body = ""
+            if response.status_code == 401:
+                try:
+                    body = (response.get_json() or {}).get("error", "")
+                except Exception:
+                    body = ""
+            gated_by_auth = gate_marker in body
             exempt = rule.rule in auth_service.ANONYMOUS_RULES
-            if exempt and response.status_code == 401:
-                problems.append(f"{rule.rule} is exempt but returned 401")
-            elif not exempt and response.status_code != 401:
+
+            if exempt and gated_by_auth:
+                problems.append(f"{rule.rule} is exempt but the GATE refused it")
+            elif not exempt and not gated_by_auth:
                 problems.append(
-                    f"{rule.rule} is not exempt but returned {response.status_code}"
+                    f"{rule.rule} is not exempt but was not refused by the gate"
+                    f" (status {response.status_code})"
                 )
         assert not problems, "route classification gaps:\n  " + "\n  ".join(problems)
 
