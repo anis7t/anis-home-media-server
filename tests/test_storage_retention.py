@@ -39,6 +39,23 @@ app.config.CACHE_DIR = app.CACHE_DIR
 (app.CACHE_DIR / "previews").mkdir(parents=True, exist_ok=True)
 
 
+
+def _enumeration(paths, complete=True):
+    """A (paths, status) tuple shaped like the real ``enumerate_media_with_status()``.
+
+    ``audit_orphaned_caches()`` / ``purge_orphaned_caches()`` call that seam, not
+    ``video_paths()``. Mocking the old name left the patch inert, so these tests
+    silently exercised the real library instead of the scenario they describe.
+    """
+    return ([str(p) for p in paths], {
+        'complete': complete,
+        'roots': [{'path': '<mock>', 'ok': True, 'missing': False,
+                   'errors': [], 'count': len(paths)}],
+        'walk_errors': [],
+        'deduped': [],
+        'skipped_uploads': 0,
+    })
+
 def _lexical(path):
     """Normalise *path* for comparison WITHOUT touching the filesystem.
 
@@ -176,7 +193,8 @@ class StorageRetentionTests(unittest.TestCase):
                     _base.resolve(),
                 )
 
-            with patch("app.services.transcode_service.video_paths", return_value=[str(active_movie)]):
+            with patch("app.services.transcode_service.enumerate_media_with_status",
+               return_value=_enumeration([str(active_movie)])):
                 # 3. Audit should discover the orphans
                 audit = audit_orphaned_caches()
                 orphaned_hls_names = [o['name'] for o in audit['orphaned_hls']]
@@ -446,7 +464,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
             (d / fname).write_bytes(payload)
         return d
 
-    @patch("app.services.transcode_service.video_paths", return_value=[])
+    @patch("app.services.transcode_service.enumerate_media_with_status",
+       return_value=_enumeration([]))
     def test_audit_fails_closed_when_enumeration_returns_nothing(self, _mock_vp):
         orphan = self._make_dir("orphan_enum_empty", {"segment_000000.ts": b"X" * 4096})
         try:
@@ -462,7 +481,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
         finally:
             shutil.rmtree(orphan, ignore_errors=True)
 
-    @patch("app.services.transcode_service.video_paths", side_effect=RuntimeError("database is locked"))
+    @patch("app.services.transcode_service.enumerate_media_with_status",
+       side_effect=RuntimeError("database is locked"))
     def test_audit_fails_closed_when_enumeration_raises(self, _mock_vp):
         orphan = self._make_dir("orphan_enum_error", {"segment_000000.ts": b"X" * 4096})
         try:
@@ -487,7 +507,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
         })
         stale = self._make_dir("orphan_and_stale", {"segment_000000.ts": b"Z" * 1024})
         try:
-            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
+            with patch("app.services.transcode_service.enumerate_media_with_status",
+                   return_value=_enumeration([str(media)])):
                 res = purge_orphaned_caches(dry_run=False)
 
             self.assertFalse(res["refused"])
@@ -509,7 +530,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
             "segment_000000.ts": b"W" * 2048,
         })
         try:
-            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
+            with patch("app.services.transcode_service.enumerate_media_with_status",
+                   return_value=_enumeration([str(media)])):
                 res = purge_orphaned_caches(dry_run=False)
             self.assertFalse(res["refused"])
             self.assertTrue(live.exists(), "a chunk playlist being written must protect the directory")

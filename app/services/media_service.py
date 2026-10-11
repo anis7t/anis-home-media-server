@@ -209,8 +209,6 @@ def enumerate_media_with_status():
     walk that produced those paths.
     """
 
-def video_paths():
-    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
     global _paths
 
     if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
@@ -641,7 +639,7 @@ def get_managed_media_items():
         file_exists = p.is_file() if isinstance(p, Path) else Path(p).is_file()
         st = p.stat() if file_exists else None
         size_bytes = st.st_size if st else 0
-        size_str = format_bytes_display(size_bytes) if size_bytes else "—"
+        size_str = format_bytes_display(size_bytes) if size_bytes else "â€”"
         suffix = Path(rel_fn).suffix.upper().lstrip('.')
         is_mkv = needs_transcode(p)
 

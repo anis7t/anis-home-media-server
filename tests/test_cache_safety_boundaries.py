@@ -332,7 +332,7 @@ def test_purge_orphaned_caches_refuses_before_enumerating():
     with _both_cache_roots(approved):
         app.CACHE_DIR = intruder  # the two names now disagree
         with mock.patch.object(
-            transcode_service, "video_paths", side_effect=_tripwire
+            transcode_service, "enumerate_media_with_status", side_effect=_tripwire
         ) as enumeration:
             result = transcode_service.purge_orphaned_caches(dry_run=False)
 
@@ -398,7 +398,7 @@ def test_purge_orphaned_caches_revalidates_each_item_before_removal():
         with mock.patch.object(
             transcode_service, "audit_orphaned_caches", return_value=forged_audit
         ), mock.patch.object(
-            transcode_service, "video_paths", side_effect=_tripwire
+            transcode_service, "enumerate_media_with_status", side_effect=_tripwire
         ):
             result = transcode_service.purge_orphaned_caches(dry_run=False)
 
@@ -670,6 +670,36 @@ def _orphan_hls(cache_root, name, payload=b"O" * 64):
     return orphan
 
 
+def _enumeration(paths, complete=True, missing_roots=(), unreadable_roots=()):
+    """A (paths, status) tuple shaped like the real ``enumerate_media_with_status()``.
+
+    ``audit_orphaned_caches()`` calls that seam, not ``video_paths()``. Mocking the
+    old name left the patch inert: the real enumeration ran, the audit saw a real
+    library, and the fail-closed assertions these tests exist to prove never fired.
+    The status is part of the contract now - the audit reads ``complete`` and the
+    per-root ``missing``/``errors`` entries before it will classify anything as
+    orphaned, so a scenario that used to be produced by "the root was absent" must
+    now be described in the status instead.
+    """
+    roots = [{'path': '<mock>', 'ok': True, 'missing': False,
+              'errors': [], 'count': len(paths)}]
+    for raw in missing_roots:
+        roots.append({'path': str(raw), 'ok': False, 'missing': True,
+                      'errors': [], 'count': 0})
+    for raw in unreadable_roots:
+        roots.append({'path': str(raw), 'ok': False, 'missing': False,
+                      'errors': [f"{raw}: PermissionError: denied"], 'count': 0})
+    if missing_roots or unreadable_roots:
+        complete = False
+    return ([str(p) for p in paths], {
+        'complete': complete,
+        'roots': roots,
+        'walk_errors': [],
+        'deduped': [],
+        'skipped_uploads': 0,
+    })
+
+
 def test_audit_degraded_when_enumeration_empty_but_cache_populated():
     """C-B2 - an empty enumeration against a populated cache is degraded.
 
@@ -694,7 +724,8 @@ def test_audit_degraded_when_enumeration_empty_but_cache_populated():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[approved]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=[]):
+         mock.patch.object(transcode_service, "enumerate_media_with_status",
+                          return_value=_enumeration([])):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -735,7 +766,9 @@ def test_audit_degraded_when_configured_media_root_missing():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[present, absent]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=partial_inventory):
+         mock.patch.object(transcode_service, "enumerate_media_with_status",
+                          return_value=_enumeration(partial_inventory,
+                                                     missing_roots=[str(absent)])):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -771,7 +804,8 @@ def test_audit_degraded_when_configured_media_root_is_not_a_directory():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[not_a_directory]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=[]):
+         mock.patch.object(transcode_service, "enumerate_media_with_status",
+                          return_value=_enumeration([], missing_roots=[str(not_a_directory)])):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -801,7 +835,8 @@ def test_audit_not_degraded_when_every_configured_root_is_present():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[root_a, root_b]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=inventory):
+         mock.patch.object(transcode_service, "enumerate_media_with_status",
+                          return_value=_enumeration(inventory)):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["media_roots_missing"] == []
@@ -865,7 +900,7 @@ def test_purge_refuses_and_deletes_nothing_when_audit_degraded():
                            return_value=degraded_audit), \
          mock.patch.object(transcode_service, "_remove_path_with_retries",
                            side_effect=_no_removal) as removal, \
-         mock.patch.object(transcode_service, "video_paths", side_effect=_no_enumeration):
+         mock.patch.object(transcode_service, "enumerate_media_with_status", side_effect=_no_enumeration):
         result = transcode_service.purge_orphaned_caches(dry_run=False)
 
     assert result["refused"] is True
@@ -939,11 +974,11 @@ def test_enumeration_completeness_is_not_observable():
         (live_cache / "playlist.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
         (live_cache / "segment_000000.ts").write_bytes(b"L" * 32)
 
-        with mock.patch.object(transcode_service, "video_paths",
-                               return_value=complete_inventory):
+        with mock.patch.object(transcode_service, "enumerate_media_with_status",
+                               return_value=_enumeration(complete_inventory)):
             audit_complete = transcode_service.audit_orphaned_caches()
-        with mock.patch.object(transcode_service, "video_paths",
-                               return_value=truncated_inventory):
+        with mock.patch.object(transcode_service, "enumerate_media_with_status",
+                               return_value=_enumeration(truncated_inventory)):
             audit_truncated = transcode_service.audit_orphaned_caches()
 
     # The only difference the audit can see is none.
