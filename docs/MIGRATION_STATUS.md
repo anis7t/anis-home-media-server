@@ -1,10 +1,38 @@
 # Media Server Modernization — Migration Status & Handoff
 
+> ## ⚠️ Reconciliation notice — 2026-10-12
+>
+> **This document below is a 2026-10-10 snapshot and is materially out of date.**
+> Its blockers were subsequently resolved on `main`. Read this notice before the
+> body text; where the two disagree, this notice wins.
+>
+> Verified against the repository on 2026-10-12:
+>
+> | Snapshot claim (2026-10-10) | Verified reality (2026-10-12) |
+> |---|---|
+> | Branch 2 commits ahead of origin, NOT pushed; 16 modified + 13 untracked | `main...feat/rust-react-postgres-migration` = **25 ahead / 0 behind**. Fully merged, zero divergence. The branch is a spent artifact. |
+> | P3.3–3.8G tests **untracked, never executed** (`compile()`/`ast.parse()` only) | All 10 files are **tracked**, landed via `064a9b3` ("make the suite order-independent — 54 failures to zero"). Suite: **720 passed / 28 skipped**. |
+> | Issue 1 (**Critical**) enumeration completeness — "blocks complete: Yes" | **Fixed.** `16592be` is an ancestor of `main`. |
+> | Issue 8 — `CachePurgeSafetyTests` shared-root defect | **Fixed.** `d1772e3`. |
+> | Issue 9 — retention-test correction uncommitted | **Fixed and committed.** |
+> | Issue 10 — 38 historical failures; "no completion claim defensible" | **Superseded.** 54 failures → 0, now 720 passing. |
+> | §2.3 item 1 — phase numbering diverges 0–9 vs 0–7, "needs a decision" | **Resolved.** The roadmap's **0–7 is canonical**; the 0–9 scheme is retired (recorded in the roadmap header). |
+> | §2.3 item 4 — roadmap status line stale ("Proposed roadmap only") | **Cleared.** Roadmap now reads Active. |
+>
+> **Still true and still open:** the **Phase 3 exit gate is NOT met** (no
+> demonstrated data transfer or recovery, no representative regression run against
+> PostgreSQL), and there is **no documented backup, restore drill, or rollback
+> window** (§8 step 12 is still gated on it).
+>
+> **Phase 2 (React) began 2026-10-12** on `feat/react-web-frontend`, scoped to
+> roadmap sequence items 1, 3 and 5. Acceptance thresholds are recorded in the
+> roadmap under *Phase 2 acceptance thresholds*. Authentication is explicitly out
+> of Phase 2 scope and remains an open gap.
+
 **Authoritative Roadmap:** [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)
-**Dedicated Branch:** `feat/rust-react-postgres-migration`
-**Current HEAD:** `99e63ed2fe6bca4172e9f4f263855be7d2016938` — *`feat(db): add PostgreSQL schema migrations and harden cleanup`* (2026-10-10)
+**Migration branch (now fully merged into `main`):** `feat/rust-react-postgres-migration`
 **Baseline Commit (previous revision of this document):** `b007944`
-**Last Updated:** October 10, 2026
+**Last Updated:** October 12, 2026 (reconciliation notice added; body below is the October 10 snapshot)
 
 > This revision consolidates the PostgreSQL adapter work (Phase 3.1–3.8G) that has
 > accumulated in the working tree since the `b007944` baseline. Every claim below is
@@ -96,7 +124,7 @@ Status key: **Complete** · **Partially complete** · **Blocked** · **Not start
 |---|---|---|---|---|---|
 | **P0 — Architecture audit** | Evidence-based inventory before code changes | `docs/PHASE_0_ARCHITECTURE_AUDIT.md` | Documented; reviewed | **Complete** | None known |
 | **P1 — API contracts & contract tests** | OpenAPI 3.1 spec + executable contract tests | `docs/openapi.yaml`, `tests/test_api_contracts.py` (both committed at `b007944`) | Reported 15/15 contract tests and 98 regression tests passing at Phase 1 | **Complete** (reported) | Re-verify; `test_api_contracts.py` is implicated in a known ordering failure (§6, item 10) |
-| **P2 — React web frontend** | Vite/React/TS app in `web/` against the existing Flask API | **No `web/` directory, no `package.json`** | None | **Not started** | Entire phase |
+| **P2 — React web frontend** | Vite/React/TS app in `web/` against the existing Flask API | **Started 2026-10-12** on `feat/react-web-frontend`. Scope: roadmap sequence items 1, 3, 5 (app shell + generated typed client, library grid, browser player + persisted progress). | None yet | **In progress** | Items 2, 4, 6, 7, 8, 9 of the roadmap sequence. Gates A–G agreed and recorded in the roadmap. |
 | **P3.1 — PostgreSQL adapter** | Dual SQLite/PostgreSQL backend, versioned migrations, advisory locking, pool lifecycle | `app/db.py`: `POSTGRES_MIGRATIONS` (:311), `_validate_postgres_migrations` (:409), `run_postgres_migrations` (:509), `pg_advisory_lock` (:538/:612/:636), `schema_migrations` (:547/:669/:754), `_PG_POOL`/`_PG_POOL_LOCK` (:24-25). **Committed at `99e63ed`.** | Reported: 72 adapter tests (1 skipped), 23 API tests | **Partially complete** (reported) | Reconciliation, rollback plan, production cutover — all exit-gate items still open |
 | **P3.2 — PostgreSQL integration tests** | Opt-in real-PG tests against an isolated schema | `tests/integration/{conftest,test_postgres_migrations,test_postgres_timestamps}.py` + `README.md` (untracked) | Reported 26 tests passing against PG 18.4; clean skip when gate closed | **Partially complete** (reported, untracked) | Never re-run under authorization |
 | **P3.3 — Timestamp compatibility** | Normalize SQLite string ↔ PG datetime at the DB→app boundary | `app/utils/formatting.py` (+77), `app/services/device_service.py`, `app/services/media_service.py`; `tests/test_timestamp_compat.py` (untracked) | Reported focused results positive; **baseline suite had 38 failures** | **Partially complete** (reported) | Full-suite re-run |

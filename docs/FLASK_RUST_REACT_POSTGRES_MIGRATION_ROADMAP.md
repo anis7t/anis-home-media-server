@@ -1,9 +1,15 @@
 # Flask → Rust / React / PostgreSQL Migration Roadmap
 
-**Status:** Proposed — read-only audit required before implementation  
+**Status:** Active — Phase 0–1 delivered, Phase 2 in progress, Phase 3 landed (exit gate open)  
 **Owner:** Media Server project  
 **Repository default branch:** `main`  
-**Last updated:** 2026-10-10
+**Last updated:** 2026-10-12
+
+> **Phase numbering is canonical 0–7 as defined here.** An earlier revision of
+> `MIGRATION_STATUS.md` used a 0–9 scheme that split Phase 7 into "Live Events" (7),
+> "Operations" (8) and "Deprecation" (9). That scheme is **retired**; the 0–7
+> numbering in this document is the single reference. This resolves
+> `MIGRATION_STATUS.md` §2.3 item 1.
 
 > This document describes the intended migration strategy, not completed work. All implementation details must be verified against the repository during Phase 0. Do not begin a big-bang rewrite.
 
@@ -195,6 +201,36 @@ Implementation sequence:
 Target a polished, cinematic and responsive UI; do not treat template-to-component translation as the full design task.
 
 **Exit gate:** users can complete the current core web workflows against the existing backend, and the React app has automated coverage for its critical routes.
+
+#### Phase 2 acceptance thresholds (agreed 2026-10-12)
+
+The exit gate above is qualitative. These thresholds make it measurable for the
+first slice, which is roadmap sequence items **1, 3 and 5** (app shell + typed
+client; home screen and library grid; browser player and persisted progress).
+Items 4, 6, 7 and 9 remain for later slices. Clauses marked *(borrowed)* restate
+this roadmap or `AGENTS.md`; clauses marked *(proposed)* were added because the
+roadmap states no threshold.
+
+| Gate | Requirement | Source |
+|---|---|---|
+| **A — Scope** | React Router reaches library → detail → player. **No Flask template is deleted.** | *(borrowed)* roadmap:153 |
+| **B — Contract conformance** | Typed client is **generated from `docs/openapi.yaml`** (59 paths / 65 operations / 31 schemas), never hand-written. Every endpoint the slice calls is asserted in `tests/test_api_contracts.py`. | *(borrowed)* roadmap:146, §6 |
+| **C — Test floors** | **≥80% line coverage on `src/features/library` and `src/features/playback` only** — not whole-app, which would reward padding untested files. Each §6 route in the slice gets one render + one interaction test. One Playwright E2E: library → detail → playback → progress persisted. | *(proposed)* |
+| **D — Static** | `tsc --noEmit` clean; ESLint clean; `vite build` succeeds; **zero `any` in `src/lib/api`**. | *(proposed)* |
+| **E — Perf budget** | **≤250 KB gzip initial JS** for this slice. Video is excluded — fetched by the player element, not the bundle. Number is provisional and to be recalibrated from a measured build. | *(proposed)* |
+| **F — Playback correctness** | Reuses `/media` (Range) and `/hls` (CORS-scoped) unchanged. No regression to seek-to-`0:00`, arbitrary seek, subtitle toggle, or resume. **No CORS widening on `/api/*`** — a Vite `server.proxy` keeps the browser same-origin so `routes/media.py` `CORS_PATHS` is untouched. | *(borrowed)* `AGENTS.md` §6 |
+| **G — Docs** | Update the Phase 2 row in `MIGRATION_STATUS.md`; clear the stale "Proposed roadmap only" status line; reconcile phase numbering. | *(borrowed)* project rule |
+
+**Known limit of Gate B.** `tests/test_api_contracts.py` contains 15 test
+definitions against 65 operations. It does not cover the whole contract today and
+no claim of full contract coverage may be made. Gate B applies to the endpoints the
+slice actually calls; the uncovered remainder is to be reported, not hidden.
+
+**Not resolved by this slice.** Authentication remains absent from the API and
+`media.anisparvez.in` remains publicly reachable and unauthenticated. Phase 2 does
+not create that exposure and does not widen it (`/api/*` is already reachable by
+anyone holding the URL), but it places a polished browser client in front of it.
+Tracked as an open security gap; out of Phase 2 scope by decision.
 
 ### Phase 3 — PostgreSQL migration
 
@@ -449,4 +485,9 @@ The first coding-agent task must be read-only. Use a plan/audit mode and require
 - Backups/restoration, deployment, monitoring, and rollback have been tested and documented.
 - No production dependency on Flask remains, and unused runtime code/configuration is removed safely.
 
-**Current status: Proposed roadmap only. Phase 0 is the next action; implementation has not been authorized by this document.**
+**Current status: Active.** Phases 0–1 are delivered. Phase 3 (PostgreSQL) is
+committed to `main` and runtime-verified, but **its exit gate is not met** — there
+is no demonstrated data transfer or recovery, no representative regression run
+against PostgreSQL, and no documented backup, restore drill, or rollback window.
+Phase 2 (React) began 2026-10-12 on `feat/react-web-frontend`. Phases 4–7 (Rust)
+have not started. See `docs/MIGRATION_STATUS.md` for the reconciled tracker.
