@@ -325,9 +325,27 @@ Two consequences:
 
 - **No per-user accounts or sharing profiles.** Two roles are enough for a
   single-household server. Multi-user adds surface with no user.
-- **Open decision — admin bootstrap.** The allowlist must exist before the first sign-in
-  is enabled. Decide where it lives (NSSM environment vs `settings` table) and who
-  edits it. There is deliberately no "first account becomes admin" rule (§0).
+- **Open decision — admin bootstrap. DECIDED 2026-10-12: the allowlist lives in the
+  `settings` table**, under a dedicated key, edited from an admin-only route — not
+  in an NSSM environment variable. Consequences:
+  - Permitted addresses can be added **without a service restart**, which is the
+    main practical win.
+  - `MEDIA_SERVER_AUTH_ALLOWLIST` **remains supported as a break-glass
+    administrator**, and the effective allowlist is the **union** of the two. The
+    table can be edited by anyone who can reach the web UI; the environment
+    variable can only be set by someone with machine access. Keeping both, unioned,
+    means emptying the table by accident cannot lock the operator out.
+  - **Verified safe against self-enrolment:** `/api/storage/settings`
+    (`api.py:757-782`) is key-restricted — it only ever calls
+    `set_setting('retention_policy', …)` — so no existing route can write an
+    arbitrary `settings` key. The allowlist must stay behind a dedicated
+    admin-only route; a generic "set any key" endpoint would defeat the whole
+    allowlist.
+  - **Bootstrap:** the allowlist must be non-empty before Phase B is enabled. The
+    documented first-run path is to set `MEDIA_SERVER_AUTH_ALLOWLIST` in the NSSM
+    environment, sign in through that break-glass identity, then manage the table
+    from the UI. There is deliberately still no "first sign-in becomes admin"
+    rule (§0).
 - **Open decision — token expiry.** A TV token with no expiry is convenient; a token
   with a short expiry needs a re-pairing flow on a device that may be switched off for
   weeks. Suggest long-lived (90 days) with visible expiry in the UI.
