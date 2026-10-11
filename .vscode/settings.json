@@ -48,5 +48,41 @@
     ]
   },
   "yaml.format.enable": true,
-  "yaml.validate": true
+  "yaml.validate": true,
+
+  "// Rust": "Added with the Rust toolchain (rustup 1.99.0, x86_64-pc-windows-msvc)",
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.onSave": true,
+  "rust-analyzer.cargo.allTargets": true,
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true,
+    "editor.rustfmt.onSave": true
+  },
+
+  "// React / TypeScript": "Added with typescript-language-server 6.0.2, prettier 3.9.9, eslint 10.12.0 (global npm)",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.useFlatConfig": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[sql]": {
+    "editor.formatOnSave": true
+  }
 }

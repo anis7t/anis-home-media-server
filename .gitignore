@@ -55,3 +55,18 @@ opencode/db/*.db.tmp
 
 # Serena MCP local project state (semantic index; regenerate with the serena MCP)
 .serena/
+
+# Rust toolchain (cargo build artifacts)
+target/
+**/*.rs.bk
+
+# Node / React toolchain
+node_modules/
+.next/
+dist/
+*.tsbuildinfo
+
+# Local dev PostgreSQL never lives in the repo, but guard anyway:
+# the portable cluster is E:\pgdata and the server binaries are E:\postgres\pgsql.
+pgdata/
+.pgpass

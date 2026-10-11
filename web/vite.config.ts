@@ -49,6 +49,10 @@ export default defineConfig({
       // Seek-preview thumbnails and subtitles, used by later slices.
       '/seek-preview': { target: FLASK_ORIGIN, changeOrigin: true },
       '/subtitles': { target: FLASK_ORIGIN, changeOrigin: true },
+      // Sign-in. Without this the browser hits Vite's SPA fallback for
+      // /auth/google and gets index.html instead of the redirect to Google, so
+      // sign-in silently does nothing in development.
+      '/auth': { target: FLASK_ORIGIN, changeOrigin: true },
     },
   },
   test: {

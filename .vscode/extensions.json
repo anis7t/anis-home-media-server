@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "cweijan.vscode-postgresql-client2",
+    "uniquevision.vscode-plpgsql-lsp",
+    "bradlc.vscode-tailwindcss"
+  ]
+}

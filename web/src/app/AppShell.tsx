@@ -1,4 +1,8 @@
-import { NavLink } from 'react-router';
+import { NavLink, useLocation } from 'react-router';
+import type { ReactNode } from 'react';
+
+import { useAuth } from '../auth/AuthProvider';
+import LoginScreen from '../components/LoginScreen';
 
 function BrandMark() {
   return (
@@ -20,7 +24,18 @@ function BrandMark() {
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
+  const { authenticated, email, locked, signIn } = useAuth();
+  const location = useLocation();
+
+  /*
+   * The sign-in screen appears only when the server has actually REFUSED this
+   * client, not merely because nobody is signed in. Enforcement can be off
+   * while authentication is still perfectly possible, and showing a locked
+   * screen then would be wrong - the app is usable.
+   */
+  const showLogin = locked && !authenticated;
+
   return (
     <div className="min-h-screen">
       <header className="glass-header sticky top-0 z-20">
@@ -51,11 +66,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               Library
             </NavLink>
+
+            {/* Hidden on the player, where a stray nav click would interrupt playback. */}
+            {location.pathname.startsWith('/watch/') ? null : authenticated ? (
+              <NavLink
+                to="/account"
+                className={({ isActive }) =>
+                  `rounded-full px-4 py-2 text-sm transition ${
+                    isActive
+                      ? 'bg-white/10 font-semibold text-white'
+                      : 'text-white/60 hover:bg-white/5 hover:text-white'
+                  }`
+                }
+              >
+                {email ?? 'Account'}
+              </NavLink>
+            ) : (
+              <button
+                type="button"
+                onClick={signIn}
+                className="card-ring rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+              >
+                Sign in
+              </button>
+            )}
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6">
+        {showLogin ? <LoginScreen /> : children}
+      </main>
     </div>
   );
 }

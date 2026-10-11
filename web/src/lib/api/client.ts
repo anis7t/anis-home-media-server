@@ -12,6 +12,7 @@
  * added to `/api/*` anywhere, and `routes/media.py` `CORS_PATHS` stays exactly
  * as it is (`/media/`, `/hls/` only, for the benefit of Cast receivers).
  */
+import { notifyAuthLocked } from '../../auth/authEvents';
 import type {
   MovieDetailsResponseLive,
   MovieListResponseLive,
@@ -60,6 +61,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (!response.ok) {
     // Non-2xx is a real failure, not an empty payload: surface the status so
     // callers can distinguish "not found" from "transcode still building".
+    //
+    // A 401 additionally means this client can do nothing until someone signs
+    // in, so it is announced to the app rather than left for each screen to
+    // rediscover as its own error.
+    if (response.status === 401) {
+      // A 401 additionally means this client can do nothing until someone signs
+      // in, so it is announced to the app rather than left for each screen to
+      // rediscover as its own error.
+      notifyAuthLocked();
+    }
     throw new ApiError(
       `Request failed: ${response.status} ${response.statusText}`,
       response.status,
