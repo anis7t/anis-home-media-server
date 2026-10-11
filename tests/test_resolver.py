@@ -112,10 +112,15 @@ def test_scan_single_file_numeric_resolution(tmp_path):
         "backdrop_path": "/mayday_backdrop.jpg", "runtime": 110,
         "genres": [{"name": "Action"}], "vote_average": 7.9,
     }
+    # scanner.py binds `from posters import download_poster` at import time, so patching
+    # the posters module alone never reached it. Left unpatched, the real function ran
+    # and issued live TMDb image requests on every run. Backdrops use the same
+    # function with backdrop=True (scanner.py:479).
     with patch("scanner.load_token", return_value="fake_token"), \
          patch("app.services.media_resolver.resolve_media", return_value=(mock_resolved_movie, "consensus:container_tags:Mayday,moviehash:imdb:tt28014327")), \
          patch("scanner.get_movie_details", return_value=mock_details), \
-         patch("posters.download_poster", return_value=True):
+         patch("posters.download_poster", return_value=True), \
+         patch("scanner.download_poster", return_value=True):
         result = scanner.scan_single_file(dummy, conn=conn, session=MagicMock(), token="fake_token", media_root=tmp_path)
     assert result["title"] == "Mayday"
     row = conn.execute("SELECT title, tmdb_id, year FROM movies WHERE filename=?", ("1000403712.mkv",)).fetchone()

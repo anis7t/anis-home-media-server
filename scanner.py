@@ -5,13 +5,28 @@ import requests
 import re
 import time
 import json
+import sys
 from dotenv import load_dotenv
 from posters import download_poster
 from app.db import get_db, get_backend
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
 ENV_FILE = BASE_DIR / ".env"
-load_dotenv(ENV_FILE, override=True)
+# Mirror app/config.py:11 exactly. Under pytest - or whenever the caller has
+# already chosen a media root explicitly - .env must NOT override it.
+#
+# This line is the single vector behind the 23-byte `Mayday (2026)N.mkv`
+# artifacts that appeared in the deployed library: importing this module ran
+# load_dotenv(override=True), which rewrote MEDIA_SERVER_MEDIA_ROOT back to the
+# deployed value from .env. tests/conftest.py repaired the environment in
+# pytest_runtest_setup only - BEFORE a test, never during one - so any test that
+# imported or reloaded scanner mid-run poisoned the environment, and an
+# importlib.reload(app.config) in that window resolved MEDIA_ROOT to the real
+# library for /api/upload to write into.
+if "pytest" in sys.modules or os.environ.get("MEDIA_SERVER_MEDIA_ROOT"):
+    load_dotenv(ENV_FILE, override=False)
+else:
+    load_dotenv(ENV_FILE, override=True)
 MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "D:/Flicks" if os.name == "nt" else "/home/iamroot/Media/Movies")).resolve()
 DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
 

@@ -174,8 +174,15 @@ class MediaServerTests(unittest.TestCase):
         old_time = time.time() - 7200
         os.utime(stale_part, (old_time, old_time))
         orig_cache_dir = getattr(app, 'CACHE_DIR', None)
+        orig_config_cache = getattr(app.config, 'CACHE_DIR', None)
+        target_cache = Path(TMP.name) / 'cache'
         try:
-            app.CACHE_DIR = Path(TMP.name) / 'cache'
+            # BOTH names must be rebound. approved_cache_root() refuses when
+            # app.CACHE_DIR and config.CACHE_DIR disagree, so setting only the
+            # app-level snapshot made cleanup_cache() raise CacheRootUnsafe and
+            # the assertions below never ran. Bind them together, restore both.
+            app.CACHE_DIR = target_cache
+            app.config.CACHE_DIR = target_cache
             app.cleanup_cache()
             self.assertTrue(final.exists())
             self.assertTrue(valid_part.exists())
@@ -183,6 +190,8 @@ class MediaServerTests(unittest.TestCase):
         finally:
             if orig_cache_dir is not None:
                 app.CACHE_DIR = orig_cache_dir
+            if orig_config_cache is not None:
+                app.config.CACHE_DIR = orig_config_cache
     def test_transcode_uses_separate_locks_for_direct_and_compat_modes(self):
         app.TRANSCODE_LOCKS.clear()
         self.assertIsNot(app.TRANSCODE_LOCKS.setdefault('Example.2026.mp4:direct', __import__('threading').Lock()),

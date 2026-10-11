@@ -158,10 +158,18 @@ _UPDATES = _BASE / "updates"
 
 # Environment first: config computes these at import, and recomputes them on reload.
 # MEDIA_ROOT matters as much as the database: /api/upload writes to it directly.
+#
+# MEDIA_SERVER_CACHE_DIR belongs here for the same reason. Phase 3.8 added the
+# override (app/config.py:42-43); when the variable is unset the cache falls back
+# to BASE_DIR/cache, so a reload during a test relocated CACHE_DIR back to the
+# deployed cache - which is how tests began trying to write E:\MediaServer\cache.
+# Setting it here is what keeps the "environment first" promise below true for
+# the cache as well.
 os.environ["MEDIA_SERVER_MEDIA_ROOT"] = str(_MEDIA)
 os.environ["MEDIA_SERVER_DATABASE"] = str(_DB)
 os.environ["MEDIA_SERVER_UPLOAD_TARGET_DIR"] = str(_UPLOADS)
 os.environ["MEDIA_SERVER_UPLOAD_TMP"] = str(_UPLOADS_TMP)
+os.environ["MEDIA_SERVER_CACHE_DIR"] = str(_CACHE)
 
 # The isolation values this suite depends on. ``scanner.py`` calls
 # ``load_dotenv(ENV_FILE, override=True)`` at import time, so merely importing it
@@ -177,6 +185,7 @@ _ISOLATION_ENV = {
     "MEDIA_SERVER_UPLOAD_TMP": str(_UPLOADS_TMP),
     "MEDIA_SERVER_ARCHIVE_DIR": str(_ARCHIVE),
     "MEDIA_SERVER_DELETED_DIR": str(_DELETED),
+    "MEDIA_SERVER_CACHE_DIR": str(_CACHE),
 }
 
 
@@ -494,6 +503,25 @@ def isolation_guard():
         "db": _DB,
         "build_production_paths": _ip.build_production_paths,
     }
+
+
+@pytest.fixture(autouse=True)
+def _repair_isolation_env_after_each_test():
+    """Repair the isolation environment after EVERY test, not only before it.
+
+    pytest_runtest_setup restores the environment on the way IN. Without a
+    matching restore on the way OUT, a test that poisoned it - by importing
+    scanner, by reloading app.config, or by assigning os.environ directly - left
+    it poisoned for its own teardown fixtures and for anything running before the
+    next setup hook.
+
+    This repairs os.environ ONLY. It deliberately does not touch the config
+    module attributes: pytest_runtest_teardown detects drift by reading
+    app.config.MEDIA_ROOT and friends, so rewriting those here would silence
+    that detection. Restoring the environment cannot mask it.
+    """
+    yield
+    _restore_isolation_env()
 
 
 def pytest_runtest_setup(item):

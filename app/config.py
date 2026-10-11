@@ -65,12 +65,25 @@ UPDATES_DIR = Path(os.environ.get("MEDIA_SERVER_UPDATES_DIR", BASE_DIR / "update
 # --------------------------------------------------------------------------- #
 
 
-class CacheRootUnsafe(RuntimeError):
-    """A destructive cache operation refused to run.
+if "CacheRootUnsafe" not in globals():
+    # Defined conditionally so the class object has a STABLE IDENTITY across
+    # importlib.reload(). Reload re-executes this module in the existing
+    # namespace without clearing it, so an unconditional `class` statement here
+    # would mint a brand-new class on every reload while other modules that
+    # captured the old one - notably app/services/transcode_service.py, which
+    # binds `CacheRootUnsafe = config.CacheRootUnsafe` at import - kept a
+    # reference to the previous object. Every `except CacheRootUnsafe` in those
+    # modules then stopped matching, and a deliberate refusal escaped as an
+    # unhandled exception instead of returning a refusal result.
+    #
+    # The behaviour is unchanged on a first import; this only prevents the
+    # identity from being recreated.
+    class CacheRootUnsafe(RuntimeError):
+        """A destructive cache operation refused to run.
 
-    Raised when the cache root cannot be established as the single configured
-    root, so no deletion can be proven to stay inside it.
-    """
+        Raised when the cache root cannot be established as the single configured
+        root, so no deletion can be proven to stay inside it.
+        """
 
 
 def _cache_key(path):
