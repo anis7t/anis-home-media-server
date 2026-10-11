@@ -429,8 +429,28 @@ Flutter client:
 - **Ordinary Flutter tests must never reach the live server.** `test/support/test_network_guard.dart` installs an allowlist `HttpOverrides` (per-isolate, so call it from each file's `setUp`/`setUpAll`, after `TestWidgetsFlutterBinding.ensureInitialized()`) that refuses any non-sentinel host, plus a shared sentinel origin `http://test.invalid:8000` — deliberately non-loopback, because `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests that genuinely need the running server stay behind `liveServerSkip` (`MEDIA_SERVER_LIVE_TESTS=1`) and must never null `HttpOverrides.global` unconditionally.
 
 Cache-directory safety when running the suite on the live host:
+- **Never resolve `conftest` by module name.** `tests/conftest.py` and `tests/integration/conftest.py`
+  share a basename and neither directory has `__init__.py`, so pytest registers **both** under the
+  module name `conftest` in `sys.modules`, and whichever is imported last wins. `_write_guard` looked
+  its production-path set up as `sys.modules["conftest"]._PRODUCTION_PATHS`, got a module that has no
+  such attribute, and **silently fell back to its own set** — so every path added through
+  `temporary_production_paths()` was invisible to the guard and 18 refusal tests failed with
+  `DID NOT RAISE RuntimeError` while the guard was installed, working, and correctly classifying
+  `D:/Flicks`. The owner now hands the set over explicitly
+  (`_write_guard.set_production_paths(_PRODUCTION_PATHS)` at `pytest_sessionstart`), holding a **live
+  reference, not a copy**, so temporary additions stay visible. If you need conftest's data in a test,
+  import it as a fixture — never as a module.
+- **A test module must not configure the environment at import time.** `test_app.py` used to create its
+  own `TemporaryDirectory`, set `MEDIA_SERVER_MEDIA_ROOT` to it, and then `import app` — which only
+  works if that file is the *first* module to import `app`. `test_api_contracts.py` sorts earlier and
+  imports `app` first, so `config.MEDIA_ROOT` was already bound to conftest's root, the later import was
+  a no-op, the fixtures landed in a directory nothing pointed at, and **36 tests failed with 404s** while
+  the same file passed 58/58 alone. It now uses the root the app is already pointed at. **Import order
+  must never decide where a test writes.**
+- When you change isolation, verify it the hard way rather than trusting a green run: snapshot the
+  library file list, the production `movies` rows and the `cache/hls` directory list (plus a hash of
+  each) before and after a full run — all three must be unchanged.
 - `tests/conftest.py` owns test isolation: it redirects the cache, database, upload target/staging, archive and deleted directories onto a throwaway tree **through the environment before the app is imported** (so a `config` reload recomputes throwaway paths), re-asserts them before every test, and refuses any deletion inside the checkout's `cache/` tree. Never rely on import-time attribute rebinding alone: `tests/test_app.py`'s teardown reloads `app.config` and `tests/test_selenium_multi_seek_coyote.py` rebinds `app.CACHE_DIR = app.config.CACHE_DIR` — that is how a full-suite run once deleted the live transcode cache. `audit_orphaned_caches()` derives the "active" set from `video_paths()`, so any run whose cache is not isolated makes every real HLS directory look orphaned and the non-dry-run purge deletes production transcodes; likewise, `_resolve_upload_dirs()` returns `MEDIA_ROOT` under pytest, which once wrote 22-byte fixtures into the real library and fixture rows into the production database.
-- Verify isolation the hard way after touching it: snapshot the library file list, the production `movies` rows and the `cache/hls` directory list (plus a hash of each) before and after a full run — all three must be unchanged.
 - The orphan audit is fail-closed by design; do not reintroduce bare `except Exception: <empty active set>` handling around media enumeration.
 - `purge_orphaned_caches()` refuses to run when the audit reports itself degraded, and skips any directory holding `hls.progress`/`playlist.m3u8`/`chunk_*.m3u8*` written within `RECENT_CACHE_GRACE_SECONDS` (live transcode). Startup no longer purges orphans unless `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
 - Never fall back to a bare `MEDIA_ROOT / user_input` join when `safe_path()` refuses a name, and never unlink without an `_is_within_media_roots()` check: the service runs as LocalSystem, so a traversal name in `/api/media/delete` deletes arbitrary host files (see `docs/PROJECT_STATUS.md`). Audit sibling deletion paths the same way.

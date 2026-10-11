@@ -176,10 +176,7 @@ class StorageRetentionTests(unittest.TestCase):
                     _base.resolve(),
                 )
 
-            with patch("app.services.transcode_service.enumerate_media_with_status",
-                       return_value=([str(active_movie)],
-                                     {"complete": True, "roots": [], "walk_errors": [],
-                                      "deduped": [], "skipped_uploads": 0})):
+            with patch("app.services.transcode_service.video_paths", return_value=[str(active_movie)]):
                 # 3. Audit should discover the orphans
                 audit = audit_orphaned_caches()
                 orphaned_hls_names = [o['name'] for o in audit['orphaned_hls']]
@@ -355,22 +352,42 @@ class StorageRetentionTests(unittest.TestCase):
         self.client.post("/api/storage/settings", json={"retention_policy": "keep"})
 
         # 5. POST /api/storage/purge-orphans (dry-run)
-        # Phase 3.8H: the audit fails closed whenever the enumeration is not
-        # provably complete, which it is not in a test run with an empty media
-        # root. Mock the purge result so this exercises the endpoint CONTRACT
-        # (success flag + preserved payload) rather than the audit.
-        healthy_purge = {
-            "freed_bytes": 0, "purged_count": 0, "purged_dirs": [],
-            "failed_count": 0, "failed_dirs": [], "skipped_live_count": 0,
-            "skipped_live": [], "dry_run": True, "refused": False,
-        }
-        with patch("app.services.transcode_service.purge_orphaned_caches",
-                   return_value=healthy_purge):
-            res = self.client.post("/api/storage/purge-orphans?dry_run=true")
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertTrue(data["success"])
-        self.assertTrue(data["result"]["dry_run"])
+        #
+        # This assertion used the whole session's shared cache root and the real
+        # media roots, so the outcome depended on what other test files happened
+        # to leave behind. With a populated shared cache and an empty disposable
+        # library, audit_orphaned_caches() correctly refuses (empty enumeration +
+        # populated cache == degraded) and the purge returns success=False. The
+        # test passed alone and failed in any combination - an order dependence,
+        # not an enumeration bug, and the failure text blamed the audit for
+        # doing the right thing.
+        #
+        # Bind it to a dedicated cache root AND a dedicated library root holding
+        # one real video, so the audit has a defined, non-degraded answer on every
+        # branch. Both seams (get_cache_dir, config.get_media_roots) are shared
+        # by the legacy and enumeration-complete audit paths.
+        previous_cache = app.CACHE_DIR
+        dedicated = _dedicated_cache_root("storage_endpoints")
+        _assert_dedicated_cache_root(self, dedicated, previous_cache)  # before any mutation
+        dedicated_library = dedicated.parent / "library"
+        dedicated_library.mkdir(parents=True, exist_ok=True)
+        (dedicated_library / "LibraryProbe.2026.mkv").write_bytes(b"x" * 32)
+        app.config.CACHE_DIR = dedicated
+        app.CACHE_DIR = dedicated
+        app._paths = (0, [])
+        try:
+            with patch("app.config.get_media_roots", return_value=[dedicated_library]):
+                app._paths = (0, [])
+                res = self.client.post("/api/storage/purge-orphans?dry_run=true")
+                self.assertEqual(res.status_code, 200)
+                data = res.get_json()
+                self.assertTrue(data["success"], data)
+                self.assertTrue(data["result"]["dry_run"])
+        finally:
+            app._paths = (0, [])
+            app.config.CACHE_DIR = previous_cache
+            app.CACHE_DIR = previous_cache
+            shutil.rmtree(dedicated.parent, ignore_errors=True)
 
     def test_manage_page_storage_governance_render(self):
         """Verify /manage and /library render storage governance UI without template errors."""
@@ -429,12 +446,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
             (d / fname).write_bytes(payload)
         return d
 
-    # Phase 3.8H: the audit now reads what the walk actually proved, via
-    # enumerate_media_with_status() rather than a bare list of paths.
-    @patch("app.services.transcode_service.enumerate_media_with_status",
-           return_value=([], {"complete": True, "roots": [], "walk_errors": [],
-                              "deduped": [], "skipped_uploads": 0}))
-    def test_audit_fails_closed_when_enumeration_returns_nothing(self, _mock_enum):
+    @patch("app.services.transcode_service.video_paths", return_value=[])
+    def test_audit_fails_closed_when_enumeration_returns_nothing(self, _mock_vp):
         orphan = self._make_dir("orphan_enum_empty", {"segment_000000.ts": b"X" * 4096})
         try:
             audit = audit_orphaned_caches()
@@ -449,9 +462,8 @@ class CachePurgeSafetyTests(unittest.TestCase):
         finally:
             shutil.rmtree(orphan, ignore_errors=True)
 
-    @patch("app.services.transcode_service.enumerate_media_with_status",
-           side_effect=RuntimeError("database is locked"))
-    def test_audit_fails_closed_when_enumeration_raises(self, _mock_enum):
+    @patch("app.services.transcode_service.video_paths", side_effect=RuntimeError("database is locked"))
+    def test_audit_fails_closed_when_enumeration_raises(self, _mock_vp):
         orphan = self._make_dir("orphan_enum_error", {"segment_000000.ts": b"X" * 4096})
         try:
             audit = audit_orphaned_caches()
@@ -475,10 +487,7 @@ class CachePurgeSafetyTests(unittest.TestCase):
         })
         stale = self._make_dir("orphan_and_stale", {"segment_000000.ts": b"Z" * 1024})
         try:
-            with patch("app.services.transcode_service.enumerate_media_with_status",
-                       return_value=([str(media)],
-                                     {"complete": True, "roots": [], "walk_errors": [],
-                                      "deduped": [], "skipped_uploads": 0})):
+            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
                 res = purge_orphaned_caches(dry_run=False)
 
             self.assertFalse(res["refused"])
@@ -500,10 +509,7 @@ class CachePurgeSafetyTests(unittest.TestCase):
             "segment_000000.ts": b"W" * 2048,
         })
         try:
-            with patch("app.services.transcode_service.enumerate_media_with_status",
-                       return_value=([str(media)],
-                                     {"complete": True, "roots": [], "walk_errors": [],
-                                      "deduped": [], "skipped_uploads": 0})):
+            with patch("app.services.transcode_service.video_paths", return_value=[str(media)]):
                 res = purge_orphaned_caches(dry_run=False)
             self.assertFalse(res["refused"])
             self.assertTrue(live.exists(), "a chunk playlist being written must protect the directory")

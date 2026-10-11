@@ -6,8 +6,16 @@ import time
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
 DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
-POSTER_DIR = BASE_DIR / "cache" / "posters"
-BACKDROP_DIR = BASE_DIR / "cache" / "backdrops"
+# Derive the cache tree the same way app/config.py does. Hardcoding
+# BASE_DIR / "cache" ignored MEDIA_SERVER_CACHE_DIR entirely, so this module
+# always wrote to the deployed cache regardless of how the process was
+# configured - and it mkdirs that directory on every download (see the mkdir in
+# download_poster). With the variable unset the result is identical to the
+# previous literal, so production behaviour is unchanged; with it set - as
+# tests/conftest.py does - posters land in the throwaway tree instead.
+_CACHE_DIR = Path(os.environ.get("MEDIA_SERVER_CACHE_DIR") or (BASE_DIR / "cache"))
+POSTER_DIR = _CACHE_DIR / "posters"
+BACKDROP_DIR = _CACHE_DIR / "backdrops"
 
 TMDB_IMAGE = "https://image.tmdb.org/t/p/w500"
 

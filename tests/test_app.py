@@ -7,9 +7,32 @@ from unittest.mock import MagicMock, patch
 
 _orig_media_root_env = os.environ.get("MEDIA_SERVER_MEDIA_ROOT")
 _orig_database_env = os.environ.get("MEDIA_SERVER_DATABASE")
-TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-os.environ["MEDIA_SERVER_MEDIA_ROOT"] = TMP.name
-os.environ["MEDIA_SERVER_DATABASE"] = str(Path(TMP.name) / "media.db")
+
+# Capture conftest's throwaway locations BEFORE anything else can overwrite them.
+_conftest_media_root = Path(os.environ["MEDIA_SERVER_MEDIA_ROOT"])
+_conftest_database = Path(os.environ["MEDIA_SERVER_DATABASE"])
+
+
+class _ConfiguredRoot:
+    """Stand-in for tempfile.TemporaryDirectory that names an EXISTING root.
+
+    This module used to create its own TemporaryDirectory and point
+    MEDIA_SERVER_MEDIA_ROOT at it at import time, immediately before `import app`.
+    That only worked when this file was the first module to import `app`: pytest
+    collects test_api_contracts.py before test_app.py, and that module imports
+    `app` first, so config.MEDIA_ROOT was already bound to conftest's root and this
+    file's later import was a no-op. Its fixtures then landed in a directory nothing
+    pointed at and 36 tests failed with 404s - while the same file passed 58/58 when
+    run alone. Import order must not decide where a test writes.
+
+    Using the root the app is actually pointed at makes the file order-independent.
+    """
+
+    def __init__(self, path):
+        self.name = str(path)
+
+
+TMP = _ConfiguredRoot(_conftest_media_root)
 import app
 
 import _isolation_paths
@@ -39,11 +62,6 @@ def _validate_isolation_targets():
                 f"TEST ISOLATION VIOLATION: {name} points at a deployed "
                 f"location ({resolved}); refusing to continue."
             )
-
-# Capture conftest's throwaway locations so tearDownClass can restore the
-# isolation environment instead of the deployed one (see tearDownClass).
-_conftest_media_root = Path(os.environ["MEDIA_SERVER_MEDIA_ROOT"])
-_conftest_database = Path(os.environ["MEDIA_SERVER_DATABASE"])
 
 class MediaServerTests(unittest.TestCase):
     @classmethod
@@ -174,8 +192,15 @@ class MediaServerTests(unittest.TestCase):
         old_time = time.time() - 7200
         os.utime(stale_part, (old_time, old_time))
         orig_cache_dir = getattr(app, 'CACHE_DIR', None)
+        orig_config_cache = getattr(app.config, 'CACHE_DIR', None)
+        target_cache = Path(TMP.name) / 'cache'
         try:
-            app.CACHE_DIR = Path(TMP.name) / 'cache'
+            # BOTH names must be rebound. approved_cache_root() refuses when
+            # app.CACHE_DIR and config.CACHE_DIR disagree, so setting only the
+            # app-level snapshot made cleanup_cache() raise CacheRootUnsafe and
+            # the assertions below never ran. Bind them together, restore both.
+            app.CACHE_DIR = target_cache
+            app.config.CACHE_DIR = target_cache
             app.cleanup_cache()
             self.assertTrue(final.exists())
             self.assertTrue(valid_part.exists())
@@ -183,6 +208,8 @@ class MediaServerTests(unittest.TestCase):
         finally:
             if orig_cache_dir is not None:
                 app.CACHE_DIR = orig_cache_dir
+            if orig_config_cache is not None:
+                app.config.CACHE_DIR = orig_config_cache
     def test_transcode_uses_separate_locks_for_direct_and_compat_modes(self):
         app.TRANSCODE_LOCKS.clear()
         self.assertIsNot(app.TRANSCODE_LOCKS.setdefault('Example.2026.mp4:direct', __import__('threading').Lock()),
