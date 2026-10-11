@@ -16,7 +16,7 @@ from flask import current_app, url_for
 
 from app import config
 from app.db import get_db
-from app.services.media_service import probe_media, video_paths
+from app.services.media_service import enumerate_media_with_status, probe_media, video_paths
 from app.utils.filesystem import get_rel_path, is_video, safe_path
 
 logger = logging.getLogger(__name__)
@@ -319,41 +319,47 @@ def audit_orphaned_caches():
     # to empty `active_videos`, which marked the entire cache orphaned and let the automatic
     # purge delete every transcode on the host.
     degraded_reasons = []
-    try:
-        active_videos = video_paths()
-    except Exception as exc:
-        active_videos = []
-        degraded_reasons.append(f"media enumeration failed: {exc}")
-
-    # ENUMERATION COMPLETENESS (Phase 3.8D).
-    #
-    # A non-empty enumeration is NOT proof that the library was fully walked. The
-    # purge incident this guards against returned one real file from a valid root
-    # and was therefore indistinguishable from a complete listing, so every other
-    # cache directory was classified orphaned and deleted.
-    #
-    # What can be established from source, without inventing a coverage threshold:
-    # `video_paths()` skips any root that does not exist (`if not root.exists():
-    # continue`), so an absent or unreadable configured root yields a SILENTLY
-    # PARTIAL list - no exception, no degraded flag. That is a completeness failure
-    # the code can actually observe, so it is treated as one.
+    active_videos = []
+    enumeration = None
     media_roots_missing = []
     try:
-        configured_roots = config.get_media_roots()
+        active_videos, enumeration = enumerate_media_with_status()
     except Exception as exc:
-        configured_roots = []
-        degraded_reasons.append(f"media root configuration unreadable: {exc}")
-    for root in configured_roots:
-        try:
-            if not root.exists() or not root.is_dir():
-                media_roots_missing.append(str(root))
-        except OSError as exc:
-            media_roots_missing.append(f"{root} ({exc})")
-    if media_roots_missing:
-        degraded_reasons.append(
-            "media enumeration is incomplete: configured root(s) missing or unreadable: "
-            + ", ".join(media_roots_missing)
-        )
+        degraded_reasons.append(f"media enumeration failed: {exc}")
+
+    # ENUMERATION COMPLETENESS.
+    #
+    # A non-empty enumeration is NOT proof that the library was fully walked. The
+    # purge incident this guards against returned a list built from a walk that
+    # silently dropped files, so it was indistinguishable from a complete
+    # listing, and every other cache directory was classified orphaned and deleted.
+    #
+    # enumerate_media_with_status() now proves what the walk actually did, so the
+    # audit asks it instead of guessing. It reports a root that is missing or is
+    # not a directory, every directory that could not be read (pathlib's rglob
+    # swallowed PermissionError and returned a short list with no error at all),
+    # and every distinct file lost to basename deduplication.
+    #
+    # There is still no coverage threshold and none is invented: "complete" means
+    # only that the walk succeeded. A walk that succeeds while omitting files for
+    # some reason this code cannot observe remains undetectable by construction.
+    if enumeration is not None and not enumeration.get('complete'):
+        for root in enumeration.get('roots') or []:
+            if root.get('missing'):
+                media_roots_missing.append(root.get('path'))
+                degraded_reasons.append(
+                    "media enumeration is incomplete: configured root missing or unreadable: "
+                    f"{root.get('path')}"
+                )
+            for err in root.get('errors') or []:
+                degraded_reasons.append(
+                    f"media enumeration is incomplete: {root.get('path')}: {err}"
+                )
+        for name in enumeration.get('deduped') or []:
+            degraded_reasons.append(
+                "media enumeration is incomplete: distinct file collapsed by basename "
+                f"deduplication: {name}"
+            )
 
     active_hls_map = {}       # dir_name -> source Path
     active_preview_map = {}   # dir_name -> source Path

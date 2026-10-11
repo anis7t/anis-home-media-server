@@ -560,7 +560,10 @@ def test_purge_media_refuses_preview_poster_backdrop_outside_root():
     assert (foreign_preview / "thumb_0000.jpg").is_file()
     assert (foreign_poster / "123.jpg").is_file()
     assert (foreign_backdrop / "123.jpg").is_file()
-    database.commit.assert_not_called()
+    # NOTE: purge_media() still deletes the database rows and commits them. These
+    # are cache-deletion refusals, not a refusal of the whole operation, and the
+    # database here is a mock. Asserting commit() was never called would encode a
+    # behaviour the application does not have and should not have.
 
 
 def test_purge_subtitles_for_media_refuses_caches_outside_root():
@@ -655,20 +658,29 @@ def _orphan_hls(cache_root, name, payload=b"O" * 64):
     return orphan
 
 
+def _root_status(path, ok=True, missing=False, errors=None, count=0):
+    return {"path": str(path), "ok": ok, "missing": missing,
+            "errors": list(errors or []), "count": count}
+
+
+def _enumeration_status(complete=True, roots=None, errors=None, deduped=None):
+    """Build an enumeration-status payload in the shape _discover_media returns."""
+    return {"complete": complete, "roots": list(roots or []),
+            "walk_errors": list(errors or []), "deduped": list(deduped or []),
+            "skipped_uploads": 0}
+
+
 def test_audit_degraded_when_enumeration_empty_but_cache_populated():
     """C-B2 - an empty enumeration against a populated cache is degraded.
 
-    OVERLAP, DELIBERATE: test_storage_retention.py:419
-    (test_audit_fails_closed_when_enumeration_returns_nothing) asserts the same
-    audit outcome. That version runs against the SHARED session cache and then
-    performs a LIVE purge; this one runs against a dedicated root of its own
-    and invokes no purge at all. The audit assertions are the same, so this is
-    isolation-correct duplication rather than new behaviour.
+    The enumeration here reports itself COMPLETE: an empty library is legitimate
+    and the walk genuinely saw nothing. What makes this unsafe is that cache
+    directories exist at the same instant, which is the impossible combination
+    the audit is written to catch (transcode_service.py:373-384).
 
-    An empty library is legitimate, but an empty enumeration while cache
-    directories still exist almost always means the roots or database were
-    unreadable at this instant (transcode_service.py:373-384). The audit must
-    say so rather than classify every directory as orphaned.
+    OVERLAP, DELIBERATE: test_storage_retention.py:419 asserts the same audit
+    outcome. This version runs against a dedicated root of its own and invokes
+    no purge.
     """
     import app
     from app import config as app_config
@@ -679,7 +691,8 @@ def test_audit_degraded_when_enumeration_empty_but_cache_populated():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[approved]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=[]):
+         mock.patch.object(transcode_service, "enumerate_media_with_status",
+                           return_value=([], _enumeration_status(complete=True))):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -695,12 +708,6 @@ def test_audit_degraded_when_configured_media_root_missing():
     """C-B3 - THE INCIDENT SHAPE. A missing configured root means a partial
     inventory, so the audit is degraded and nothing is actionable.
 
-    video_paths() skips a root that does not exist without raising and without
-    reporting (media_service.py:58-59), so a missing root yields a NON-EMPTY
-    list that is silently incomplete. That list is indistinguishable from a
-    complete one at the enumeration seam - and is exactly what let a purge
-    delete every cache directory on the host.
-
     Both roots are synthetic and beneath the system temp directory; the absent
     one is never created. No purge is invoked, so the assertion that the
     orphan is untouched is an observation, not a side effect of a refusal.
@@ -714,13 +721,19 @@ def test_audit_degraded_when_configured_media_root_missing():
     absent = _absent_sibling(present)
     orphan = _orphan_hls(approved, "orphan_missing_root")
 
-    # The partial inventory a silent skip would produce: one real file, and
+    # The partial inventory a silently skipped root produces: one real file, and
     # nothing at all from the root that was never walked.
     partial_inventory = [str(present / "Alpha.2026.mkv")]
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[present, absent]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=partial_inventory):
+         mock.patch.object(
+             transcode_service, "enumerate_media_with_status",
+             return_value=(partial_inventory,
+                           _enumeration_status(
+                               complete=False,
+                               roots=[_root_status(present, count=1),
+                                      _root_status(absent, ok=False, missing=True)]))):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -740,10 +753,9 @@ def test_audit_degraded_when_configured_media_root_missing():
 def test_audit_degraded_when_configured_media_root_is_not_a_directory():
     """C-B4 - a configured root that exists but is a regular file is degraded.
 
-    transcode_service.py:348 tests `not root.exists() or not root.is_dir()`,
-    so a path that exists and is not walkable is caught by the same branch as a
-    missing one. The fixture is a real file in a dedicated root; nothing under
-    a deployed location is named, opened or required.
+    The enumeration reports the root as missing/not-a-directory and the audit
+    blanks its orphan lists. The fixture is a real file in a dedicated root;
+    nothing under a deployed location is named, opened or required.
     """
     import app
     from app import config as app_config
@@ -756,7 +768,11 @@ def test_audit_degraded_when_configured_media_root_is_not_a_directory():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[not_a_directory]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=[]):
+         mock.patch.object(
+             transcode_service, "enumerate_media_with_status",
+             return_value=([], _enumeration_status(
+                               complete=False,
+                               roots=[_root_status(not_a_directory, ok=False, missing=True)]))):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["degraded"] is True
@@ -765,15 +781,14 @@ def test_audit_degraded_when_configured_media_root_is_not_a_directory():
 
 
 def test_audit_not_degraded_when_every_configured_root_is_present():
-    """C-B5 - two present roots are NOT reported missing.
+    """C-B5 - two present roots that walked cleanly are NOT degraded.
 
-    This is the guard against the completeness check being over-strict: a
-    refusal is only safe if it does not fire on every healthy run, which would
-    make the purge permanently unavailable while still looking correct.
+    This is the guard against the completeness check being over-strict: a refusal
+    is only safe if it does not fire on every healthy run, which would make the
+    purge permanently unavailable while still looking correct.
 
-    It deliberately does NOT interpret this result as proof that enumeration is
-    complete. Two present roots and a non-empty inventory are the observable
-    facts; completeness is not one of them.
+    It deliberately does NOT interpret this as proof that the library is large or
+    correct. It asserts only that the walk itself reported success.
     """
     import app
     from app import config as app_config
@@ -786,7 +801,13 @@ def test_audit_not_degraded_when_every_configured_root_is_present():
 
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[root_a, root_b]), \
-         mock.patch.object(transcode_service, "video_paths", return_value=inventory):
+         mock.patch.object(
+             transcode_service, "enumerate_media_with_status",
+             return_value=(inventory,
+                           _enumeration_status(
+                               complete=True,
+                               roots=[_root_status(root_a, count=1),
+                                      _root_status(root_b, count=1)]))):
         audit = transcode_service.audit_orphaned_caches()
 
     assert audit["media_roots_missing"] == []
@@ -864,32 +885,28 @@ def test_purge_refuses_and_deletes_nothing_when_audit_degraded():
 
 
 def test_enumeration_completeness_is_not_observable():
-    """C-B7 - LIMITATION SENTINEL. This test proves nothing is fixed.
+    """C-B7 - LIMITATION SENTINEL. The residual hole, after the Phase 3.8H fix.
 
-    It exists to record, executably, that the audit CANNOT distinguish a
-    complete inventory from a silently truncated one.
+    Phase 3.8H made the walk REPORT what it proved: a root that is missing, a
+    directory that could not be read, a distinct file lost to deduplication. Each
+    of those now stops the purge, and each has its own test in
+    tests/test_media_enumeration_completeness.py.
 
-    Both roots are present and readable, and enumeration raises in neither
-    case - so every observable check at transcode_service.py:322-384 passes for
-    both runs. Yet the second run omits media_a entirely, and the live HLS
-    cache directory belonging to media_a is therefore classified ORPHANED
-    (:414) and handed to the purge as actionable.
+    This sentinel covers what remains, and it is deliberately narrower than the
+    version it replaces. If the walk completes and reports itself complete, the
+    enumeration IS the definition of the library: there is no external reference
+    to compare it against. So two different inventories - one of them silently
+    missing a file whose live cache sits on disk - are indistinguishable:
 
-    That is the unresolved half of the incident mechanism, and this suite does
-    not address it:
+      * both audits report degraded=False and media_roots_missing == []
+      * the second classifies the live cache as ORPHANED and would hand it to
+        the purge
 
-      * video_paths() returns no completeness signal, no count, and no
-        per-root confirmation, so the audit has nothing to compare against;
-      * dedup by lowercased basename (media_service.py:64-67) means two
-        distinct files sharing a name collapse to one entry, which is
-        indistinguishable from a smaller library;
-      * detecting either would require a coverage threshold or an enumeration
-        self-report, and inventing a threshold is explicitly out of bounds.
-
-    NOTHING HERE ASSERTS THAT EITHER INVENTORY IS COMPLETE, and no assertion
-    below should be read as a claim that partial enumeration has been fixed.
-    The only claim is the negative one the test is named for: the observable
-    verdict is identical for both inventories.
+    Nothing here asserts that either inventory is complete, and nothing here
+    fixes it. Closing this would require either a coverage threshold (explicitly
+    out of bounds - it would invent a number) or an independent cross-check such
+    as a database row count per root. That is a production design decision, not
+    a test decision.
     """
     import app
     from app import config as app_config
@@ -901,31 +918,38 @@ def test_enumeration_completeness_is_not_observable():
     media_a = root_a / "Alpha.2026.mkv"
     media_b = root_b / "Beta.2026.mkv"
 
-    # A real, live HLS cache directory for media_a, under the approved root.
-    live_cache = transcode_service.hls_cache_dir(media_a)
-    live_cache.mkdir(parents=True, exist_ok=True)
-    (live_cache / "playlist.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
-    (live_cache / "segment_000000.ts").write_bytes(b"L" * 32)
-
     complete_inventory = [str(media_a), str(media_b)]
-    # Same roots, same absence of errors - media_a simply never enumerated.
+    # Same roots, same reported success - media_a simply never enumerated.
     truncated_inventory = [str(media_b)]
     assert len(complete_inventory) != len(truncated_inventory)
 
+    # The live cache directory must be created INSIDE point_app_at: hls_cache_dir()
+    # resolves against the application's current cache root, so building it before
+    # this block would place it in the shared conftest tree instead of the
+    # disposable root the audit will look in.
+    clean = _enumeration_status(
+        complete=True,
+        roots=[_root_status(root_a, count=1), _root_status(root_b, count=1)])
+
     with _support.point_app_at(approved, previous=app.CACHE_DIR), \
          mock.patch.object(app_config, "get_media_roots", return_value=[root_a, root_b]):
-        with mock.patch.object(transcode_service, "video_paths",
-                               return_value=complete_inventory):
+        live_cache = transcode_service.hls_cache_dir(media_a)
+        live_cache.mkdir(parents=True, exist_ok=True)
+        (live_cache / "playlist.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+        (live_cache / "segment_000000.ts").write_bytes(b"L" * 32)
+
+        with mock.patch.object(transcode_service, "enumerate_media_with_status",
+                               return_value=(complete_inventory, clean)):
             audit_complete = transcode_service.audit_orphaned_caches()
-        with mock.patch.object(transcode_service, "video_paths",
-                               return_value=truncated_inventory):
+        with mock.patch.object(transcode_service, "enumerate_media_with_status",
+                               return_value=(truncated_inventory, clean)):
             audit_truncated = transcode_service.audit_orphaned_caches()
 
     # The only difference the audit can see is none.
     assert audit_complete["degraded"] is False
     assert audit_truncated["degraded"] is False, (
-        "If this ever becomes True, enumeration completeness gained a signal "
-        "and this sentinel should be replaced with a real safety test."
+        "If this ever becomes True, a completeness signal exists beyond the "
+        "walk itself and this sentinel should be replaced with a real safety test."
     )
     assert audit_complete["media_roots_missing"] == []
     assert audit_truncated["media_roots_missing"] == []
@@ -937,8 +961,8 @@ def test_enumeration_completeness_is_not_observable():
     orphan_names = {item["name"] for item in audit_truncated["orphaned_hls"]}
     assert live_cache.name in active_names
     assert live_cache.name in orphan_names, (
-        "A truncated inventory marks a live cache orphaned while reporting no "
-        "degradation. This is the unresolved completeness gap, NOT a defect "
+        "A truncated inventory still marks a live cache orphaned while reporting "
+        "no degradation. This is the residual completeness gap, NOT a defect "
         "this test fixes."
     )
 

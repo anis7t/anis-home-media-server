@@ -1,6 +1,7 @@
 """Media inspection, technical specifications, and library metadata service."""
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -43,30 +44,126 @@ def probe_media(path):
         return {}
 
 
-def video_paths():
-    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
+def _walk_media(root, errors):
+    """Yield every file under *root*, recording directories that cannot be read.
+
+    pathlib's rglob() swallows PermissionError. When a root exists and is a
+    directory but a subdirectory below it cannot be read, rglob returns a short
+    list and raises nothing at all - which is exactly the shape that made an
+    incomplete enumeration indistinguishable from a complete library, and is how
+    a live cache directory came to be classified as orphaned.
+
+    This walks with os.scandir explicitly so the failure is recorded instead of
+    being lost. Symlinked directories are not followed, matching rglob.
+    """
+    stack = [Path(root)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError as exc:
+                        errors.append((str(current), f"{type(exc).__name__}: {exc}"))
+                        continue
+                    if is_dir:
+                        stack.append(Path(entry.path))
+                    else:
+                        yield Path(entry.path)
+        except OSError as exc:
+            errors.append((str(current), f"{type(exc).__name__}: {exc}"))
+
+
+def _discover_media(roots):
+    """Walk every configured root and report what the walk actually proved.
+
+    Returns ``(sorted_paths, status)``.
+
+    ``status['complete']`` is True only when every configured root was walked to
+    the end without an error and no distinct file was lost to basename
+    deduplication. It asserts nothing about how much media exists - there is no
+    coverage threshold in this function. It only says "the walk succeeded", so
+    that a caller which deletes data can tell the difference between "there is
+    nothing to purge" and "I could not see the library".
+    """
+    discovered = []
+    seen = set()
+    deduped = []
+    skipped_uploads = 0
+    root_status = []
+    walk_errors = []
+
+    for root in roots:
+        errors = []
+        found = 0
+        try:
+            missing = not root.exists() or not root.is_dir()
+        except OSError as exc:
+            missing = True
+            errors.append((str(root), f"{type(exc).__name__}: {exc}"))
+
+        if not missing:
+            for p in _walk_media(root, errors):
+                if any(part.startswith('.uploads') for part in p.parts):
+                    skipped_uploads += 1
+                    continue
+                try:
+                    if not is_video(p):
+                        continue
+                except OSError as exc:
+                    # A file that vanished between listing and stat must not
+                    # abort the walk, but it does mean the walk is not clean.
+                    errors.append((str(p), f"{type(exc).__name__}: {exc}"))
+                    continue
+                found += 1
+                rel_key = p.name.lower()
+                if rel_key in seen:
+                    # Two distinct files collapse to a single entry here, so the
+                    # loser's cache directory would look orphaned. Fail closed.
+                    deduped.append(str(p))
+                    continue
+                seen.add(rel_key)
+                discovered.append(p)
+
+        root_status.append({
+            'path': str(root),
+            'ok': not missing and not errors,
+            'missing': missing,
+            'errors': [f"{where}: {what}" for where, what in errors],
+            'count': found,
+        })
+        walk_errors.extend(f"{where}: {what}" for where, what in errors)
+
+    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
+    status = {
+        'complete': all(r['ok'] for r in root_status) and not walk_errors and not deduped,
+        'roots': root_status,
+        'walk_errors': walk_errors,
+        'deduped': deduped,
+        'skipped_uploads': skipped_uploads,
+    }
+    return current, status
+
+
+def enumerate_media_with_status():
+    """Return ``(paths, status)`` for one media enumeration.
+
+    video_paths() delegates here, so every existing caller keeps its signature
+    and the 30-second change-detection behaviour, while a caller that must not
+    act on an unproven enumeration can read ``status['complete']`` for the very
+    walk that produced those paths.
+    """
     global _paths
+
     if 'app' in sys.modules and hasattr(sys.modules['app'], '_paths'):
         app_paths = sys.modules['app']._paths
         if app_paths != _paths:
             _paths = app_paths
 
     roots = config.get_media_roots() if hasattr(config, "get_media_roots") else [config.MEDIA_ROOT]
-    discovered = []
-    seen = set()
-    for root in roots:
-        if not root.exists():
-            continue
-        for p in root.rglob('*'):
-            if any(part.startswith('.uploads') for part in p.parts):
-                continue
-            if is_video(p):
-                rel_key = p.name.lower()
-                if rel_key not in seen:
-                    seen.add(rel_key)
-                    discovered.append(p)
+    current, status = _discover_media(roots)
 
-    current = sorted(discovered, key=lambda p: str(getattr(p, 'name', p)).lower())
     if (
         time.monotonic() - _paths[0] > 30
         or len(current) != len(_paths[1])
@@ -78,7 +175,13 @@ def video_paths():
         _paths = (time.monotonic(), current)
         if 'app' in sys.modules:
             sys.modules['app']._paths = _paths
-    return _paths[1]
+
+    return _paths[1], status
+
+
+def video_paths():
+    """Discover all video files across configured MEDIA_ROOTS with a 30-second in-memory cache and immediate change detection."""
+    return enumerate_media_with_status()[0]
 
 
 def poster_for(path, row):
