@@ -246,6 +246,40 @@ def create_app(test_config=None):
         return render_template('error.html', code=403, message='That location is not available.'), 403
 
     @app_instance.after_request
+    def stamp_device_cookie(response):
+        """Ensure the persistent device-tracking cookie is set on page visits.
+
+        Registered at the **app** level, not on `pages_bp`. Since the React SPA
+        migration, user-facing routes (`/`, `/movie/...`, `/watch/...`) are
+        served by the catch-all defined below rather than by a blueprint view, so
+        a blueprint-scoped `after_request` no longer ran for them and the SPA's
+        HTML responses silently stopped carrying `ms_device_id`. Anything that
+        identifies the caller by that cookie - `device_service.current_device_id`
+        - then saw an anonymous browser.
+
+        Only HTML responses are stamped, so API, media and asset responses stay
+        untouched, and an existing cookie is left alone.
+        """
+        try:
+            if response.mimetype != 'text/html':
+                return response
+            from app.services.device_service import register_device_request
+
+            dev_id, is_new = register_device_request(request)
+            if is_new or not request.cookies.get('ms_device_id'):
+                response.set_cookie(
+                    'ms_device_id',
+                    dev_id,
+                    max_age=31536000,
+                    path='/',
+                    samesite='Lax',
+                )
+        except Exception:
+            # Device tracking must never be able to fail a page response.
+            pass
+        return response
+
+    @app_instance.after_request
     def add_client_hints_and_caching_headers(response):
         response.headers['Accept-CH'] = (
             'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Platform, '
@@ -317,6 +351,36 @@ def create_app(test_config=None):
         x_port=1,
         x_prefix=1
     )
+
+    # Serve the built React SPA for every route that no Flask blueprint owns.
+    # This gives a single origin for the session cookie that Google Sign-In
+    # requires, while `/api/*`, `/auth/*`, `/media/*`, `/hls/*` and every
+    # blueprint route are handled by their explicit Flask rules - Flask always
+    # matches the most specific route first, so this catch-all never steels
+    # traffic from them. User-facing SPA routes (/, /account, /movie/*,
+    # /watch/* etc.) are rewritten to index.html so React Router drives them.
+    REACT_DIST = base_path / "web" / "dist"
+    if (REACT_DIST / "index.html").exists():
+        from flask import abort, send_file, send_from_directory
+
+        @app_instance.route("/")
+        def serve_react_root():
+            return send_from_directory(REACT_DIST, "index.html")
+
+        @app_instance.route("/<path:path>")
+        def serve_react_spa(path):
+            # Static chunks / stylesheets must not be rewritten to index.html.
+            if path.startswith("assets/"):
+                asset = REACT_DIST / path
+                if asset.exists():
+                    return send_file(asset)
+                abort(404)
+            if path in ("favicon.svg", "icons.svg"):
+                asset = REACT_DIST / path
+                if asset.exists():
+                    return send_file(asset)
+                abort(404)
+            return send_from_directory(REACT_DIST, "index.html")
 
     return app_instance
 

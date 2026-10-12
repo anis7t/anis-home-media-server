@@ -252,8 +252,11 @@ def upsert_user(claims: dict) -> dict:
     try:
         row = db.execute("SELECT id, role FROM users WHERE google_sub=?", (sub,)).fetchone()
         if row:
+            # Only overwrite name/picture if Google actually returned them;
+            # a later sign-in with a stripped ID token must not clobber what
+            # we already have. COALESCE preserves the existing value.
             db.execute(
-                "UPDATE users SET email=?, name=?, picture_url=?, last_login_at=? WHERE google_sub=?",
+                "UPDATE users SET email=?, name=COALESCE(?, name), picture_url=COALESCE(?, picture_url), last_login_at=? WHERE google_sub=?",
                 (email, name, picture, now, sub),
             )
             db.commit()
@@ -280,14 +283,59 @@ SESSION_COOKIE = "media_session"
 
 
 def issue_session(user: dict) -> None:
-    """Write our own signed session cookie for *user*."""
+    """Write our own signed session cookie for *user*.
+
+    `sub` is Google's stable subject id and is what `session_identity()` uses to
+    look the profile row up, so every caller must supply it - see
+    `get_user_by_id()` for callers that start from a database id rather than
+    from a Google callback.
+
+    A missing `sub` degrades to `None` instead of raising. This function is the
+    single place that mints sessions for every credential class, and one
+    caller forgetting a field would otherwise turn a working sign-in path into
+    a 500. With `sub` absent the session is still valid and authorization still
+    works; only the name/avatar lookup degrades, which is the correct severity.
+    """
     from flask import session
 
     session.clear()
-    session["uid"] = user["id"]
-    session["email"] = user["email"]
-    session["role"] = user["role"]
+    session["uid"] = user.get("id")
+    session["email"] = user.get("email")
+    session["role"] = user.get("role") or auth_service.ROLE_VIEWER
+    session["sub"] = user.get("sub")
     session["issued_at"] = int(time.time())
+
+
+def get_user_by_id(user_id) -> dict | None:
+    """Full identity row for a database user id.
+
+    Needed by callers that authenticate a *local* record rather than a Google
+    callback - notably the QR pairing route, which knows `user_id` from the
+    token but never sees Google's claims, and therefore cannot supply `sub`
+    without reading it.
+    """
+    from app.db import get_db
+
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT id, google_sub, email, name, role FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    finally:
+        db.close()
+
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "sub": row["google_sub"],
+        "email": row["email"],
+        "name": row["name"],
+        "role": row["role"],
+    }
 
 
 def clear_session() -> None:
@@ -327,7 +375,12 @@ def session_identity() -> Optional[auth_service.Identity]:
         return None
 
     role = session.get("role") or auth_service.ROLE_VIEWER
-    subject = session.get("email") or "session"
+    subject = session.get("sub") or session.get("email") or "session"
+    if session.get("uid") is None:
+        return None
+    return auth_service.Identity(subject=subject, role=role)
+
+
 def get_user_by_sub(sub: str) -> dict:
     """Fetch the profile row (name, picture) for a logged-in user.
 

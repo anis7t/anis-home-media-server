@@ -1,126 +1,12 @@
 """Frontend page routes and PWA manifests."""
 import json
-from flask import Blueprint, Response, abort, render_template, request
+from flask import Blueprint, Response, render_template, request
 
 from app import config
-from app.db import get_db
-from app.services.media_service import (
-    extract_media_technical_specs,
-    get_movies,
-    movie,
-)
 from app.services.device_service import current_device_id
-from app.services.subtitles_service import tracks
-from app.services.system_service import get_system_telemetry
-from app.services.transcode_service import (
-    _is_hls_truly_complete,
-    get_active_transcodes,
-    hls_cache_dir,
-    needs_transcode,
-)
-from app.utils.filesystem import is_video, safe_path
-from app.utils.formatting import format_bytes_display, format_runtime_display
+from app.utils.formatting import format_bytes_display
 
 pages_bp = Blueprint('pages', __name__)
-
-
-@pages_bp.route('/')
-def home():
-    """Render home media library page with search, sorting, and transcode status."""
-    q = request.args.get('q', '').strip().lower()
-    sort = request.args.get('sort', 'title')
-    movies = get_movies(device_id=current_device_id())
-    if q:
-        movies = [m for m in movies if q in (m['title'] + ' ' + str(m['year']) + ' ' + m['genres']).lower()]
-    movies.sort(
-        key=(lambda m: m['updated_at'] or '') if sort == 'recent' else lambda m: m['title'].lower(),
-        reverse=sort == 'recent'
-    )
-    watching = sorted(
-        [m for m in movies if m['position'] > 10 and (not m['duration'] or m['position'] < m['duration'] - 10)],
-        key=lambda m: m['updated_at'] or '',
-        reverse=True
-    )
-    active_transcodes = get_active_transcodes()
-    try:
-        telemetry = get_system_telemetry()
-    except Exception:
-        telemetry = None
-    return render_template(
-        'library.html',
-        movies=movies,
-        watching=watching,
-        q=q,
-        sort=sort,
-        active_transcodes=active_transcodes,
-        telemetry=telemetry
-    )
-
-
-@pages_bp.route('/movie/<path:filename>')
-def details(filename):
-    """Render movie details hero, technical specifications, cast rail, and trailer modal."""
-    path = safe_path(filename)
-    if not is_video(path):
-        abort(404)
-    db = get_db()
-    try:
-        m = movie(path, db, current_device_id())
-        backdrop = m['tmdb_id'] if m['tmdb_id'] and (config.BACKDROP_CACHE / f"{m['tmdb_id']}.jpg").is_file() else None
-        extended = {}
-        if m.get('details_json'):
-            try:
-                extended = json.loads(m['details_json'])
-            except Exception:
-                extended = {}
-    finally:
-        db.close()
-    specs = extract_media_technical_specs(path, m)
-    formatted_runtime = format_runtime_display(m.get('runtime'))
-    active_transcodes = get_active_transcodes()
-    transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    needs_tc = needs_transcode(path)
-    hls_dir = hls_cache_dir(path)
-    pl_file = hls_dir / 'playlist.m3u8'
-    is_ready = _is_hls_truly_complete(pl_file, path) if needs_tc else True
-    return render_template(
-        'details.html',
-        movie=m,
-        backdrop=backdrop,
-        extended=extended,
-        specs=specs,
-        formatted_runtime=formatted_runtime,
-        transcode_info=transcode_info,
-        needs_transcode=needs_tc,
-        is_transcode_ready=is_ready,
-    )
-
-
-@pages_bp.route('/watch/<path:filename>')
-def watch(filename):
-    """Render media player interface with HLS/compat streaming and custom controls."""
-    path = safe_path(filename)
-    if not is_video(path):
-        abort(404)
-    db = get_db()
-    try:
-        m = movie(path, db, current_device_id())
-    finally:
-        db.close()
-    active_transcodes = get_active_transcodes()
-    transcode_info = next((t for t in active_transcodes if t['filename'] == filename), None)
-    needs_tc = needs_transcode(path)
-    hls_dir = hls_cache_dir(path)
-    pl_file = hls_dir / 'playlist.m3u8'
-    is_ready = _is_hls_truly_complete(pl_file, path) if needs_tc else True
-    return render_template(
-        'player.html',
-        movie=m,
-        tracks=tracks(path, m),
-        transcode_info=transcode_info,
-        needs_transcode=needs_tc,
-        is_transcode_ready=is_ready,
-    )
 
 
 @pages_bp.route('/manifest.webmanifest')
@@ -190,92 +76,15 @@ def sw():
     return Response(js, mimetype='application/javascript', headers={'Service-Worker-Allowed': '/'})
 
 
-@pages_bp.route('/manage')
-@pages_bp.route('/library')
-def manage():
-    """Render media library management dashboard with delete/purge actions and storage metrics."""
-    from app.services.media_service import get_managed_media_items
-    from app.services.transcode_service import audit_orphaned_caches, get_active_transcodes, get_cache_dir
-    from app.services.system_service import get_system_telemetry
-    from app.db import get_setting
-    from app.utils.formatting import format_bytes_display
-
-    items = get_managed_media_items()
-    total_size = sum(i['size_bytes'] for i in items)
-
-    # Calculate transcode & stream cache size
-    cache_dir = get_cache_dir()
-    hls_dir = cache_dir / 'hls'
-    transcode_dir = cache_dir / 'transcodes'
-    hls_size = sum(f.stat().st_size for f in hls_dir.rglob('*') if f.is_file()) if hls_dir.is_dir() else 0
-    mp4_size = sum(f.stat().st_size for f in transcode_dir.rglob('*') if f.is_file()) if transcode_dir.is_dir() else 0
-    total_cache_size = hls_size + mp4_size
-
-    active_transcodes = get_active_transcodes()
-    audit_data = audit_orphaned_caches()
-    retention_policy = get_setting('retention_policy', config.DEFAULT_RETENTION_POLICY)
-    telemetry = get_system_telemetry()
-    storage_telemetry = telemetry.get('storage', {})
-
-    return render_template(
-        'manage.html',
-        items=items,
-        total_movies=len(items),
-        total_size_str=format_bytes_display(total_size),
-        total_cache_str=format_bytes_display(total_cache_size),
-        active_transcodes=active_transcodes,
-        audit=audit_data,
-        orphaned_count=audit_data.get('total_orphaned_dirs', 0),
-        orphaned_size_str=format_bytes_display(audit_data.get('total_orphaned_bytes', 0)),
-        retention_policy=retention_policy,
-        archive_dir=str(config.ARCHIVE_DIR),
-        disk_free_str=format_bytes_display(storage_telemetry.get('free_bytes', 0)),
-        disk_total_str=format_bytes_display(storage_telemetry.get('total_bytes', 0)),
-        disk_percent=storage_telemetry.get('percent', 0),
-    )
-
-
-@pages_bp.route('/devices')
-@pages_bp.route('/clients')
-def devices():
-    """Render client devices and network telemetry dashboard."""
-    from app.services.device_service import get_all_devices, get_or_create_device_id
-    current_dev_id, _ = get_or_create_device_id(request)
-    dev_list, stats = get_all_devices(current_device_id=current_dev_id)
-    return render_template(
-        'devices.html',
-        devices=dev_list,
-        stats=stats,
-        current_dev_id=current_dev_id,
-    )
-
-
-@pages_bp.route('/manual')
-@pages_bp.route('/help')
-@pages_bp.route('/how-to-use')
-def manual():
-    """Render the application user manual and feature guide ('How to use')."""
-    return render_template('manual.html')
-
-
 @pages_bp.after_request
 def stamp_device_cookie(response):
-    """Ensure persistent device tracking cookie is set on client page visits."""
-    try:
-        # Only stamp HTML page responses, avoid static/sw/manifest
-        if response.mimetype == 'text/html':
-            from app.services.device_service import register_device_request
-            dev_id, is_new = register_device_request(request)
-            if is_new or not request.cookies.get('ms_device_id'):
-                response.set_cookie(
-                    'ms_device_id',
-                    dev_id,
-                    max_age=31536000,
-                    path='/',
-                    samesite='Lax'
-                )
-    except Exception:
-        pass
+    """Retained for compatibility: stamping now happens app-wide.
+
+    This used to live here, which worked while every page was a blueprint view.
+    Since the React SPA migration the user-facing routes are served by the
+    catch-all in `app/__init__.py`, and a blueprint-scoped hook does not run for
+    routes another blueprint (or the app itself) owns - so the SPA's HTML
+    responses stopped carrying `ms_device_id`. The hook moved to the app level
+    (`create_app`) where it applies to whichever route served the response.
+    """
     return response
-
-

@@ -182,10 +182,12 @@ def whoami():
     identity = auth_service.resolve_identity()
     if identity is None:
         return jsonify({"authenticated": False}), 200
+    from flask import session
+
     user = google_auth.get_user_by_sub(identity.subject)
     return jsonify({
         "authenticated": True,
-        "email": identity.subject,
+        "email": session.get("email") or identity.subject,
         "name": user.get("name"),
         "picture": user.get("picture_url"),
         "role": identity.role,
@@ -308,10 +310,19 @@ def pair_device_submit():
         # Do not distinguish "unknown", "revoked" and "expired" to the caller.
         return jsonify({"error": "That pairing token is not valid."}), 401
 
-    google_auth.issue_session({
-        "id": record["user_id"],
-        "email": record["email"],
-        "role": record["role"],
-    })
-    log.info("AUTH: device paired sub=%s email=%s", record["email"], record["email"])
+    # The token carries user_id/email/role but no Google `sub`, and `sub` is
+    # what the profile lookup keys on. Read the full identity row so the paired
+    # session is indistinguishable from a browser sign-in.
+    identity = google_auth.get_user_by_id(record["user_id"])
+    if identity is None:
+        # The token outlived its user row. Refuse rather than mint a session
+        # with no identity behind it.
+        log.warning("AUTH: pairing refused - user %s no longer exists", record["user_id"])
+        return jsonify({"error": "That pairing token is not valid."}), 401
+
+    google_auth.issue_session(identity)
+    log.info(
+        "AUTH: device paired uid=%s email=%s role=%s",
+        identity["id"], identity["email"], identity["role"],
+    )
     return redirect("/")

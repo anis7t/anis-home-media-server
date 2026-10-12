@@ -406,12 +406,20 @@ class TestSuccessfulSignIn:
             # module may legitimately have left a user row behind in the shared
             # test database, and asserting on the total made this an
             # order-dependent landmine.
+            #
+            # Scoped by google_sub rather than by email, which is the stronger
+            # version of the same fix. `test_auth_tokens.py` seeds its own
+            # owner@example.com row, so an email-scoped count saw two rows and
+            # failed purely on file ordering. The invariant this test is really
+            # about is "the same subject resolves to one row" - and google_sub is
+            # the natural key `upsert_user` keys on.
             count = db.execute(
-                "SELECT COUNT(*) AS n FROM users WHERE email=?", ("owner@example.com",)
+                "SELECT COUNT(*) AS n FROM users WHERE google_sub=?",
+                (_claims()["sub"],),
             ).fetchone()["n"]
         finally:
             db.close()
-        assert count == 1
+        assert count == 1, f"expected one row for this subject, found {count}"
 
     def test_next_cannot_redirect_off_site(self, client, monkeypatch):
         state, nonce = _begin(client)

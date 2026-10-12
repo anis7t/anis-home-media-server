@@ -144,9 +144,15 @@ def test_callback_succeeds_with_dropped_session_cookie(monkeypatch):
     # The session is issued at the callback response, so the browser's next
     # request will carry it. (A cookieless client cannot hold a cookie it was
     # just told about; prove issuance via the Set-Cookie header.)
+    #
+    # Search *all* Set-Cookie headers rather than the first: the app also stamps
+    # `ms_device_id` app-wide, so ordering is not a property worth asserting.
+    # What matters is that our signed session cookie is among them.
     set_cookie = [value for name, value in response.headers if name.lower() == "set-cookie"]
     assert set_cookie, "expected a session cookie to be issued"
-    assert "session=" in set_cookie[0], "expected our signed session cookie"
+    assert any("session=" in value for value in set_cookie), (
+        f"expected our signed session cookie among {set_cookie}"
+    )
 
 
 def test_callback_reuses_db_nonce_not_url_nonce(monkeypatch):
