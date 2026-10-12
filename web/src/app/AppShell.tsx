@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import type { ReactNode } from 'react';
 
@@ -39,21 +39,34 @@ export function AppShell({ children }: { children: ReactNode }) {
   const showLogin = locked && !authenticated;
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  /* Close the dropdown when anything outside is clicked. */
+  /* Close the dropdown when anything outside is clicked. We explicitly ignore
+   * clicks that originate from the trigger button or from inside the menu
+   * itself - those are handled by the button/menu handlers. */
   useEffect(() => {
-    if (!menuOpen) return;
-    const onOutside = () => setMenuOpen(false);
-    window.addEventListener('click', onOutside);
-    return () => window.removeEventListener('click', onOutside);
+    const handleClick = (event: MouseEvent) => {
+      if (!menuOpen) return;
+      if (buttonRef.current && buttonRef.current.contains(event.target as Node)) return;
+      if (menuRef.current && menuRef.current.contains(event.target as Node)) return;
+      setMenuOpen(false);
+    };
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
   }, [menuOpen]);
 
   const stop = useCallback(() => setMenuOpen(false), []);
 
   return (
     <div className="min-h-screen">
-      <header className="glass-header sticky top-0 z-20">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-6 px-4 py-3 sm:px-6">
+      {/*
+        `app-header` opts the bar into a scroll-state container so its inner
+        row can restyle itself once the bar is actually stuck (see index.css).
+        It is progressive enhancement - the base look is already correct.
+      */}
+      <header className="glass-header app-header sticky top-0 z-20">
+        <div className="app-header-surface mx-auto flex max-w-[1600px] items-center gap-6 px-4 py-3 transition-[background-color,box-shadow] duration-200 sm:px-6">
           <NavLink to="/" className="flex items-center gap-3">
             <BrandMark />
             <span className="hidden sm:block">
@@ -85,28 +98,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             {location.pathname.startsWith('/watch/') ? null : authenticated ? (
               <div className="relative">
                 <button
+                  ref={buttonRef}
                   type="button"
                   onClick={() => setMenuOpen((v) => !v)}
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
                   aria-label="Open account menu"
-                  className="card-ring flex h-9 w-9 items-center justify-center rounded-full overflow-hidden border border-white/15 transition hover:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                  onMouseEnter={stop}
-                  onMouseLeave={stop}
-                  onFocus={stop}
-                  onBlur={stop}
+                  className="card-ring group flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 shadow-sm transition hover:border-white/30 hover:bg-white/10 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                 >
                   <Avatar size="md" label={name ?? 'User'} />
                 </button>
 
                 {menuOpen && (
                   <div
+                    ref={menuRef}
                     role="menu"
+                    aria-orientation="vertical"
                     className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-white/15 bg-obsidian-800 shadow-xl"
-                    onMouseEnter={stop}
-                    onMouseLeave={stop}
-                    onFocus={stop}
-                    onBlur={stop}
                   >
                     <div className="border-b border-white/10 px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -138,10 +146,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                         type="button"
                         onClick={signOut}
                         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/5 hover:text-white"
-                        onMouseEnter={stop}
-                        onMouseLeave={stop}
-                        onFocus={stop}
-                        onBlur={stop}
                       >
                         Sign out
                       </button>
@@ -162,7 +166,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6">
+      {/* Anchors scroll compensation so the sticky header's stuck-state height
+          change cannot oscillate against scroll anchoring. */}
+      <main className="mx-auto max-w-[1600px] overflow-anchor-none px-4 py-8 sm:px-6">
         {showLogin ? <LoginScreen /> : children}
       </main>
     </div>

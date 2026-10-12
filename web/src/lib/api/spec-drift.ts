@@ -52,6 +52,41 @@ export type MovieListResponseLive = Omit<MovieListResponse, 'movies' | 'watching
   watching: MovieSummary[];
 };
 
-export type MovieDetailsResponseLive = Omit<MovieDetailsResponse, 'movie'> & {
+export type MovieDetailsResponseLive = Omit<MovieDetailsResponse, 'movie' | 'specs'> & {
   movie: MovieSummary;
+  specs: TechnicalSpecsDrift;
 };
+
+/**
+ * Fields the live `/api/movie/<file>` sends in `specs` that the spec omits.
+ *
+ * `extract_media_technical_specs()` (`app/services/media_service.py:333`) builds
+ * ten keys. The generated `TechnicalSpecs` declares seven, and two of those use
+ * different names than the server sends:
+ *
+ * ```
+ * spec   : filesize        -> reality: file_size
+ * spec   : (absent)        -> reality: container, resolution_badge,
+ *                                     video_profile, subtitles[]
+ * ```
+ *
+ * The legacy Jinja page renders all of them, so this is a contract gap rather
+ * than a new capability. Correcting `docs/openapi.yaml` is Phase 1 contract work
+ * and is reported here, not applied silently - `tests/test_api_contracts.py`
+ * asserts against the spec.
+ */
+export interface TechnicalSpecsDrift {
+  resolution?: string | null;
+  resolution_badge?: string | null;
+  video_codec?: string | null;
+  video_profile?: string | null;
+  audio_codec?: string | null;
+  audio_channels?: string | null;
+  container?: string | null;
+  /** Display string such as `"2.4 GB"`. Spec calls this `filesize`. */
+  file_size?: string | null;
+  bitrate?: string | null;
+  aspect_ratio?: string | null;
+  /** Sidecar subtitle track descriptions; empty when none are available. */
+  subtitles?: string[] | null;
+}

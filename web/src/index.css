@@ -77,4 +77,107 @@
     outline: 2px solid var(--color-brand-400);
     outline-offset: 3px;
   }
+
+  /*
+   * Horizontal media rail (Top Billed Cast).
+   *
+   * The native scrollbar is suppressed: it rendered as a heavy grey slab
+   * under the portraits and read as raw unstyled browser chrome in the middle
+   * of an otherwise composed page. Scrolling is not removed with it - the rail
+   * still scrolls natively (trackpad, touch, keyboard, shift+wheel), and
+   * `CastRail` adds hover-revealed arrow controls for pointer users, so nothing
+   * is lost by hiding the bar. Both declarations are needed: `scrollbar-width`
+   * for Firefox, the pseudo-element for Chromium/Safari.
+   */
+  .cast-rail {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .cast-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  /*
+   * The edge fades are a *scroll affordance*, not decoration: they signal
+   * there is more content past the edge. They are gated on
+   * `[data-scrollable="true"]`, which `CastRail` sets only after measuring
+   * real overflow - a rail holding two names must not paint a fade promising
+   * content that does not exist.
+   *
+   * `scroll-timeline`/`animation-timeline` drive the fade so each edge appears
+   * only at the end of the scroll range where it is meaningful. Percentage
+   * ranges are valid here because the rail is a scroll container rather than
+   * an in-flow box.
+   *
+   * Progressive enhancement by design: where scroll-driven animations are
+   * unsupported the rail simply scrolls without a fade, which is still a
+   * usable control. No polyfill - it is incomplete and buys little here.
+   */
+  @supports (animation-timeline: scroll()) and (animation-range: 0% 100%) {
+    .cast-rail[data-scrollable='true'] {
+      animation: cast-rail-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+
+  @keyframes cast-rail-fade {
+    /* Start: no left fade, right edge still has content beyond it. */
+    0%,
+    100% {
+      mask-image: linear-gradient(
+        to right,
+        #000 0,
+        #000 calc(100% - 3.5rem),
+        transparent 100%
+      );
+    }
+    /* Scrolled off the left: that edge now has content behind it. */
+    12% {
+      mask-image: linear-gradient(
+        to right,
+        transparent 0,
+        #000 2rem,
+        #000 calc(100% - 3.5rem),
+        transparent 100%
+      );
+    }
+    /* Scrolled to the end: release the right fade, it has nothing to hide. */
+    88% {
+      mask-image: linear-gradient(
+        to right,
+        transparent 0,
+        #000 2rem,
+        #000 100%,
+        transparent 100%
+      );
+    }
+  }
+
+  /*
+   * Sticky header hardening.
+   *
+   * `container-type: scroll-state` lets the header's *descendants* restyle
+   * themselves once the header is actually stuck, which is a purely declarative
+   * replacement for a scroll listener. The container is given an explicit name
+   * because these queries nest and unnamed containers would collide.
+   *
+   * Progressive enhancement: without support the header simply keeps its base
+   * appearance, which is already correct at the top of the page.
+   *
+   * `overflow-anchor: none` sits on <main>, the sticky element's parent, not on
+   * :root - scroll anchoring would otherwise fight the height change and cause
+   * the header to oscillate in and out of its stuck state.
+   */
+  .app-header {
+    container-type: scroll-state;
+    container-name: app-header;
+  }
+
+  @container app-header scroll-state(stuck: top) {
+    .app-header-surface {
+      background-color: color-mix(in srgb, var(--color-obsidian-900) 92%, transparent);
+      box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.9);
+    }
+  }
 }
