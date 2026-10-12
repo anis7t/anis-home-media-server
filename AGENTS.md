@@ -500,6 +500,38 @@ Verify at minimum:
 - Subtitles remain correctly positioned.
 - No mobile horizontal/vertical layout regression.
 
+### Frontend migration: the Android client must not break
+
+The shipped Flutter app (`flutter_client/`) is a **working, not-yet-migrated consumer** and
+must keep working throughout the Jinja -> React migration. Two facts make this safe to hold
+onto, and both are verified rather than assumed:
+
+- **It requests no HTML page.** It has no `WebView` (zero matches for `webview` in `lib/`),
+  and its `AppRoutes` constants (`/home`, `/library`, `/player`, `/movie-details`,
+  `/connection`, `/settings`) are `GoRoute` definitions for in-app navigation, never
+  server URLs. Its entire server surface is `/api/*`, `/media/`, `/hls/`, `/subtitles/`,
+  `/poster/*`, `/tmdb-poster/`, `/tmdb-backdrop/`.
+- **Therefore template work cannot affect it**, and `/api/*` must not change shape while
+  the app is un-migrated.
+
+Verify after any API or routing change:
+
+```powershell
+python scripts/probe_android_api.py    # 18 endpoints, live server, exit 1 on break
+```
+
+Its expectations are each route's *contract*, not a wish for `200`: `/api/app/*` answers
+`404` when nothing is published for the channel, and `/api/cast/status` answers `400` when
+no cast is active. Both are working routes; `CastRepository.status()` catches the
+`DioException` and returns `null`, so polling while idle is normal. Do not "fix" those
+into `200`s — that would be changing a documented behaviour to satisfy a bad probe.
+
+**Corollary for the web UI:** removing or rewriting a Jinja page cannot break the Android
+app, so it is a *product* decision, not a compatibility constraint. What must not be
+deleted is the **coverage**: any test asserting on a page that is being replaced should be
+migrated to its React equivalent or retired deliberately, never left failing. See
+`docs/PROJECT_STATUS.md` for the current standing of that work.
+
 ## 8. Model routing, verification and project memory
 
 Work on this repository is performed by **one Hermes profile** (`default`); kanban assignee = profile

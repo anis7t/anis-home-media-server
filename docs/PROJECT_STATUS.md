@@ -45,6 +45,91 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-12 - Header account menu, profile avatar name/picture, and account affordance
+
+**Deliverable:** The signed-in user's header control is now a recognisable account button that opens a menu which stays open while you move onto it, and whose avatar shows the Google picture (or a person glyph) rather than a bare letter.
+
+**1. The menu closed as soon as the pointer moved toward it (`web/src/app/AppShell.tsx`).** Clicking the avatar did open the menu, but it vanished the moment the pointer moved down toward an item, so nothing could be selected. This took **two** fixes, and the first one shipped an incomplete repair:
+
+- *First attempt:* the `<div role="menu">` carried `onMouseEnter={stop}`, `onMouseLeave={stop}`, `onFocus={stop}`, `onBlur={stop}` with `stop = useCallback(() => setMenuOpen(false), [])`. Entering the menu fired `onMouseEnter` and set `menuOpen` to `false`. Removing those four handlers fixed the menu's own trigger but **not the symptom** — the same handlers were also still attached to the **trigger button** and the **Sign out** button. Because the menu is positioned *below* the button (`mt-2`), moving the pointer from the button down to the menu necessarily crosses the button's edge, firing its `onMouseLeave` and closing the menu. The reported behaviour therefore survived the first fix.
+- *Actual fix:* **every** `onMouseEnter`/`onMouseLeave`/`onFocus`/`onBlur` handler was removed from the header. A dropdown that closes because the pointer left its trigger is not a menu, it is a tooltip; dismissal is now owned **solely** by the outside-click listener, which ignores a click whose target is inside either the trigger (`buttonRef.current.contains(...)`) or the menu (`menuRef.current.contains(...)`). `stop` survives only as the `onClick` of the account-link row, where closing is the intended result.
+
+**Verified in a real browser, not by inspection.** A Playwright harness serves the built SPA with a signed-in session and drives it (`verify_menu.py`, kept out of the repo). All five behaviours pass: opens on click; **stays open while hovering the menu body and while hovering the "Device tokens & settings" row**; closes on the account link and navigates to `/account`; closes on an outside click; reopens and toggles closed. A green reading here is meaningful because the first fix was verified by reasoning and was wrong — the regression had to be reproduced in the browser to be found.
+
+**2. Profile name/picture always NULL (`app/services/google_auth.py`, `app/routes/auth.py`).** `resolve_identity()` built the identity `subject` from `session.get("email")`, so `/api/auth/me` called `get_user_by_sub(email)` — i.e. `SELECT name, picture_url FROM users WHERE google_sub = ?` with the *e-mail address*. But `google_sub` is Google's stable subject ID (e.g. `1135675135...`), never the e-mail, so the lookup never matched and `name` / `picture_url` were always `None` even though the user was signed in. That is why the header showed a fallback instead of "Anis Parvez". **Fixes:** `issue_session()` now stores `session["sub"]`; `resolve_identity()` uses `subject = session.get("sub") or session.get("email") or "session"`; `/api/auth/me` returns the e-mail from the session instead of `identity.subject`. `upsert_user()`'s UPDATE now uses `COALESCE(?, name)` and `COALESCE(?, picture_url)`, so a later sign-in whose ID token omits the profile claims can no longer erase values already stored.
+
+**3. The avatar reads as an account control, not as a letter (`web/src/components/Avatar.tsx`, `AppShell.tsx`).** A single capital in an unstyled circle does not present itself as a button, so the control did not look like something you click. Precedence is now **Google picture -> person glyph**, with a person silhouette (head + shoulders) as the default rather than an initial: it is the universally understood account affordance and it renders identically regardless of what the profile claims happen to contain. An explicit `fallback` prop still yields an initial for callers that ask for one. The frame carries its own `rounded-full object-cover`, which also fixes the **menu** avatar — it sits outside the header button's `overflow-hidden`, so a picture there was previously square. The trigger gained a real control surface (translucent plate, hover fill/border, `active:scale-95`) and the picture is fetched with `referrerPolicy="no-referrer"`.
+
+**Deployment:** the React build in `web/dist` was rebuilt and is served via the catch-all routes already in `app/__init__.py`; restart with `restart_service.bat`. **Operator action still required:** the live session predates the `sub` fix and the account row still holds NULL name/picture, so **sign out and sign in again** — a fresh sign-in re-saves the profile from Google (`openid email profile` returns `name` and `picture`), after which the header shows the real name and Google picture.
+
+**Verification:** auth suite — 106 passed, 1 failed, the failure being the pre-existing `test_startup_errors_when_on_without_secret` (its "no `SECRET_KEY`" scenario cannot coexist with a `.env` that already has one; it passes in a full-suite run). `tsc -b` clean; `oxlint` reports no new findings. Enforcement remains OFF, so TV and Flutter clients are unaffected.
+
+
+### 2026-10-12 (later) - Movie details page rebuilt: header overlap, richer metadata, modern OTT layout
+
+**Deliverable:** The React details page is rewritten. The reported layout bug (poster top edge sitting under the sticky header) is fixed and *measured*, and the page now surfaces the metadata the legacy Jinja page showed - cast, genres, crew, technical specs - with an icon set and a scrolling cast rail.
+
+**1. The reported overlap (`MovieDetailsPage.tsx`).** The hero sat inside `<main>`'s padding, so its top began below the header, while the poster was pulled up with a negative top margin and landed in the header's band. The fix is structural rather than a nudge: the hero now **breaks out** of `<main>` with `-mx-4 -mt-8 sm:-mx-6` so the backdrop runs edge-to-edge and *under* the sticky glass header, and the inner column restores the padding with `pt-24 sm:pt-28` - comfortably more than the ~61px header. Verified in a real browser by measuring both rects, not by eye: `overlapPx: 0`, `posterTop: 174`, `headerBottom: 61`, at 1440x1000 and 414x900.
+
+**2. Two data bugs found while building it, both silent.**
+
+- *Extended metadata never rendered.* `parseDetails()` accepted only a JSON **string**, but `GET /api/movie/<file>` parses `details_json` server-side and sends `extended` as an **object** (`app/routes/api.py:940`). Every extended field therefore degraded to absent - no tagline, no cast, no directors - with no error anywhere. This was true of the page before this rewrite too, which is why the old React details page looked so much emptier than the legacy one. It now accepts both shapes, and the test asserts on the **object** shape because that is what the server sends.
+- *A 404 per title without artwork.* The page built the backdrop URL from `movie.tmdb_id`, bypassing the `backdrop_tmdb_id` the server deliberately gates on real artwork (`app/routes/api.py:950`). Every title without a backdrop requested an image that does not exist. Now reads `data.backdrop_tmdb_id` and falls back to a brand-gradient panel - the same lesson as the profile lookup in the entry above: **trust the value the server computed as safe.** Caught only because the preview harness surfaces console errors; a page that renders fine while logging a 404 is otherwise invisible.
+
+**3. Content now shown** (all fields verified present in a live API response before being rendered): tagline, certification, rating, year, runtime, genres as chips, Director / Writers / Studios / Release Date, Top Billed Cast with TMDb portraits and a two-letter initials fallback, and Media Information as five spec cards (Video, Audio, Container, Bitrate, Subtitles) including `resolution_badge`, `file_size`, `bitrate`, `aspect_ratio` and subtitle track names. Actions: Play/Resume (Resume only once a position exists), Replay (`?replay=1`), Trailer, IMDb, TMDB. `TechnicalSpecsDrift` was added to `spec-drift.ts` because the generated `TechnicalSpecs` declares 7 of the 10 keys the server sends and spells one `filesize` against the real `file_size`; the OpenAPI spec itself is Phase 1 contract work and is reported, not edited.
+
+**4. Design and guidance.** Built against the `modern-web-guidance` skill. Two scroll-driven features, both **progressive enhancement** behind `@supports`, with no polyfill (the guide is explicit that `scroll-timeline-polyfill` is incomplete):
+
+- The cast rail's edge fades are driven by `animation-timeline: scroll(self inline)`, so each edge appears only at the end of the scroll range where it means something.
+- The header opts into `container-type: scroll-state` (defined in `web/src/index.css`, applied in `AppShell`) and restyles itself when actually stuck, replacing a scroll listener. `overflow-anchor: none` sits on `<main>`, the sticky element's parent, precisely so scroll anchoring cannot oscillate against the height change - the failure mode the guide warns about.
+
+The rail fade is gated on `[data-scrollable="true"]`, set by `CastRail` only after **measuring** real overflow. A CSS scroll-timeline cannot express "is scrollable": with nothing to scroll the timeline is inactive and the base mask would paint a fade promising content that does not exist. A one-member cast correctly shows no fade. `ResizeObserver` is feature-detected.
+
+The trailer is a native `<dialog>` using `showModal()` for top-layer stacking and Escape-to-close, with the **iframe mounted only while open** so the YouTube player is never fetched speculatively. `showModal()` is feature-detected too - a missing method would otherwise throw inside a click handler and leave a state flag set with no dialog. The dialog is rendered *only* when the title actually has a trailer, so there is no dead dialog in the DOM.
+
+**Verification.** Frontend: `tsc -b` clean, `oxlint` reports **no findings in any new or changed file**, **78/78 vitest pass** (10 files; the details file grew 7 -> 14 tests, including regression tests for both bugs above). Visual: rendered against the **live API** through a local reverse-proxy preview and screenshotted at desktop and mobile, plus a deliberately sparse title (no backdrop, no genres, one cast member) to exercise every absence path - `overlapPx: 0` and **no console errors** on both.
+
+**Outstanding, and not caused by this work: the Python suite is red.** Full run: **41 failed, 849 passed, 28 skipped**. Measured against a clean `HEAD` worktree as the baseline (**12 failed, 877 passed**; those 12 were the `google_auth` session bug fixed earlier in this session, now resolved). The ~29 extra failures are **all** tests asserting on legacy Jinja page HTML - `const filename` in the player page, `Total Devices` on `/devices`, `Connected Devices & Telemetry` - which the React SPA migration removed from `pages.py` (202 lines deleted) in favour of the `app/__init__.py` catch-all. They now receive the SPA shell (`<div id="root">`). They assert on markup that no longer exists, not on behaviour that broke. **This needs a decision: update those tests to the SPA, or keep the Jinja pages behind a flag.** It is not fixed here because it is a migration-wide question, not a details-page defect.
+
+One genuine regression *was* fixed here, found by the same baseline comparison: `app/__init__.py` gained the SPA catch-all, so `pages_bp`'s `after_request` no longer ran for `/` and the SPA's HTML responses silently stopped carrying `ms_device_id` - which `device_service.current_device_id()` reads. The stamping moved to the app level so it applies whichever route served the response; `tests/test_api_contracts.py::test_html_and_asset_endpoints_contract` passes again.
+
+### 2026-10-12 (latest) - Details page: hero space reclaimed, "Synopsis" retired, cast scroll rebuilt
+
+**Three changes, all from review feedback on the previous entry's layout.**
+
+**1. The hero's empty right column now carries soft details.** The backdrop is edge-to-edge, so the area to the right of the title was a large unspent field. The hero became three columns at `lg` - poster, identity block (title / meta / genres / actions), and a glass panel - and the panel holds the **overview prose plus Director / Writers / Studios / Released**.
+
+Those crew facts moved *out* of their own "Cast & Crew" section rather than being copied, which is the whole point: keeping both would have printed "Stanley Kubrick" twice on a wide screen while the hero column stayed empty. The sections that remain are Top Billed Cast and Media Information. Below `lg` the panel simply stacks under the actions, so the overview is still the first thing read on a phone.
+
+**2. The "Synopsis" heading is gone.** It was the only heading on the page doing nothing but naming the paragraph beneath it. The overview is now a single panel with no title, and there is no second copy in the body - one home per fact is what keeps the page from repeating itself.
+
+**3. The native cast scrollbar is gone, replaced by real controls.** It rendered as a heavy grey slab under the portraits - unstyled browser chrome in the middle of a composed page. Suppressed with both `scrollbar-width: none` (Firefox) and `::-webkit-scrollbar` (Chromium/Safari), and replaced with hover-revealed circular arrow controls that scroll by one card plus its gap, so a click always lands on a tile edge.
+
+Nothing was lost by hiding the bar: the rail still scrolls natively (trackpad, touch, keyboard, shift+wheel), and the arrows cover pointer users. The edge fades driven by `animation-timeline` are unchanged. Each arrow is **disabled at its own end**, measured on scroll, so it never offers a scroll that would do nothing - a control that is merely invisible on hover is unreachable by keyboard, so the fade is visual only and focus reveals it too.
+
+**Verification.** `tsc -b` clean, `oxlint` no findings in any new or changed file, **78/78 vitest pass**. Rendered in a real browser against the live API and measured rather than eyeballed: `overlapPx: 0` still holds, no horizontal overflow, both arrows present, and an arrow click moved `scrollLeft` 0 -> 108px (i.e. the control actually scrolls). Screenshot budget includes desktop, mobile and a hovered close-up of the rail.
+
+One tooling bug worth recording because it cost real time and looked like an app bug: the local preview server's SPA fallback was changed to trigger only on paths with an *empty* file extension. Media filenames end in `.mp4`, so every `/movie/<name>.mp4` route 404'd and the app appeared not to render at all. The fallback must key on "is this a real file in the build", never on the absence of an extension.
+
+
+### 2026-10-12 (latest) - Details page: synopsis into the hero dead space, vertical rhythm tightened, Android guardrail
+
+**1. Synopsis moved into the hero, italic, under the actions.** The band of backdrop below the action buttons was still unspent. The overview now sits exactly there, which is also where Netflix and Apple TV put it, and the right-hand panel keeps only the crew facts. Styling: **italic**, so it reads as the title's own voice rather than as another metadata block, and `text-wrap: pretty` because it is body copy — the guidance is explicit that `text-wrap: balance` is for short headings and must not be put on paragraphs (it can leave visibly empty space inside a box). A long overview is clamped to 3 lines on mobile / 4 at `lg` behind an explicit **More** control, because unbounded prose is what drives a hero tall.
+
+**2. Vertical space tightened without crowding.** `pt-24 sm:pt-28 -> pt-20 sm:pt-24` and `pb-10 sm:pb-12 -> pb-7 sm:pb-9`, with the gaps between genres, actions and synopsis pulled in from `mt-4/6` to `mt-3.5/5` and the rail gap `gap-2.5`. Top padding still clears the ~61px sticky header with real margin, and the hero deliberately stops there: compressing further starts to crowd the poster. Measured after: `deadSpacePx: 36` on a well-tagged title, down from an empty band roughly three times that height.
+
+**3. The Android client cannot break — verified, not assumed.** This was the stated migration constraint, so it was proven rather than reasoned about:
+
+- Enumerated the client's server surface from `flutter_client/lib` (85 Dart files): **17 `/api/*` endpoints plus `/media/`, `/hls/`, `/subtitles/`, `/poster/*`**. The seven `/`-prefixed names that look like pages (`/home`, `/library`, `/player`, `/movie-details`, `/connection`, `/settings`) are **`GoRoute` definitions in a `GoRouter`**, i.e. in-app navigation. There is **no `WebView`** anywhere in `lib/` (zero matches), so the client never requests an HTML page — template work cannot reach it, and `/api/*` must not change shape.
+- `scripts/probe_android_api.py` now calls all 18 endpoints against the live server and exits non-zero on a break. It is committed as the guardrail, not run once and discarded.
+- **Three endpoints first looked broken and all three were the probe's fault, not the app's:** `/api/cast/status` returned `400` because the probe omitted `device_id`; and it still returns `400` when no cast is running, which is the documented idle answer — `CastRepository.status()` catches the `DioException` and returns `null`, so polling while idle is normal. `/api/app/update` and `/api/app/download` return `404` when no manifest or APK is published for the channel — a working route with nothing to serve. The probe now encodes each route's **contract**, not a wish for `200`; the `AGENTS.md` note says so explicitly, because "fixing" those into `200`s would change documented behaviour to satisfy a bad assertion.
+
+Recorded in `AGENTS.md` as a standing invariant so a later migration does not have to rediscover it.
+
+**Consequence for the outstanding test work, now stated plainly:** because the Android app never touched the Jinja pages, retiring them is a **product decision, not a compatibility constraint**. What is *not* optional is the coverage — the ~29 HTML-assertion tests must be migrated to their React equivalents or retired deliberately. That decision is still open.
+
+**Verification.** `tsc -b` clean, `oxlint` no findings in changed files, **78/78 vitest pass**, `scripts/probe_android_api.py` green on 18/18. Rendered against the live API and measured: `overlapPx: 0`, `deadSpacePx: 36`, synopsis `font-style: italic`, More toggle grows the hero 490px -> 539px, no horizontal overflow at 1440 and 414.
+
 ### 2026-10-11 â€” Transcode correctness, throughput and telemetry
 
 Full detail and the measurements behind every number:
@@ -1019,7 +1104,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Secondary / parked
 1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-2. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
+2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. What remains is access control before wider public sharing — the Cloudflare hostname alone is not authentication.
 3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
