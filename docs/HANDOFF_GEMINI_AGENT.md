@@ -1,10 +1,11 @@
 # Handoff — Anthropic/Antigravity Gemini Agent
 ## Media Server: React migration, auth rework, details page
 
-**Prepared:** 2026-10-13 · **Branch:** `feat/react-web-frontend` · **Commits:** `96ecc56`, `1b16f56`, `dbec07a`
+**Prepared:** 2026-10-13 · **Branch:** `feat/react-web-frontend`
+**Commits:** `96ecc56` auth · `1b16f56` web · `dbec07a` invariant+guardrail · `b2af86c` handoff · `9f5aa97` docs
 
-Read this before changing anything. Three sections matter most: **§4 the one open
-decision**, **§5 the traps**, **§7 how to verify**. Everything else is context.
+Read this before changing anything. Four sections matter most: **§3.1 a regression this
+work introduced**, **§4 the one open decision**, **§5 the traps**, **§7 how to verify**.
 
 ---
 
@@ -68,6 +69,34 @@ sign-in, so a token lacking those claims wiped a good profile. Now `COALESCE`.
 no longer ran for `/`, so SPA responses silently stopped carrying `ms_device_id` —
 which `device_service.current_device_id()` reads. Stamping moved to app level.
 
+### 3.1a ⚠️ A regression THIS work introduced, and the lesson
+
+Adding `sub` to the session **broke QR pairing**, and it was caught only at commit time.
+
+`issue_session()` became the single place that mints a session for every credential
+class and read `user["sub"]`. But the pairing route is built from a *device token*
+record — `user_id` / `email` / `role`, never Google's claims — so it raised `KeyError`
+and **pairing returned 500**. A working feature, broken by its own fix.
+
+**Why it nearly shipped:** `test_auth_tokens.py` had never been run in isolation during
+this work. "The auth suite is green" had been true — over a *different file set*.
+**A green subset is not evidence about a file you did not run.**
+
+Fixed in two parts, and they are not redundant:
+
+- The pairing route resolves the full identity row via the new
+  `google_auth.get_user_by_id()` — what a caller authenticating a *local* record rather
+  than a Google callback needs. If the token outlived its user row it refuses `401`
+  rather than minting a session with no identity behind it. *(Correctness.)*
+- `issue_session()` reads every field with `.get()` and tolerates an absent `sub`. The
+  session stays valid, authorization still works, only the profile lookup degrades —
+  the correct severity for an optional field in the one function every credential class
+  routes through. *(Safety.)*
+
+**Take this forward:** if you change a shared helper, enumerate *every* caller before
+running a subset. `issue_session` has two, and only one was obvious from the file that
+motivated the change.
+
 ### 3.2 Account menu — a fix that was wrong the first time
 
 The dropdown closed the instant the pointer moved toward it. First attempt removed the
@@ -109,6 +138,10 @@ Two **silent data bugs** found by rendering against the live API:
 ```
 38 failed, 852 passed, 28 skipped
 ```
+
+(Was 41 before §3.1a; three auth failures were fixed at commit time. Baseline for
+comparison is **12 failed / 877 passed** at `2ea7fb4` — those 12 were the
+`google_auth` identity bug in §3.1, now fixed.)
 
 | Source | Count | Nature |
 |---|---|---|
@@ -212,11 +245,25 @@ moved, confirm `document.documentElement.scrollWidth === window.innerWidth`, and
 the backdrop bug survived.
 
 Two failures this handoff ran into, both from not doing that:
-- A menu fix verified by *reasoning* shipped broken.
-- A page "rendered fine" while 404ing on every title without artwork.
+- A menu fix verified by *reasoning* shipped broken (§3.2).
+- A page "rendered fine" while 404ing on every title without artwork (§3.4).
 
 For hard isolation claims, snapshot library files, production `movies` rows and
 `cache/hls` hashes before and after — a green suite is what hid the purge bug.
+
+### Test-order and assertion traps
+
+Three tests in this project were wrong in ways that only surface under some orderings.
+All three are fixed; the patterns are not:
+
+- **Scope an identity assertion by its natural key, not by email.** A test asserting
+  "one row per user" counted by e-mail, so a row seeded by another module failed it
+  purely on file ordering. `google_sub` is what `upsert_user()` keys on — use that.
+- **Do not assert `Set-Cookie[0]`.** A response can legitimately carry several cookies.
+  Assert the cookie you care about is *among* them; ordering is not a property worth
+  pinning, and doing so turns any unrelated change into a failure.
+- **Run the file you changed, in isolation.** See §3.1a. A green subset tells you
+  nothing about a file you did not run.
 
 ---
 
