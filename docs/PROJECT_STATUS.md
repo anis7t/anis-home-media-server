@@ -45,6 +45,58 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-13 - QR pairing regression from the session fix, two order-dependent tests, and the commit record
+
+**The one that matters: adding `sub` to the session broke QR pairing, and it was caught only at commit time.** `issue_session()` became the single place that mints a session for every credential class, and it read `user["sub"]`. The pairing route (`app/routes/auth.py::pair_device_submit`) was built from a *device token* record, which carries only `user_id` / `email` / `role` - it never sees Google's claims - so the lookup raised `KeyError` and **pairing returned 500**. This is precisely the "a working thing must keep working" rule, and it was broken by my own change.
+
+**Why it nearly shipped unnoticed:** `test_auth_tokens.py` had not been run in isolation at any earlier point in this work, so the "auth suite is green" claim made earlier in this log was measured over a *different file set*. A green subset is not evidence about a file you did not run.
+
+**Fix, in two parts.**
+
+- The pairing route now resolves the full identity row through the new
+  `google_auth.get_user_by_id()`, which is what a caller authenticating a *local*
+  record rather than a Google callback needs. If the token outlived its user row
+  the route refuses with `401` rather than minting a session with no identity
+  behind it.
+- `issue_session()` now reads every field with `.get()` and lets `sub` be absent.
+  With `sub` missing the session is still valid and authorization still works -
+  only the name/avatar lookup degrades. That is the correct severity for an
+  optional field in the one function every credential class routes through: one
+  caller forgetting a key must never turn a working sign-in path into a 500.
+  Note the two fixes are not redundant - the lookup makes pairing *correct*, the
+  `.get()` makes the shared helper *safe*.
+
+**Two tests were order-dependent, not broken.**
+
+- `test_second_sign_in_reuses_the_same_row` counted rows by **e-mail**, so a row seeded
+  by `test_auth_tokens.py` (same `owner@example.com`) made it fail purely on file
+  ordering. The comment above it already claimed to have fixed exactly this class of
+  bug, by scoping to the identity rather than counting globally - but scoping by e-mail
+  is not identity, because e-mail is not the natural key. Now scoped by `google_sub`,
+  which is what `upsert_user()` keys on.
+- `test_callback_succeeds_with_dropped_session_cookie` asserted that `Set-Cookie[0]` is
+  the session cookie. The app-level device-cookie fix means a response now legitimately
+  carries two cookies, and the device cookie comes first. Asserted now that the session
+  cookie is *among* the `Set-Cookie` headers. Header ordering was never a property worth
+  asserting, and pinning it would have turned an unrelated, correct change into a failure.
+
+**Session commits** (branch `feat/react-web-frontend`):
+
+| Commit | Contents |
+|---|---|
+| `96ecc56` | auth identity/profile fixes, device cookie, pairing regression + both test fixes |
+| `1b16f56` | account menu, avatar affordance, details page rebuild, cast rail, icons |
+| `dbec07a` | `AGENTS.md` migration invariant + `scripts/probe_android_api.py` guardrail |
+| `b2af86c` | `docs/HANDOFF_GEMINI_AGENT.md` |
+
+**Standing of the suites at this commit.** Frontend: `tsc -b` clean, `oxlint` clean in
+every changed file, **78/78 vitest**. Auth + API contract subset: **101 passed**.
+Android guardrail: **18/18 endpoints respond per contract**. Full Python suite:
+**38 failed, 852 passed, 28 skipped** - down from 41 as the three auth failures above
+were fixed. The 36 legacy Jinja HTML assertions remain the one **open decision**;
+see `AGENTS.md` for the migration invariant and `docs/HANDOFF_GEMINI_AGENT.md` §4 for
+the options and the recommendation not to bulk-delete them.
+
 ### 2026-10-12 - Header account menu, profile avatar name/picture, and account affordance
 
 **Deliverable:** The signed-in user's header control is now a recognisable account button that opens a menu which stays open while you move onto it, and whose avatar shows the Google picture (or a person glyph) rather than a bare letter.
@@ -93,7 +145,7 @@ The trailer is a native `<dialog>` using `showModal()` for top-layer stacking an
 
 One genuine regression *was* fixed here, found by the same baseline comparison: `app/__init__.py` gained the SPA catch-all, so `pages_bp`'s `after_request` no longer ran for `/` and the SPA's HTML responses silently stopped carrying `ms_device_id` - which `device_service.current_device_id()` reads. The stamping moved to the app level so it applies whichever route served the response; `tests/test_api_contracts.py::test_html_and_asset_endpoints_contract` passes again.
 
-### 2026-10-12 (latest) - Details page: hero space reclaimed, "Synopsis" retired, cast scroll rebuilt
+### 2026-10-12 (latest, part 1) - Details page: hero space reclaimed, "Synopsis" retired, cast scroll rebuilt
 
 **Three changes, all from review feedback on the previous entry's layout.**
 
@@ -112,7 +164,7 @@ Nothing was lost by hiding the bar: the rail still scrolls natively (trackpad, t
 One tooling bug worth recording because it cost real time and looked like an app bug: the local preview server's SPA fallback was changed to trigger only on paths with an *empty* file extension. Media filenames end in `.mp4`, so every `/movie/<name>.mp4` route 404'd and the app appeared not to render at all. The fallback must key on "is this a real file in the build", never on the absence of an extension.
 
 
-### 2026-10-12 (latest) - Details page: synopsis into the hero dead space, vertical rhythm tightened, Android guardrail
+### 2026-10-12 (latest, part 2) - Details page: synopsis into the hero dead space, vertical rhythm tightened, Android guardrail
 
 **1. Synopsis moved into the hero, italic, under the actions.** The band of backdrop below the action buttons was still unspent. The overview now sits exactly there, which is also where Netflix and Apple TV put it, and the right-hand panel keeps only the crew facts. Styling: **italic**, so it reads as the title's own voice rather than as another metadata block, and `text-wrap: pretty` because it is body copy — the guidance is explicit that `text-wrap: balance` is for short headings and must not be put on paragraphs (it can leave visibly empty space inside a box). A long overview is clamped to 3 lines on mobile / 4 at `lg` behind an explicit **More** control, because unbounded prose is what drives a hero tall.
 
