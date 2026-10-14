@@ -74,17 +74,20 @@ def test_extended_controls_e2e():
         aspect_btn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "aspectBtn"))
         )
-        rotate_btn = driver.find_element(By.ID, "rotateBtn")
+        assert len(driver.find_elements(By.ID, "rotateBtn")) == 0, "#rotateBtn should be removed"
         pip_btn = driver.find_element(By.ID, "pipBtn")
         nerd_btn = driver.find_element(By.ID, "nerdStatsBtn")
         shortcuts_btn = driver.find_element(By.ID, "shortcutsBtn")
+        full_btn = driver.find_element(By.ID, "full")
+        vol_pct = driver.find_element(By.ID, "volumePercent")
 
         assert aspect_btn.is_displayed(), "#aspectBtn must be visible"
-        assert rotate_btn.is_displayed(), "#rotateBtn must be visible"
         assert pip_btn.is_displayed(), "#pipBtn must be visible"
         assert nerd_btn.is_displayed(), "#nerdStatsBtn must be visible"
         assert shortcuts_btn.is_displayed(), "#shortcutsBtn must be visible"
-        print("[SUCCESS] All Phase 3 control buttons are present and visible.")
+        assert full_btn.is_displayed(), "#full top-right button must be visible"
+        assert vol_pct.is_displayed(), "#volumePercent indicator must be visible"
+        print("[SUCCESS] All modernized player control buttons (and top-right #full) are present and visible.")
 
         # 3. Test Aspect Ratio switching
         initial_classes = video.get_attribute("class") or ""
@@ -106,13 +109,15 @@ def test_extended_controls_e2e():
         assert "aspect-stretch" in stretch_classes, f"Expected aspect-stretch class, got: {stretch_classes}"
         print("[SUCCESS] Aspect ratio shortcut 'a' verified.")
 
-        # 4. Test Video Rotation
-        driver.execute_script("arguments[0].click();", rotate_btn)
-        time.sleep(0.4)
-        rot_classes = video.get_attribute("class") or ""
-        assert "rotate-90" in rot_classes, f"Expected rotate-90 class, got: {rot_classes}"
-        assert "90°" in hud.text, f"Expected HUD to show 90°, got: '{hud.text}'"
-        print("[SUCCESS] Screen rotation toggle verified via #rotateBtn.")
+        # 4. Test Volume Percentage & Progressive Fill Slider
+        vol_slider = driver.find_element(By.ID, "volume")
+        assert vol_pct.text == "100%", f"Expected initial volume 100%, got: {vol_pct.text}"
+        assert "100%" in (vol_slider.get_attribute("style") or "")
+
+        # Test Movie Details Section Below Player
+        watch_info = driver.find_element(By.CSS_SELECTOR, "main.watch-info")
+        assert watch_info.is_displayed(), "Movie details section .watch-info must be visible below player"
+        print("[SUCCESS] Volume percent indicator, progressive fill, and movie details verified.")
 
         # 5. Test Nerd Stats HUD
         assert len(driver.find_elements(By.ID, "nerdStatsHud")) == 0 or not driver.find_element(By.ID, "nerdStatsHud").is_displayed()

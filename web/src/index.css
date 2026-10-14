@@ -1105,6 +1105,7 @@
   /* Mobile Controls Responsive Invariants (AGENTS.md & GEMINI.md) */
   @media (max-width: 768px), (max-height: 500px) {
     #volume,
+    #volumePercent,
     #shortcutsBtn,
     #skipBackBtn,
     #skipForwardBtn {
@@ -1114,10 +1115,54 @@
     #mute,
     #pipBtn,
     #nerdStatsBtn,
-    #rotateBtn,
     #aspectBtn {
       display: inline-flex !important;
     }
+  }
+
+  /* Volume Slider Progressive Fill & Custom Thumb (Modern Web Guidance) */
+  #volume {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 9999px;
+    outline: none;
+  }
+  #volume::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: transparent;
+  }
+  #volume::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(229, 9, 20, 0.7), 0 2px 4px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    border: 1.5px solid #e50914;
+    transition: transform 0.15s ease;
+    margin-top: -4px;
+  }
+  #volume:hover::-webkit-slider-thumb {
+    transform: scale(1.2);
+  }
+  #volume::-moz-range-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: transparent;
+  }
+  #volume::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(229, 9, 20, 0.7), 0 2px 4px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    border: 1.5px solid #e50914;
+    transition: transform 0.15s ease;
   }
 
   /* Player Preloader Overlay */

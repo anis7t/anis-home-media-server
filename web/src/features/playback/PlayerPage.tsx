@@ -4,13 +4,18 @@ import { Icon } from '../../components/icons';
 import { PlayerSeekbar } from './PlayerSeekbar';
 import {
   getMediaInfo,
+  getMovieDetails,
   getProgress,
   getTranscodeStatus,
   setProgress,
+  encodePathSegments,
 } from '../../lib/api/client';
 import { playbackModeFor, playbackUrlFor, type PlaybackMode } from '../../lib/api/media';
 import { useDeviceId } from '../../lib/useDeviceId';
 import type { MediaInfoResponse, TranscodeStatusResponse } from '../../lib/api/types';
+import type { MovieSummary } from '../../lib/api/spec-drift';
+import { posterUrl } from '../../lib/api/poster';
+import { PosterImage } from '../../components/PosterImage';
 import { useSubtitles } from './useSubtitles';
 import { SubtitleSettingsModal } from './SubtitleSettingsModal';
 import { NerdStatsHud } from './NerdStatsHud';
@@ -63,6 +68,17 @@ const PROGRESS_INTERVAL_SECONDS = 5;
 const RESUME_MIN_SECONDS = 30;
 const RESUME_TAIL_RATIO = 0.97;
 
+function formatReleaseDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 function formatClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const total = Math.floor(seconds);
@@ -81,6 +97,7 @@ export function PlayerPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [info, setInfo] = useState<MediaInfoResponse | undefined>();
+  const [movieDetails, setMovieDetails] = useState<MovieSummary | undefined>();
   const [error, setError] = useState<Error | undefined>();
   const [loading, setLoading] = useState(true);
   const [transcode, setTranscode] = useState<TranscodeStatusResponse | undefined>();
@@ -92,6 +109,7 @@ export function PlayerPage() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showRemainingTime, setShowRemainingTime] = useState(() => {
     try {
       return localStorage.getItem('media_show_remaining') === '1';
@@ -110,7 +128,6 @@ export function PlayerPage() {
     }
     return 'fit';
   });
-  const [rotationDeg, setRotationDeg] = useState<0 | 90 | 180 | 270>(0);
   const [isPipActive, setIsPipActive] = useState(false);
   const [isNerdStatsOpen, setIsNerdStatsOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -250,6 +267,40 @@ export function PlayerPage() {
       controller.abort();
     };
   }, [decoded]);
+
+  // --- Fetch detailed movie metadata for details section below player ----
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    getMovieDetails(decoded, { signal: controller.signal, deviceId })
+      .then((res) => {
+        if (active && res.movie) {
+          setMovieDetails(res.movie);
+        }
+      })
+      .catch(() => {
+        // Degrade gracefully; if endpoint fails, title/metadata fall back to info
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [decoded, deviceId]);
+
+  // --- Track Fullscreen Changes -------------------------------------------
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
 
   const directPlay = info?.direct_play ?? false;
   const mode: PlaybackMode | undefined = info ? playbackModeFor(directPlay) : undefined;
@@ -593,6 +644,7 @@ export function PlayerPage() {
     if (!v) return;
     v.muted = !v.muted;
     setMuted(v.muted);
+    showHud(v.muted ? '🔇 Muted' : `🔊 ${Math.round(v.volume * 100)}%`);
     resetControlsTimer();
   };
 
@@ -603,6 +655,7 @@ export function PlayerPage() {
     v.muted = false;
     setVolume(newVol);
     setMuted(false);
+    showHud(`🔊 ${Math.round(newVol * 100)}%`);
     resetControlsTimer();
   };
 
@@ -638,36 +691,6 @@ export function PlayerPage() {
       }
       showHud(`Aspect: ${nextMode.name}`);
       return nextMode.id;
-    });
-    resetControlsTimer();
-  }, [resetControlsTimer, showHud]);
-
-  const toggleRotation = useCallback(() => {
-    const screenAny = window.screen as unknown as {
-      orientation?: { type?: string; lock?: (target: string) => Promise<void> };
-    };
-    if (screenAny?.orientation && typeof screenAny.orientation.lock === 'function') {
-      try {
-        const isPortrait =
-          screenAny.orientation.type?.startsWith('portrait') || window.innerHeight > window.innerWidth;
-        const target = isPortrait ? 'landscape' : 'portrait';
-        void screenAny.orientation
-          .lock(target)
-          .then(() => {
-            showHud(`🔄 Screen: ${target === 'landscape' ? 'Landscape' : 'Portrait'}`);
-          })
-          .catch(() => {
-            // Fall back to software rotation
-          });
-      } catch {
-        // Fall back to software rotation
-      }
-    }
-
-    setRotationDeg((prev) => {
-      const next = ((prev + 90) % 360) as 0 | 90 | 180 | 270;
-      showHud(`🔄 Rotate: ${next}°`);
-      return next;
     });
     resetControlsTimer();
   }, [resetControlsTimer, showHud]);
@@ -710,13 +733,6 @@ export function PlayerPage() {
     };
   }, []);
 
-  const getRotationScale = useCallback(() => {
-    const shell = videoRef.current?.parentElement;
-    if (!shell) return 1;
-    const r = shell.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 ? (r.height / r.width).toFixed(4) : 1;
-  }, []);
-
   const controlsVisibleAtInteractionStart = useRef(true);
   const lastTapTimeRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -728,7 +744,7 @@ export function PlayerPage() {
     if (!target) return;
     if (
       target.closest(
-        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #rotateBtn, #pipBtn, button, input, select, label, a',
+        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
       )
     ) {
       return;
@@ -746,7 +762,7 @@ export function PlayerPage() {
     if (!target) return;
     if (
       target.closest(
-        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #rotateBtn, #pipBtn, button, input, select, label, a',
+        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
       )
     ) {
       return;
@@ -961,13 +977,6 @@ export function PlayerPage() {
         return;
       }
 
-      // Rotate screen
-      if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault();
-        toggleRotation();
-        return;
-      }
-
       // Stats for nerds
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
@@ -1035,7 +1044,6 @@ export function PlayerPage() {
     toggleFullscreen,
     togglePip,
     nextAspect,
-    toggleRotation,
     toggleCC,
     resetControlsTimer,
     showHud,
@@ -1143,16 +1151,7 @@ export function PlayerPage() {
         <video
           id="video"
           ref={videoRef}
-          className={`aspect-video w-full bg-black cursor-pointer aspect-${aspectMode} ${
-            rotationDeg > 0 ? `rotate-${rotationDeg}` : ''
-          }`}
-          style={
-            rotationDeg === 90 || rotationDeg === 270
-              ? { transform: `rotate(${rotationDeg}deg) scale(${getRotationScale()})` }
-              : rotationDeg === 180
-                ? { transform: 'rotate(180deg)' }
-                : undefined
-          }
+          className={`aspect-video w-full bg-black cursor-pointer aspect-${aspectMode}`}
           playsInline
           preload="metadata"
           data-filename={decoded}
@@ -1182,6 +1181,29 @@ export function PlayerPage() {
             />
           ))}
         </video>
+
+        {/* Top-Right Fullscreen Button */}
+        <button
+          id="full"
+          type="button"
+          onClick={toggleFullscreen}
+          disabled={!ready}
+          title={isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)'}
+          aria-label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          className={`absolute top-3 right-3 sm:top-5 sm:right-5 z-30 flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-30 ${
+            controlsVisible || isScrubbing || !playing ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {isFullscreen ? (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+            </svg>
+          )}
+        </button>
 
         {/* Media Preloader Overlay */}
         <PlayerPreloader
@@ -1253,12 +1275,17 @@ export function PlayerPage() {
                 onClick={togglePlay}
                 disabled={!ready}
                 title="Play / Pause (Space / k)"
-                className="brand-gradient brand-glow-sm flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full text-white shadow-md transition hover:scale-105 active:scale-95 disabled:opacity-40"
+                aria-label="Play / Pause"
+                className="brand-gradient brand-glow-sm flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full text-white shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-40"
               >
                 {playing ? (
-                  <span className="text-sm font-bold">⏸</span>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
                 ) : (
-                  <Icon name="play" size={15} className="ml-0.5 text-white" />
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" className="ml-0.5">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 )}
               </button>
 
@@ -1269,9 +1296,12 @@ export function PlayerPage() {
                 onClick={() => onSeek(0)}
                 disabled={!ready}
                 title="Play from beginning"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                aria-label="Play from beginning"
+                className="group/restart flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
               >
-                <Icon name="rotate" size={14} />
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="transition-transform duration-200 group-hover/restart:-rotate-45 group-active/restart:-rotate-90">
+                  <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                </svg>
               </button>
 
               {/* Skip Back 10s */}
@@ -1281,11 +1311,12 @@ export function PlayerPage() {
                 onClick={() => handleSkip(-10)}
                 disabled={!ready}
                 title="Rewind 10s (j / ←)"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                aria-label="Rewind 10 seconds"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                  <text x="12" y="15" fontSize="6.5" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
+                  <text x="12" y="15.5" fontSize="7" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
                 </svg>
               </button>
 
@@ -1296,11 +1327,12 @@ export function PlayerPage() {
                 onClick={() => handleSkip(10)}
                 disabled={!ready}
                 title="Fast Forward 10s (l / →)"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                aria-label="Fast forward 10 seconds"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 8-8 8-8z" />
-                  <text x="12" y="15" fontSize="6.5" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
+                  <text x="12" y="15.5" fontSize="7" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
                 </svg>
               </button>
 
@@ -1317,35 +1349,36 @@ export function PlayerPage() {
                   onClick={toggleRemainingTime}
                 >
                   {showRemainingTime
-                    ? `-${formatClock(Math.max(0, (duration || info.duration || 0) - position))}`
-                    : formatClock(duration || info.duration || 0)}
+                    ? `-${formatClock(Math.max(0, (duration || info?.duration || 0) - position))}`
+                    : formatClock(duration || info?.duration || 0)}
                 </span>
                 <span id="time" hidden>
-                  {formatClock(position)} / {formatClock(duration || info.duration || 0)}
+                  {formatClock(position)} / {formatClock(duration || info?.duration || 0)}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Volume & Mute */}
-              <div className="flex items-center gap-1.5 group/vol">
+              <div className="flex items-center gap-2 group/vol">
                 <button
                   id="mute"
                   type="button"
                   onClick={toggleMute}
                   title="Mute (m)"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white transition"
+                  aria-label="Mute"
+                  className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95"
                 >
                   {muted || volume === 0 ? (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                       <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
                     </svg>
                   ) : volume < 0.5 ? (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                       <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" />
                     </svg>
                   ) : (
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                       <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
                     </svg>
                   )}
@@ -1359,8 +1392,17 @@ export function PlayerPage() {
                   value={muted ? 0 : volume}
                   onChange={(e) => handleVolumeChange(Number(e.target.value))}
                   aria-label="Volume"
-                  className="w-16 sm:w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                  style={{
+                    background: `linear-gradient(to right, #e50914 0%, #e50914 ${Math.round((muted ? 0 : volume) * 100)}%, rgba(255,255,255,0.25) ${Math.round((muted ? 0 : volume) * 100)}%, rgba(255,255,255,0.25) 100%)`,
+                  }}
+                  className="w-16 sm:w-24 h-1.5 rounded-full appearance-none cursor-pointer accent-brand-500 transition-all"
                 />
+                <span
+                  id="volumePercent"
+                  className="font-mono text-xs font-semibold text-white/90 min-w-[34px] select-none text-left"
+                >
+                  {Math.round((muted ? 0 : volume) * 100)}%
+                </span>
               </div>
 
               {/* Playback Speed */}
@@ -1370,7 +1412,7 @@ export function PlayerPage() {
                 onChange={(e) => handleSpeedChange(Number(e.target.value))}
                 title="Speed (< / >)"
                 aria-label="Playback speed"
-                className="rounded-full border border-white/15 bg-obsidian-850 px-2.5 py-1 text-xs font-semibold text-white/80 hover:bg-obsidian-800 transition focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="h-9 sm:h-10 rounded-full border border-white/20 bg-black/60 px-3 text-xs font-semibold text-white shadow-md backdrop-blur-md transition-all hover:bg-black/80 hover:border-white/40 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
               >
                 <option value="0.75">.75×</option>
                 <option value="1">1×</option>
@@ -1420,24 +1462,10 @@ export function PlayerPage() {
                 onClick={nextAspect}
                 title="Aspect ratio (a)"
                 aria-label="Aspect ratio"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z" />
-                </svg>
-              </button>
-
-              {/* Rotate Screen */}
-              <button
-                id="rotateBtn"
-                type="button"
-                onClick={toggleRotation}
-                title="Rotate screen (r)"
-                aria-label="Rotate screen"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white"
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03 3.81 3.81 1.33-1.32zm-6.25-.77c-.59-.59-1.54-.59-2.12 0L1.75 8.11c-.59.59-.59 1.54 0 2.12l12.02 12.02c.59.59 1.54.59 2.12 0l6.36-6.36c.59-.59.59-1.54 0-2.12L10.23 1.75zm4.6 19.44L2.81 9.17l6.36-6.36 12.02 12.02-6.36 6.36zm-7.31.29C4.25 19.93 1.91 16.76 1.55 13H.05C.56 19.16 5.71 24 12 24l.66-.03-3.81-3.81-1.33 1.32z" />
                 </svg>
               </button>
 
@@ -1448,11 +1476,11 @@ export function PlayerPage() {
                 onClick={togglePip}
                 title="Picture-in-Picture (p / i)"
                 aria-label="Picture-in-Picture"
-                className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white ${
-                  isPipActive ? 'active' : ''
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isPipActive ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
                 }`}
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 2-1.98V5c0-1.1-.9-2-2-2zm0 16.01H3V4.98h18v14.03z" />
                 </svg>
               </button>
@@ -1465,16 +1493,18 @@ export function PlayerPage() {
                   setCastModalOpen(true);
                   resetControlsTimer();
                 }}
-                disabled={!isPlaybackReady}
+                disabled={!ready}
                 title="Cast to Smart TV / Chromecast"
                 aria-label="Cast to Smart TV or Chromecast"
-                className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border transition ${
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border transition-all duration-200 shadow-md backdrop-blur-md active:scale-95 ${
                   activeCastDevice
-                    ? 'border-brand-500/50 bg-brand-500/20 text-brand-400'
-                    : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white'
+                    ? 'border-brand-500/80 bg-brand-500/30 text-brand-400'
+                    : 'border-white/20 bg-black/60 text-white/90 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white'
                 } disabled:opacity-40`}
               >
-                <Icon name="cast" size={16} />
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" />
+                </svg>
               </button>
 
               {/* Stats for Nerds */}
@@ -1487,11 +1517,11 @@ export function PlayerPage() {
                 }}
                 title="Stats for nerds (n)"
                 aria-label="Stats for nerds"
-                className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white ${
-                  isNerdStatsOpen ? 'active' : ''
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isNerdStatsOpen ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
                 }`}
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-5h2v5zm4 0h-2v-9h2v9zm4 0h-2v-4h2v4z" />
                 </svg>
               </button>
@@ -1506,25 +1536,13 @@ export function PlayerPage() {
                 }}
                 title="Keyboard Shortcuts (?)"
                 aria-label="Keyboard Shortcuts"
-                className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10 hover:text-white ${
-                  isShortcutsOpen ? 'active' : ''
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isShortcutsOpen ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
                 }`}
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z" />
                 </svg>
-              </button>
-
-              {/* Fullscreen button */}
-              <button
-                id="full"
-                type="button"
-                onClick={toggleFullscreen}
-                disabled={!ready}
-                title="Fullscreen (f)"
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-30"
-              >
-                <Icon name="ruler" size={14} />
               </button>
             </div>
           </div>
@@ -1571,12 +1589,80 @@ export function PlayerPage() {
         />
       </div>
 
-      {/* Main Transcode Progress Card */}
-      <TranscodeCard
-        transcode={transcode}
-        isReady={info.is_transcode_ready}
-        needsTranscode={mode === 'hls' && !info.is_transcode_ready}
-      />
+      {/* Movie Details Section Below Player (Strict Container Isolation Outside #shell) */}
+      <main className="watch-info max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {transcode && mode === 'hls' && !info?.is_transcode_ready && (
+          <TranscodeCard
+            transcode={transcode}
+            isReady={info?.is_transcode_ready}
+            needsTranscode={true}
+          />
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] lg:grid-cols-[240px_1fr] gap-6 sm:gap-8 items-start">
+          {/* Poster Artwork */}
+          <div className="aspect-[2/3] w-full max-w-[240px] mx-auto md:mx-0 rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-2xl bg-obsidian-850">
+            <PosterImage
+              src={posterUrl(movieDetails?.poster)}
+              alt={movieDetails?.title ?? title}
+              priority="normal"
+            />
+          </div>
+
+          {/* Metadata Information */}
+          <div className="space-y-4">
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              {movieDetails?.title ?? title}
+            </h1>
+
+            <p className="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-medium text-white/60">
+              <span>
+                {movieDetails?.release_date
+                  ? formatReleaseDate(movieDetails.release_date)
+                  : movieDetails?.year ?? ''}
+              </span>
+              {movieDetails?.runtime ? <span>· {movieDetails.runtime} min</span> : null}
+              {movieDetails?.rating ? (
+                <span className="text-amber-400 font-semibold">
+                  · ★ {movieDetails.rating.toFixed(1)}/10
+                </span>
+              ) : null}
+            </p>
+
+            {movieDetails?.genres && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {movieDetails.genres.split(',').map((g) => (
+                  <span
+                    key={g.trim()}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm"
+                  >
+                    {g.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <p className="text-sm sm:text-base leading-relaxed text-white/70 max-w-3xl pt-2">
+              {movieDetails?.overview || 'No synopsis is available for this title.'}
+            </p>
+
+            <div className="flex flex-wrap gap-3 pt-4">
+              <Link
+                to={`/movie/${encodePathSegments(decoded)}`}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs sm:text-sm font-semibold text-white/90 shadow-sm transition-all hover:bg-white/10 hover:border-white/30 hover:text-white active:scale-95"
+              >
+                ← Back to Details
+              </Link>
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs sm:text-sm font-semibold text-white/90 shadow-sm transition-all hover:bg-white/10 hover:border-white/30 hover:text-white active:scale-95"
+              >
+                ← Anis' Home Media Server
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

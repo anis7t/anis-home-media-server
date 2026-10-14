@@ -334,7 +334,8 @@ describe('PlayerPage extended controls & telemetry', () => {
     expect(document.getElementById('speed')).toBeInTheDocument();
     expect(document.getElementById('ccMergedPill')).toBeInTheDocument();
     expect(document.getElementById('aspectBtn')).toBeInTheDocument();
-    expect(document.getElementById('rotateBtn')).toBeInTheDocument();
+    expect(document.getElementById('rotateBtn')).toBeNull();
+    expect(document.getElementById('volumePercent')).toBeInTheDocument();
     expect(document.getElementById('pipBtn')).toBeInTheDocument();
     expect(document.getElementById('nerdStatsBtn')).toBeInTheDocument();
     expect(document.getElementById('shortcutsBtn')).toBeInTheDocument();
@@ -362,22 +363,37 @@ describe('PlayerPage extended controls & telemetry', () => {
     expect(document.getElementById('playerHud')?.textContent).toBe('Aspect: Stretch');
   });
 
-  it('toggles video rotation and displays HUD toast', async () => {
+  it('updates volume percentage indicator and progressive fill slider', async () => {
     setupStandardPlayer();
     await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
 
-    const rotateBtn = document.getElementById('rotateBtn')!;
-    const video = document.getElementById('video')!;
+    const volumeSlider = document.getElementById('volume') as HTMLInputElement;
+    const volumePercent = document.getElementById('volumePercent')!;
 
-    // Click rotateBtn -> 90 deg
-    fireEvent.click(rotateBtn);
-    expect(video.className).toContain('rotate-90');
-    expect(document.getElementById('playerHud')?.textContent).toBe('🔄 Rotate: 90°');
+    expect(volumePercent.textContent).toBe('100%');
+    expect(volumeSlider.style.background).toContain('100%');
 
-    // Press 'r' key -> 180 deg
-    fireEvent.keyDown(window, { key: 'r' });
-    expect(video.className).toContain('rotate-180');
-    expect(document.getElementById('playerHud')?.textContent).toBe('🔄 Rotate: 180°');
+    // Change volume to 0.5
+    fireEvent.change(volumeSlider, { target: { value: '0.5' } });
+    expect(volumePercent.textContent).toBe('50%');
+    expect(volumeSlider.style.background).toContain('50%');
+    expect(document.getElementById('playerHud')?.textContent).toBe('🔊 50%');
+  });
+
+  it('renders movie details section below player shell', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const watchInfo = document.querySelector('main.watch-info');
+    expect(watchInfo).toBeInTheDocument();
+
+    // Ensure watchInfo is outside #shell
+    const shell = document.getElementById('shell')!;
+    expect(shell.contains(watchInfo)).toBe(false);
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('← Back to Details')).toBeInTheDocument();
+    expect(screen.getByText("← Anis' Home Media Server")).toBeInTheDocument();
   });
 
   it('toggles Nerd Stats HUD on button click and keyboard shortcut', async () => {

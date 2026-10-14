@@ -104,12 +104,6 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
           </div>
           <div className="sc-row">
             <span className="sc-keys">
-              <kbd>r</kbd>
-            </span>
-            <span>Rotate Screen</span>
-          </div>
-          <div className="sc-row">
-            <span className="sc-keys">
               <kbd>n</kbd>
             </span>
             <span>Stats for Nerds</span>

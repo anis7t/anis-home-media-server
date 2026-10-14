@@ -25,7 +25,7 @@ describe('ShortcutsModal', () => {
     expect(screen.getByText('Play / Pause')).toBeDefined();
     expect(screen.getByText('Stats for Nerds')).toBeDefined();
     expect(screen.getByText('Aspect Ratio')).toBeDefined();
-    expect(screen.getByText('Rotate Screen')).toBeDefined();
+    expect(screen.getByText('Fullscreen')).toBeDefined();
 
     // Close button
     const closeBtn = document.getElementById('closeShortcutsModal');

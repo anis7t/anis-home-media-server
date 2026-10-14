@@ -253,23 +253,26 @@ def run_exhaustive_player_test():
         # =========================================================================
         # PHASE 3: Extended Controls & Telemetry HUD
         # =========================================================================
-        print("\n>>> [PHASE 3] Testing Extended Controls, Rotation & Telemetry HUD...")
+        print("\n>>> [PHASE 3] Testing Extended Controls, Fullscreen, Volume & Movie Details...")
         driver.execute_script("arguments[0].dispatchEvent(new PointerEvent('pointermove', {bubbles: true}));", shell)
         time.sleep(0.3)
         aspect_btn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "aspectBtn"))
         )
-        rotate_btn = driver.find_element(By.ID, "rotateBtn")
+        assert len(driver.find_elements(By.ID, "rotateBtn")) == 0, "#rotateBtn must be removed"
         pip_btn = driver.find_element(By.ID, "pipBtn")
         nerd_btn = driver.find_element(By.ID, "nerdStatsBtn")
         shortcuts_btn = driver.find_element(By.ID, "shortcutsBtn")
         speed_select = driver.find_element(By.ID, "speed")
         volume_slider = driver.find_element(By.ID, "volume")
+        vol_pct = driver.find_element(By.ID, "volumePercent")
         mute_btn = driver.find_element(By.ID, "mute")
+        full_btn = driver.find_element(By.ID, "full")
 
-        assert aspect_btn.is_displayed() and rotate_btn.is_displayed() and pip_btn.is_displayed()
+        assert aspect_btn.is_displayed() and pip_btn.is_displayed()
         assert nerd_btn.is_displayed() and shortcuts_btn.is_displayed()
         assert speed_select.is_displayed() and volume_slider.is_displayed() and mute_btn.is_displayed()
+        assert full_btn.is_displayed() and vol_pct.is_displayed()
 
         # 1. Aspect Ratio Cycling (fit -> crop)
         initial_aspect = video.get_attribute("class") or ""
@@ -281,11 +284,14 @@ def run_exhaustive_player_test():
         hud = driver.find_element(By.ID, "playerHud")
         assert "Aspect: Crop (Zoom)" in hud.text
 
-        # 2. 90° Video Rotation
-        driver.execute_script("arguments[0].click();", rotate_btn)
-        time.sleep(0.3)
-        assert "rotate-90" in (video.get_attribute("class") or "")
-        assert "90°" in hud.text
+        # 2. Top-right Fullscreen Button & Volume Percent Indicator
+        assert full_btn.is_displayed(), "#full top-right button must be visible"
+        assert vol_pct.text == "100%", f"Expected volume 100%, got {vol_pct.text}"
+        assert "100%" in (volume_slider.get_attribute("style") or "")
+
+        # Verify Movie Details Section Below Player
+        watch_info = driver.find_element(By.CSS_SELECTOR, "main.watch-info")
+        assert watch_info.is_displayed(), "Movie details section .watch-info must be visible below player"
 
         # 3. Speed selector
         driver.execute_script("arguments[0].value = '1.5'; arguments[0].dispatchEvent(new Event('change', {bubbles: true}));", speed_select)
