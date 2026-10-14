@@ -396,3 +396,21 @@
   - On Windows hosts with multiple network adapters (Ethernet, Wi-Fi, Tailscale, virtual adapters), mDNS multicast packets can be dropped.
   - Pair SSDP multi-interface search with an ARP cache scan and concurrent HTTP probes against the Google Cast Eureka endpoint (`http://<ip>:8008/setup/eureka_info`), ensuring reliable discovery across all local subnets.
 
+## 28. Native Rust Axum Streaming Engine, Windows Path Resolution & Test Harness Invariants
+- **Windows Verbatim Path Stripping (`\\?\`) for Deterministic Hashing**:
+  - In Rust on Windows, `std::fs::canonicalize()` prefixes verbatim paths with `\\?\`.
+  - When computing deterministic SHA-256 cache signatures for HLS cache directories, preview thumbnails, and transcoded MP4s matching Python (`preview:{path}:{size}:{mtime_ns}` and `hls:{path}:{size}:{mtime_ns}`), always strip `\\?\` prefix via `strip_verbatim()`.
+  - Always bind `path.to_string_lossy()` to a `let` variable before taking a reference (`let path_lossy = path.to_string_lossy(); let path_str = strip_verbatim(&path_lossy);`) to satisfy borrow lifetimes across statements.
+- **Tower-HTTP CORS Wildcard Matching in Contract Tests**:
+  - When `CorsLayer` is configured with `allow_methods(Any)`, Tower-HTTP emits `access-control-allow-methods: *`.
+  - Contract and integration tests asserting allowed HTTP methods must accept either wildcard or explicit lists:
+    ```rust
+    let allow_methods = res.headers().get("access-control-allow-methods").unwrap().to_str().unwrap();
+    assert!(allow_methods == "*" || allow_methods.contains("GET"));
+    ```
+- **Axum Integration Test Harnesses with RAII `Drop`**:
+  - When an integration test harness struct implements `Drop` for filesystem cleanup, calling `harness.app.oneshot(req)` fails with compiler error `E0509: cannot move out of type which implements the Drop trait`.
+  - Always call `harness.app.clone().oneshot(req)`, as Axum's `Router` is cheaply cloneable.
+- **RFC 8216 Target Duration Healing (`honest_target_duration`)**:
+  - Always parse `#EXTINF:<duration>` labels across all playlist segments and elevate `#EXT-X-TARGETDURATION:N` to `ceil(max(durations))` if any segment exceeds the declared duration, preventing player timeline drift and HLS.js sliding window skips.
+
