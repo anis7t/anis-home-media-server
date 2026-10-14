@@ -44,7 +44,7 @@ async fn setup_subtitle_test() -> TestSubtitleHarness {
     let system_service = SystemService::new();
 
     let roots = vec![test_dir.clone()];
-    let app = create_app(pool, system_service, roots);
+    let app = create_app(pool, system_service, roots, config.cache_dir);
 
     TestSubtitleHarness { app, test_dir }
 }

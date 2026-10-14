@@ -18,7 +18,7 @@ async fn setup_test_app() -> axum::Router {
         .await
         .expect("Failed to connect to test database");
     let system_service = SystemService::new();
-    create_app(pool, system_service, config.media_roots)
+    create_app(pool, system_service, config.media_roots, config.cache_dir)
 }
 
 #[tokio::test]

@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let system_service = SystemService::new();
 
     // Build application router
-    let app = create_app(pool, system_service, config.media_roots);
+    let app = create_app(pool, system_service, config.media_roots, config.cache_dir);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     tracing::info!("Listening on http://{}", addr);

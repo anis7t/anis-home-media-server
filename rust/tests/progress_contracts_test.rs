@@ -17,7 +17,7 @@ async fn setup_test_app() -> (axum::Router, sqlx::PgPool) {
         .await
         .expect("Failed to connect to test database");
     let system_service = SystemService::new();
-    let app = create_app(pool.clone(), system_service, config.media_roots);
+    let app = create_app(pool.clone(), system_service, config.media_roots, config.cache_dir);
     (app, pool)
 }
 

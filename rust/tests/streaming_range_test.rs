@@ -58,7 +58,7 @@ async fn setup_media_test() -> TestMediaHarness {
     let system_service = SystemService::new();
 
     let roots = vec![test_dir.clone()];
-    let app = create_app(pool, system_service, roots);
+    let app = create_app(pool, system_service, roots, config.cache_dir);
 
     TestMediaHarness {
         app,
