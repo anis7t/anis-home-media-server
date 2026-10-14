@@ -1,0 +1,133 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { CastBar } from './CastBar';
+import type { CastDevice, CastStatusResponse } from '../../lib/api/cast';
+
+const mockDevice: CastDevice = {
+  id: 'dlna:uuid-samsung-1',
+  name: 'Living Room TV (Samsung QLED)',
+  kind: 'dlna',
+  model: 'Samsung QLED 4K',
+  ip: '192.168.1.55',
+};
+
+const mockStatus: CastStatusResponse = {
+  ok: true,
+  state: 'playing',
+  position: 125,
+  duration: 3600,
+  volume: 75,
+  muted: false,
+};
+
+describe('CastBar', () => {
+  it('renders active target device name, state, and timeline clock', () => {
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={vi.fn()}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: /active cast remote controller/i })).toBeInTheDocument();
+    expect(screen.getByText('Living Room TV (Samsung QLED)')).toBeInTheDocument();
+    expect(screen.getByText('Interstellar.2014')).toBeInTheDocument();
+    expect(screen.getByText('2:05')).toBeInTheDocument(); // 125s -> 2:05
+    expect(screen.getByText('1:00:00')).toBeInTheDocument(); // 3600s -> 1:00:00
+  });
+
+  it('toggles play/pause command when button clicked', () => {
+    const handleControl = vi.fn();
+
+    const { rerender } = render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    // Currently playing -> click should send 'pause'
+    const playPauseBtn = screen.getByRole('button', { name: /pause/i });
+    fireEvent.click(playPauseBtn);
+    expect(handleControl).toHaveBeenCalledWith('pause');
+
+    // Rerender as paused -> click should send 'play'
+    rerender(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={{ ...mockStatus, state: 'paused' }}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const playBtn = screen.getByRole('button', { name: /play/i });
+    fireEvent.click(playBtn);
+    expect(handleControl).toHaveBeenCalledWith('play');
+  });
+
+  it('triggers -10s and +10s seek commands', () => {
+    const handleControl = vi.fn();
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const backBtn = screen.getByRole('button', { name: /seek back 10s/i });
+    fireEvent.click(backBtn);
+    expect(handleControl).toHaveBeenCalledWith('seek', 115); // 125 - 10 = 115
+
+    const forwardBtn = screen.getByRole('button', { name: /seek forward 10s/i });
+    fireEvent.click(forwardBtn);
+    expect(handleControl).toHaveBeenCalledWith('seek', 135); // 125 + 10 = 135
+  });
+
+  it('dispatches volume change', () => {
+    const handleControl = vi.fn();
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const volumeSlider = screen.getByRole('slider', { name: /remote volume/i });
+    fireEvent.change(volumeSlider, { target: { value: '85' } });
+    expect(handleControl).toHaveBeenCalledWith('volume', 85);
+  });
+
+  it('calls onDisconnect when disconnect button clicked', () => {
+    const handleDisconnect = vi.fn();
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={vi.fn()}
+        onDisconnect={handleDisconnect}
+      />,
+    );
+
+    const disconnectBtn = screen.getByRole('button', { name: /disconnect cast/i });
+    fireEvent.click(disconnectBtn);
+    expect(handleDisconnect).toHaveBeenCalledTimes(1);
+  });
+});

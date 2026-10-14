@@ -51,7 +51,9 @@ export type IconName =
   | 'archive'
   | 'devices'
   | 'book'
-  | 'shield';
+  | 'shield'
+  | 'cast'
+  | 'tv';
 
 const PATHS: Record<IconName, React.ReactElement> = {
   trash: (
@@ -270,6 +272,20 @@ const PATHS: Record<IconName, React.ReactElement> = {
     <>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
       <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  cast: (
+    <>
+      <path d="M2 16.1A5 5 0 0 1 5.9 20" />
+      <path d="M2 12.05A9 9 0 0 1 9.95 20" />
+      <path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
+      <line x1="2" y1="20" x2="2.01" y2="20" strokeWidth={2.5} />
+    </>
+  ),
+  tv: (
+    <>
+      <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+      <polyline points="17 2 12 7 7 2" />
     </>
   ),
 };

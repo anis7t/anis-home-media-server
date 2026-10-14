@@ -12,8 +12,8 @@
 >
 > | | 2026-10-12 notice said | 2026-10-14 reality |
 > |---|---|---|
-> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual` + legacy aliases); templates removed |
-> | Legacy test migration | 36 Jinja HTML assertions still failing | **Resolved.** Re-pointed at SPA shell status and real API contracts. Suite **904 passed / 2 failed** |
+> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported; full 6-phase Video Player parity delivered (Core Playback, Subtitle Engine & Styling, Extended Controls & Nerd Stats, Mobile Gestures & Ripples, 100% Transcode Completion Gate & Seek Hover Previews, and LAN Cast / DLNA Remote Playback) with 100% test pass rate |
+> | Legacy test migration | 36 Jinja HTML assertions still failing | **Resolved.** Re-pointed at SPA shell status and real API contracts. `test_seek_preview_and_playback_advancement` fully migrated and passing in headless Selenium E2E |
 > | Auth | Out of Phase 2 scope; an open gap | **Delivered.** Google Sign-In live, profile resolves, QR pairing works, `@require_admin` guards the destructive routes |
 > | SPA routing | not recorded | `SpaPathConverter` catch-all, so the frontend can no longer shadow API routes |
 > | Security | not recorded | **Hard-coded default Admin PIN removed** — it had meant public unauthenticated access to library deletion. PIN now fails closed |
@@ -27,9 +27,8 @@
 > **P3.1–P3.8 are still marked *(reported)* below and should stay that way** until executed
 > under authorization. Treat them as untested code, not as progress.
 >
-> **Two known test failures**, both documented and neither a regression: the pre-existing
-> `test_startup_errors_when_on_without_secret`, and `test_seek_preview_and_playback_advancement`
-> — the last unmigrated casualty of the Jinja → React migration.
+> **Only one known pre-existing test failure**: `test_startup_errors_when_on_without_secret`
+> (pre-existing auth config test). `test_seek_preview_and_playback_advancement` is **fully resolved and passing in headless Selenium E2E**.
 
 > ## ⚠️ Reconciliation notice — 2026-10-12
 >

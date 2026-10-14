@@ -80,6 +80,7 @@ describe('PlayerPage playback mode', () => {
           is_transcode_ready: false,
         });
       }
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 900 });
       throw new Error(`unexpected request: ${url}`);
     });
@@ -119,6 +120,7 @@ describe('PlayerPage playback mode', () => {
           speed: 2.4,
         });
       }
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 900 });
       throw new Error(`unexpected request: ${url}`);
     });
@@ -198,6 +200,7 @@ describe('PlayerPage resume', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 1200, duration: 3600 });
       throw new Error(`unexpected request: ${url}`);
     });
@@ -217,6 +220,7 @@ describe('PlayerPage resume', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       // 12s in - the viewer has barely started.
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 12, duration: 3600 });
       throw new Error(`unexpected request: ${url}`);
@@ -235,6 +239,7 @@ describe('PlayerPage resume', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       // 3580 / 3600 = 99.4% - effectively finished.
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 3580, duration: 3600 });
       throw new Error(`unexpected request: ${url}`);
@@ -253,6 +258,7 @@ describe('PlayerPage resume', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 3600 });
       throw new Error(`unexpected request: ${url}`);
     });
@@ -270,6 +276,7 @@ describe('PlayerPage resume', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
       if (url.startsWith('/api/progress?')) return jsonResponse({ position: 600, duration: 3600 });
       if (url === '/api/progress')
         return jsonResponse({ ok: true }, 200);
@@ -293,5 +300,291 @@ describe('PlayerPage resume', () => {
       expect(posts).toHaveLength(1);
       expect(posts[0][1].body).toContain('"position":600');
     });
+  });
+});
+
+describe('PlayerPage extended controls & telemetry', () => {
+  beforeEach(() => {
+    Reflect.deleteProperty(HTMLMediaElement.prototype, 'duration');
+    Reflect.deleteProperty(HTMLMediaElement.prototype, 'currentTime');
+  });
+
+  function setupStandardPlayer() {
+    stubVideo({ duration: 3600, currentTime: 100 });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
+      if (url.startsWith('/api/progress?')) return jsonResponse({ position: 100, duration: 3600 });
+      throw new Error(`unexpected request: ${url}`);
+    });
+    return renderPlayer();
+  }
+
+  it('renders all Phase 3 controls buttons with correct DOM IDs', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    expect(document.getElementById('restartBtn')).toBeInTheDocument();
+    expect(document.getElementById('play')).toBeInTheDocument();
+    expect(document.getElementById('skipBackBtn')).toBeInTheDocument();
+    expect(document.getElementById('skipForwardBtn')).toBeInTheDocument();
+    expect(document.getElementById('mute')).toBeInTheDocument();
+    expect(document.getElementById('volume')).toBeInTheDocument();
+    expect(document.getElementById('speed')).toBeInTheDocument();
+    expect(document.getElementById('ccMergedPill')).toBeInTheDocument();
+    expect(document.getElementById('aspectBtn')).toBeInTheDocument();
+    expect(document.getElementById('rotateBtn')).toBeInTheDocument();
+    expect(document.getElementById('pipBtn')).toBeInTheDocument();
+    expect(document.getElementById('nerdStatsBtn')).toBeInTheDocument();
+    expect(document.getElementById('shortcutsBtn')).toBeInTheDocument();
+    expect(document.getElementById('full')).toBeInTheDocument();
+  });
+
+  it('cycles aspect ratio modes and displays HUD toast', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const aspectBtn = document.getElementById('aspectBtn')!;
+    const video = document.getElementById('video')!;
+
+    // Initial aspect is fit
+    expect(video.className).toContain('aspect-fit');
+
+    // Click aspectBtn -> crop
+    fireEvent.click(aspectBtn);
+    expect(video.className).toContain('aspect-crop');
+    expect(document.getElementById('playerHud')?.textContent).toBe('Aspect: Crop (Zoom)');
+
+    // Press 'a' key -> stretch
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(video.className).toContain('aspect-stretch');
+    expect(document.getElementById('playerHud')?.textContent).toBe('Aspect: Stretch');
+  });
+
+  it('toggles video rotation and displays HUD toast', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const rotateBtn = document.getElementById('rotateBtn')!;
+    const video = document.getElementById('video')!;
+
+    // Click rotateBtn -> 90 deg
+    fireEvent.click(rotateBtn);
+    expect(video.className).toContain('rotate-90');
+    expect(document.getElementById('playerHud')?.textContent).toBe('🔄 Rotate: 90°');
+
+    // Press 'r' key -> 180 deg
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(video.className).toContain('rotate-180');
+    expect(document.getElementById('playerHud')?.textContent).toBe('🔄 Rotate: 180°');
+  });
+
+  it('toggles Nerd Stats HUD on button click and keyboard shortcut', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const nerdBtn = document.getElementById('nerdStatsBtn')!;
+    expect(document.getElementById('nerdStatsHud')).toBeNull();
+
+    // Open via button
+    fireEvent.click(nerdBtn);
+    expect(document.getElementById('nerdStatsHud')).toBeInTheDocument();
+    expect(nerdBtn.className).toContain('active');
+
+    // Close via 'Escape'
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.getElementById('nerdStatsHud')).toBeNull();
+
+    // Toggle via 'n' key
+    fireEvent.keyDown(window, { key: 'n' });
+    expect(document.getElementById('nerdStatsHud')).toBeInTheDocument();
+
+    // Close via close button
+    const closeBtn = document.getElementById('closeNerdStats')!;
+    fireEvent.click(closeBtn);
+    expect(document.getElementById('nerdStatsHud')).toBeNull();
+  });
+
+  it('toggles Shortcuts modal on button click and ? shortcut', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const scBtn = document.getElementById('shortcutsBtn')!;
+    expect(document.getElementById('shortcutsModal')).toBeNull();
+
+    // Open via button
+    fireEvent.click(scBtn);
+    expect(document.getElementById('shortcutsModal')).toBeInTheDocument();
+
+    // Close via 'Escape'
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.getElementById('shortcutsModal')).toBeNull();
+
+    // Open via '?' key
+    fireEvent.keyDown(window, { key: '?' });
+    expect(document.getElementById('shortcutsModal')).toBeInTheDocument();
+  });
+
+  it('renders preloader and seek ripples in player shell', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const preloader = document.getElementById('playerPreloader');
+    expect(preloader).not.toBeNull();
+
+    const leftRipple = document.getElementById('seekRippleLeft');
+    const rightRipple = document.getElementById('seekRippleRight');
+    expect(leftRipple).not.toBeNull();
+    expect(rightRipple).not.toBeNull();
+    expect(leftRipple).toHaveAttribute('hidden');
+    expect(rightRipple).toHaveAttribute('hidden');
+  });
+
+  it('triggers ripples on skip back and skip forward', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const skipBackBtn = document.getElementById('skipBackBtn')!;
+    const skipForwardBtn = document.getElementById('skipForwardBtn')!;
+
+    // Skip back triggers left ripple
+    fireEvent.click(skipBackBtn);
+    expect(document.getElementById('seekRippleLeft')).not.toHaveAttribute('hidden');
+
+    // Skip forward triggers right ripple
+    fireEvent.click(skipForwardBtn);
+    expect(document.getElementById('seekRippleRight')).not.toHaveAttribute('hidden');
+  });
+
+  it('triggers left and right ripples on double-tap zones', async () => {
+    setupStandardPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const shell = document.getElementById('shell')!;
+    vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 600,
+      right: 1000,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    // Double-tap left zone (clientX = 200 < 400)
+    fireEvent.click(shell, { clientX: 200, clientY: 300 });
+    fireEvent.click(shell, { clientX: 200, clientY: 300 });
+
+    expect(document.getElementById('seekRippleLeft')).not.toHaveAttribute('hidden');
+
+    // Double-tap right zone (clientX = 800 > 600)
+    fireEvent.click(shell, { clientX: 800, clientY: 300 });
+    fireEvent.click(shell, { clientX: 800, clientY: 300 });
+
+    expect(document.getElementById('seekRippleRight')).not.toHaveAttribute('hidden');
+  });
+
+  it('locks playback behind TranscodeGate when media requires transcoding and is not 100% ready', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/media-info/')) {
+        return jsonResponse({
+          container: 'matroska',
+          duration: 900,
+          direct_play: false,
+          needs_transcode: true,
+          is_transcode_ready: false,
+        });
+      }
+      if (url.startsWith('/api/transcode-status/')) {
+        return jsonResponse({
+          status: 'transcoding',
+          percent: 55,
+          remaining: 60,
+          encoded: 495,
+          duration: 900,
+          speed: 2.1,
+        });
+      }
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
+      if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 900 });
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    renderPlayer();
+
+    expect(await screen.findByRole('region', { name: /transcode progress gate/i })).toBeInTheDocument();
+    expect(screen.getByText(/Dual AMD GPU Transcoder Active/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Transcoding 55%/i)).toBeInTheDocument();
+
+    const shell = document.getElementById('shell');
+    expect(shell).toHaveStyle({ display: 'none' });
+  });
+
+  it('opens CastModal on cast button click and switches to CastBar upon device selection', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('/api/media-info/')) {
+        return jsonResponse({
+          filename: 'test.mp4',
+          container: 'mp4',
+          duration: 3600,
+          direct_play: true,
+          needs_transcode: false,
+          is_transcode_ready: true,
+        });
+      }
+      if (url.startsWith('/api/seek-preview-meta/')) {
+        return jsonResponse({ duration: 3600, interval: 10, count: 360, base_url: '/seek-preview/test.mp4' });
+      }
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
+      if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 3600 });
+      if (url.startsWith('/api/cast/devices')) {
+        return jsonResponse({
+          ok: true,
+          devices: [
+            {
+              id: 'dlna:samsung-tv-1',
+              name: 'Living Room TV',
+              kind: 'dlna',
+              model: 'Samsung QLED',
+              ip: '192.168.1.100',
+            },
+          ],
+          scanning: false,
+        });
+      }
+      if (url.startsWith('/api/cast/play')) {
+        return jsonResponse({ ok: true, device: 'Living Room TV' });
+      }
+      if (url.startsWith('/api/cast/status')) {
+        return jsonResponse({ ok: true, state: 'playing', position: 10, duration: 3600, volume: 80 });
+      }
+      if (url.startsWith('/api/cast/control')) {
+        return jsonResponse({ ok: true });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    renderPlayer();
+
+    const castBtn = await screen.findByRole('button', { name: /cast to smart tv/i });
+    expect(castBtn).toBeInTheDocument();
+    fireEvent.click(castBtn);
+
+    // CastModal is open
+    expect(await screen.findByRole('dialog', { name: /cast to device/i })).toBeInTheDocument();
+    const deviceItem = await screen.findByRole('button', { name: /living room tv/i });
+    fireEvent.click(deviceItem);
+
+    // CastBar is now active
+    expect(await screen.findByRole('region', { name: /active cast remote controller/i })).toBeInTheDocument();
+    expect(screen.getByText('Living Room TV')).toBeInTheDocument();
+
+    const shell = document.getElementById('shell');
+    expect(shell).toHaveStyle({ display: 'none' });
   });
 });

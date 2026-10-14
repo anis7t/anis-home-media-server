@@ -14,16 +14,21 @@ from selenium.webdriver.common.action_chains import ActionChains
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import create_app
 
-SCREENSHOT_DIR = Path(r"C:\Users\anis7\.gemini\antigravity\brain\28ad84d6-4614-45f8-a2bd-14cdf94d6c9c\screenshots")
+SCREENSHOT_DIR = Path(__file__).resolve().parent / "screenshots"
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class ServerThread(threading.Thread):
-    def __init__(self, app, port=5066):
+    def __init__(self, app, port=0):
         super().__init__(daemon=True)
         self.server = make_server("127.0.0.1", port, app)
         self.ctx = app.app_context()
         self.ctx.push()
+
+    @property
+    def port(self):
+        """The port actually bound by make_server (0 selects an ephemeral port)."""
+        return self.server.server_port
 
     def run(self):
         self.server.serve_forever()
@@ -35,8 +40,9 @@ class ServerThread(threading.Thread):
 def test_seek_preview_and_playback_advancement():
     """Verify hover thumbnail, seek commitment, playback resumption, and UI elapsed time advancement."""
     app = create_app()
-    server = ServerThread(app, port=5066)
+    server = ServerThread(app, port=0)
     server.start()
+    port = server.port
     time.sleep(1)
 
     driver = None
@@ -51,15 +57,23 @@ def test_seek_preview_and_playback_advancement():
         driver.set_page_load_timeout(15)
 
         # 1. Load watch page for an existing video file
-        driver.get("http://127.0.0.1:5066/")
-        time.sleep(1)
-        cards = driver.find_elements(By.CSS_SELECTOR, "a.card[href*='/movie/']")
+        driver.get(f"http://127.0.0.1:{port}/")
+        time.sleep(1.5)
+
+        cards = driver.find_elements(
+            By.CSS_SELECTOR,
+            "a[data-testid='movie-card'], a.card[href*='/movie/'], a[href*='/movie/']",
+        )
         if cards:
             details_href = cards[0].get_attribute("href")
             print(f"Navigating to details page: {details_href}")
             driver.get(details_href)
-            time.sleep(1)
-            play_btn = driver.find_element(By.ID, "playBtn")
+            time.sleep(1.5)
+
+            play_btn = driver.find_element(
+                By.CSS_SELECTOR,
+                "a[data-testid='play-button'], #playBtn, a[href*='/watch/']",
+            )
             watch_href = play_btn.get_attribute("href")
             print(f"Navigating to watch page: {watch_href}")
             driver.get(watch_href)
@@ -67,10 +81,21 @@ def test_seek_preview_and_playback_advancement():
             from app.services.media_service import get_movies
             movies = get_movies()
             if not movies:
-                print("No video cards or movies found; test skipped.")
-                return
-            driver.get(f"http://127.0.0.1:5066/watch/{movies[0]['filename']}")
+                import pytest
+                pytest.skip("No video cards or movies found in media root; skipping E2E selenium test.")
+            driver.get(f"http://127.0.0.1:{port}/watch/{movies[0]['filename']}")
+
         time.sleep(2)
+
+        # Wait up to 10s for video element readiness
+        for _ in range(20):
+            ready = driver.execute_script(
+                "const v = document.querySelector('video');"
+                "return v && (v.readyState >= 1 || (v.duration && v.duration > 0));"
+            )
+            if ready:
+                break
+            time.sleep(0.5)
 
         # Reveal controls
         driver.execute_script("document.querySelector('#shell')?.classList.add('show');")
@@ -84,7 +109,7 @@ def test_seek_preview_and_playback_advancement():
 
         actions = ActionChains(driver)
         actions.move_to_element(seek_target).perform()
-        time.sleep(0.6)
+        time.sleep(0.8)
 
         previews = driver.find_elements(By.CLASS_NAME, "seek-preview")
         if previews:
@@ -121,9 +146,9 @@ def test_seek_preview_and_playback_advancement():
         driver.execute_script(
             "const v = document.querySelector('video');"
             "const s = document.querySelector('#seek');"
-            f"s.value = {target_seek};"
-            "s.dispatchEvent(new Event('input'));"
-            "s.dispatchEvent(new Event('change'));"
+            f"if (s) s.value = {target_seek};"
+            "if (s) s.dispatchEvent(new Event('input', { bubbles: true }));"
+            "if (s) s.dispatchEvent(new Event('change', { bubbles: true }));"
             f"v.currentTime = {target_seek};"
         )
         time.sleep(0.5)
@@ -133,7 +158,9 @@ def test_seek_preview_and_playback_advancement():
         time.sleep(2.0)
 
         cur_time_2 = float(driver.execute_script("return document.querySelector('video').currentTime || 0;"))
-        ui_time_text = driver.execute_script("return document.querySelector('#time')?.innerText || '';")
+        ui_time_text = driver.execute_script(
+            "return document.querySelector('#time')?.innerText || document.querySelector('#timeElapsed')?.innerText || '';"
+        )
         print(f"Post-seek state: currentTime={cur_time_2:.2f}s, UI display='{ui_time_text}'")
 
         # 6. Verify Seek Preview Hides After Pointer Leave
@@ -151,6 +178,7 @@ def test_seek_preview_and_playback_advancement():
         print(f"Saved screenshot: {SCREENSHOT_DIR / 'post_seek_playback_advancing.png'}")
 
         print("\n[SUCCESS] Seek preview, playback advancement, post-seek resume, and UI sync verified cleanly!")
+        return True
 
     finally:
         if driver:

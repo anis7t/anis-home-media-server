@@ -78,7 +78,7 @@ export const MEDIA_PROBE_TIMEOUT_MS = 45_000;
 /** Header the server uses to scope watch progress and presence per device. */
 const DEVICE_HEADER = 'X-Device-Id';
 
-interface RequestOptions {
+export interface RequestOptions {
   readonly signal?: AbortSignal;
   readonly deviceId?: string;
   readonly method?: 'GET' | 'POST';
@@ -86,7 +86,7 @@ interface RequestOptions {
   readonly timeoutMs?: number;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const {
     signal,
     deviceId,

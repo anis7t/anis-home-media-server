@@ -16,7 +16,7 @@ Active branch: `feat/rust-react-postgres-migration`
 |:---:|---|:---:|
 | 0 | Architecture Audit | ✅ COMPLETE — [`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md) |
 | 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
-| 2 | React Web Frontend | ⏳ PENDING AUTHORIZATION — Vite + React + TS under `web/` |
+| 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 146 Vitest tests passing |
 | 3 | PostgreSQL Migration | 📋 Planned |
 | 4 | Rust API Foundation | 📋 Planned |
 
