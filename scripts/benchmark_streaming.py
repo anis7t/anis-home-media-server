@@ -480,7 +480,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Media Server Concurrency & Streaming Benchmark")
     parser.add_argument(
         "--target",
-        choices=["local", "remote", "both"],
+        choices=["local", "remote", "rust", "both", "all"],
         default="both",
         help="Target to benchmark (default: both local and remote)",
     )
@@ -516,27 +516,30 @@ def main() -> int:
         return 1
     file_size = int(size_str)
 
-    # Locate Waitress PID for telemetry
-    waitress_pid = None
+    # Locate server PID for telemetry (port 8001 for Rust, port 8000 for Waitress)
+    target_port = 8001 if args.target == "rust" else 8000
+    server_pid = None
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             conns = proc.net_connections(kind="inet")
             for c in conns:
-                if c.laddr.port == 8000 and c.status == "LISTEN":
-                    waitress_pid = proc.info["pid"]
+                if c.laddr.port == target_port and c.status == "LISTEN":
+                    server_pid = proc.info["pid"]
                     break
-            if waitress_pid:
+            if server_pid:
                 break
         except Exception:
             continue
 
-    sampler = HardwareSampler(target_pid=waitress_pid)
+    sampler = HardwareSampler(target_pid=server_pid)
     levels = [int(x.strip()) for x in args.levels.split(",") if x.strip().isdigit()]
 
     targets = []
-    if args.target in ("local", "both"):
-        targets.append((LOCAL_ORIGIN, "Local Origin (127.0.0.1:8000)"))
-    if args.target in ("remote", "both"):
+    if args.target in ("local", "both", "all"):
+        targets.append((LOCAL_ORIGIN, "Local Origin Waitress (127.0.0.1:8000)"))
+    if args.target in ("rust", "all"):
+        targets.append(("http://127.0.0.1:8001", "Native Rust Axum (127.0.0.1:8001)"))
+    if args.target in ("remote", "both", "all"):
         targets.append((REMOTE_TUNNEL, "Cloudflare Tunnel (media.anisparvez.in)"))
 
     workloads = []
@@ -554,7 +557,7 @@ def main() -> int:
     print(f"  Direct MP4 Target   : {direct_mp4} ({file_size / (1024*1024):.1f} MB)", flush=True)
     print(f"  HLS Target Media    : {hls_media_path if hls_media_path else 'None available (skipping HLS)'}", flush=True)
     print(f"  HLS Cache Key Target: {hls_key if hls_key else 'None'}", flush=True)
-    print(f"  Waitress Process    : PID {waitress_pid if waitress_pid else 'unknown'}", flush=True)
+    print(f"  Server Process      : PID {server_pid if server_pid else 'unknown'}", flush=True)
     print(f"  Concurrency Levels  : {levels}", flush=True)
     print(f"  Workloads           : {workloads}", flush=True)
     print(f"  Targets             : {[t[1] for t in targets]}", flush=True)
@@ -588,7 +591,7 @@ def main() -> int:
 
     export_data = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "waitress_pid": waitress_pid,
+        "server_pid": server_pid,
         "direct_media": direct_mp4,
         "hls_key": hls_key,
         "reports": [asdict(r) for r in all_reports],

@@ -1,3 +1,4 @@
+pub mod hls_service;
 pub mod movie_service;
 pub mod path_resolver;
 pub mod preview_service;

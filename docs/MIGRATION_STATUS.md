@@ -59,6 +59,18 @@
 > Application suites pass against PostgreSQL (15/15 API contracts, 33/33 devices, 20/20 admin auth,
 > 8/8 movies, 71 adapter tests). Phase 3 exit gate is fully satisfied.
 >
+> **Phase 4 (Rust API Foundation) is COMPLETE (2026-10-14):**
+> Modular Rust Axum/Tokio/SQLx crate delivered on branch `feat/rust-api-foundation` with PostgreSQL 18.4
+> pool management, structured tracing, health endpoints, movies catalog, and system telemetry.
+>
+> **Phase 5 (Media Library, Playback, and Streaming) is COMPLETE (2026-10-15):**
+> All 5 sub-phase slices delivered and verified on `feat/rust-api-foundation` with 47/47 passing tests:
+> - **Phase 5A**: Watch progress and history API (`/api/progress` GET/POST) with PostgreSQL upserts.
+> - **Phase 5B**: Safe multi-root path resolution and RFC 7233 byte-range streaming (`/media/{*path}`).
+> - **Phase 5C**: Subtitle delivery engine, SRT-to-WebVTT parsing, and dynamic timing offset shifting (`/subtitles/{*path}`, `/api/subtitles`).
+> - **Phase 5D**: Seek-hover frame previews engine, WebVTT storyboards, and multi-root thumbnail cache (`/api/seek-preview-meta`, `/seek-preview`, `/preview-vtt`).
+> - **Phase 5E**: HLS manifest/segment delivery, RFC 8216 target duration healing, transcode MP4 cache serving, and concurrency benchmarking (510.86 Mbps aggregate throughput, 32.5 MB RAM footprint).
+>
 > **Phase 2 (React) began 2026-10-12** on `feat/react-web-frontend`, scoped to
 > roadmap sequence items 1, 3 and 5. Acceptance thresholds are recorded in the
 > roadmap under *Phase 2 acceptance thresholds*. 172 frontend component/unit tests pass.

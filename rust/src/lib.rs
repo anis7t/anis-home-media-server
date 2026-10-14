@@ -71,8 +71,8 @@ pub fn create_app(
 
     let preview_state = Arc::new(routes::preview::PreviewState {
         pool,
-        media_roots: roots_arc,
-        cache_dir,
+        media_roots: roots_arc.clone(),
+        cache_dir: cache_dir.clone(),
     });
 
     let preview_routes = Router::new()
@@ -94,6 +94,40 @@ pub fn create_app(
         )
         .with_state(preview_state);
 
+    let cache_dir_arc = Arc::new(cache_dir);
+
+    let hls_state = routes::hls::HlsState {
+        roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc.clone(),
+    };
+
+    let hls_routes = Router::new()
+        .route(
+            "/hls/{*path}",
+            get(routes::hls::hls_handler)
+                .head(routes::hls::hls_handler)
+                .options(routes::hls::hls_handler),
+        )
+        .with_state(hls_state);
+
+    let transcode_state = routes::transcode::TranscodeState {
+        roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc,
+    };
+
+    let transcode_routes = Router::new()
+        .route(
+            "/transcode/{*filename}",
+            get(routes::transcode::transcode_handler)
+                .head(routes::transcode::transcode_handler)
+                .options(routes::transcode::transcode_handler),
+        )
+        .route(
+            "/api/transcode-status/{*filename}",
+            get(routes::transcode::transcode_status_handler),
+        )
+        .with_state(transcode_state);
+
     Router::new()
         .route("/health", get(routes::health::health_handler))
         .route("/api/health", get(routes::health::health_handler))
@@ -103,6 +137,8 @@ pub fn create_app(
         .merge(media_routes)
         .merge(subtitle_routes)
         .merge(preview_routes)
+        .merge(hls_routes)
+        .merge(transcode_routes)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }
