@@ -34,6 +34,47 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A request that exceeded its deadline.
+ *
+ * Distinct from `ApiError` on purpose. A hung request and a rejected one are
+ * different user-facing situations: one is worth retrying, the other usually
+ * is not, and the UI cannot tell them apart from `name` alone once both have
+ * been flattened to a message.
+ */
+export class ApiTimeoutError extends Error {
+  readonly timeoutMs: number;
+  readonly url: string;
+
+  constructor(timeoutMs: number, url: string) {
+    super(`The server did not respond within ${Math.round(timeoutMs / 1000)}s.`);
+    this.name = 'ApiTimeoutError';
+    this.timeoutMs = timeoutMs;
+    this.url = url;
+  }
+}
+
+/**
+ * Default deadline for a single API call.
+ *
+ * Not arbitrary. Measured against this server, a cold `/api/movie/{filename}`
+ * for an unseen title costs 2.5-8s because the details route probes the file
+ * server-side, and ten simultaneous cold details requests (what a library grid
+ * does) finish in ~3.5s wall. 20s is comfortably above the observed cold path
+ * while still converting an indefinite hang into a visible, retryable failure.
+ *
+ * Without this, a hung fetch is indistinguishable from a slow one: the caller
+ * waits forever on a skeleton with no error and no way to recover short of a
+ * full page reload.
+ */
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+/**
+ * Longer deadline for the two endpoints that probe media server-side and so
+ * can legitimately take seconds on a cold cache.
+ */
+export const MEDIA_PROBE_TIMEOUT_MS = 45_000;
+
 /** Header the server uses to scope watch progress and presence per device. */
 const DEVICE_HEADER = 'X-Device-Id';
 
@@ -42,21 +83,60 @@ interface RequestOptions {
   readonly deviceId?: string;
   readonly method?: 'GET' | 'POST';
   readonly body?: unknown;
+  readonly timeoutMs?: number;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { signal, deviceId, method = 'GET', body } = options;
+  const {
+    signal,
+    deviceId,
+    method = 'GET',
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = options;
 
   const headers: Record<string, string> = {};
   if (deviceId) headers[DEVICE_HEADER] = deviceId;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const response = await fetch(path, {
-    method,
-    headers,
-    signal,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  /*
+   * One controller for both reasons to stop: the caller's cancellation (a route
+   * change, an unmount) and our own deadline. Wired by hand rather than with
+   * `AbortSignal.any()` so there is no polyfill to carry, and so a timeout is
+   * distinguishable from a caller abort afterwards.
+   */
+  const controller = new AbortController();
+  let timedOut = false;
+  const forwardAbort = () => controller.abort(signal?.reason);
+
+  if (signal?.aborted) {
+    controller.abort(signal.reason);
+  } else {
+    signal?.addEventListener('abort', forwardAbort, { once: true });
+  }
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers,
+      signal: controller.signal,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (error) {
+    // Checked before rethrowing so a deadline reads as a timeout rather than as
+    // the opaque "The operation was aborted" the platform would otherwise give.
+    if (timedOut) throw new ApiTimeoutError(timeoutMs, path);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', forwardAbort);
+  }
 
   if (!response.ok) {
     // Non-2xx is a real failure, not an empty payload: surface the status so
@@ -99,27 +179,44 @@ export function listMovies(options: { signal?: AbortSignal; deviceId?: string } 
   return request<MovieListResponseLive>('/api/movies', options);
 }
 
+/**
+ * Details for one title.
+ *
+ * Given the probing deadline: this route stats and probes the file server-side,
+ * so a cold title costs seconds where `/api/movies` costs milliseconds. Timing
+ * it out on the default budget would fail the slowest titles deterministically.
+ */
 export function getMovieDetails(
   filename: string,
-  options: { signal?: AbortSignal; deviceId?: string } = {},
+  options: {
+    signal?: AbortSignal;
+    deviceId?: string;
+    timeoutMs?: number;
+  } = {},
 ) {
-  return request<MovieDetailsResponseLive>(`/api/movie/${encodePathSegments(filename)}`, options);
+  return request<MovieDetailsResponseLive>(
+    `/api/movie/${encodePathSegments(filename)}`,
+    { timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...options },
+  );
 }
 
 export function getMediaInfo(
   filename: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
-  return request<MediaInfoResponse>(`/api/media-info/${encodePathSegments(filename)}`, options);
+  return request<MediaInfoResponse>(`/api/media-info/${encodePathSegments(filename)}`, {
+    timeoutMs: MEDIA_PROBE_TIMEOUT_MS,
+    ...options,
+  });
 }
 
 export function getTranscodeStatus(
   filename: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
   return request<TranscodeStatusResponse>(
     `/api/transcode-status/${encodePathSegments(filename)}`,
-    options,
+    { timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...options },
   );
 }
 

@@ -86,6 +86,146 @@ describe('client error handling', () => {
   });
 });
 
+describe('request deadline', () => {
+  /*
+   * Motivation, measured against this server rather than assumed: a cold
+   * `/api/movie/{filename}` for an unseen title costs 2.5-8s (the route probes
+   * the file server-side), and one request was observed exceeding 30s outright.
+   * With no deadline, any of those presents identically to a hung socket - an
+   * indefinite skeleton with no error and no recovery short of a page reload.
+   */
+
+  /**
+   * A hung socket that behaves like a real one: never resolves on its own, and
+   * rejects with `AbortError` when the request is aborted. A mock that simply
+   * never settles would leave `await fetch(...)` pending after the abort and
+   * make every deadline test hang instead of failing - which is the one outcome
+   * that cannot distinguish a working timeout from a broken one.
+   */
+  function hungFetch() {
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        if (signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError')),
+        );
+      });
+    });
+  }
+
+  it('rejects with ApiTimeoutError when the response never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      hungFetch();
+
+      const { getProgress } = await import('./client');
+      const pending = getProgress('a.mkv').catch((e: unknown) => e);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      const error = await pending;
+
+      expect(error).toMatchObject({ name: 'ApiTimeoutError', timeoutMs: 20_000 });
+      expect((error as Error).message).toContain('20s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fire once the response has arrived', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue(jsonResponse({ position: 42 }));
+
+      const { getProgress } = await import('./client');
+      const pending = getProgress('a.mkv');
+
+      // Well past the deadline: a resolved request must not be retroactively
+      // turned into a timeout, which would discard a good response.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(pending).resolves.toMatchObject({ position: 42 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('honours a caller-supplied deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      hungFetch();
+
+      const { getMediaInfo } = await import('./client');
+      const pending = getMediaInfo('a.mkv', { timeoutMs: 5_000 }).catch((e: unknown) => e);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toMatchObject({ timeoutMs: 5_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives media-probing endpoints a longer deadline than the catalog', async () => {
+    /*
+     * `/api/movie/` and `/api/media-info/` probe the file server-side, so
+     * timing them out on the 20s default would fail the slowest titles
+     * deterministically rather than by accident.
+     */
+    const client = await import('./client');
+    expect(client.MEDIA_PROBE_TIMEOUT_MS).toBeGreaterThan(20_000);
+  });
+
+  it('aborts the underlying fetch when the deadline fires', async () => {
+    vi.useFakeTimers();
+    try {
+      let capturedSignal: AbortSignal | undefined;
+      fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+        capturedSignal = init.signal as AbortSignal;
+        return new Promise(() => {});
+      });
+
+      const { getProgress } = await import('./client');
+      void getProgress('a.mkv').catch(() => {});
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      // The socket must actually be released, not merely abandoned: without
+      // this the connection stays open and the server keeps working for a
+      // request nobody will read.
+      expect(capturedSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still surfaces a caller abort as an abort, not as a timeout', async () => {
+    /*
+     * `useAsync` aborts on unmount and route change. If a caller abort were
+     * reported as a timeout, every navigation away from a slow page would
+     * render a spurious "server took too long" error on the way out.
+     */
+    const controller = new AbortController();
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError')),
+        );
+      });
+    });
+
+    const { getProgress } = await import('./client');
+    const pending = getProgress('a.mkv', { signal: controller.signal }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort();
+
+    const error = await pending;
+    expect((error as Error).name).toBe('AbortError');
+  });
+});
+
 async function getMediaInfoStub() {
   const { getMediaInfo } = await import('./client');
   return getMediaInfo('a.mkv');

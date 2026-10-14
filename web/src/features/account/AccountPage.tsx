@@ -81,38 +81,68 @@ export function AccountPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      <header>
-        <div className="flex items-center gap-3">
-          <Avatar size="md" label={name ?? 'Account'} />
-          <div>
-            <h1 className="text-2xl font-bold text-white">Account</h1>
-            <p className="mt-1 text-sm text-white/55">
-              Signed in as <span className="text-white/80">
-                {name ?? email ?? 'unknown'}
-              </span>
-              {role ? (
-                <span className="ml-2 rounded bg-white/10 px-2 py-0.5 text-xs uppercase text-white/60">
-                  {role}
-                </span>
-              ) : null}
-            </p>
-            <p className="mt-0.5 text-xs text-white/40">{email}</p>
+    <div className="mx-auto max-w-3xl space-y-8 animate-fade-in">
+      {/* Account Profile Header Card */}
+      <section className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Avatar size="lg" label={name ?? 'Account'} />
+              <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-obsidian-900" title="Online">
+                <span className="h-2 w-2 rounded-full bg-white"></span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold tracking-tight text-white">Account</h1>
+                {role ? (
+                  <span className="rounded-full bg-brand-500/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-brand-300 border border-brand-500/30">
+                    {role}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-sm text-white/60">
+                Signed in as <span className="text-white/90 font-medium">{name ?? email ?? 'unknown'}</span>
+              </p>
+              <p className="text-xs text-white/40">{email}</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={signOut}
+            className="self-start sm:self-auto rounded-full border border-white/15 bg-white/5 px-5 py-2 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          >
+            Sign out
+          </button>
+        </div>
+      </section>
+
+      {/* Connected Devices Section */}
+      <section aria-labelledby="tokens-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 id="tokens-heading" className="text-xl font-bold text-white">
+              Devices &amp; TV App Pairing
+            </h2>
+            <span className="rounded-full bg-brand-500/15 border border-brand-500/25 px-2.5 py-0.5 text-xs font-semibold text-brand-300">
+              For Android TV &amp; Fire TV
+            </span>
+          </div>
+          <p className="mt-1.5 text-sm text-white/60">
+            A device token signs the Android app or Fire TV in as your profile, syncing your watch
+            history, resume points, and playback settings across screens without needing to type your Google password with a TV remote.
+          </p>
+          <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs text-white/65">
+            <span className="text-brand-400 font-semibold shrink-0">💡 Note for Web Users:</span>
+            <span>
+              Your web browser is already signed in! You only need to add a device here when pairing an external screen like an Android TV, Fire TV Stick, or phone.
+            </span>
           </div>
         </div>
-      </header>
-
-      <section aria-labelledby="tokens-heading" className="space-y-4">
-        <h2 id="tokens-heading" className="text-lg font-semibold text-white">
-          Devices
-        </h2>
-        <p className="text-sm text-white/50">
-          A device token signs the Android app or a TV in as you, so your watch
-          history and player settings follow you between them.
-        </p>
 
         {role === 'admin' ? (
-          <form onSubmit={onMint} className="flex flex-wrap items-center gap-2">
+          <form onSubmit={onMint} className="flex flex-wrap items-center gap-3">
             <label htmlFor="token-label" className="sr-only">
               Device name
             </label>
@@ -122,18 +152,18 @@ export function AccountPage() {
               onChange={(event) => setLabel(event.target.value)}
               placeholder="Living room TV"
               maxLength={60}
-              className="min-w-48 flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30"
+              className="min-w-64 flex-1 rounded-full border border-white/15 bg-obsidian-900/80 px-4 py-2.5 text-sm text-white placeholder:text-white/30 shadow-inner transition focus:border-brand-500/60 focus:bg-obsidian-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
             <button
               type="submit"
               disabled={busy || label.trim().length === 0}
-              className="card-ring rounded-lg brand-gradient px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="card-ring rounded-full brand-gradient brand-glow-sm px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
             >
               {busy ? 'Working…' : 'Add device'}
             </button>
           </form>
         ) : (
-          <p className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-white/50">
+          <p className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/50">
             Only an administrator can add devices.
           </p>
         )}
@@ -141,38 +171,42 @@ export function AccountPage() {
         {minted ? <MintedTokenPanel minted={minted} onDismiss={() => setMinted(null)} /> : null}
 
         {error ? (
-          <p className="rounded-lg border border-brand-500/40 bg-brand-500/10 p-3 text-xs text-brand-400">
+          <p className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4 text-xs font-medium text-brand-400">
             {error}
           </p>
         ) : null}
 
         {tokens === null ? (
-          <p className="text-sm text-white/50" role="status">
-            Loading devices…
-          </p>
+          <div className="py-8 flex flex-col items-center justify-center space-y-3 animate-fade-in" role="status">
+            <div className="h-7 w-7 rounded-full border-2 border-white/10 border-t-brand-500 animate-spin" />
+            <p className="text-xs font-medium text-white/50 animate-pulse">
+              Loading devices…
+            </p>
+          </div>
         ) : tokens.length === 0 ? (
-          <p className="text-sm text-white/50" role="status">
-            No devices yet.
-          </p>
+          <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center" role="status">
+            <p className="text-sm font-medium text-white/60">No devices yet.</p>
+            <p className="mt-1 text-xs text-white/40">Add a device token above to pair your Android TV, phone, or tablet.</p>
+          </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {tokens.map((token) => {
               const status = statusOf(token);
               return (
                 <li
                   key={token.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-obsidian-800 p-4"
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/10 bg-obsidian-900/60 p-4.5 shadow-sm transition hover:border-white/20"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-white">{token.label}</p>
-                    <p className="mt-0.5 text-xs text-white/45">
+                    <p className="truncate text-sm font-semibold text-white">{token.label}</p>
+                    <p className="mt-1 text-xs text-white/45">
                       Created {formatDate(token.created_at)} · Last used{' '}
                       {formatDate(token.last_used_at)}
                       {token.expires_at ? ` · Expires ${formatDate(token.expires_at)}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={`rounded px-2 py-0.5 text-xs ${status.className}`}>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${status.className}`}>
                       {status.label}
                     </span>
                     {!token.revoked_at ? (
@@ -180,7 +214,7 @@ export function AccountPage() {
                         type="button"
                         disabled={busy}
                         onClick={() => void onRevoke(token.id)}
-                        className="card-ring rounded border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/10 disabled:opacity-40"
+                        className="card-ring rounded-full border border-white/15 bg-white/5 px-3.5 py-1 text-xs font-medium text-white/70 transition hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-300 disabled:opacity-40"
                       >
                         Revoke
                       </button>
@@ -193,14 +227,18 @@ export function AccountPage() {
         )}
       </section>
 
-      <section aria-labelledby="session-heading" className="space-y-3">
-        <h2 id="session-heading" className="text-lg font-semibold text-white">
-          Session
+      {/* Session Management Section */}
+      <section aria-labelledby="session-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+        <h2 id="session-heading" className="text-lg font-bold text-white">
+          Active Session
         </h2>
+        <p className="text-xs text-white/50">
+          Sign out will clear your session cookie on this browser. You can sign back in at any time with Google Sign-In.
+        </p>
         <button
           type="button"
           onClick={signOut}
-          className="card-ring rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+          className="card-ring rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 active:scale-95 transition"
         >
           Sign out
         </button>

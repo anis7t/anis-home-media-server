@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import type { ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import Avatar from '../components/Avatar';
+import { Icon } from '../components/icons';
 import LoginScreen from '../components/LoginScreen';
 
 function BrandMark() {
@@ -39,12 +40,48 @@ export function AppShell({ children }: { children: ReactNode }) {
   const showLogin = locked && !authenticated;
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  /* Close the dropdown when anything outside is clicked. We explicitly ignore
-   * clicks that originate from the trigger button or from inside the menu
-   * itself - those are handled by the button/menu handlers. */
+  /* Trigger server library re-scan */
+  const onScan = async () => {
+    if (scanning) return;
+    setScanning(true);
+    setScanStatus('Scanning…');
+    try {
+      const res = await fetch('/api/scan', { method: 'POST' });
+      if (res.ok) {
+        const body = (await res.json()) as {
+          transcodes_queued?: number;
+          transcodes_started?: number;
+        };
+        const q = body.transcodes_queued || 0;
+        const s = body.transcodes_started || 0;
+        if (q > 0) {
+          setScanStatus(`Queued ${q} transcode${q === 1 ? '' : 's'}`);
+        } else if (s > 0) {
+          setScanStatus(`Started ${s} transcode${s === 1 ? '' : 's'}`);
+        } else {
+          setScanStatus('Scan complete');
+        }
+      } else {
+        setScanStatus('Scan failed');
+      }
+    } catch {
+      setScanStatus('Scan failed');
+    } finally {
+      setTimeout(() => {
+        setScanning(false);
+        setScanStatus(null);
+      }, 2500);
+    }
+  };
+
+  /* Close dropdown when clicked outside */
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       if (!menuOpen) return;
@@ -56,21 +93,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('click', handleClick);
   }, [menuOpen]);
 
-  const stop = useCallback(() => setMenuOpen(false), []);
+  /* Reset window scroll to top whenever navigation occurs */
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, [location.pathname]);
+
 
   return (
     <div className="min-h-screen">
-      {/*
-        `app-header` opts the bar into a scroll-state container so its inner
-        row can restyle itself once the bar is actually stuck (see index.css).
-        It is progressive enhancement - the base look is already correct.
-      */}
+      {/* Sticky Obsidian Header */}
       <header className="glass-header app-header sticky top-0 z-20">
-        <div className="app-header-surface mx-auto flex max-w-[1600px] items-center gap-6 px-4 py-3 transition-[background-color,box-shadow] duration-200 sm:px-6">
-          <NavLink to="/" className="flex items-center gap-3">
-            <BrandMark />
+        <div className="app-header-surface mx-auto flex max-w-[1600px] items-center gap-3 sm:gap-6 px-3 py-3 transition-[background-color,box-shadow] duration-200 sm:px-6">
+          <NavLink to="/" className="group flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded-lg p-1">
+            <div className="transition-transform duration-300 group-hover:scale-105">
+              <BrandMark />
+            </div>
             <span className="hidden sm:block">
-              <span className="block text-sm font-bold text-white">
+              <span className="block text-sm font-bold text-white transition-colors duration-200 group-hover:text-white">
                 <span className="text-brand-400">Anis&apos;</span> Home Media Server
               </span>
               <span className="block text-[10px] tracking-[0.2em] text-white/40">
@@ -79,19 +118,93 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </NavLink>
 
-          <nav className="ml-auto flex items-center gap-1" aria-label="Primary">
+          {/* Live System Indicator */}
+          <div className="hidden lg:flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+            </span>
+            <span className="font-semibold tracking-wider text-[11px]">ONLINE</span>
+          </div>
+
+          <nav className="ml-auto flex items-center gap-1.5 sm:gap-2.5" aria-label="Primary">
             <NavLink
               to="/"
               end
               className={({ isActive }) =>
-                `rounded-full px-4 py-2 text-sm transition ${
+                `flex items-center gap-2 rounded-full px-3 sm:px-4 py-2 text-sm font-medium transition ${
                   isActive
-                    ? 'bg-white/10 font-semibold text-white'
+                    ? 'bg-white/10 font-semibold text-white shadow-sm'
                     : 'text-white/60 hover:bg-white/5 hover:text-white'
                 }`
               }
+              title="Home Library"
             >
-              Library
+              <Icon name="film" className="text-brand-400" />
+              <span className="hidden sm:inline">Library</span>
+            </NavLink>
+
+            {/* Scan Library Trigger Button with Live Feedback */}
+            <button
+              type="button"
+              onClick={() => void onScan()}
+              disabled={scanning}
+              className={`flex items-center gap-2 rounded-full px-3 sm:px-4 py-2 text-sm font-medium transition border border-white/10 ${
+                scanning
+                  ? 'bg-brand-500/20 text-brand-300 border-brand-500/40 shadow-sm'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white active:scale-95'
+              }`}
+              title="Scan library for newly added media files"
+            >
+              <Icon
+                name="refresh"
+                className={`transition-transform ${scanning ? 'animate-spin text-brand-400' : 'text-white/50'}`}
+              />
+              <span className="text-xs sm:text-sm font-medium">
+                {scanStatus ?? 'Scan'}
+              </span>
+            </button>
+
+            {/* Get the App - Links to APK Distribution */}
+            <a
+              href="/download"
+              className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 sm:px-4 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95"
+              title="Download Android & Fire TV Client"
+            >
+              <Icon name="download" className="text-emerald-400" />
+              <span className="hidden lg:inline">Get the app</span>
+            </a>
+
+            {/* Manage Files & Storage */}
+            <NavLink
+              to="/manage"
+              className={({ isActive }) =>
+                `hidden lg:flex items-center gap-2 rounded-full border border-white/10 px-3.5 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? 'bg-white/10 font-semibold text-white shadow-sm'
+                    : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95'
+                }`
+              }
+              title="Manage media files, storage pools & retention"
+            >
+              <Icon name="folder" className="text-amber-400" />
+              <span>Manage</span>
+            </NavLink>
+
+            {/* TV & Mobile Devices */}
+            <NavLink
+              to="/account"
+              className={({ isActive }) =>
+                `hidden sm:flex items-center gap-2 rounded-full px-3 sm:px-4 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? 'bg-white/10 font-semibold text-white shadow-sm'
+                    : 'text-white/60 hover:bg-white/5 hover:text-white'
+                }`
+              }
+              title="TV & Mobile device pairing"
+            >
+              <Icon name="devices" className="text-sky-400" />
+              <span className="hidden xl:inline">Devices</span>
             </NavLink>
 
             {/* Hidden on the player, where a stray nav click would interrupt playback. */}
@@ -114,9 +227,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     ref={menuRef}
                     role="menu"
                     aria-orientation="vertical"
-                    className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-white/15 bg-obsidian-800 shadow-xl"
+                    className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-2xl border border-white/15 bg-obsidian-850 shadow-2xl backdrop-blur-xl animate-fade-in"
                   >
-                    <div className="border-b border-white/10 px-4 py-3">
+                    <div className="border-b border-white/10 px-4 py-3 bg-white/[0.02]">
                       <div className="flex items-center gap-3">
                         <Avatar size="sm" label={name ?? 'User'} />
                         <div className="min-w-0">
@@ -127,27 +240,75 @@ export function AppShell({ children }: { children: ReactNode }) {
                         </div>
                       </div>
                     </div>
-                    <div className="px-2 py-1" onClick={stop}>
+                    <div className="px-2 py-1.5 space-y-1">
                       <NavLink
                         to="/account"
+                        onClick={() => setMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                          `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
                             isActive
-                              ? 'bg-brand-500/20 text-brand-300'
+                              ? 'bg-brand-500/20 text-brand-300 font-medium'
                               : 'text-white/80 hover:bg-white/5 hover:text-white'
                           }`
                         }
                       >
-                        Device tokens & settings
+                        <Icon name="devices" className="text-sky-400" />
+                        <span>TV &amp; Mobile Pairing</span>
+                      </NavLink>
+                      <NavLink
+                        to="/manage"
+                        onClick={() => setMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
+                            isActive
+                              ? 'bg-brand-500/20 text-brand-300 font-medium'
+                              : 'text-white/80 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        <Icon name="folder" className="text-amber-400" />
+                        <span>Storage &amp; File Manager</span>
+                      </NavLink>
+                      <NavLink
+                        to="/devices"
+                        onClick={() => setMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
+                            isActive
+                              ? 'bg-brand-500/20 text-brand-300 font-medium'
+                              : 'text-white/80 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        <Icon name="gauge" className="text-emerald-400" />
+                        <span>Client Presence Telemetry</span>
+                      </NavLink>
+                      <NavLink
+                        to="/manual"
+                        onClick={() => setMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
+                            isActive
+                              ? 'bg-brand-500/20 text-brand-300 font-medium'
+                              : 'text-white/80 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        <Icon name="book" className="text-purple-400" />
+                        <span>User Manual &amp; Shortcuts</span>
                       </NavLink>
                     </div>
-                    <div className="border-t border-white/10 px-2 py-1">
+                    <div className="border-t border-white/10 px-2 py-1.5">
                       <button
                         type="button"
-                        onClick={signOut}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/5 hover:text-white"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          void signOut();
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-white/70 transition hover:bg-white/5 hover:text-white"
                       >
-                        Sign out
+                        <Icon name="user" className="text-white/40" />
+                        <span>Sign out</span>
                       </button>
                     </div>
                   </div>
@@ -157,7 +318,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={signIn}
-                className="card-ring rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+                className="card-ring rounded-full bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 transition-colors"
               >
                 Sign in
               </button>
@@ -166,11 +327,146 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* Anchors scroll compensation so the sticky header's stuck-state height
-          change cannot oscillate against scroll anchoring. */}
+      {/* Main Container */}
       <main className="mx-auto max-w-[1600px] overflow-anchor-none px-4 py-8 sm:px-6">
         {showLogin ? <LoginScreen /> : children}
       </main>
+
+      {/* Sleek Cinematic Obsidian Footer */}
+      {!location.pathname.startsWith('/watch/') ? (
+        <footer className="mt-20 border-t border-white/10 bg-obsidian-900/80 py-12 backdrop-blur-xl">
+          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 space-y-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between text-center lg:text-left">
+              {/* Brand Lockup */}
+              <div className="flex flex-col items-center lg:items-start gap-1.5">
+                <div className="flex items-center gap-2.5 text-base font-bold text-white">
+                  <BrandMark />
+                  <span>
+                    <span className="text-brand-400">Anis&apos;</span> Home Media Server
+                  </span>
+                </div>
+                <p className="text-xs text-white/50 tracking-wider">
+                  PLAY • ORGANIZE • ENJOY — Private Cinema Engine
+                </p>
+              </div>
+
+              {/* Hardware & Storage Badges */}
+              <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2.5 text-xs text-white/60">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                  <Icon name="bolt" className="text-brand-400" />
+                  Dual AMD Radeon RX 560X &amp; Vega 8
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                  <Icon name="disc" className="text-sky-400" />
+                  Storage Tiering (D: Flicks • E: SSD Engine)
+                </span>
+                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300 font-medium">
+                  Waitress WSGI
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Links Rail with Icons */}
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 border-y border-white/5 py-4 text-xs font-medium text-white/70">
+              <NavLink to="/" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="film" className="text-brand-400" />
+                <span>Library</span>
+              </NavLink>
+              <NavLink to="/manual" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="book" className="text-purple-400" />
+                <span>How to use</span>
+              </NavLink>
+              <a href="/download" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="download" className="text-emerald-400" />
+                <span>Get the app</span>
+              </a>
+              <NavLink to="/manage" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="folder" className="text-amber-400" />
+                <span>File Manager</span>
+              </NavLink>
+              <NavLink to="/devices" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="gauge" className="text-emerald-400" />
+                <span>Devices Telemetry</span>
+              </NavLink>
+              <NavLink to="/account" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="devices" className="text-sky-400" />
+                <span>TV Pairing</span>
+              </NavLink>
+              <button
+                type="button"
+                onClick={() => setPrivacyOpen(true)}
+                className="inline-flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
+              >
+                <Icon name="shield" className="text-emerald-400" />
+                <span>Privacy Policy</span>
+              </button>
+            </div>
+
+            {/* Copyright and Legal Notice */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40">
+              <p>© 2026 Anis&apos; Home Media Server. All rights reserved.</p>
+              <p>Self-hosted private streaming · Zero telemetry · Direct hardware pipeline</p>
+            </div>
+          </div>
+        </footer>
+      ) : null}
+
+      {/* Privacy Policy Glass Modal */}
+      {privacyOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="privacy-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in"
+          onClick={() => setPrivacyOpen(false)}
+        >
+          <div
+            className="glass-card max-w-lg w-full rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl border border-white/15"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                  <Icon name="shield" size={18} />
+                </div>
+                <h3 id="privacy-dialog-title" className="text-lg font-bold text-white">
+                  Privacy Policy
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPrivacyOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                aria-label="Close dialog"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs sm:text-sm text-white/70 leading-relaxed">
+              <p>
+                <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
+              </p>
+              <p>
+                Playback progress, user accounts, and device pairing tokens are persisted entirely within a local SQLite database (<code>media.db</code>) on your host machine.
+              </p>
+              <p>
+                Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPrivacyOpen(false)}
+                className="rounded-full brand-gradient px-5 py-2 text-xs font-semibold text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

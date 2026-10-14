@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
+import { Icon } from '../../components/icons';
 import {
   getMediaInfo,
   getProgress,
@@ -327,30 +328,75 @@ export function PlayerPage() {
 
   if (loading || !info || !mode) {
     return (
-      <p className="py-16 text-center text-sm text-white/50" role="status">
-        Probing media…
-      </p>
+      <div className="space-y-4 animate-fade-in" role="status" aria-label="Probing media">
+        <div className="flex items-center justify-between px-1">
+          <div className="h-8 w-32 rounded-full bg-white/10 shimmer" />
+          <div className="h-5 w-24 rounded-full bg-white/10 shimmer" />
+        </div>
+        <div className="relative aspect-video w-full rounded-2xl sm:rounded-3xl bg-black ring-1 ring-white/10 shadow-2xl flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative mb-5 flex items-center justify-center">
+            <div className="absolute h-16 w-16 rounded-full bg-brand-500/20 blur-xl animate-pulse" />
+            <div className="h-12 w-12 rounded-full border-2 border-white/10 border-t-brand-500 animate-spin" />
+            <div className="absolute h-4 w-4 rounded-full bg-brand-500/80 blur-xs" />
+          </div>
+          <p className="text-sm font-semibold tracking-wide text-white/90 animate-pulse">
+            Probing media…
+          </p>
+          <p className="mt-1 text-xs text-white/40 max-w-sm">
+            Initializing video stream & hardware decoder
+          </p>
+        </div>
+      </div>
     );
   }
 
   const ready = directPlay || info.is_transcode_ready;
 
+  const title = decoded.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? decoded;
+
   return (
-    <div className="space-y-4" data-testid="player" data-mode={mode}>
+    <div className="space-y-4 animate-fade-in" data-testid="player" data-mode={mode}>
+      {/* Player Top Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <Link
+          to={`/movie/${decoded.split('/').map(encodeURIComponent).join('/')}`}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        >
+          <Icon name="arrow-left" size={13} />
+          <span>Back to Movie</span>
+        </Link>
+
+        <div className="flex items-center gap-2">
+          <span className="truncate max-w-xs sm:max-w-md text-xs font-medium text-white/60">
+            {title}
+          </span>
+          <span className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${
+            mode === 'direct'
+              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+              : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+          }`}>
+            {mode === 'direct' ? 'Direct Play' : 'HLS Stream'}
+          </span>
+        </div>
+      </div>
+
       {!ready ? (
-        <div className="rounded-xl border border-white/10 bg-obsidian-800 p-6 text-center">
-          <p className="text-sm font-semibold text-white">
+        <div className="glass-card rounded-2xl p-6 text-center shadow-xl animate-fade-in">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/20 text-brand-400">
+            <Icon name="bolt" size={20} />
+          </div>
+          <p className="text-base font-bold text-white">
             Building a transcode for this title
           </p>
-          <p className="mt-1 text-xs text-white/50">
+          <p className="mt-1 text-xs text-white/50 max-w-md mx-auto">
             {transcode
-              ? `${Math.round(transcode.percent)}% encoded · ${transcode.speed}× · ETA ${formatClock(transcode.remaining ?? 0)}`
-              : 'The first play of an MKV/HEVC file starts a transcode.'}
+              ? `${Math.round(transcode.percent)}% encoded · ${transcode.speed}× transcode speed · ETA ${formatClock(transcode.remaining ?? 0)}`
+              : 'The first play of an MKV/HEVC title dynamically prepares HLS chunks via dual AMD GPUs.'}
           </p>
           {transcode ? (
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-4 max-w-md mx-auto h-2 overflow-hidden rounded-full bg-white/10">
               <div
-                className="brand-gradient h-full"
+                className="brand-gradient brand-glow h-full transition-[width] duration-300"
                 style={{ width: `${transcode.percent}%` }}
               />
             </div>
@@ -358,10 +404,11 @@ export function PlayerPage() {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
+      {/* Video Container */}
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-black ring-1 ring-white/10 shadow-2xl">
         <video
           ref={videoRef}
-          className="aspect-video w-full bg-black"
+          className="aspect-video w-full bg-black object-contain"
           controls
           playsInline
           preload="metadata"
@@ -372,38 +419,77 @@ export function PlayerPage() {
         />
       </div>
 
-      <div className="flex items-center gap-4">
+      {/* Modern Controls Ribbon */}
+      <div className="glass-card flex flex-wrap items-center gap-3 sm:gap-4 rounded-2xl p-3 sm:p-4 shadow-xl">
         <button
           type="button"
           onClick={togglePlay}
           disabled={!ready}
-          className="card-ring rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          className="brand-gradient brand-glow-sm flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-bold text-white shadow-md transition hover:scale-105 active:scale-95 disabled:opacity-40"
         >
-          {playing ? '⏸ Pause' : '▶ Play'}
+          {playing ? (
+            <>
+              <span>⏸</span>
+              <span>Pause</span>
+            </>
+          ) : (
+            <>
+              <Icon name="play" size={13} className="text-white" />
+              <span>Play</span>
+            </>
+          )}
         </button>
 
-        <span className="font-mono text-xs text-white/60">
-          {formatClock(position)} / {formatClock(duration || info.duration)}
-        </span>
-
-        <input
-          type="range"
-          min={0}
-          max={duration || info.duration || 0}
-          step={0.1}
-          value={Math.min(position, duration || info.duration || 0)}
-          onChange={(event) => setPosition(Number(event.target.value))}
-          onPointerUp={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
-          onKeyUp={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
-          onTouchEnd={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
+        <button
+          type="button"
+          onClick={() => onSeek(0)}
           disabled={!ready}
-          className="flex-1 accent-brand-500"
-          aria-label="Seek"
-        />
+          title="Restart video from beginning"
+          className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+        >
+          <Icon name="rotate" size={14} />
+        </button>
 
-        <span className="rounded bg-white/10 px-2 py-1 font-mono text-[10px] uppercase text-white/50">
-          {mode === 'direct' ? 'Direct' : 'HLS'}
+        <span className="font-mono text-xs text-white/70 tracking-tight">
+          <span className="text-white font-semibold">{formatClock(position)}</span> / {formatClock(duration || info.duration)}
         </span>
+
+        {/* Seekbar Slider */}
+        <div className="relative flex-1 min-w-[140px] flex items-center">
+          <input
+            type="range"
+            min={0}
+            max={duration || info.duration || 0}
+            step={0.1}
+            value={Math.min(position, duration || info.duration || 0)}
+            onChange={(event) => setPosition(Number(event.target.value))}
+            onPointerUp={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
+            onKeyUp={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
+            onTouchEnd={(event) => onSeek(Number((event.target as HTMLInputElement).value))}
+            disabled={!ready}
+            className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-500 disabled:opacity-30"
+            aria-label="Seek"
+          />
+        </div>
+
+        {/* Fullscreen Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (videoRef.current) {
+              if (document.fullscreenElement) {
+                void document.exitFullscreen();
+              } else {
+                void videoRef.current.requestFullscreen();
+              }
+            }
+          }}
+          disabled={!ready}
+          title="Toggle fullscreen"
+          className="rounded-full border border-white/15 bg-white/5 p-2 text-white/70 hover:bg-white/10 hover:text-white transition disabled:opacity-30"
+        >
+          <Icon name="ruler" size={14} />
+        </button>
       </div>
     </div>
   );

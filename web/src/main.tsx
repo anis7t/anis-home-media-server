@@ -5,7 +5,10 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import AppShell from './app/AppShell';
 import { AuthProvider } from './auth/AuthProvider';
 import AccountPage from './features/account/AccountPage';
+import DevicesPage from './features/devices/DevicesPage';
 import LibraryPage from './features/library/LibraryPage';
+import ManagePage from './features/manage/ManagePage';
+import ManualPage from './features/manual/ManualPage';
 import MovieDetailsPage from './features/media-details/MovieDetailsPage';
 import PlayerPage from './features/playback/PlayerPage';
 import './index.css';
@@ -29,6 +32,13 @@ createRoot(container).render(
             <Route path="/movie/*" element={<MovieDetailsPage />} />
             <Route path="/watch/*" element={<PlayerPage />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/manage" element={<ManagePage />} />
+            <Route path="/library-manage" element={<ManagePage />} />
+            <Route path="/devices" element={<DevicesPage />} />
+            <Route path="/clients" element={<DevicesPage />} />
+            <Route path="/manual" element={<ManualPage />} />
+            <Route path="/help" element={<ManualPage />} />
+            <Route path="/how-to-use" element={<ManualPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AppShell>

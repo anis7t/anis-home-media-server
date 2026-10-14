@@ -1,8 +1,8 @@
 import { useAuth } from '../auth/AuthProvider';
 
 export interface AvatarProps {
-  /** Small (menu) or medium (header trigger) sizing. */
-  size?: 'sm' | 'md';
+  /** Small (menu), medium (header trigger), or large (profile) sizing. */
+  size?: 'sm' | 'md' | 'lg';
   /** Optional explicit text to derive an initial from, overriding the icon. */
   fallback?: string;
   /** Optional aria label for screen readers. */
@@ -59,8 +59,8 @@ export function Avatar({ size = 'md', fallback, label }: AvatarProps) {
 }
 
 /** Human glyph: head + shoulders. Decorative; the label carries the meaning. */
-function PersonGlyph({ size }: { size: 'sm' | 'md' }) {
-  const box = size === 'sm' ? 'h-4 w-4' : 'h-[18px] w-[18px]';
+function PersonGlyph({ size }: { size: 'sm' | 'md' | 'lg' }) {
+  const box = size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-7 w-7' : 'h-[18px] w-[18px]';
   return (
     <svg
       viewBox="0 0 24 24"
@@ -81,19 +81,19 @@ function PersonGlyph({ size }: { size: 'sm' | 'md' }) {
 
 /** The circular frame. `rounded-full` is required on the image path too,
  *  because the menu avatar is not inside the clipping header button. */
-function frameClass(size: 'sm' | 'md'): string {
+function frameClass(size: 'sm' | 'md' | 'lg'): string {
   return (
     'shrink-0 rounded-full object-cover ' +
-    (size === 'sm' ? 'h-7 w-7' : 'h-9 w-9')
+    (size === 'sm' ? 'h-7 w-7' : size === 'lg' ? 'h-14 w-14' : 'h-9 w-9')
   );
 }
 
 /** Subtle raised plate so the control reads as a button, not a glyph. */
-function plateClass(size: 'sm' | 'md'): string {
+function plateClass(size: 'sm' | 'md' | 'lg'): string {
   return (
     'flex items-center justify-center border border-white/15 bg-white/10 ' +
     'text-white/90 ' +
-    (size === 'sm' ? '' : 'group-hover:bg-white/15 ')
+    (size === 'sm' ? '' : size === 'lg' ? 'text-xl ring-2 ring-white/10 ' : 'group-hover:bg-white/15 ')
   );
 }
 

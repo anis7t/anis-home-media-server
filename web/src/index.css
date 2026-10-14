@@ -26,7 +26,11 @@
 
   body {
     margin: 0;
-    background: var(--color-obsidian-950);
+    background: radial-gradient(circle 900px at 50% -150px, rgba(229, 9, 20, 0.09), transparent 70%),
+                radial-gradient(circle 700px at 80% 60%, rgba(20, 24, 34, 0.6), transparent 70%),
+                var(--color-obsidian-950);
+    background-attachment: fixed;
+    min-height: 100vh;
     color: #e8eaf0;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -58,9 +62,26 @@
 @layer components {
   /* Frosted obsidian glass, matching the server-rendered header. */
   .glass-header {
-    background: color-mix(in srgb, var(--color-obsidian-900) 72%, transparent);
-    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--color-obsidian-900) 75%, transparent);
+    backdrop-filter: blur(18px);
     border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  .glass-card {
+    background: color-mix(in srgb, var(--color-obsidian-850) 80%, transparent);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  .glass-pill {
+    background: rgb(255 255 255 / 0.06);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgb(255 255 255 / 0.1);
+  }
+
+  .glass-pill:hover {
+    background: rgb(255 255 255 / 0.12);
+    border-color: rgb(255 255 255 / 0.2);
   }
 
   .brand-gradient {
@@ -72,10 +93,53 @@
     );
   }
 
+  .brand-glow {
+    box-shadow: 0 0 25px -4px rgba(229, 9, 20, 0.45);
+  }
+
+  .brand-glow-sm {
+    box-shadow: 0 0 14px -3px rgba(229, 9, 20, 0.35);
+  }
+
   /* Visible focus ring for keyboard users on dark poster art. */
   .card-ring:focus-visible {
     outline: 2px solid var(--color-brand-400);
     outline-offset: 3px;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 0%,
+      rgba(255, 255, 255, 0.09) 50%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.8s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   /*

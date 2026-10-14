@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,7 +76,9 @@ describe('LibraryPage states', () => {
       jsonResponse({ movies: [], watching: [], total: 0 }),
     );
     renderLibrary();
-    expect(await screen.findByRole('status')).toHaveTextContent(/no movies found/i);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/no movies found/i);
+    });
   });
 
   it('only renders the continue-watching rail when something is in progress', async () => {
@@ -94,5 +96,58 @@ describe('LibraryPage states', () => {
 
     expect(await screen.findByText('Continue watching')).toBeInTheDocument();
     expect(screen.getByText('All movies')).toBeInTheDocument();
+  });
+
+  it('filters movies in real-time when searching by title', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({
+        movies: [
+          { filename: 'inception.mkv', title: 'Inception', year: 2010, poster: 'tmdb:1', position: 0, duration: 0, percent: 0 },
+          { filename: 'interstellar.mkv', title: 'Interstellar', year: 2014, poster: 'tmdb:2', position: 0, duration: 0, percent: 0 },
+          { filename: 'gladiator.mkv', title: 'Gladiator', year: 2000, poster: 'tmdb:3', position: 0, duration: 0, percent: 0 },
+        ] as MovieSummaryLive[],
+        watching: [],
+        total: 3,
+      }),
+    );
+
+    renderLibrary();
+
+    expect(await screen.findByText('Inception')).toBeInTheDocument();
+    expect(screen.getByText('Interstellar')).toBeInTheDocument();
+    expect(screen.getByText('Gladiator')).toBeInTheDocument();
+
+    const searchInput = screen.getByRole('textbox', { name: /search movies/i });
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.change(searchInput, { target: { value: 'Incep' } });
+
+    expect(screen.getByText('Inception')).toBeInTheDocument();
+    expect(screen.queryByText('Interstellar')).not.toBeInTheDocument();
+    expect(screen.queryByText('Gladiator')).not.toBeInTheDocument();
+  });
+
+  it('filters movies by genre pill', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({
+        movies: [
+          { filename: 'sci1.mkv', title: 'SciFi Movie', genres: 'Sci-Fi, Action', year: 2020, poster: 'tmdb:1', position: 0, duration: 0, percent: 0 },
+          { filename: 'drama1.mkv', title: 'Drama Movie', genres: 'Drama', year: 2021, poster: 'tmdb:2', position: 0, duration: 0, percent: 0 },
+        ] as MovieSummaryLive[],
+        watching: [],
+        total: 2,
+      }),
+    );
+
+    renderLibrary();
+
+    expect(await screen.findByText('SciFi Movie')).toBeInTheDocument();
+    expect(screen.getByText('Drama Movie')).toBeInTheDocument();
+
+    const sciFiPill = screen.getByRole('button', { name: 'Sci-Fi' });
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.click(sciFiPill);
+
+    expect(screen.getByText('SciFi Movie')).toBeInTheDocument();
+    expect(screen.queryByText('Drama Movie')).not.toBeInTheDocument();
   });
 });

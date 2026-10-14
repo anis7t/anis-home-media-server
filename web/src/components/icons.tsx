@@ -36,9 +36,60 @@ export type IconName =
   | 'chevron'
   | 'bolt'
   | 'sparkle'
-  | 'film';
+  | 'film'
+  | 'search'
+  | 'x'
+  | 'filter'
+  | 'sort'
+  | 'arrow-left'
+  | 'arrow-right'
+  | 'info'
+  | 'refresh'
+  | 'download'
+  | 'folder'
+  | 'trash'
+  | 'archive'
+  | 'devices'
+  | 'book'
+  | 'shield';
 
 const PATHS: Record<IconName, React.ReactElement> = {
+  trash: (
+    <>
+      <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect width="20" height="5" x="2" y="3" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4.35-4.35" />
+    </>
+  ),
+  x: <path d="M18 6 6 18M6 6l12 12" />,
+  filter: (
+    <>
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </>
+  ),
+  sort: (
+    <>
+      <path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16" />
+    </>
+  ),
+  'arrow-left': <path d="m15 18-6-6 6-6" />,
+  'arrow-right': <path d="m9 18 6-6-6-6" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4M12 8h.01" />
+    </>
+  ),
   play: <path d="M6 4.5v15l13-7.5-13-7.5Z" fill="currentColor" stroke="none" />,
   rotate: (
     <>
@@ -177,6 +228,48 @@ const PATHS: Record<IconName, React.ReactElement> = {
     <>
       <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
       <path d="M8 4.5v15M16 4.5v15M3 12h18M3 8.2h5M3 15.8h5M16 8.2h5M16 15.8h5" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 16h5v5" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </>
+  ),
+  folder: (
+    <>
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+    </>
+  ),
+  devices: (
+    <>
+      <rect x="2" y="4" width="13" height="10" rx="2" />
+      <path d="M5 18h7" />
+      <path d="M8.5 14v4" />
+      <rect x="14" y="9" width="8" height="12" rx="2" />
+      <path d="M18 18h.01" />
+    </>
+  ),
+  book: (
+    <>
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+      <path d="M6 6h10" />
+      <path d="M6 10h10" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+      <path d="m9 12 2 2 4-4" />
     </>
   ),
 };

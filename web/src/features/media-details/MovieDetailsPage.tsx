@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { getMovieDetails } from '../../lib/api/client';
 import { posterUrl, backdropUrl } from '../../lib/api/poster';
@@ -75,10 +75,15 @@ export function MovieDetailsPage() {
   const filename = params['*'] ?? '';
   const deviceId = useDeviceId();
 
-  const { data, error, loading } = useAsync(
+  const { data, error, loading, reload } = useAsync(
     (signal) => getMovieDetails(decodeURIComponent(filename), { signal, deviceId }),
     [filename, deviceId],
   );
+
+  /* Ensure viewport starts at the top when navigating to this title */
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, [filename]);
 
   const extended = useMemo(() => (data ? parseDetails(data.extended) : {}), [data]);
   const trailerRef = useRef<HTMLDialogElement>(null);
@@ -107,8 +112,11 @@ export function MovieDetailsPage() {
   };
 
   if (!data) {
+    if (loading) {
+      return <MovieDetailsSkeleton />;
+    }
     return (
-      <StateMessage loading={loading} error={error} empty={false} emptyText="">
+      <StateMessage loading={false} error={error} empty={false} emptyText="" onRetry={reload}>
         {null}
       </StateMessage>
     );
@@ -667,6 +675,94 @@ function TrailerDialog({
         </div>
       ) : null}
     </dialog>
+  );
+}
+
+/**
+ * Cinematic shimmer skeleton for the movie details view.
+ * Provides instant, modern visual feedback when navigating to a title.
+ */
+export function MovieDetailsSkeleton() {
+  return (
+    <article className="pb-16 animate-fade-in" role="status" aria-label="Loading movie details">
+      {/* Screen reader announcement */}
+      <div className="sr-only">Loading movie details…</div>
+
+      {/* Hero Backdrop Shimmer Skeleton */}
+      <section className="relative -mx-4 -mt-8 sm:-mx-6 overflow-hidden">
+        <div className="h-[400px] sm:h-[460px] w-full bg-obsidian-900/60 shimmer" />
+        <div className="absolute inset-0 bg-obsidian-950/30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-obsidian-950/85 via-obsidian-950/40 to-obsidian-950" />
+        <div className="absolute inset-0 bg-gradient-to-r from-obsidian-950 via-obsidian-950/70 to-transparent" />
+
+        {/* Hero Content */}
+        <div className="relative mx-auto max-w-[1200px] px-4 pb-7 pt-20 sm:px-6 sm:pb-9 sm:pt-24">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+            {/* Poster Skeleton */}
+            <div className="w-36 shrink-0 sm:w-48">
+              <div className="aspect-2/3 w-full rounded-2xl border border-white/10 bg-obsidian-900 shadow-2xl shadow-black/70 shimmer" />
+            </div>
+
+            {/* Title & Metadata Skeleton */}
+            <div className="min-w-0 flex-1 space-y-4">
+              <div className="h-10 sm:h-12 w-3/4 max-w-lg rounded-xl bg-white/10 shimmer" />
+              <div className="h-4 w-1/2 max-w-sm rounded-md bg-white/5 shimmer" />
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <div className="h-6 w-14 rounded-full bg-white/10 shimmer" />
+                <div className="h-6 w-18 rounded-full bg-white/10 shimmer" />
+                <div className="h-6 w-14 rounded-full bg-white/10 shimmer" />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <div className="h-6 w-16 rounded-full bg-white/5 shimmer" />
+                <div className="h-6 w-20 rounded-full bg-white/5 shimmer" />
+                <div className="h-6 w-14 rounded-full bg-white/5 shimmer" />
+              </div>
+
+              <div className="flex items-center gap-3 pt-3">
+                <div className="h-11 w-36 rounded-full bg-brand-500/25 shimmer ring-1 ring-brand-500/30" />
+                <div className="h-11 w-28 rounded-full bg-white/10 shimmer" />
+              </div>
+
+              <div className="space-y-2 pt-3 max-w-xl">
+                <div className="h-3.5 w-full rounded bg-white/5 shimmer" />
+                <div className="h-3.5 w-5/6 rounded bg-white/5 shimmer" />
+                <div className="h-3.5 w-3/5 rounded bg-white/5 shimmer" />
+              </div>
+            </div>
+
+            {/* Aside Crew Info Box Skeleton */}
+            <aside className="w-full shrink-0 lg:w-[19rem] xl:w-[21rem]">
+              <div className="rounded-2xl border border-white/10 bg-obsidian-900/55 p-5 shadow-xl backdrop-blur-md space-y-4">
+                <div className="h-4 w-1/3 rounded bg-white/10 shimmer" />
+                <div className="space-y-3 pt-2">
+                  <div className="h-3 w-3/4 rounded bg-white/5 shimmer" />
+                  <div className="h-3 w-1/2 rounded bg-white/5 shimmer" />
+                  <div className="h-3 w-2/3 rounded bg-white/5 shimmer" />
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      {/* Cast & Specs Skeleton Grid */}
+      <div className="mx-auto mt-9 max-w-[1200px] space-y-11 px-4 sm:space-y-12 sm:px-6">
+        <div className="space-y-4">
+          <div className="h-5 w-36 rounded bg-white/10 shimmer" />
+          <div className="flex gap-4 overflow-hidden">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="w-28 sm:w-32 shrink-0 space-y-2">
+                <div className="aspect-2/3 w-full rounded-xl bg-obsidian-900/70 border border-white/5 shimmer" />
+                <div className="h-3 w-3/4 rounded bg-white/10 shimmer" />
+                <div className="h-2.5 w-1/2 rounded bg-white/5 shimmer" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 

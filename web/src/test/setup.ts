@@ -33,3 +33,12 @@ Object.defineProperty(HTMLMediaElement.prototype, 'load', {
   configurable: true,
   value: vi.fn(),
 });
+
+/*
+ * jsdom does not implement window.scrollTo(). Stubbed here so route scroll
+ * resets do not produce "Not implemented: Window's scrollTo() method" warnings.
+ */
+Object.defineProperty(window, 'scrollTo', {
+  configurable: true,
+  value: vi.fn(),
+});
