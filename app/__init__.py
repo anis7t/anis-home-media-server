@@ -356,18 +356,24 @@ def create_app(test_config=None):
     # This gives a single origin for the session cookie that Google Sign-In
     # requires, while `/api/*`, `/auth/*`, `/media/*`, `/hls/*` and every
     # blueprint route are handled by their explicit Flask rules - Flask always
-    # matches the most specific route first, so this catch-all never steels
+    # matches the most specific route first, so this catch-all never steals
     # traffic from them. User-facing SPA routes (/, /account, /movie/*,
     # /watch/* etc.) are rewritten to index.html so React Router drives them.
     REACT_DIST = base_path / "web" / "dist"
     if (REACT_DIST / "index.html").exists():
         from flask import abort, send_file, send_from_directory
+        from werkzeug.routing import BaseConverter
+
+        class SpaPathConverter(BaseConverter):
+            regex = r'(?!(?:api|auth|media|hls|subtitles|poster|tmdb-poster|tmdb-backdrop|static)/).+'
+
+        app_instance.url_map.converters['spa_path'] = SpaPathConverter
 
         @app_instance.route("/")
         def serve_react_root():
             return send_from_directory(REACT_DIST, "index.html")
 
-        @app_instance.route("/<path:path>")
+        @app_instance.route("/<spa_path:path>")
         def serve_react_spa(path):
             # Static chunks / stylesheets must not be rewritten to index.html.
             if path.startswith("assets/"):
