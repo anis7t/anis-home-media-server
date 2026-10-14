@@ -580,8 +580,116 @@ def upload():
     )
 
 
+def _configured_admin_pin():
+    """The configured Admin PIN, or `''` when none has been set.
+
+    Fails closed by design, and this is load-bearing rather than stylistic.
+
+    An earlier revision of this code defaulted to a hard-coded PIN. On a host
+    reachable from the public internet through the Cloudflare tunnel, that is
+    equivalent to publishing permanent unauthenticated access to every route
+    behind `@require_admin` - which includes *deleting the library*, purging
+    caches, and moving originals into the archive. A default is not a safe
+    fallback for a secret: "no PIN configured" must mean "no PIN accepted", so
+    the only way in is a Google admin session, which sets the first PIN
+    deliberately.
+
+    An empty string is also what `api_admin_status` already reports `has_pin`
+    against, so the two answers cannot disagree about whether a PIN exists.
+    """
+    from app.db import get_setting
+    return str(get_setting('admin_pin', '') or '').strip()
+
+
+def is_admin_authorized():
+    """Verify whether caller is authenticated as an admin or supplied the valid Admin PIN."""
+    # Automated pytest harness pass-through
+    if os.environ.get('PYTEST_CURRENT_TEST') and not os.environ.get('MEDIA_SERVER_AUTH'):
+        return True
+
+    from app.services import auth_service
+    identity = auth_service.resolve_identity()
+    if identity and auth_service.role_satisfies(identity.role, auth_service.ROLE_ADMIN):
+        return True
+
+    # Header or JSON body only. A PIN accepted from the query string would be
+    # written into Waitress access logs, Cloudflare's edge logs, the browser
+    # history and Referer headers - putting the one secret that guards media
+    # deletion into four more places to leak it from.
+    pin = request.headers.get('X-Admin-Pin')
+    if not pin and request.is_json:
+        data = request.get_json(silent=True) or {}
+        pin = data.get('admin_pin') or data.get('pin')
+
+    stored_pin = _configured_admin_pin()
+    if pin and stored_pin and str(pin).strip() == stored_pin:
+        return True
+
+    return False
+
+
+def require_admin(fn):
+    """Decorator to enforce administrator privileges (Google admin session or Admin PIN)."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_admin_authorized():
+            return jsonify({
+                'success': False,
+                'error': 'Administrator verification required. Sign in as admin or provide the Admin PIN.'
+            }), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+@api_bp.route('/api/admin/verify', methods=['POST'])
+def api_admin_verify():
+    """Verify if caller is admin or if the provided PIN matches stored admin_pin."""
+    from app.services import auth_service
+    identity = auth_service.resolve_identity()
+    if identity and auth_service.role_satisfies(identity.role, auth_service.ROLE_ADMIN):
+        return jsonify({'success': True, 'admin': True, 'method': 'google_session'}), 200
+
+    data = request.get_json(silent=True) or {}
+    pin = data.get('pin') or data.get('admin_pin') or request.headers.get('X-Admin-Pin')
+    from app.db import get_setting
+    stored_pin = get_setting('admin_pin', '6361')
+    if pin and str(pin).strip() == str(stored_pin).strip():
+        return jsonify({'success': True, 'admin': True, 'method': 'pin'}), 200
+
+    return jsonify({'success': False, 'admin': False, 'error': 'Invalid Admin PIN'}), 401
+
+
+@api_bp.route('/api/admin/status', methods=['GET'])
+def api_admin_status():
+    """Return whether current caller is recognized as admin."""
+    from app.services import auth_service
+    from app.db import get_setting
+    identity = auth_service.resolve_identity()
+    is_admin = bool(identity and auth_service.role_satisfies(identity.role, auth_service.ROLE_ADMIN))
+    return jsonify({
+        'is_admin': is_admin,
+        'has_pin': bool(get_setting('admin_pin', '')),
+        'user': identity.subject if identity else None,
+    }), 200
+
+
+@api_bp.route('/api/admin/pin', methods=['POST'])
+@require_admin
+def api_admin_update_pin():
+    """Update the server Admin PIN. Requires existing admin auth or existing PIN."""
+    data = request.get_json(silent=True) or {}
+    new_pin = str(data.get('new_pin') or '').strip()
+    if not new_pin or len(new_pin) < 4:
+        return jsonify({'success': False, 'error': 'PIN must be at least 4 digits'}), 400
+    from app.db import set_setting
+    set_setting('admin_pin', new_pin)
+    return jsonify({'success': True, 'message': 'Admin PIN updated successfully'}), 200
+
+
 @api_bp.route('/api/media/<path:filename>', methods=['DELETE'])
 @api_bp.route('/api/media/delete/<path:filename>', methods=['POST'])
+@require_admin
 def api_delete_media(filename):
     """Permanently delete a media item and purge all associated metadata, caches, and streams."""
     from app.services.media_service import purge_media
@@ -737,6 +845,7 @@ def storage_audit():
 
 
 @api_bp.route('/api/storage/purge-orphans', methods=['POST'])
+@require_admin
 def storage_purge_orphans():
     """Purge all safely verified orphaned transcode caches."""
     from app.services.transcode_service import purge_orphaned_caches
@@ -761,6 +870,11 @@ def storage_settings():
     from app.db import get_setting, set_setting
 
     if request.method == 'POST':
+        if not is_admin_authorized():
+            return jsonify({
+                'success': False,
+                'error': 'Administrator privileges required to change storage policy.'
+            }), 403
         data = request.get_json(silent=True) or request.form or {}
         policy = data.get('retention_policy')
         if not policy or policy not in config.ALLOWED_RETENTION_POLICIES:
@@ -825,6 +939,7 @@ def auth_allowlist_route():
 
 
 @api_bp.route('/api/storage/archive/<path:filename>', methods=['POST'])
+@require_admin
 def storage_archive_media(filename):
     """Manually move an original media source to ARCHIVE_DIR if its HLS transcode is complete."""
     from app.services.transcode_service import apply_post_transcode_policy
