@@ -94,6 +94,7 @@ The current project includes:
 - **Universal Android APK & 10-Foot TV Experience (Fire TV Stick 4K & Android TV):** Single universal APK (`in.anisparvez.media_server_client`) operating seamlessly across mobile phones (touch UI + bottom bar) and Android TV / Fire TV Stick 4K (`AFTMM`) (10-foot D-pad remote UI + collapsible obsidian side rail + borderless fullscreen cinema player). Runtime capability detection (`deviceCapabilitiesProvider`), 2-column details with autofocus action (`autofocus: true`), 2-zone remote transport model (Zone 1 Timeline, Zone 2 Controls), edge traversal bridge (`TvDirectionalFocusAction`), and debounced exit dialog (`TvExitDialog`).
 - **Flutter Player Architecture Segregation & Modularization:** Modularized monolithic `player_screen.dart` (2,283 → 1,232 lines, ~46% reduction) into 5 decoupled domain/infrastructure/presentation modules: `tv_player_focus.dart` (`TvPlayerFocusZone`), `player_cast_bar.dart` (`PlayerCastBar`), `player_details_panel.dart` (`PlayerBrandHeader` & `PlayerDetailsPanel`), `player_key_dispatcher.dart` (`PlayerKeyDispatcher`), and `player_media_resolver.dart` (`PlayerMediaResolver`), with 100% backward compatibility and 204+ passing unit/widget tests.
 - **Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`) using `mediacodec-copy`, preventing direct `SurfaceTexture` / `ANativeWindow` fence timeouts on non-16-byte-aligned dimensions (e.g. 1916px) with automatic dynamic software fallback (`fallbackToSoftwareDecoder`, `hwdec: no`) and buffer flush seek.
+- **LAN Cast & DLNA Second-Screen Playback:** Cross-platform casting to DLNA TVs (Samsung Tizen, LG webOS) and Google Cast devices (Chromecast with Google TV, Nest Hub). Direct byte-range delivery for DLNA and web-friendly MP4/WebM, HLS for Matroska/HEVC on Chromecast, real-time receiver master volume tracking and 3-state mute toggle, WebVTT subtitle track delivery with live in-cast selector popover, and clean receiver app quit (`cast.quit_app()`) restoring the TV to its home screen upon disconnect.
 
 
 ## 4. Known unresolved issues & active roadmap
@@ -244,8 +245,11 @@ the Cloudflare tunnel. Treat them as the most destructive surface in the applica
   and `/hls/` only — `/api/*` is deliberately outside the scope. A loader that sends `Range` preflights
   (`Range` is not a safelisted header), so OPTIONS is covered; `tests/test_media_cors.py` pins all of it,
   including that every URL `build_media_url()` hands a receiver lives on a CORS path.
-- Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`), so it is
+- Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`, `volume`, `muted`), so it is
   the ground truth for "did the TV actually move?" — never infer it from the phone's UI.
+- **Cast Disconnect Quits Receiver App:** Disconnecting from Google Cast MUST invoke `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and connection cache eviction. Halting playback alone leaves the default media receiver running as an idle blank screen on the TV.
+- **Cast Master Volume & Anti-Reset Synchronization:** Cast status endpoints must query and report actual receiver volume (`volume_level * 100` and `volume_muted`), and remote UI sliders must enforce scrub isolation (`scrubVolume`) and progressive red track fills.
+- **Cast Subtitles Require Full LAN URLs:** Cast receivers cannot fetch relative paths (`/subtitles/...`). Tracks in `media_info['tracks']` must use fully-qualified LAN origins with WebVTT mimetype and high-contrast styles, and expose live in-cast switching (`action == 'subtitle'`).
 
 ### HLS cache integrity (learned the hard way)
 

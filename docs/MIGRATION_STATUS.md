@@ -2,17 +2,17 @@
 
 > ## Current session handoff — 2026-10-14
 >
-> **Read `Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md` first.** It carries the
+> **Read `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md` first.** It carries the
 > paste-ready prompt, the P0–P7 phase table, the known-failing and known-flaky tests, and the
 > traps that have already cost time here. This document remains the detailed record; the
 > handoff is the orientation layer.
 >
-> Verified against the repository at `7eb4f99` on `feat/react-web-frontend` (16 commits ahead
+> Verified against the repository at `72c89f1` on `feat/react-web-frontend` (22 commits ahead
 > of origin, **not pushed**):
 >
 > | | 2026-10-12 notice said | 2026-10-14 reality |
 > |---|---|---|
-> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported; full 6-phase Video Player parity delivered (Core Playback, Subtitle Engine & Styling, Extended Controls & Nerd Stats, Mobile Gestures & Ripples, 100% Transcode Completion Gate & Seek Hover Previews, and LAN Cast / DLNA Remote Playback) with 100% test pass rate |
+> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported; full 6-phase Video Player parity delivered with Cast Remote hardening (hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle track delivery, in-cast subtitle selector, and clean receiver app quit) with 100% test pass rate |
 > | Legacy test migration | 36 Jinja HTML assertions still failing | **Resolved.** Re-pointed at SPA shell status and real API contracts. `test_seek_preview_and_playback_advancement` fully migrated and passing in headless Selenium E2E |
 > | Auth | Out of Phase 2 scope; an open gap | **Delivered.** Google Sign-In live, profile resolves, QR pairing works, `@require_admin` guards the destructive routes |
 > | SPA routing | not recorded | `SpaPathConverter` catch-all, so the frontend can no longer shadow API routes |

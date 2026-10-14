@@ -46,11 +46,29 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 ## 0. Recent work
 
 > **Session handoffs live in `Handoffs/`** (`YYYY-MM-DD_HH-MM_<agent>.md`, IST). The newest,
-> `Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md`, describes the tree at `7eb4f99`
-> and carries the paste-ready prompt, the P0-P7 migration phase table, the two known-failing
-> tests, one known flake with its evidence, and the traps. Read it first; this log remains the
-> detailed record of *why* each change was made. Migration state: `docs/MIGRATION_STATUS.md`;
-> phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+> `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md`, describes the tree at `72c89f1`
+> and carries the paste-ready prompt, the P0-P7 migration phase table, the test coverage,
+> and the traps. Read it first; this log remains the detailed record of *why* each change was made.
+> Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+
+### 2026-10-14 — Cast Remote Control Hardening: Volume Anti-Reset, 3-State Mute, In-Cast Subtitles & Clean Disconnect
+
+**1. Volume Slider Reset & Anti-Jump (`app/services/cast_service.py`, `web/src/features/playback/CastBar.tsx`)**
+- `cast_status()` and `dlna_status()` now query real receiver hardware volume (`volume_level * 100` and `volume_muted` for Cast; `GetVolume` / `GetMute` for DLNA).
+- Added `scrubVolume` state isolation in `CastBar` preventing status poll ticks from overwriting slider position during adjustments.
+- Applied progressive bold red gradient fill (`#e50914`) to `#castVolume` matching the web player slider, with numeric `#castVolumePercent` indicator.
+
+**2. Dynamic 3-State Mute Toggle (`#castMuteBtn`)**
+- Integrated dynamic SVG mute button with 3 states: Muted ($0\%$), Low ($< 50\%$), and High ($\ge 50\%$).
+- Toggling dispatches `action: 'mute'` across Google Cast (`cast.set_volume_muted`) and DLNA (`SetMute`).
+
+**3. In-Cast Subtitle Track Delivery & Live Selector**
+- Google Cast `cast_load()` now attaches sidecar subtitle tracks via `media_info['tracks']` with fully-qualified LAN WebVTT URLs and high-contrast styling (`textTrackStyle`).
+- Added a `CC ⚙` button and obsidian glass popover (`#castSubMenu`) in the remote transport row for live subtitle switching (`action: 'subtitle'`) and turning subtitles Off.
+
+**4. Clean Google Cast Receiver App Quit & Disconnect**
+- Disconnecting from Google Cast now calls `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and cache eviction.
+- The TV terminates the default media receiver cleanly and returns to its ambient/home screen, matching DLNA behavior.
 
 ### 2026-10-14 - Request deadlines and retry; two defects caught before commit
 

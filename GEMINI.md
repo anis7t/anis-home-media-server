@@ -367,3 +367,20 @@
   - Relative seek commands (D-pad Left/Right, Media Rewind/Fast-Forward) accumulate delta in real time (`+10 sec` → `+20 sec` → `+30 sec`) and refresh a 1000ms settle timer in a single unified HUD toast, eliminating timer races and buffer flashes.
 - **Immediate Buffering Dismissal**:
   - Buffering indicators dismiss immediately when `bufferingStream` emits `false`, leaving zero lingering loading spinners on the viewport once video frames resume.
+
+## 27. Google Cast & DLNA Remote Playback Invariants
+- **Google Cast Receiver Lifecycle & App Quit**:
+  - Halting playback via `media_controller.stop()` only pauses/stops the stream; it leaves the Google Cast Default Media Receiver running as an empty black screen on the TV.
+  - To release the TV back to its native dashboard, ambient backdrop, or previous input (matching DLNA behavior), the disconnect sequence MUST invoke `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and evict cached connections from `_cast_connections`.
+- **Receiver Master Volume & Anti-Reset Synchronization**:
+  - Cast receivers manage master volume via `cast.status.volume_level` (float `0.0`–`1.0`) and `cast.status.volume_muted` (boolean).
+  - Backend status endpoints must always populate `volume` (`round(volume_level * 100, 1)`) and `muted`. Omitting them causes UI clients to fall back to `100%`, jerking the volume slider on every status poll tick.
+  - Frontend remote controllers (`CastBar`) must maintain scrub isolation (`scrubVolume` state) and progressive bold red track fills (`#e50914`) matching the primary web player slider.
+- **In-Cast Subtitle Track Delivery & Full LAN Origins**:
+  - Google Cast receivers cannot resolve relative paths like `/subtitles/...`.
+  - When loading media with sidecar subtitles on Cast receivers, construct `media_info['tracks']` with fully-qualified LAN URLs (`http://<lan_ip>:<port>/subtitles/...`), `trackContentType: 'text/vtt'`, and high-contrast `textTrackStyle`.
+  - The in-cast remote HUD must provide a live subtitle selector (`#castSubBtn` and `#castSubMenu`) dispatching `action: 'subtitle'` (`controller.enable_subtitle(id)` / `controller.disable_subtitle()`) without interrupting playback.
+- **Multi-Adapter LAN SSDP & mDNS Discovery Resilience**:
+  - On Windows hosts with multiple network adapters (Ethernet, Wi-Fi, Tailscale, virtual adapters), mDNS multicast packets can be dropped.
+  - Pair SSDP multi-interface search with an ARP cache scan and concurrent HTTP probes against the Google Cast Eureka endpoint (`http://<ip>:8008/setup/eureka_info`), ensuring reliable discovery across all local subnets.
+
