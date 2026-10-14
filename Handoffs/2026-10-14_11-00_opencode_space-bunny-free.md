@@ -6,10 +6,14 @@
 | **Agent** | OpenCode |
 | **Model** | space-bunny-free |
 | **Workspace** | `E:\MediaServer` |
-| **Branch** | `feat/react-web-frontend` |
-| **HEAD** | `7eb4f99` — **16 commits ahead of `origin/feat/react-web-frontend`, not pushed** |
+| **Branch** | `feat/react-web-frontend` — **not pushed**, ahead of `origin/feat/react-web-frontend` |
+| **Code state** | `3afdc29` admin fix · `34f54ae` transcode fix · `9ea7f24` SPA routing · `ba0b9b2` legacy tests · `a311be4` SPA + deadlines. This document is the only change on top. |
 | **Verified** | Python **904 passed / 2 failed**; frontend **91/91**; Android guardrail **18/18** |
 | **Pushed** | **No** — pushing is reserved for the user |
+
+> This header deliberately names the **code** commits rather than a single `HEAD`: a handoff
+> that states its own hash is wrong the moment it is committed. The next handoff should cite
+> the newest file in `Handoffs/`.
 
 ---
 
@@ -23,8 +27,9 @@ Copy everything inside the block below to start the next session.
 Continue work on Anis' Home Media Server at E:\MediaServer.
 
 STATE
-- Branch feat/react-web-frontend, HEAD 7eb4f99, 16 commits ahead of origin (NOT pushed).
-  Pushing is reserved for the user.
+- Branch feat/react-web-frontend, ahead of origin (NOT pushed). Pushing is reserved for the user.
+- Code state: 3afdc29 admin fix, 34f54ae transcode fix, 9ea7f24 SPA routing, ba0b9b2 legacy
+  tests, a311be4 SPA redesign + request deadlines.
 - Verified at HEAD: Python 904 passed / 2 failed (both documented below), frontend 91/91,
   tsc + oxlint clean, Android guardrail 18/18.
 - Live host: MediaServer + Cloudflared NSSM services. Server on 127.0.0.1:8000,
@@ -314,7 +319,7 @@ was actually protecting — SPA shell status for page routes, real JSON contract
 routes. `test_app.py` shrank by ~174 net lines because most deleted content was HTML-shape
 assertion with no behavioural content left.
 
-### 4.5 Documentation (`7eb4f99`)
+### 4.5 Documentation
 
 This document, three new invariant blocks in `AGENTS.md` (§4 admin authorisation, §6
 predicate-must-not-write and frontend deadlines), a dated `PROJECT_STATUS.md` entry, and a
