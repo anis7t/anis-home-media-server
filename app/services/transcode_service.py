@@ -897,6 +897,19 @@ def _is_hls_truly_complete(playlist_path, source_path):
         return False
     ratio = cumulative / source_duration
     if ratio >= float(getattr(config, 'MIN_COVERAGE_RATIO', 0.98)):
+        # Deliberately a PREDICATE, not a repair.
+        #
+        # This ratio is label arithmetic, and labels are the one measure this
+        # project has measured to be untrustworthy: a cache read 100% by
+        # duration while missing 277.2s of frames across 101 chunks, and a
+        # 99.88% "repair" masked that same loss. A previous revision appended
+        # `#EXT-X-ENDLIST` here on ratio alone, which would seal exactly the
+        # frame-deficient caches the frame-accounting work exists to catch -
+        # and did so from a 1Hz progress callback, unserialised and non-atomically.
+        #
+        # Sealing a complete cache is `scripts/hls_restore_endlist.py`, which
+        # re-checks with frame counting before writing. Keep it a deliberate,
+        # offline, measured act.
         return True
     logger.info('HLS completeness check: playlist has %.1fs (%.1f%%) of %.1fs source — treating as INCOMPLETE',
                 cumulative, ratio * 100, source_duration)
@@ -1525,8 +1538,14 @@ def source_video_duration(path, fallback=None):
             except (ValueError, TypeError):
                 pass
 
-        # Check stream tags DURATION (standard Matroska/mkvmerge track statistics)
-        v_dur_tag = video_stream.get('tags', {}).get('DURATION')
+        # Check stream tags DURATION (standard Matroska/mkvmerge track statistics: DURATION, DURATION-eng, etc.)
+        tags = video_stream.get('tags', {})
+        v_dur_tag = tags.get('DURATION')
+        if not v_dur_tag:
+            for k, val in tags.items():
+                if k.upper().startswith('DURATION'):
+                    v_dur_tag = val
+                    break
         if v_dur_tag:
             try:
                 parts = str(v_dur_tag).strip().split(':')
