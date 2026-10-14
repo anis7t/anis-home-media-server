@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 cast_bp = Blueprint('cast', __name__)
 
-ACTIONS = {'play', 'pause', 'stop', 'seek', 'volume'}
+ACTIONS = {'play', 'pause', 'stop', 'seek', 'volume', 'mute', 'subtitle'}
 
 
 def _payload() -> dict:
@@ -62,12 +62,22 @@ def cast_control():
         return jsonify({'ok': False, 'error': 'device_id is required'}), 400
     if action not in ACTIONS:
         return jsonify({'ok': False, 'error': f'action must be one of {sorted(ACTIONS)}'}), 400
-    value = _float_or_none(payload.get('value'))
     if action in ('seek', 'volume'):
+        value = _float_or_none(payload.get('value'))
         if value is None:
             return jsonify({'ok': False, 'error': f'{action} needs a numeric value'}), 400
         if action == 'volume' and not 0 <= value <= 100:
             return jsonify({'ok': False, 'error': 'volume must be between 0 and 100'}), 400
+    elif action == 'mute':
+        raw_val = payload.get('value')
+        value = True if raw_val is None else bool(raw_val)
+    elif action == 'subtitle':
+        try:
+            value = int(payload.get('value') or 0)
+        except (TypeError, ValueError):
+            value = 0
+    else:
+        value = _float_or_none(payload.get('value'))
     result = registry().control(device_id, action, value)
     return jsonify(result), (200 if result.get('ok') else 400)
 

@@ -1121,19 +1121,22 @@
   }
 
   /* Volume Slider Progressive Fill & Custom Thumb (Modern Web Guidance) */
-  #volume {
+  #volume,
+  #castVolume {
     -webkit-appearance: none;
     appearance: none;
     height: 6px;
     border-radius: 9999px;
     outline: none;
   }
-  #volume::-webkit-slider-runnable-track {
+  #volume::-webkit-slider-runnable-track,
+  #castVolume::-webkit-slider-runnable-track {
     height: 6px;
     border-radius: 9999px;
     background: transparent;
   }
-  #volume::-webkit-slider-thumb {
+  #volume::-webkit-slider-thumb,
+  #castVolume::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 14px;
@@ -1146,15 +1149,18 @@
     transition: transform 0.15s ease;
     margin-top: -4px;
   }
-  #volume:hover::-webkit-slider-thumb {
+  #volume:hover::-webkit-slider-thumb,
+  #castVolume:hover::-webkit-slider-thumb {
     transform: scale(1.2);
   }
-  #volume::-moz-range-track {
+  #volume::-moz-range-track,
+  #castVolume::-moz-range-track {
     height: 6px;
     border-radius: 9999px;
     background: transparent;
   }
-  #volume::-moz-range-thumb {
+  #volume::-moz-range-thumb,
+  #castVolume::-moz-range-thumb {
     width: 14px;
     height: 14px;
     border-radius: 50%;

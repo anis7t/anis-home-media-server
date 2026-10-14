@@ -541,6 +541,14 @@ def dlna_command(device: dict, action: str, value=None) -> None:
             control, RENDERING_ST, 'SetVolume',
             {'InstanceID': 0, 'Channel': 'Master', 'DesiredVolume': int(float(value or 0))},
         )
+    elif action == 'mute':
+        control = device.get('rendering_control_url')
+        if not control:
+            raise RuntimeError('device has no RenderingControl service')
+        _soap_call(
+            control, RENDERING_ST, 'SetMute',
+            {'InstanceID': 0, 'Channel': 'Master', 'DesiredMute': 1 if value else 0},
+        )
     else:
         raise ValueError(f'unsupported action: {action}')
 
@@ -556,7 +564,27 @@ def dlna_status(device: dict) -> dict:
         duration = _parse_hhmmss(_find_text(root, 'TrackDuration'))
     except (requests.RequestException, ET.ParseError) as exc:
         log.debug('DLNA position read failed for %s: %s', device['id'], exc)
-    return {'state': state, 'position': position, 'duration': duration}
+
+    volume = 100.0
+    muted = False
+    control = device.get('rendering_control_url')
+    if control:
+        try:
+            vol_res = _soap_call(control, RENDERING_ST, 'GetVolume', {'InstanceID': 0, 'Channel': 'Master'})
+            v = _find_text(ET.fromstring(vol_res), 'CurrentVolume')
+            if v is not None:
+                volume = float(v)
+        except Exception as exc:  # noqa: BLE001
+            log.debug('DLNA GetVolume failed for %s: %s', device['id'], exc)
+        try:
+            mute_res = _soap_call(control, RENDERING_ST, 'GetMute', {'InstanceID': 0, 'Channel': 'Master'})
+            m = _find_text(ET.fromstring(mute_res), 'CurrentMute')
+            if m is not None:
+                muted = bool(int(m))
+        except Exception as exc:  # noqa: BLE001
+            log.debug('DLNA GetMute failed for %s: %s', device['id'], exc)
+
+    return {'state': state, 'position': position, 'duration': duration, 'volume': volume, 'muted': muted}
 
 
 def _dlna_size_and_duration(path) -> tuple[int, float]:
@@ -728,18 +756,56 @@ def _cast_connect(device: dict, timeout: float = 12.0):
     return cast
 
 
-def cast_load(device: dict, url: str, title: str, content_type: str, position: float | None = None) -> None:
+def cast_load(
+    device: dict,
+    url: str,
+    title: str,
+    content_type: str,
+    position: float | None = None,
+    subtitles: list[dict] | None = None,
+    active_subtitle_id: int | None = None,
+) -> None:
     """Hand the media to a Cast receiver, starting at *position* when it is given."""
     cast = _cast_connect(device)
     controller = cast.media_controller
-    controller.play_media(
-        url,
-        content_type,
-        title=title,
-        stream_type=CAST_STREAM_TYPE,
-        current_time=float(position) if position else None,
-        autoplay=True,
-    )
+    media_info = {}
+    if subtitles:
+        media_info['tracks'] = [
+            {
+                'trackId': s['track_id'],
+                'trackContentId': s['src'],
+                'language': s.get('lang', 'en'),
+                'subtype': 'SUBTITLES',
+                'type': 'TEXT',
+                'trackContentType': 'text/vtt',
+                'name': s.get('label') or s.get('name') or f"Subtitle {s['track_id']}",
+            }
+            for s in subtitles
+        ]
+        media_info['textTrackStyle'] = {
+            'backgroundColor': '#00000000',
+            'foregroundColor': '#FFFFFFFF',
+            'edgeType': 'OUTLINE',
+            'edgeColor': '#000000FF',
+            'fontScale': 1.1,
+        }
+
+    kwargs = {
+        'title': title,
+        'stream_type': CAST_STREAM_TYPE,
+        'current_time': float(position) if position else None,
+        'autoplay': True,
+    }
+    if media_info:
+        kwargs['media_info'] = media_info
+
+    controller.play_media(url, content_type, **kwargs)
+    if active_subtitle_id and active_subtitle_id > 0:
+        _wait_for_cast_session(controller)
+        try:
+            controller.enable_subtitle(active_subtitle_id)
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Could not enable initial subtitle %s: %s', active_subtitle_id, exc)
 
 
 def _wait_for_cast_session(controller) -> None:
@@ -755,7 +821,8 @@ def _wait_for_cast_session(controller) -> None:
 
 
 def cast_command(device: dict, action: str, value=None) -> None:
-    controller = _cast_connect(device).media_controller
+    cast = _cast_connect(device)
+    controller = cast.media_controller
     if action == 'play':
         _wait_for_cast_session(controller)
         controller.play()
@@ -763,12 +830,33 @@ def cast_command(device: dict, action: str, value=None) -> None:
         _wait_for_cast_session(controller)
         controller.pause()
     elif action == 'stop':
-        controller.stop()
+        try:
+            controller.stop()
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Cast stop media failed: %s', exc)
+        try:
+            cast.quit_app()
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Cast quit app failed: %s', exc)
+        try:
+            cast.disconnect()
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Cast disconnect failed: %s', exc)
+        _REGISTRY.forget_cast_connection(device['id'])
     elif action == 'seek':
         _wait_for_cast_session(controller)
         controller.seek(float(value or 0))
     elif action == 'volume':
-        _cast_connect(device).set_volume(float(value or 0) / 100.0)
+        cast.set_volume(float(value or 0) / 100.0)
+    elif action == 'mute':
+        cast.set_volume_muted(bool(value))
+    elif action == 'subtitle':
+        _wait_for_cast_session(controller)
+        track_id = int(value or 0)
+        if track_id > 0:
+            controller.enable_subtitle(track_id)
+        else:
+            controller.disable_subtitle()
     else:
         raise ValueError(f'unsupported action: {action}')
 
@@ -791,17 +879,27 @@ def _refresh_cast_status(controller, timeout: float = 2.0) -> None:
 
 
 def cast_status(device: dict) -> dict:
-    controller = _cast_connect(device).media_controller
+    cast = _cast_connect(device)
+    controller = cast.media_controller
     _refresh_cast_status(controller)
     status = controller.status
+    volume = 100.0
+    muted = False
+    if hasattr(cast, 'status') and cast.status:
+        if cast.status.volume_level is not None:
+            volume = round(float(cast.status.volume_level) * 100.0, 1)
+        if cast.status.volume_muted is not None:
+            muted = bool(cast.status.volume_muted)
     if status is None:
-        return {'state': 'unknown', 'position': 0.0, 'duration': 0.0}
+        return {'state': 'unknown', 'position': 0.0, 'duration': 0.0, 'volume': volume, 'muted': muted}
     raw = (status.player_state or '').upper()
     state = {'PLAYING': 'playing', 'PAUSED': 'paused', 'BUFFERING': 'buffering', 'IDLE': 'stopped'}.get(raw, raw.lower())
     return {
         'state': state,
         'position': float(status.current_time or 0.0),
         'duration': float(status.duration or 0.0),
+        'volume': volume,
+        'muted': muted,
     }
 
 
@@ -915,6 +1013,11 @@ class CastRegistry:
         with self._lock:
             self._cast_connections[device_id] = (cast, browser)
 
+    def forget_cast_connection(self, device_id: str) -> None:
+        with self._lock:
+            self._cast_connections.pop(device_id, None)
+            self._active.pop(device_id, None)
+
     # -- actions
     def play(self, device_id: str, filename: str, position: float | None = None, origin: str | None = None) -> dict:
         device = self.resolve_device(device_id)
@@ -946,8 +1049,40 @@ class CastRegistry:
             title = f'{title} (transcoded)'
 
         url = build_media_url(path, origin=origin, hls=use_hls)
+        base_origin = validate_origin(origin or '') or f'http://{lan_ip()}:{server_port()}'
+        sub_tracks = []
+        try:
+            from app.services import subtitles_service
+
+            raw_subs = subtitles_service.tracks(path)
+            for idx, st in enumerate(raw_subs, start=1):
+                src = st.get('src', '')
+                full_src = src if src.startswith(('http://', 'https://')) else f'{base_origin}{src}'
+                sub_tracks.append({
+                    'track_id': idx,
+                    'label': st.get('label') or st.get('name') or f'Track {idx}',
+                    'lang': st.get('lang', 'en'),
+                    'src': full_src,
+                    'default': bool(st.get('default', False)),
+                })
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Failed to gather cast subtitles for %s: %s', path, exc)
+
+        default_sub_id = next((s['track_id'] for s in sub_tracks if s.get('default')), 0)
+        if not default_sub_id and sub_tracks:
+            default_sub_id = sub_tracks[0]['track_id']
+
         with self._lock:
-            self._active[device_id] = {'filename': filename, 'url': url, 'title': title}
+            self._active[device_id] = {
+                'filename': filename,
+                'url': url,
+                'title': title,
+                'subtitles': [
+                    {'track_id': s['track_id'], 'label': s['label'], 'lang': s['lang']}
+                    for s in sub_tracks
+                ],
+                'active_subtitle_id': default_sub_id,
+            }
 
         def _run():
             try:
@@ -958,7 +1093,11 @@ class CastRegistry:
                         size=size, duration=duration,
                     )
                 else:
-                    cast_load(device, url, title, content_type, position)
+                    cast_load(
+                        device, url, title, content_type, position,
+                        subtitles=sub_tracks,
+                        active_subtitle_id=default_sub_id,
+                    )
                 with self._lock:
                     self._errors.pop(f'play:{device_id}', None)
             except Exception as exc:  # noqa: BLE001
@@ -980,9 +1119,15 @@ class CastRegistry:
                 cast_command(device, action, value)
         except Exception as exc:  # noqa: BLE001
             return {'ok': False, 'error': _error_text(exc)}
-        if action == 'stop':
+        if action == 'subtitle':
+            track_id = int(value or 0)
+            with self._lock:
+                if device_id in self._active:
+                    self._active[device_id]['active_subtitle_id'] = track_id
+        elif action == 'stop':
             with self._lock:
                 self._active.pop(device_id, None)
+                self._cast_connections.pop(device_id, None)
         return {'ok': True}
 
     def status(self, device_id: str) -> dict:

@@ -95,7 +95,7 @@ describe('CastBar', () => {
     expect(handleControl).toHaveBeenCalledWith('seek', 135); // 125 + 10 = 135
   });
 
-  it('dispatches volume change', () => {
+  it('dispatches volume change and displays percentage', () => {
     const handleControl = vi.fn();
 
     render(
@@ -109,8 +109,79 @@ describe('CastBar', () => {
     );
 
     const volumeSlider = screen.getByRole('slider', { name: /remote volume/i });
+    expect(document.getElementById('castVolumePercent')?.textContent).toBe('75%');
+    expect(volumeSlider.style.background).toContain('75%');
+
     fireEvent.change(volumeSlider, { target: { value: '85' } });
     expect(handleControl).toHaveBeenCalledWith('volume', 85);
+  });
+
+  it('toggles mute when mute button clicked', () => {
+    const handleControl = vi.fn();
+
+    const { rerender } = render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={mockStatus}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const muteBtn = screen.getByRole('button', { name: /mute/i });
+    fireEvent.click(muteBtn);
+    expect(handleControl).toHaveBeenCalledWith('mute', true);
+
+    rerender(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={{ ...mockStatus, muted: true }}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const unmuteBtn = screen.getByRole('button', { name: /unmute/i });
+    fireEvent.click(unmuteBtn);
+    expect(handleControl).toHaveBeenCalledWith('mute', false);
+  });
+
+  it('renders subtitle selector and switches subtitle tracks', () => {
+    const handleControl = vi.fn();
+    const statusWithSubs: CastStatusResponse = {
+      ...mockStatus,
+      subtitles: [
+        { track_id: 1, label: 'English [Original]', lang: 'en' },
+        { track_id: 2, label: 'Spanish', lang: 'es' },
+      ],
+      active_subtitle_id: 1,
+    };
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={statusWithSubs}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const subBtn = screen.getByRole('button', { name: /cast subtitles/i });
+    expect(subBtn).toBeInTheDocument();
+
+    // Click to open menu
+    fireEvent.click(subBtn);
+    expect(screen.getByRole('menu', { name: /cast subtitles/i })).toBeInTheDocument();
+    expect(screen.getByText('English [Original]')).toBeInTheDocument();
+    expect(screen.getByText('Spanish')).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
+
+    // Select Spanish
+    fireEvent.click(screen.getByText('Spanish'));
+    expect(handleControl).toHaveBeenCalledWith('subtitle', 2);
   });
 
   it('calls onDisconnect when disconnect button clicked', () => {

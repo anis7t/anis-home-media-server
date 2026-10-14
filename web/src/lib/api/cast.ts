@@ -37,6 +37,12 @@ export interface CastControlResponse {
 
 export type CastState = 'playing' | 'paused' | 'buffering' | 'stopped' | 'unknown';
 
+export interface CastSubtitleTrack {
+  readonly track_id: number;
+  readonly label: string;
+  readonly lang: string;
+}
+
 export interface CastStatusResponse {
   readonly ok: boolean;
   readonly state?: CastState;
@@ -45,6 +51,8 @@ export interface CastStatusResponse {
   readonly volume?: number;
   readonly muted?: boolean;
   readonly title?: string;
+  readonly subtitles?: CastSubtitleTrack[];
+  readonly active_subtitle_id?: number;
   readonly error?: string;
 }
 
@@ -75,8 +83,8 @@ export function startCastPlay(
 
 export function sendCastControl(
   deviceId: string,
-  action: 'play' | 'pause' | 'stop' | 'seek' | 'volume',
-  value?: number,
+  action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle',
+  value?: number | boolean,
   options: { signal?: AbortSignal } = {},
 ): Promise<CastControlResponse> {
   return request<CastControlResponse>('/api/cast/control', {

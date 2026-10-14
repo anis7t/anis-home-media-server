@@ -70,6 +70,11 @@ def test_cast_integration_e2e():
                 'volume': 75.0,
                 'muted': False,
                 'title': '2001',
+                'subtitles': [
+                    {'track_id': 1, 'label': 'English [Original]', 'lang': 'en'},
+                    {'track_id': 2, 'label': 'Spanish', 'lang': 'es'},
+                ],
+                'active_subtitle_id': 1,
             }
 
         def control(self, device_id, action, value=None):
@@ -158,18 +163,44 @@ def test_cast_integration_e2e():
         assert shell_display == "none", f"#shell must have display: none during cast, got: {shell_display}"
         print("[SUCCESS] Local video shell strictly hidden while casting to second-screen.")
 
+        # 8. Verify Volume, Mute Button, and Progressive Fill
+        mute_btn = driver.find_element(By.ID, "castMuteBtn")
+        assert mute_btn.is_displayed(), "#castMuteBtn must be visible"
+        vol_slider = driver.find_element(By.ID, "castVolume")
+        assert vol_slider.is_displayed(), "#castVolume slider must be visible"
+        vol_percent = driver.find_element(By.ID, "castVolumePercent")
+        assert vol_percent.text == "75%", f"Expected volume percent '75%', got: '{vol_percent.text}'"
+        assert "75%" in vol_slider.get_attribute("style"), "Progressive red gradient must reflect 75% volume"
+        print("[SUCCESS] Cast volume slider (75%), progressive track fill, and #castMuteBtn verified.")
+
+        # 9. Verify Subtitle Selector & Popover
+        sub_btn = driver.find_element(By.ID, "castSubBtn")
+        assert sub_btn.is_displayed(), "#castSubBtn must be visible when subtitle tracks exist"
+        driver.execute_script("arguments[0].click();", sub_btn)
+        time.sleep(0.3)
+        sub_menu = driver.find_element(By.ID, "castSubMenu")
+        assert sub_menu.is_displayed(), "#castSubMenu must be displayed upon clicking #castSubBtn"
+        assert "English [Original]" in sub_menu.text, "English subtitle must be listed"
+        assert "Spanish" in sub_menu.text, "Spanish subtitle must be listed"
+        assert "Off" in sub_menu.text, "'Off' option must be listed"
+        print("[SUCCESS] In-cast Subtitle Popover Menu (#castSubMenu) verified with track selection.")
+
+        # Close subtitle popover
+        driver.execute_script("arguments[0].click();", sub_btn)
+        time.sleep(0.2)
+
         # Capture active cast controller screenshot
         cast_bar_screenshot_path = "tests/screenshots/cast_integration_verified.png"
         driver.save_screenshot(cast_bar_screenshot_path)
         print(f"[SUCCESS] CastBar HUD screenshot saved to {cast_bar_screenshot_path}")
 
-        # 8. Test Remote Transport Commands (Play/Pause, Disconnect)
+        # 10. Test Remote Transport Commands (Play/Pause, Disconnect)
         play_pause_btn = driver.find_element(By.ID, "castPlayPauseBtn")
         driver.execute_script("arguments[0].click();", play_pause_btn)
         time.sleep(0.3)
         print("[SUCCESS] Remote play/pause command dispatched.")
 
-        # 9. Disconnect Cast and verify return to local player
+        # 11. Disconnect Cast and verify return to local player
         disconnect_btn = driver.find_element(By.ID, "castDisconnectBtn")
         driver.execute_script("arguments[0].click();", disconnect_btn)
         time.sleep(0.8)

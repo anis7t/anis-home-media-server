@@ -87,6 +87,12 @@ class _FakeMediaController:
         if self.session_error:
             raise self.session_error
 
+    def enable_subtitle(self, track_id):
+        self.calls.append(('enable_subtitle', track_id))
+
+    def disable_subtitle(self):
+        self.calls.append(('disable_subtitle',))
+
     def play(self):
         self.calls.append(('play',))
 
@@ -100,9 +106,29 @@ class _FakeMediaController:
         self.calls.append(('seek', position))
 
 
+class _FakeCastStatus:
+    def __init__(self, volume_level=1.0, volume_muted=False):
+        self.volume_level = volume_level
+        self.volume_muted = volume_muted
+
+
 class _FakeCast:
     def __init__(self):
         self.media_controller = _FakeMediaController()
+        self.status = _FakeCastStatus()
+        self.calls = []
+
+    def set_volume(self, level):
+        self.calls.append(('set_volume', level))
+
+    def set_volume_muted(self, muted):
+        self.calls.append(('set_volume_muted', muted))
+
+    def quit_app(self):
+        self.calls.append(('quit_app',))
+
+    def disconnect(self):
+        self.calls.append(('disconnect',))
 
 
 def test_cast_load_puts_the_resume_point_in_the_load_message(monkeypatch):
@@ -134,6 +160,22 @@ def test_cast_load_without_a_position_leaves_the_start_time_open(monkeypatch):
     kwargs = fake.media_controller.calls[0][3]
     assert kwargs['current_time'] is None
     assert kwargs['stream_type'] == 'BUFFERED'
+
+
+def test_cast_load_includes_subtitles(monkeypatch):
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    subs = [{'track_id': 1, 'src': 'http://host/sub.vtt', 'lang': 'en', 'label': 'English'}]
+    cs.cast_load({'id': 'cast:1'}, 'http://host/media/a.mp4', 'A Movie', 'video/mp4', subtitles=subs, active_subtitle_id=1)
+
+    assert len(fake.media_controller.calls) >= 2
+    play_call = fake.media_controller.calls[0]
+    assert play_call[0] == 'play_media'
+    media_info = play_call[3]['media_info']
+    assert len(media_info['tracks']) == 1
+    assert media_info['tracks'][0]['trackId'] == 1
+    assert ('enable_subtitle', 1) in fake.media_controller.calls
 
 
 @pytest.mark.parametrize("action,expected", [
@@ -172,6 +214,32 @@ def test_stop_does_not_wait_on_a_session(monkeypatch):
     cs.cast_command({'id': 'cast:1'}, 'stop')
 
     assert fake.media_controller.calls == [('stop',)]
+    assert ('quit_app',) in fake.calls
+    assert ('disconnect',) in fake.calls
+
+
+def test_cast_command_mute(monkeypatch):
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_command({'id': 'cast:1'}, 'mute', True)
+    assert fake.calls == [('set_volume_muted', True)]
+
+    fake.calls.clear()
+    cs.cast_command({'id': 'cast:1'}, 'mute', False)
+    assert fake.calls == [('set_volume_muted', False)]
+
+
+def test_cast_command_subtitle(monkeypatch):
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, '_cast_connect', lambda device, timeout=12.0: fake)
+
+    cs.cast_command({'id': 'cast:1'}, 'subtitle', 2)
+    assert ('enable_subtitle', 2) in fake.media_controller.calls
+
+    fake.media_controller.calls.clear()
+    cs.cast_command({'id': 'cast:1'}, 'subtitle', 0)
+    assert ('disable_subtitle',) in fake.media_controller.calls
 
 
 def test_cast_status_asks_the_receiver_instead_of_reporting_a_stale_push(monkeypatch):
@@ -187,7 +255,7 @@ def test_cast_status_asks_the_receiver_instead_of_reporting_a_stale_push(monkeyp
     status = cs.cast_status({'id': 'cast:1'})
 
     assert ('update_status',) in fake.media_controller.calls
-    assert status == {'state': 'playing', 'position': 255.2, 'duration': 4717.024}
+    assert status == {'state': 'playing', 'position': 255.2, 'duration': 4717.024, 'volume': 100.0, 'muted': False}
 
 
 def test_the_status_refresh_is_bounded_and_falls_back_to_the_cached_value():
@@ -419,6 +487,14 @@ def test_control_validates_actions_and_values(client, fake_registry, monkeypatch
     seek = client.post("/api/cast/control", json={"device_id": "dlna:test-tv", "action": "seek", "value": 42})
     assert seek.status_code == 200
     assert sent[-1] == ("seek", 42.0)
+
+    mute = client.post("/api/cast/control", json={"device_id": "dlna:test-tv", "action": "mute", "value": True})
+    assert mute.status_code == 200
+    assert sent[-1] == ("mute", True)
+
+    sub = client.post("/api/cast/control", json={"device_id": "dlna:test-tv", "action": "subtitle", "value": 2})
+    assert sub.status_code == 200
+    assert sent[-1] == ("subtitle", 2)
 
 
 def test_control_reports_device_errors_as_json(client, fake_registry, monkeypatch):

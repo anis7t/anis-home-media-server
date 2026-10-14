@@ -404,16 +404,18 @@ export function PlayerPage() {
   };
 
   const handleCastControl = async (
-    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume',
-    value?: number,
+    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle',
+    value?: number | boolean,
   ) => {
     if (!activeCastDevice) return;
     try {
       await sendCastControl(activeCastDevice.id, action, value);
       if (action === 'play') setCastStatus((s) => (s ? { ...s, state: 'playing' } : null));
       if (action === 'pause') setCastStatus((s) => (s ? { ...s, state: 'paused' } : null));
-      if (action === 'seek' && value !== undefined) setCastStatus((s) => (s ? { ...s, position: value } : null));
-      if (action === 'volume' && value !== undefined) setCastStatus((s) => (s ? { ...s, volume: value } : null));
+      if (action === 'seek' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, position: value } : null));
+      if (action === 'volume' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, volume: value, muted: false } : null));
+      if (action === 'mute') setCastStatus((s) => (s ? { ...s, muted: Boolean(value) } : null));
+      if (action === 'subtitle' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, active_subtitle_id: value } : null));
     } catch (err) {
       showHud(err instanceof Error ? err.message : 'Remote control failed');
     }
