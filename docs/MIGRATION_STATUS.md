@@ -1,5 +1,36 @@
 # Media Server Modernization — Migration Status & Handoff
 
+> ## Current session handoff — 2026-10-14
+>
+> **Read `Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md` first.** It carries the
+> paste-ready prompt, the P0–P7 phase table, the known-failing and known-flaky tests, and the
+> traps that have already cost time here. This document remains the detailed record; the
+> handoff is the orientation layer.
+>
+> Verified against the repository at `7eb4f99` on `feat/react-web-frontend` (16 commits ahead
+> of origin, **not pushed**):
+>
+> | | 2026-10-12 notice said | 2026-10-14 reality |
+> |---|---|---|
+> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual` + legacy aliases); templates removed |
+> | Legacy test migration | 36 Jinja HTML assertions still failing | **Resolved.** Re-pointed at SPA shell status and real API contracts. Suite **904 passed / 2 failed** |
+> | Auth | Out of Phase 2 scope; an open gap | **Delivered.** Google Sign-In live, profile resolves, QR pairing works, `@require_admin` guards the destructive routes |
+> | SPA routing | not recorded | `SpaPathConverter` catch-all, so the frontend can no longer shadow API routes |
+> | Security | not recorded | **Hard-coded default Admin PIN removed** — it had meant public unauthenticated access to library deletion. PIN now fails closed |
+>
+> **Still true and still open (unchanged):** the **Phase 3 exit gate is NOT met** — no
+> demonstrated data transfer or recovery, no representative regression run against
+> PostgreSQL — and there is **no documented backup, restore drill, or rollback window.**
+> For a machine holding a film library and a multi-day transcode pipeline this remains the
+> largest unmitigated risk in the project, and it is on nobody's critical path.
+>
+> **P3.1–P3.8 are still marked *(reported)* below and should stay that way** until executed
+> under authorization. Treat them as untested code, not as progress.
+>
+> **Two known test failures**, both documented and neither a regression: the pre-existing
+> `test_startup_errors_when_on_without_secret`, and `test_seek_preview_and_playback_advancement`
+> — the last unmigrated casualty of the Jinja → React migration.
+
 > ## ⚠️ Reconciliation notice — 2026-10-12
 >
 > **This document below is a 2026-10-10 snapshot and is materially out of date.**

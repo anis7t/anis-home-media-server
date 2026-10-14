@@ -1,11 +1,11 @@
 # Handoff — superseded
 
-**This document has been replaced by [`HANDOFF.md`](HANDOFF.md).**
+**Superseded by [`Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md`](../Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md).**
 
-It was written on 2026-10-13 and is now out of date in ways that would mislead: it reports
-38 failing Python tests and leaves the legacy-test decision open, both of which have since
-changed. It also predates the request-deadline work, the page migration and the two security
-defects fixed at commit time.
+This brief was written for one specific receiving harness on 2026-10-13 and is now wrong in
+ways that would mislead: it reports 38 failing Python tests and leaves the legacy-test
+decision open. Both have since been resolved — the suite is at 904 passed / 2 failed — and
+the page migration, request deadlines and two security defects have all landed since.
 
-Read `docs/HANDOFF.md` instead. Kept as a stub so existing bookmarks and references resolve
-rather than 404.
+Handoffs now live in `Handoffs/`, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST. Read the
+newest one. Kept as a stub so existing bookmarks resolve rather than 404.

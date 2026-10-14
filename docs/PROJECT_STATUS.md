@@ -45,6 +45,13 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+> **Session handoffs live in `Handoffs/`** (`YYYY-MM-DD_HH-MM_<agent>.md`, IST). The newest,
+> `Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md`, describes the tree at `7eb4f99`
+> and carries the paste-ready prompt, the P0-P7 migration phase table, the two known-failing
+> tests, one known flake with its evidence, and the traps. Read it first; this log remains the
+> detailed record of *why* each change was made. Migration state: `docs/MIGRATION_STATUS.md`;
+> phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+
 ### 2026-10-14 - Request deadlines and retry; two defects caught before commit
 
 **Context.** Committing the previous session's uncommitted work surfaced two defects and one

@@ -1,9 +1,27 @@
 # Flask → Rust / React / PostgreSQL Migration Roadmap
 
-**Status:** Active — Phase 0–1 delivered, Phase 2 in progress, Phase 3 landed (exit gate open)  
+**Status:** Active — Phase 0–1 delivered, **Phase 2 complete against the Flask backend**, Phase 3 landed (exit gate open)  
 **Owner:** Media Server project  
 **Repository default branch:** `main`  
-**Last updated:** 2026-10-12
+**Last updated:** 2026-10-14
+
+> **Phase 2 status update — 2026-10-14 (`7eb4f99`, `feat/react-web-frontend`, not pushed).**
+> Phase 2 is **delivered**, not in progress. Every Jinja page has a React equivalent
+> (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual`, plus legacy
+> aliases); the templates are removed and `pages.py` is down to four routes. The 36 legacy
+> HTML assertions were migrated to assert SPA shell status and real API contracts, and the
+> Python suite stands at **904 passed / 2 failed** (both documented, neither a regression).
+>
+> **Delivered beyond the original Phase 2 scope, and worth noting when planning:** Google
+> Sign-In (explicitly out of Phase 2 scope when it began), and `@require_admin` guarding the
+> destructive routes — media delete, cache purge, archive, retention policy.
+>
+> **One item still outstanding:** `tests/test_selenium_seek_playback.py`, the last unmigrated
+> casualty of the Jinja → React migration. It loads `/`, receives the SPA shell, then raises
+> `NoSuchElementException` on removed markup.
+>
+> Session handoff: `Handoffs/2026-10-14_11-00_opencode_space-bunny-free.md`.
+> Current-state detail: `docs/MIGRATION_STATUS.md`.
 
 > **Phase numbering is canonical 0–7 as defined here.** An earlier revision of
 > `MIGRATION_STATUS.md` used a 0–9 scheme that split Phase 7 into "Live Events" (7),
