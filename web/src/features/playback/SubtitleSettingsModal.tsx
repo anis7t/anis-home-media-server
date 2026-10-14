@@ -303,6 +303,75 @@ export function SubtitleSettingsModal({
             </select>
           </div>
 
+          {/* Subtitle Synchronization / Delay */}
+          <div className="sub-field">
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="subOffsetRange" className="text-xs font-semibold text-white/90">
+                Subtitle Sync / Delay
+              </label>
+              <div className="flex items-center gap-2">
+                <span id="subOffsetVal" className="font-mono text-xs font-semibold text-brand-400">
+                  {prefs.offset === 0
+                    ? '0.0s (In Sync)'
+                    : prefs.offset > 0
+                    ? `+${prefs.offset.toFixed(1)}s (Delayed)`
+                    : `${prefs.offset.toFixed(1)}s (Advanced)`}
+                </span>
+                {prefs.offset !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onUpdatePref('offset', 0)}
+                    className="text-[10px] text-white/50 hover:text-white underline transition"
+                    title="Reset offset to 0.0s"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdatePref(
+                    'offset',
+                    Math.max(-5, Math.round(((prefs.offset || 0) - 0.1) * 10) / 10)
+                  )
+                }
+                title="Advance by 100ms (earlier)"
+                className="flex h-7 px-2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
+              >
+                -100ms
+              </button>
+              <input
+                id="subOffsetRange"
+                type="range"
+                min={-3}
+                max={3}
+                step={0.1}
+                value={prefs.offset || 0}
+                onChange={(e) => onUpdatePref('offset', Number(e.target.value))}
+                className="flex-1 h-1.5 rounded-full appearance-none bg-white/20 accent-brand-500 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdatePref(
+                    'offset',
+                    Math.min(5, Math.round(((prefs.offset || 0) + 0.1) * 10) / 10)
+                  )
+                }
+                title="Delay by 100ms (later)"
+                className="flex h-7 px-2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
+              >
+                +100ms
+              </button>
+            </div>
+            <p className="text-[11px] text-white/40 mt-1">
+              Hotkeys: <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">Z</kbd> to delay (+100ms), <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">X</kbd> to advance (-100ms).
+            </p>
+          </div>
+
           {/* Live Preview Box */}
           <div className="sub-field sub-preview-wrap">
             <label>Preview</label>

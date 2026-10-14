@@ -184,6 +184,38 @@ describe('CastBar', () => {
     expect(handleControl).toHaveBeenCalledWith('subtitle', 2);
   });
 
+  it('renders a scrollable menu with track count when many subtitle tracks exist', () => {
+    const manySubs = Array.from({ length: 37 }, (_, i) => ({
+      track_id: i + 1,
+      label: `Language Track ${i + 1}`,
+      lang: `l${i + 1}`,
+    }));
+    const statusWithManySubs: CastStatusResponse = {
+      ...mockStatus,
+      subtitles: manySubs,
+      active_subtitle_id: 1,
+    };
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Spider-Man.mkv"
+        status={statusWithManySubs}
+        onControl={vi.fn()}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const subBtn = screen.getByRole('button', { name: /cast subtitles/i });
+    fireEvent.click(subBtn);
+
+    const menu = screen.getByRole('menu', { name: /cast subtitles/i });
+    expect(menu).toHaveClass('overflow-y-auto');
+    expect(menu).toHaveClass('custom-scrollbar');
+    expect(screen.getByText('37 tracks')).toBeInTheDocument();
+    expect(screen.getByText('Language Track 37')).toBeInTheDocument();
+  });
+
   it('calls onDisconnect when disconnect button clicked', () => {
     const handleDisconnect = vi.fn();
 

@@ -29,18 +29,46 @@ def compute_opensubtitles_hash(path):
     return f"{hash_val:016x}", filesize
 
 
-def srt_to_vtt(text):
-    """Convert SRT formatted subtitle text to WebVTT format."""
+def _shift_timestamp(ts_str: str, offset_sec: float) -> str:
+    """Shift a single timestamp string (HH:MM:SS.mmm or MM:SS.mmm) by offset_sec."""
+    try:
+        ts_clean = ts_str.strip().replace(',', '.')
+        parts = ts_clean.split(':')
+        if len(parts) == 3:
+            h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+        elif len(parts) == 2:
+            h, m, s = 0.0, float(parts[0]), float(parts[1])
+        else:
+            return ts_str
+        total_s = max(0.0, h * 3600 + m * 60 + s + offset_sec)
+        nh = int(total_s // 3600)
+        nm = int((total_s % 3600) // 60)
+        ns = total_s % 60
+        return f"{nh:02d}:{nm:02d}:{ns:06.3f}"
+    except Exception:
+        return ts_str
+
+
+def srt_to_vtt(text, offset_sec: float = 0.0):
+    """Convert SRT formatted subtitle text to WebVTT format with optional time offset."""
     lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     out = ["WEBVTT\n"]
-    time_pat = re.compile(r'((?:\d\d:)?\d\d:\d\d,\d{3}\s*-->\s*(?:\d\d:)?\d\d:\d\d,\d{3})')
+    time_pat = re.compile(r'((?:\d\d:)?\d\d:\d\d[,\.]\d{3})\s*-->\s*((?:\d\d:)?\d\d:\d\d[,\.]\d{3})')
     for line in lines:
         if line.strip().isdigit() and (not out or out[-1] == ''):
             continue
         if '-->' in line:
             m = time_pat.search(line)
             if m:
-                out.append(line.replace(',', '.'))
+                start_ts, end_ts = m.group(1), m.group(2)
+                if offset_sec != 0.0:
+                    start_ts = _shift_timestamp(start_ts, offset_sec)
+                    end_ts = _shift_timestamp(end_ts, offset_sec)
+                else:
+                    start_ts = start_ts.replace(',', '.')
+                    end_ts = end_ts.replace(',', '.')
+                rest = line[m.end():]
+                out.append(f"{start_ts} --> {end_ts}{rest}")
             else:
                 out.append(line)
         else:

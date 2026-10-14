@@ -17,6 +17,7 @@ const DEFAULT_PREFS: SubtitlePrefs = {
   align: 'center',
   pos: 50,
   verticalPos: 'lowered',
+  offset: 0,
 };
 
 describe('SubtitleSettingsModal', () => {
@@ -114,6 +115,13 @@ describe('SubtitleSettingsModal', () => {
 
     fireEvent.change(screen.getByLabelText('Vertical Position'), { target: { value: 'top' } });
     expect(onUpdatePref).toHaveBeenCalledWith('verticalPos', 'top');
+
+    const offsetRange = screen.getByLabelText('Subtitle Sync / Delay') as HTMLInputElement;
+    fireEvent.change(offsetRange, { target: { value: '0.5' } });
+    expect(onUpdatePref).toHaveBeenCalledWith('offset', 0.5);
+
+    fireEvent.click(screen.getByRole('button', { name: /\+100ms/i }));
+    expect(onUpdatePref).toHaveBeenCalledWith('offset', 0.1);
   });
 
   it('handles subtitle file selection and upload flow', async () => {

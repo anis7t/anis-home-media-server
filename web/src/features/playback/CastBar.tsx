@@ -219,12 +219,13 @@ export function CastBar({
                     />
                     <div
                       id="castSubMenu"
-                      className="absolute bottom-full left-0 mb-2 z-50 min-w-[180px] rounded-2xl border border-white/20 bg-neutral-900/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+                      className="absolute bottom-full left-0 mb-2 z-50 min-w-[220px] sm:min-w-[260px] max-h-56 sm:max-h-72 overflow-y-auto overflow-x-hidden rounded-2xl border border-white/20 bg-neutral-900/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 custom-scrollbar"
                       role="menu"
                       aria-label="Cast Subtitles"
                     >
-                      <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white/40 border-b border-white/10 mb-1">
-                        Subtitles
+                      <div className="sticky top-0 z-10 bg-neutral-900/95 backdrop-blur-md px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white/50 border-b border-white/10 mb-1 flex items-center justify-between">
+                        <span>Subtitles</span>
+                        <span className="font-mono text-[10px] text-white/40">{subtitles.length} tracks</span>
                       </div>
                       <button
                         type="button"

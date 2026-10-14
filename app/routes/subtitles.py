@@ -64,7 +64,11 @@ def subtitle(filename, name):
     if not is_video(video) or not sub.is_file() or not is_authorized or sub.suffix.lower() not in config.SUBTITLE_EXTENSIONS:
         abort(404)
     text = sub.read_text(encoding='utf-8-sig', errors='replace')
-    return Response(srt_to_vtt(text), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})
+    try:
+        offset_sec = float(request.args.get('offset', 0))
+    except (TypeError, ValueError):
+        offset_sec = 0.0
+    return Response(srt_to_vtt(text, offset_sec=offset_sec), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})
 
 
 @subtitles_bp.route('/subtitles/embedded/<path:filename>/<int:stream_idx>.vtt', methods=['GET', 'HEAD', 'OPTIONS'])
@@ -78,6 +82,13 @@ def subtitle_embedded(filename, stream_idx):
     vtt = extract_embedded_subtitle(video, stream_idx)
     if not vtt or not vtt.is_file():
         abort(404)
+    try:
+        offset_sec = float(request.args.get('offset', 0))
+    except (TypeError, ValueError):
+        offset_sec = 0.0
+    if offset_sec != 0.0:
+        content = vtt.read_text(encoding='utf-8', errors='replace')
+        return Response(srt_to_vtt(content, offset_sec=offset_sec), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})
     return send_file(vtt, mimetype='text/vtt', conditional=True, max_age=3600)
 
 
@@ -97,6 +108,13 @@ def subtitle_online(filename):
     vtt = fetch_online_subtitle(video, m)
     if not vtt or not vtt.is_file():
         abort(404)
+    try:
+        offset_sec = float(request.args.get('offset', 0))
+    except (TypeError, ValueError):
+        offset_sec = 0.0
+    if offset_sec != 0.0:
+        content = vtt.read_text(encoding='utf-8', errors='replace')
+        return Response(srt_to_vtt(content, offset_sec=offset_sec), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})
     return send_file(vtt, mimetype='text/vtt', conditional=True, max_age=3600)
 
 

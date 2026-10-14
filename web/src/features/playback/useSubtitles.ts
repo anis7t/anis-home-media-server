@@ -18,6 +18,7 @@ export interface SubtitlePrefs {
   align: 'center' | 'left' | 'right';
   pos: number;
   verticalPos: 'lowered' | 'bottom' | 'raised' | 'middle' | 'top';
+  offset: number;
 }
 
 const SUB_KEY = 'media_sub_settings';
@@ -40,6 +41,7 @@ const DEFAULT_PREFS: SubtitlePrefs = {
   align: 'center',
   pos: 50,
   verticalPos: 'lowered',
+  offset: 0,
 };
 
 function loadSavedPrefs(): SubtitlePrefs {
@@ -58,6 +60,9 @@ function loadSavedPrefs(): SubtitlePrefs {
     if (prefs.pos == null) prefs.pos = 50;
     if (!prefs.verticalPos || (prefs.verticalPos as string) === 'bottom') {
       prefs.verticalPos = 'lowered';
+    }
+    if (typeof prefs.offset !== 'number' || isNaN(prefs.offset)) {
+      prefs.offset = 0;
     }
     return prefs;
   } catch {
@@ -115,19 +120,35 @@ export function elevateCues(video: HTMLVideoElement | null, prefs: SubtitlePrefs
 
   const targetAlign = prefs.align || 'center';
   const targetPos = prefs.pos ?? 50;
+  const offset = prefs.offset || 0;
+
+  const applyCueStyles = (c: VTTCue) => {
+    c.snapToLines = snap;
+    c.line = targetLine;
+    try {
+      c.align = targetAlign;
+    } catch {}
+    try {
+      c.position = targetPos;
+    } catch {}
+
+    // Apply subtitle timing offset dynamically
+    if ((c as any)._origStartTime === undefined) {
+      (c as any)._origStartTime = c.startTime;
+      (c as any)._origEndTime = c.endTime;
+    }
+    const origStart = (c as any)._origStartTime;
+    const origEnd = (c as any)._origEndTime;
+    const dur = Math.max(0.1, origEnd - origStart);
+    const newStart = Math.max(0, origStart + offset);
+    c.startTime = newStart;
+    c.endTime = newStart + dur;
+  };
 
   trks.forEach((t) => {
     if (t.cues) {
       for (let i = 0; i < t.cues.length; i++) {
-        const c = t.cues[i] as VTTCue;
-        c.snapToLines = snap;
-        c.line = targetLine;
-        try {
-          c.align = targetAlign;
-        } catch {}
-        try {
-          c.position = targetPos;
-        } catch {}
+        applyCueStyles(t.cues[i] as VTTCue);
       }
     }
 
@@ -136,15 +157,7 @@ export function elevateCues(video: HTMLVideoElement | null, prefs: SubtitlePrefs
       t.addEventListener('cuechange', () => {
         if (t.activeCues) {
           for (let i = 0; i < t.activeCues.length; i++) {
-            const c = t.activeCues[i] as VTTCue;
-            c.snapToLines = snap;
-            c.line = targetLine;
-            try {
-              c.align = targetAlign;
-            } catch {}
-            try {
-              c.position = targetPos;
-            } catch {}
+            applyCueStyles(t.activeCues[i] as VTTCue);
           }
         }
       });
@@ -373,6 +386,24 @@ export function useSubtitles(
     [filename, refreshTracks]
   );
 
+  const adjustOffset = useCallback(
+    (delta: number) => {
+      setPrefs((prev) => {
+        const nextOffset = Math.round(((prev.offset || 0) + delta) * 10) / 10;
+        const clamped = Math.max(-5, Math.min(5, nextOffset));
+        const next = { ...prev, offset: clamped };
+        savePrefs(next);
+        if (onShowHud) {
+          const sign = clamped > 0 ? `+${clamped.toFixed(1)}s` : `${clamped.toFixed(1)}s`;
+          const status = clamped > 0 ? ' (Delayed)' : clamped < 0 ? ' (Advanced)' : ' (In Sync)';
+          onShowHud(`💬 Subtitle Sync: ${sign}${status}`);
+        }
+        return next;
+      });
+    },
+    [onShowHud]
+  );
+
   return {
     tracks,
     activeTrackIndex,
@@ -383,6 +414,7 @@ export function useSubtitles(
     selectTrack,
     toggleCC,
     updatePref,
+    adjustOffset,
     uploadSubtitle,
     elevateCues: () => elevateCues(videoRef.current, prefs),
   };

@@ -125,4 +125,36 @@ describe('CastModal', () => {
 
     expect(handleDisconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('polls for devices while scanning flag is true on rescan', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ok: true, devices: [], scanning: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, devices: mockDevices, scanning: false }));
+
+    render(
+      <CastModal
+        open={true}
+        onClose={vi.fn()}
+        onSelectDevice={vi.fn()}
+      />,
+    );
+
+    // Initial fetch triggers scanning: true
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/cast/devices'),
+        expect.any(Object),
+      );
+    });
+
+    // Advance 1s to trigger poll
+    await vi.advanceTimersByTimeAsync(1000);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Living Room TV')).toBeInTheDocument();
+    });
+
+    vi.useRealTimers();
+  });
 });

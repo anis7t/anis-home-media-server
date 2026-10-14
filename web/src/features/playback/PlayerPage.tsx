@@ -212,6 +212,7 @@ export function PlayerPage() {
     selectTrack,
     toggleCC,
     updatePref: updateSubPref,
+    adjustOffset,
     uploadSubtitle,
     elevateCues,
   } = useSubtitles(videoRef, decoded, showHud);
@@ -580,6 +581,26 @@ export function PlayerPage() {
       video.currentTime = resumeAt;
       lastPositionRef.current = resumeAt;
       setPosition(resumeAt);
+    }
+
+    // Automatically start playback on open (Play or Resume)
+    if (typeof video.play === 'function') {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          // Handled defensively: browser autoplay policies may require user gesture
+        });
+      }
+    }
+  };
+
+  const handleCanPlay = (v: HTMLVideoElement) => {
+    setPreloaderVisible(false);
+    if (v.paused && typeof v.play === 'function') {
+      const playPromise = v.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
     }
   };
 
@@ -994,6 +1015,28 @@ export function PlayerPage() {
         return;
       }
 
+      // Subtitle Delay & Sync: z/Z (delay +100ms/+500ms), x/X (advance -100ms/-500ms)
+      if (e.key === 'z') {
+        e.preventDefault();
+        adjustOffset(0.1);
+        return;
+      }
+      if (e.key === 'Z') {
+        e.preventDefault();
+        adjustOffset(0.5);
+        return;
+      }
+      if (e.key === 'x') {
+        e.preventDefault();
+        adjustOffset(-0.1);
+        return;
+      }
+      if (e.key === 'X') {
+        e.preventDefault();
+        adjustOffset(-0.5);
+        return;
+      }
+
       // Speed adjustment
       const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
       if (e.key === '<' || e.key === ',') {
@@ -1159,7 +1202,7 @@ export function PlayerPage() {
           data-filename={decoded}
           onLoadedMetadata={onLoadedMetadata}
           onLoadedData={() => setPreloaderVisible(false)}
-          onCanPlay={() => setPreloaderVisible(false)}
+          onCanPlay={(e) => handleCanPlay(e.currentTarget)}
           onPlay={() => {
             setPlaying(true);
             setPreloaderVisible(false);

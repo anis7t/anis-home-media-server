@@ -5,23 +5,22 @@
 **Repository default branch:** `main`  
 **Last updated:** 2026-10-14
 
-> **Phase 2 status update — 2026-10-14 (`1fcaee5`, `feat/react-web-frontend`, not pushed).**
+> **Phase 2 status update — 2026-10-14 (`feat/react-web-frontend`).**
 > Phase 2 is **DELIVERED & VERIFIED**. Every Jinja page has a React equivalent
 > (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual`, plus legacy
 > aliases); the templates are removed and `pages.py` is down to four routes.
 >
 > Full 6-phase Video Player feature parity + Cast Remote Control hardening delivered:
-> - **Core Playback:** RFC 7233 byte-range Direct Play, HLS playlist transcode delivery.
-> - **Subtitle Engine:** Merged CC pill, custom font/color/opacity/alignment settings modal, sidecar upload.
+> - **Core Playback & Autoplay:** RFC 7233 byte-range Direct Play, HLS playlist transcode delivery, automatic playback start on open (Play / Resume).
+> - **Subtitle Engine & Synchronization:** Merged CC pill, custom font/color/opacity/alignment settings modal, sidecar upload, dynamic subtitle delay/advance sync offset controls (slider, ±100ms steppers, `z`/`x` hotkeys, HUD toast, and server-side `srt_to_vtt` / route `?offset=` parameter).
 > - **Extended Controls & Telemetry:** Aspect ratio cycle, PiP, speed, Nerd Stats HUD, Shortcuts modal.
 > - **Mobile Gestures & Ripples:** Double-tap seek (±10s), seek ripples, player preloader.
 > - **Transcode Staging Gate & Previews:** 100% transcode completion gate, live dual AMD GPU telemetry, seekbar hover frame previews in paused & playing states.
-> - **LAN Cast & DLNA Remote Controller:** Device discovery, Cast remote HUD, receiver hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle delivery, live in-cast subtitle selector, and clean receiver app quit (`cast.quit_app()`).
+> - **LAN Cast & DLNA Remote Controller:** Continuous discovery polling on rescan (`scanning: true`), incremental device discovery updates, scrollable Cast subtitle menu for large catalogs (37+ tracks), receiver hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle delivery, live in-cast subtitle selector, and clean receiver app quit (`cast.quit_app()`).
 > - **Google Cast Receiver Hardening:** Direct IP/port host connection bypassing mDNS packet loss, CORS headers on WebVTT subtitle routes (`/subtitles/*`), and status polling guards preventing app relaunch cycles during receiver loading.
 >
-> Legacy test migration is **COMPLETE**: `tests/test_selenium_seek_playback.py` and the full E2E Selenium suite (`tests/test_selenium_exhaustive_player_suite.py` and `tests/test_selenium_cast_integration.py`) pass 100%. Frontend Vitest stands at **149/149 passed**, backend Cast tests at **56/56 passed**.
+> Legacy test migration is **COMPLETE**: `tests/test_selenium_seek_playback.py` and the full E2E Selenium suite (`tests/test_selenium_exhaustive_player_suite.py` and `tests/test_selenium_cast_integration.py`) pass 100%. Frontend Vitest stands at **151/151 passed**, backend Cast tests at **56/56 passed**, and subtitle upload/offset tests at **8/8 passed**.
 >
-> Session handoff: `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md`.
 > Current-state detail: `docs/MIGRATION_STATUS.md`.
 
 > **Phase numbering is canonical 0–7 as defined here.** An earlier revision of

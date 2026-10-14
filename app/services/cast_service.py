@@ -978,6 +978,9 @@ class CastRegistry:
                 found[device['id']] = device
                 if device.get('host'):
                     candidate_hints.append(device['host'])
+            with self._lock:
+                for d in found.values():
+                    self._devices[d['id']] = d
         except Exception as exc:  # noqa: BLE001
             errors['dlna'] = _error_text(exc)
             log.warning('DLNA discovery failed: %s', exc)
@@ -990,6 +993,9 @@ class CastRegistry:
         active_cast_hosts, direct_devices = _collect_candidate_cast_hosts(candidate_hints)
         for dev in direct_devices:
             found[dev['id']] = dev
+        with self._lock:
+            for dev in direct_devices:
+                self._devices[dev['id']] = dev
 
         try:
             for device in discover_cast(known_hosts=active_cast_hosts):

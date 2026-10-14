@@ -152,7 +152,29 @@ class SubtitleUploadRouteTests(unittest.TestCase):
             shutil.rmtree(mirror_folder, ignore_errors=True)
             shutil.rmtree(archive_folder, ignore_errors=True)
 
+    def test_subtitle_offset_synchronization(self):
+        """Test srt_to_vtt offset timestamp shifting and route ?offset= query param."""
+        from app.utils.subtitles import srt_to_vtt
+
+        srt = "1\n00:01:10,000 --> 00:01:15,000\nHello offset test\n"
+        # +1.5s delay
+        vtt_delayed = srt_to_vtt(srt, offset_sec=1.5)
+        self.assertIn("00:01:11.500 --> 00:01:16.500", vtt_delayed)
+        # -2.0s advance
+        vtt_advanced = srt_to_vtt(srt, offset_sec=-2.0)
+        self.assertIn("00:01:08.000 --> 00:01:13.000", vtt_advanced)
+
+        # Route query parameter delivery
+        sub_file = self.root / "offset_test.srt"
+        sub_file.write_text(srt, encoding="utf-8")
+        try:
+            resp = self.client.get("/subtitles/Moana.2016.mp4/offset_test.srt?offset=0.8")
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn(b"00:01:10.800 --> 00:01:15.800", resp.data)
+        finally:
+            sub_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
     unittest.main()
+

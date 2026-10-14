@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/icons';
 import { getCastDevices, type CastDevice } from '../../lib/api/cast';
 
@@ -22,8 +22,17 @@ export function CastModal({
   const [devices, setDevices] = useState<CastDevice[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
 
   const fetchDevices = async (force = false) => {
+    stopPolling();
     setScanning(true);
     setError(null);
     try {
@@ -31,15 +40,39 @@ export function CastModal({
       if (res && res.devices) {
         setDevices(res.devices);
       }
+      if (res?.scanning) {
+        let attempts = 0;
+        const poll = async () => {
+          attempts += 1;
+          try {
+            const nextRes = await getCastDevices({ force: false });
+            if (nextRes && nextRes.devices) {
+              setDevices(nextRes.devices);
+            }
+            if (nextRes?.scanning && attempts < 10) {
+              pollTimerRef.current = setTimeout(poll, 1000);
+            } else {
+              setScanning(false);
+            }
+          } catch {
+            setScanning(false);
+          }
+        };
+        pollTimerRef.current = setTimeout(poll, 1000);
+      } else {
+        setScanning(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to scan for LAN devices');
-    } finally {
       setScanning(false);
     }
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      stopPolling();
+      return;
+    }
     void fetchDevices(false);
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -48,7 +81,10 @@ export function CastModal({
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      stopPolling();
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [open]);
 
   if (!open) return null;
