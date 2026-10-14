@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router';
 import type { ReactNode } from 'react';
 
@@ -412,61 +413,64 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : null}
 
       {/* Privacy Policy Glass Modal */}
-      {privacyOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="privacy-dialog-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in"
-          onClick={() => setPrivacyOpen(false)}
-        >
-          <div
-            className="glass-card max-w-lg w-full rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl border border-white/15"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                  <Icon name="shield" size={18} />
+      {privacyOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="privacy-dialog-title"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto animate-overlay-fade"
+              onClick={() => setPrivacyOpen(false)}
+            >
+              <div
+                className="glass-card max-w-lg w-full my-auto rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl border border-white/15 animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                      <Icon name="shield" size={18} />
+                    </div>
+                    <h3 id="privacy-dialog-title" className="text-lg font-bold text-white">
+                      Privacy Policy
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPrivacyOpen(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                    aria-label="Close dialog"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <h3 id="privacy-dialog-title" className="text-lg font-bold text-white">
-                  Privacy Policy
-                </h3>
+
+                <div className="space-y-3 text-xs sm:text-sm text-white/70 leading-relaxed">
+                  <p>
+                    <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
+                  </p>
+                  <p>
+                    Playback progress, user accounts, and device pairing tokens are persisted entirely within a local SQLite database (<code>media.db</code>) on your host machine.
+                  </p>
+                  <p>
+                    Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setPrivacyOpen(false)}
+                    className="rounded-full brand-gradient px-5 py-2 text-xs font-semibold text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setPrivacyOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition cursor-pointer"
-                aria-label="Close dialog"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs sm:text-sm text-white/70 leading-relaxed">
-              <p>
-                <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
-              </p>
-              <p>
-                Playback progress, user accounts, and device pairing tokens are persisted entirely within a local SQLite database (<code>media.db</code>) on your host machine.
-              </p>
-              <p>
-                Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.
-              </p>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setPrivacyOpen(false)}
-                className="rounded-full brand-gradient px-5 py-2 text-xs font-semibold text-white shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

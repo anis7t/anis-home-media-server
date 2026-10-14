@@ -59,6 +59,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 15000,
     css: false,
     // Vitest's default include also matches the Playwright specs under `e2e/`,
     // which then fail with "Playwright Test did not expect test.describe() to

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router';
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../../components/icons';
@@ -383,6 +384,18 @@ export function ManagePage() {
       setDeleting(false);
     }
   };
+
+  useEffect(() => {
+    if (!deleteTarget && !pinModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deleteTarget && !deleting) setDeleteTarget(null);
+        if (pinModalOpen) setPinModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteTarget, pinModalOpen, deleting]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 animate-fade-in pb-16">
@@ -868,208 +881,223 @@ export function ManagePage() {
       </section>
 
       {/* Delete & Purge Confirmation Modal */}
-      {deleteTarget ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="purgeModalTitle"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
-        >
-          <div className="relative w-full max-w-md rounded-3xl border border-rose-500/40 bg-obsidian-950 p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-in">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
-                  <Icon name="trash" size={20} />
-                </span>
-                <div>
-                  <h3 id="purgeModalTitle" className="text-lg font-bold text-white">
-                    Permanently Delete &amp; Purge?
-                  </h3>
-                  <p className="text-xs text-rose-300/80 font-medium">This action cannot be undone</p>
+      {deleteTarget && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="purgeModalTitle"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-overlay-fade"
+            >
+              <div
+                className="relative w-full max-w-md my-auto rounded-3xl border border-rose-500/40 bg-obsidian-950 p-6 sm:p-7 shadow-2xl space-y-5 animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 shrink-0">
+                      <Icon name="trash" size={20} />
+                    </span>
+                    <div>
+                      <h3 id="purgeModalTitle" className="text-lg font-bold text-white">
+                        Permanently Delete &amp; Purge?
+                      </h3>
+                      <p className="text-xs text-rose-300/80 font-medium">This action cannot be undone</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setDeleteTarget(null)}
+                    className="rounded-full p-1.5 text-white/50 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                    aria-label="Close dialog"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Target Media Card */}
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex items-center gap-3">
+                  <div className="h-14 w-10 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                    {deleteTarget.poster ? (
+                      <img
+                        src={posterUrl(deleteTarget.poster) ?? ''}
+                        alt={deleteTarget.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-xs text-white/30">
+                        🎬
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-sm text-white truncate">
+                      {deleteTarget.title} {deleteTarget.year ? `(${deleteTarget.year})` : ''}
+                    </p>
+                    <p className="font-mono text-[11px] text-white/40 truncate">{deleteTarget.filename}</p>
+                  </div>
+                </div>
+
+                {/* What will be purged checklist */}
+                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 space-y-2 text-xs">
+                  <span className="font-bold text-rose-300 block">Associated data that will be completely wiped:</span>
+                  <ul className="space-y-1.5 text-white/70">
+                    <li className="flex items-center gap-2">
+                      <span className="text-rose-400">✕</span>
+                      <span>Source video file on disk</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-rose-400">✕</span>
+                      <span>HLS transcode cache chunks &amp; live seek thumbnails</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-rose-400">✕</span>
+                      <span>Sidecar subtitles &amp; TMDb metadata records</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="text-rose-400">✕</span>
+                      <span>Client watch progress and resume points</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Admin PIN input if not yet unlocked */}
+                {!isAdmin ? (
+                  <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 space-y-2">
+                    <label className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                      <Icon name="shield" size={13} />
+                      Admin PIN Required (6361)
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={8}
+                      value={modalPinInput}
+                      onChange={(e) => setModalPinInput(e.target.value)}
+                      placeholder="Enter 4-digit PIN…"
+                      className="w-full rounded-xl border border-rose-500/40 bg-obsidian-900/90 px-3.5 py-2 text-sm text-white placeholder-white/30 focus:border-rose-400 focus:outline-none"
+                    />
+                    <p className="text-[11px] text-white/50">
+                      Authorized as {email || 'Administrator'} or enter your Admin PIN to authorize deletion.
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setDeleteTarget(null)}
+                    className="rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 px-4 py-2 text-xs font-semibold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting || (!isAdmin && !modalPinInput)}
+                    onClick={() => void onConfirmDelete()}
+                    className="rounded-full bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-rose-600/30 cursor-pointer disabled:opacity-40"
+                  >
+                    {deleting ? (
+                      <>
+                        <span className="h-3 w-3 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                        <span>Purging File…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="trash" size={13} />
+                        <span>Yes, Delete &amp; Purge Everything</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-full p-1.5 text-white/50 hover:bg-white/10 hover:text-white transition"
-                aria-label="Close dialog"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Target Media Card */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex items-center gap-3">
-              <div className="h-14 w-10 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                {deleteTarget.poster ? (
-                  <img
-                    src={posterUrl(deleteTarget.poster) ?? ''}
-                    alt={deleteTarget.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs text-white/30">
-                    🎬
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-sm text-white truncate">
-                  {deleteTarget.title} {deleteTarget.year ? `(${deleteTarget.year})` : ''}
-                </p>
-                <p className="font-mono text-[11px] text-white/40 truncate">{deleteTarget.filename}</p>
-              </div>
-            </div>
-
-            {/* What will be purged checklist */}
-            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 space-y-2 text-xs">
-              <span className="font-bold text-rose-300 block">Associated data that will be completely wiped:</span>
-              <ul className="space-y-1.5 text-white/70">
-                <li className="flex items-center gap-2">
-                  <span className="text-rose-400">✕</span>
-                  <span>Source video file on disk</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-rose-400">✕</span>
-                  <span>HLS transcode cache chunks &amp; live seek thumbnails</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-rose-400">✕</span>
-                  <span>Sidecar subtitles &amp; TMDb metadata records</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-rose-400">✕</span>
-                  <span>Client watch progress and resume points</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Admin PIN input if not yet unlocked */}
-            {!isAdmin ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 space-y-2">
-                <label className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
-                  <Icon name="shield" size={13} />
-                  Admin PIN Required (6361)
-                </label>
-                <input
-                  type="password"
-                  maxLength={8}
-                  value={modalPinInput}
-                  onChange={(e) => setModalPinInput(e.target.value)}
-                  placeholder="Enter 4-digit PIN…"
-                  className="w-full rounded-xl border border-rose-500/40 bg-obsidian-900/90 px-3.5 py-2 text-sm text-white placeholder-white/30 focus:border-rose-400 focus:outline-none"
-                />
-                <p className="text-[11px] text-white/50">
-                  Authorized as {email || 'Administrator'} or enter your Admin PIN to authorize deletion.
-                </p>
-              </div>
-            ) : null}
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 px-4 py-2 text-xs font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleting || (!isAdmin && !modalPinInput)}
-                onClick={() => void onConfirmDelete()}
-                className="rounded-full bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-rose-600/30 cursor-pointer disabled:opacity-40"
-              >
-                {deleting ? (
-                  <>
-                    <span className="h-3 w-3 rounded-full border-2 border-white/20 border-t-white animate-spin" />
-                    <span>Purging File…</span>
-                  </>
-                ) : (
-                  <>
-                    <Icon name="trash" size={13} />
-                    <span>Yes, Delete &amp; Purge Everything</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
 
       {/* Standalone Admin PIN Unlock Dialog */}
-      {pinModalOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
-        >
-          <div className="relative w-full max-w-sm rounded-3xl border border-brand-500/40 bg-obsidian-950 p-6 shadow-2xl space-y-4 animate-scale-in">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-brand-500/20 text-brand-400 border border-brand-500/40">
-                  <Icon name="shield" size={18} />
-                </span>
-                <div>
-                  <h3 className="font-bold text-white text-base">Unlock Admin Mode</h3>
-                  <p className="text-xs text-white/50">Enter your 4-digit PIN</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPinModalOpen(false)}
-                className="text-white/40 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            {pinModalError ? (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-                ⚠️ {pinModalError}
-              </div>
-            ) : null}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void handleVerifyPin(pinInputValue);
+      {pinModalOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-overlay-fade"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setPinModalOpen(false);
               }}
-              className="space-y-4"
             >
-              <input
-                type="password"
-                maxLength={8}
-                autoFocus
-                value={pinInputValue}
-                onChange={(e) => setPinInputValue(e.target.value)}
-                placeholder="Admin PIN…"
-                className="w-full text-center tracking-widest text-lg rounded-xl border border-white/20 bg-obsidian-900 py-2.5 px-4 text-white focus:border-brand-500 focus:outline-none"
-              />
+              <div
+                className="relative w-full max-w-sm my-auto rounded-3xl border border-brand-500/40 bg-obsidian-950 p-6 shadow-2xl space-y-4 animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-brand-500/20 text-brand-400 border border-brand-500/40">
+                      <Icon name="shield" size={18} />
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-white text-base">Unlock Admin Mode</h3>
+                      <p className="text-xs text-white/50">Enter your 4-digit PIN</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPinModalOpen(false)}
+                    className="text-white/40 hover:text-white cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
 
-              <div className="flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setPinModalOpen(false)}
-                  className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10"
+                {pinModalError ? (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+                    ⚠️ {pinModalError}
+                  </div>
+                ) : null}
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleVerifyPin(pinInputValue);
+                  }}
+                  className="space-y-4"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!pinInputValue}
-                  className="rounded-full brand-gradient px-5 py-2 text-xs font-bold text-white shadow-md disabled:opacity-40"
-                >
-                  Unlock
-                </button>
+                  <input
+                    type="password"
+                    maxLength={8}
+                    autoFocus
+                    value={pinInputValue}
+                    onChange={(e) => setPinInputValue(e.target.value)}
+                    placeholder="Admin PIN…"
+                    className="w-full text-center tracking-widest text-lg rounded-xl border border-white/20 bg-obsidian-900 py-2.5 px-4 text-white focus:border-brand-500 focus:outline-none"
+                  />
+
+                  <div className="flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setPinModalOpen(false)}
+                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!pinInputValue}
+                      className="rounded-full brand-gradient px-5 py-2 text-xs font-bold text-white shadow-md disabled:opacity-40 cursor-pointer"
+                    >
+                      Unlock
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

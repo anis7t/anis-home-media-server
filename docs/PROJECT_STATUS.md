@@ -51,6 +51,23 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 
+### 2026-10-14 — React Modal Portaling, CSS Transform Isolation & Manage Loading Latency Tracking
+
+**1. Modal Dialog Viewport Centering & CSS Transform Isolation (`ManagePage.tsx`, `CastModal.tsx`, `AppShell.tsx`, `index.css`)**
+- *The Issue:* Confirmation and unlock dialogs in `/manage` (Delete & Purge Confirmation, Admin PIN Unlock) were rendered "way off in position... very down", protruding into the bottom edge of the viewport with contents cut off below the screen.
+- *Root Cause:* Under W3C CSS Transforms Module Level 1, any non-`none` value for `transform` (including `translateY(0)` retained by `forwards` on `.animate-fade-in`) turns the container into the containing block for all `position: fixed` descendants. The modal backdrop (`fixed inset-0`) was bound to the multi-thousand-pixel height of `<ManagePage />` rather than the viewport, centering the modal thousands of pixels down the page.
+- *The Fix:*
+  - Portaled all dialogs directly to `document.body` via `createPortal(..., document.body)` in `ManagePage.tsx` (`deleteTarget` and `pinModalOpen`), `CastModal.tsx`, and `AppShell.tsx` (`privacyOpen`).
+  - Updated `@keyframes fadeIn` in `web/src/index.css` to terminate on `to { opacity: 1; transform: none; }`, ensuring container animations do not retain containing block traps indefinitely.
+  - Added `.animate-overlay-fade` and `.animate-scale-in` keyframes.
+  - Added `overflow-y-auto` to the backdrop and `my-auto` to the modal card for responsive centering and safe vertical scrolling without clipping on compact screens.
+  - Added an Escape key listener in `ManagePage.tsx` for accessible dismissal.
+  - Added `testTimeout: 15000` to `vite.config.ts` to prevent worker timeouts during Windows test executions.
+
+**2. Open Issue Tracked: Manage Page Loading Latency & Optimistic Transcode Status Desync (`docs/Current issues.md`)**
+- *Reported Issue:* When loading `/manage`, the page takes ~20 seconds to fetch and process storage audit data with zero loading skeleton or indicator. During this window, media files initially display optimistically as "On-Demand HLS" even when already fully transcoded, before abruptly updating to "Transcoded" once the audit payload completes.
+- *Backlog Action Item:* Add an intermediate loading shimmer/skeleton for the storage pool and media inventory cards, and preserve known transcode states during the audit fetch.
+
 ### 2026-10-14 — Cast Remote Control Hardening: Volume Anti-Reset, 3-State Mute, In-Cast Subtitles & Clean Disconnect
 
 **1. Volume Slider Reset & Anti-Jump (`app/services/cast_service.py`, `web/src/features/playback/CastBar.tsx`)**

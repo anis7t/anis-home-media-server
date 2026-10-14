@@ -18,6 +18,8 @@
 > - **Transcode Staging Gate & Previews:** 100% transcode completion gate, live dual AMD GPU telemetry, seekbar hover frame previews in paused & playing states.
 > - **LAN Cast & DLNA Remote Controller:** Continuous discovery polling on rescan (`scanning: true`), incremental device discovery updates, scrollable Cast subtitle menu for large catalogs (37+ tracks), receiver hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle delivery, live in-cast subtitle selector, and clean receiver app quit (`cast.quit_app()`).
 > - **Google Cast Receiver Hardening:** Direct IP/port host connection bypassing mDNS packet loss, CORS headers on WebVTT subtitle routes (`/subtitles/*`), and status polling guards preventing app relaunch cycles during receiver loading.
+> - **Modal Dialog Portaling & Viewport Isolation:** Portaled all modal dialogs (`ManagePage`, `CastModal`, `AppShell`) to `document.body` via `createPortal`, terminating `.animate-fade-in` on `transform: none;` to eliminate CSS transform containing block traps that offset fixed dialogs on long pages.
+> - **Known Backlog Item Tracked:** Manage page audit latency (~20s) with optimistic "On-Demand HLS" badge display during audit loading recorded in backlog for shimmer and state persistence.
 >
 > Legacy test migration is **COMPLETE**: `tests/test_selenium_seek_playback.py` and the full E2E Selenium suite (`tests/test_selenium_exhaustive_player_suite.py` and `tests/test_selenium_cast_integration.py`) pass 100%. Frontend Vitest stands at **151/151 passed**, backend Cast tests at **56/56 passed**, and subtitle upload/offset tests at **8/8 passed**.
 >

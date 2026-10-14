@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../../components/icons';
 import { getCastDevices, type CastDevice } from '../../lib/api/cast';
 
@@ -89,10 +90,10 @@ export function CastModal({
 
   if (!open) return null;
 
-  return (
+  const modal = (
     <div
       id="castModal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-overlay-fade"
       role="dialog"
       aria-modal="true"
       aria-labelledby="castModalTitle"
@@ -100,7 +101,7 @@ export function CastModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-md rounded-2xl sm:rounded-3xl bg-neutral-950/95 ring-1 ring-white/10 shadow-2xl p-6 sm:p-7 overflow-hidden text-white">
+      <div className="relative w-full max-w-md my-auto rounded-2xl sm:rounded-3xl bg-neutral-950/95 ring-1 ring-white/10 shadow-2xl p-6 sm:p-7 overflow-hidden text-white animate-scale-in">
         {/* Ambient glow */}
         <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-brand-600/20 blur-3xl" />
 
@@ -244,4 +245,6 @@ export function CastModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : modal;
 }
