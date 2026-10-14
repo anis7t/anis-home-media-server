@@ -6,4 +6,6 @@ pub mod preview;
 pub mod progress;
 pub mod subtitles;
 pub mod system;
+pub mod spa;
 pub mod transcode;
+pub mod proxy;

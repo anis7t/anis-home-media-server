@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub media_root: PathBuf,
     pub media_roots: Vec<PathBuf>,
     pub cache_dir: PathBuf,
+    pub static_dir: PathBuf,
+    pub flask_origin: String,
 }
 
 impl AppConfig {
@@ -55,6 +57,21 @@ impl AppConfig {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("E:\\MediaServer\\cache"));
 
+        let static_dir = env::var("MEDIA_SERVER_STATIC_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let rel_dist = PathBuf::from("web/dist");
+                if rel_dist.exists() {
+                    rel_dist
+                } else {
+                    PathBuf::from("E:\\MediaServer\\web\\dist")
+                }
+            });
+
+        let flask_origin = env::var("FLASK_ORIGIN")
+            .or_else(|_| env::var("MEDIA_SERVER_FLASK_ORIGIN"))
+            .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
+
         Self {
             database_url,
             host,
@@ -62,6 +79,8 @@ impl AppConfig {
             media_root,
             media_roots,
             cache_dir,
+            static_dir,
+            flask_origin,
         }
     }
 }

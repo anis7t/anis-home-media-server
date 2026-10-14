@@ -4,7 +4,7 @@ import config from '../../vite.config';
 import { backdropUrl, posterUrl } from '../lib/api/poster';
 import { directMediaUrl, hlsPlaylistUrl } from '../lib/api/media';
 
-const proxy = (config.server?.proxy ?? {}) as Record<string, unknown>;
+const proxy = (config.server?.proxy ?? {}) as Record<string, { target?: string }>;
 
 /**
  * Every server URL the app can construct must be proxied in development.
@@ -60,10 +60,50 @@ describe('dev proxy covers every server URL the app builds', () => {
   });
 });
 
-describe('dev proxy wiring', () => {
-  it('targets the Flask origin for every entry', () => {
+describe('dev proxy dual-origin wiring', () => {
+  it('routes Rust-migrated endpoints to the Rust engine origin (:8001)', () => {
+    const rustEndpoints = [
+      '/api/movies',
+      '/api/movie',
+      '/api/progress',
+      '/api/system-status',
+      '/api/seek-preview-meta',
+      '/api/subtitles',
+      '/api/upload-subtitle',
+      '/api/transcode-status',
+      '/api/transcodes',
+      '/api/health',
+      '/media',
+      '/hls',
+      '/seek-preview',
+      '/preview-vtt',
+      '/subtitles',
+    ];
+    for (const prefix of rustEndpoints) {
+      const entry = proxy[prefix];
+      expect(entry, `missing proxy configuration for ${prefix}`).toBeDefined();
+      expect(entry?.target).toMatch(/^http:\/\/127\.0\.0\.1:8001$|^http:\/\//);
+    }
+  });
+
+  it('routes unmigrated endpoints to the Flask origin (:8000)', () => {
+    const flaskEndpoints = [
+      '/api',
+      '/tmdb-poster',
+      '/tmdb-backdrop',
+      '/poster',
+      '/auth',
+    ];
+    for (const prefix of flaskEndpoints) {
+      const entry = proxy[prefix];
+      expect(entry, `missing proxy configuration for ${prefix}`).toBeDefined();
+      expect(entry?.target).toMatch(/^http:\/\/127\.0\.0\.1:8000$|^http:\/\//);
+    }
+  });
+
+  it('targets a valid loopback origin for every entry', () => {
     for (const entry of Object.values(proxy)) {
-      expect((entry as { target?: string }).target).toMatch(/^http:\/\/127\.0\.0\.1:8000$|^http:\/\//);
+      expect(entry.target).toMatch(/^http:\/\/127\.0\.0\.1:(8000|8001)$|^http:\/\//);
     }
   });
 });

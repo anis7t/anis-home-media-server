@@ -74,6 +74,14 @@
 > **Phase 2 (React) began 2026-10-12** on `feat/react-web-frontend`, scoped to
 > roadmap sequence items 1, 3 and 5. Acceptance thresholds are recorded in the
 > roadmap under *Phase 2 acceptance thresholds*. 172 frontend component/unit tests pass.
+>
+> **Phase 2R (React + Rust Integration & Hybrid Hosting) is COMPLETE (2026-10-15):**
+> Full static SPA hosting and reverse-proxy bridge delivered on `MediaServerRust` (port 8001):
+> - **Phase 2R-A**: Vite dual-origin dev proxy configured for seamless frontend development.
+> - **Phase 2R-B**: Native Axum static SPA embedding with SPA fallback routing to `index.html`.
+> - **Phase 2R-C**: Streaming reverse-proxy bridge (`rust/src/routes/proxy.rs`) forwarding unmigrated endpoints (`/tmdb-poster/*`, `/poster/*`, `/api/devices/*`, `/auth/*`, `/api/cast/*`, `/api/storage/*`) to Flask port 8000 with 57/57 Rust integration tests passing.
+> - **Phase 2R-D**: Live End-to-End browser verification (visible non-headless Chrome) validating catalog (53 titles), movie details, player direct streaming, devices dashboard, storage management gate, and user manual.
+> - **Production Service**: `MediaServerRust` deployed as persistent Windows Service with 1-click restart parity (`scripts/restart_rust_service.bat`).
 
 **Authoritative Roadmap:** [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)
 **Migration branch (now fully merged into `main`):** `feat/rust-react-postgres-migration`

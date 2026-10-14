@@ -1,4 +1,6 @@
-use media_server_api::{config::AppConfig, create_app, db, services::system_service::SystemService};
+use media_server_api::{
+    config::AppConfig, create_app_full, db, services::system_service::SystemService,
+};
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,7 +29,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let system_service = SystemService::new();
 
     // Build application router
-    let app = create_app(pool, system_service, config.media_roots, config.cache_dir);
+    let app = create_app_full(
+        pool,
+        system_service,
+        config.media_roots,
+        config.cache_dir,
+        Some(config.static_dir),
+        Some(config.flask_origin),
+    );
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     tracing::info!("Listening on http://{}", addr);

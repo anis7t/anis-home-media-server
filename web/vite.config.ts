@@ -4,7 +4,14 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 /**
- * Flask origin. Defaults to the deployed service on loopback.
+ * Rust native API & media streaming engine origin. Defaults to loopback:8001.
+ * Override with RUST_API_ORIGIN to point the dev server elsewhere.
+ */
+const RUST_ORIGIN = process.env.RUST_API_ORIGIN ?? 'http://127.0.0.1:8001';
+
+/**
+ * Flask origin for unmigrated services (OAuth, Cast, Devices, Storage, TMDb artwork proxy).
+ * Defaults to the deployed service on loopback:8000.
  * Override with MEDIA_SERVER_ORIGIN to point the dev server elsewhere.
  */
 const FLASK_ORIGIN = process.env.MEDIA_SERVER_ORIGIN ?? 'http://127.0.0.1:8000';
@@ -14,44 +21,46 @@ export default defineConfig({
   server: {
     port: 5173,
     /**
-     * Gate F: the dev server proxies the server-owned prefixes so the browser
+     * Gate F & Phase 2R: the dev server proxies server-owned prefixes so the browser
      * sees a single same-origin application.
      *
-     * This is why no CORS change is needed for `/api/*`. The server's
-     * `CORS_PATHS` in `app/routes/media.py` stays exactly `('/media/', '/hls/')`,
-     * which is the deliberate scoping documented in AGENTS.md for Cast
-     * receivers. Widening it to cover `/api/*` would have been the wrong fix:
-     * it would have changed production behaviour to suit a dev convenience.
+     * Dual-Origin Partitioning:
+     * - Migrated high-throughput endpoints (movies, streaming, HLS, live previews,
+     *   subtitles, progress, transcode status, and system telemetry) route directly
+     *   to the native Rust engine on :8001.
+     * - Unmigrated endpoints (OAuth authentication, Google Cast / DLNA, device fleet
+     *   management, admin storage policies, library scanner trigger, and TMDb artwork
+     *   caching) fall through to the Python Flask backend on :8000.
      *
-     * The list below was enumerated from the app's own `url_map` rather than
-     * written from memory. An earlier version listed only `/api`, `/media` and
-     * `/hls`, which left `/tmdb-poster/*` and `/poster/*` to Vite's SPA
-     * fallback: those requests returned HTTP 200 with `text/html`, every poster
-     * failed to decode, and the library rendered a wall of placeholders. A 200
-     * with the wrong content type is exactly the failure a status-code check
-     * cannot see, and mocked unit tests cannot see either - they never load an
-     * image.
+     * Vite evaluates proxy keys in insertion order. Specific `/api/*` prefixes directed
+     * to Rust MUST precede the catch-all `'/api'` fallback rule for Flask.
      *
      * Only these prefixes are proxied. Everything else is Vite, and the HMR
      * websocket is untouched.
      */
     proxy: {
-      // REST API.
+      // --- Rust Engine Migrated Endpoints (:8001) ---
+      '/api/movies': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/movie': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/progress': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/system-status': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/seek-preview-meta': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/subtitles': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/upload-subtitle': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/transcode-status': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/transcodes': { target: RUST_ORIGIN, changeOrigin: true },
+      '/api/health': { target: RUST_ORIGIN, changeOrigin: true },
+      '/media': { target: RUST_ORIGIN, changeOrigin: true },
+      '/hls': { target: RUST_ORIGIN, changeOrigin: true },
+      '/seek-preview': { target: RUST_ORIGIN, changeOrigin: true },
+      '/preview-vtt': { target: RUST_ORIGIN, changeOrigin: true },
+      '/subtitles': { target: RUST_ORIGIN, changeOrigin: true },
+
+      // --- Flask Backend Unmigrated Endpoints (:8000) ---
       '/api': { target: FLASK_ORIGIN, changeOrigin: true },
-      // Byte-range direct play.
-      '/media': { target: FLASK_ORIGIN, changeOrigin: true },
-      // HLS playlists and segments.
-      '/hls': { target: FLASK_ORIGIN, changeOrigin: true },
-      // Artwork. Missing these is invisible until the grid renders empty.
       '/tmdb-poster': { target: FLASK_ORIGIN, changeOrigin: true },
       '/tmdb-backdrop': { target: FLASK_ORIGIN, changeOrigin: true },
       '/poster': { target: FLASK_ORIGIN, changeOrigin: true },
-      // Seek-preview thumbnails and subtitles, used by later slices.
-      '/seek-preview': { target: FLASK_ORIGIN, changeOrigin: true },
-      '/subtitles': { target: FLASK_ORIGIN, changeOrigin: true },
-      // Sign-in. Without this the browser hits Vite's SPA fallback for
-      // /auth/google and gets index.html instead of the redirect to Google, so
-      // sign-in silently does nothing in development.
       '/auth': { target: FLASK_ORIGIN, changeOrigin: true },
     },
   },

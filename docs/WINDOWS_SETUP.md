@@ -68,7 +68,24 @@ Registered using NSSM (Non-Sucking Service Manager):
 - Restart: `scripts\restart_service.bat`
 - Health Diagnostic: `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1`
 
-### B. Cloudflared (Remote Named Tunnel)
+### B. MediaServerRust (Rust Axum API)
+Registered using NSSM (Non-Sucking Service Manager):
+- **Service Name:** `MediaServerRust`
+- **Display Name:** `Media Server API (Rust/Axum)`
+- **Startup Type:** `Automatic`
+- **Binary:** `E:\MediaServer\rust\target\release\media-server-api.exe`
+- **Port:** `8001`
+- **Working Directory:** `E:\MediaServer`
+- **Log Files:** `E:\MediaServer\logs\rust_api.log` and `rust_api_error.log` (auto-rotated at 10 MB)
+- **Environment:** Injected `PATH` containing PostgreSQL and WinGet links, `MEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`, `MEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`.
+
+#### Management Scripts:
+- Install / Register: `scripts\install_rust_service.bat` (Run as Administrator)
+- Uninstall: `scripts\uninstall_rust_service.bat` (Run as Administrator)
+- Restart (Auto-recompile + restart): `scripts\restart_rust_service.bat`
+- Health Diagnostic: `powershell -ExecutionPolicy Bypass -File scripts\rust_service_status.ps1`
+
+### C. Cloudflared (Remote Named Tunnel)
 Runs as an automatic Windows Service pointing to `C:\Users\<USER>\.cloudflared\config.yml`:
 - **Hostname:** `your-media-hostname.example.com`
 - **Origin:** `http://127.0.0.1:8000`
