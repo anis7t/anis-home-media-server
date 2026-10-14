@@ -53,6 +53,7 @@ export interface CastStatusResponse {
   readonly title?: string;
   readonly subtitles?: CastSubtitleTrack[];
   readonly active_subtitle_id?: number;
+  readonly subtitle_offset?: number;
   readonly error?: string;
 }
 
@@ -66,7 +67,7 @@ export function getCastDevices(
 export function startCastPlay(
   deviceId: string,
   filename: string,
-  options: { position?: number; origin?: string; signal?: AbortSignal } = {},
+  options: { position?: number; origin?: string; subtitle_offset?: number; signal?: AbortSignal } = {},
 ): Promise<CastPlayResponse> {
   return request<CastPlayResponse>('/api/cast/play', {
     method: 'POST',
@@ -75,6 +76,7 @@ export function startCastPlay(
       filename,
       position: options.position,
       origin: options.origin,
+      subtitle_offset: options.subtitle_offset,
     },
     signal: options.signal,
     timeoutMs: 15_000,
@@ -83,7 +85,7 @@ export function startCastPlay(
 
 export function sendCastControl(
   deviceId: string,
-  action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle',
+  action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle' | 'subtitle_offset',
   value?: number | boolean,
   options: { signal?: AbortSignal } = {},
 ): Promise<CastControlResponse> {

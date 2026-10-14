@@ -211,10 +211,11 @@ Implementation sequence:
 3. Home screen and media library grid.
 4. Search, sorting/filtering, genres, collections, and details pages.
 5. Browser player and persisted playback progress.
-6. Subtitle/audio selection and existing seek/resume behaviors.
+6. Subtitle/audio selection, 50ms sync/delay fine-tuning (`±50ms` / `±250ms` hotkeys and steppers), live WebVTT cue offset shifting, and manual subtitle upload.
 7. Administration pages for scans, queue visibility, server status, and settings.
 8. Responsive behavior, accessibility, and performance.
 9. Browser and end-to-end regression tests.
+10. Second-screen LAN casting (Google Cast & DLNA) with active remote HUD, hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle track delivery with in-flight offset sync (`?offset=` and `subtitle_offset` control), and receiver app quit.
 
 Target a polished, cinematic and responsive UI; do not treat template-to-component translation as the full design task.
 

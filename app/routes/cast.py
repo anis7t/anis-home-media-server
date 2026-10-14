@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 cast_bp = Blueprint('cast', __name__)
 
-ACTIONS = {'play', 'pause', 'stop', 'seek', 'volume', 'mute', 'subtitle'}
+ACTIONS = {'play', 'pause', 'stop', 'seek', 'volume', 'mute', 'subtitle', 'subtitle_offset'}
 
 
 def _payload() -> dict:
@@ -49,6 +49,7 @@ def cast_play():
         filename,
         position=_float_or_none(payload.get('position')),
         origin=resolve_origin(payload.get('origin'), request.host_url),
+        subtitle_offset=_float_or_none(payload.get('subtitle_offset')),
     )
     return jsonify(result), (200 if result.get('ok') else 400)
 
@@ -62,10 +63,12 @@ def cast_control():
         return jsonify({'ok': False, 'error': 'device_id is required'}), 400
     if action not in ACTIONS:
         return jsonify({'ok': False, 'error': f'action must be one of {sorted(ACTIONS)}'}), 400
-    if action in ('seek', 'volume'):
+    if action in ('seek', 'volume', 'subtitle_offset'):
         value = _float_or_none(payload.get('value'))
-        if value is None:
+        if value is None and action != 'subtitle_offset':
             return jsonify({'ok': False, 'error': f'{action} needs a numeric value'}), 400
+        if value is None and action == 'subtitle_offset':
+            value = 0.0
         if action == 'volume' and not 0 <= value <= 100:
             return jsonify({'ok': False, 'error': 'volume must be between 0 and 100'}), 400
     elif action == 'mute':

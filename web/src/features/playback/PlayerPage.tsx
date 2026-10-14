@@ -389,7 +389,10 @@ export function PlayerPage() {
         setPlaying(false);
       }
       const currentPos = position;
-      const res = await startCastPlay(device.id, decoded, { position: currentPos });
+      const res = await startCastPlay(device.id, decoded, {
+        position: currentPos,
+        subtitle_offset: subPrefs.offset || 0,
+      });
       if (res.ok) {
         setActiveCastDevice(device);
         setCastModalOpen(false);
@@ -405,7 +408,7 @@ export function PlayerPage() {
   };
 
   const handleCastControl = async (
-    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle',
+    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle' | 'subtitle_offset',
     value?: number | boolean,
   ) => {
     if (!activeCastDevice) return;
@@ -417,10 +420,19 @@ export function PlayerPage() {
       if (action === 'volume' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, volume: value, muted: false } : null));
       if (action === 'mute') setCastStatus((s) => (s ? { ...s, muted: Boolean(value) } : null));
       if (action === 'subtitle' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, active_subtitle_id: value } : null));
+      if (action === 'subtitle_offset' && typeof value === 'number') {
+        setCastStatus((s) => (s ? { ...s, subtitle_offset: value } : null));
+        updateSubPref('offset', value);
+      }
     } catch (err) {
       showHud(err instanceof Error ? err.message : 'Remote control failed');
     }
   };
+
+  const activeCastDeviceRef = useRef(activeCastDevice);
+  activeCastDeviceRef.current = activeCastDevice;
+  const handleCastControlRef = useRef(handleCastControl);
+  handleCastControlRef.current = handleCastControl;
 
   const handleDisconnectCast = async () => {
     if (!activeCastDevice) return;
@@ -1015,25 +1027,37 @@ export function PlayerPage() {
         return;
       }
 
-      // Subtitle Delay & Sync: z/Z (delay +100ms/+500ms), x/X (advance -100ms/-500ms)
+      // Subtitle Delay & Sync: z/Z (delay +50ms/+250ms), x/X (advance -50ms/-250ms)
       if (e.key === 'z') {
         e.preventDefault();
-        adjustOffset(0.1);
+        const next = adjustOffset(0.05);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
         return;
       }
       if (e.key === 'Z') {
         e.preventDefault();
-        adjustOffset(0.5);
+        const next = adjustOffset(0.25);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
         return;
       }
       if (e.key === 'x') {
         e.preventDefault();
-        adjustOffset(-0.1);
+        const next = adjustOffset(-0.05);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
         return;
       }
       if (e.key === 'X') {
         e.preventDefault();
-        adjustOffset(-0.5);
+        const next = adjustOffset(-0.25);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
         return;
       }
 

@@ -120,8 +120,8 @@ describe('SubtitleSettingsModal', () => {
     fireEvent.change(offsetRange, { target: { value: '0.5' } });
     expect(onUpdatePref).toHaveBeenCalledWith('offset', 0.5);
 
-    fireEvent.click(screen.getByRole('button', { name: /\+100ms/i }));
-    expect(onUpdatePref).toHaveBeenCalledWith('offset', 0.1);
+    fireEvent.click(screen.getByRole('button', { name: /\+50ms/i }));
+    expect(onUpdatePref).toHaveBeenCalledWith('offset', 0.05);
   });
 
   it('handles subtitle file selection and upload flow', async () => {

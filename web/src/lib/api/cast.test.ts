@@ -127,4 +127,23 @@ describe('cast api client', () => {
       action: 'stop',
     });
   });
+
+  it('sends subtitle_offset in startCastPlay and sendCastControl', async () => {
+    await startCastPlay('cast:1', 'movie.mp4', { position: 10, subtitle_offset: 0.25 });
+    const [, playOpts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(playOpts.body as string)).toEqual({
+      device_id: 'cast:1',
+      filename: 'movie.mp4',
+      position: 10,
+      subtitle_offset: 0.25,
+    });
+
+    await sendCastControl('cast:1', 'subtitle_offset', -0.15);
+    const [, ctrlOpts] = fetchMock.mock.calls[1];
+    expect(JSON.parse(ctrlOpts.body as string)).toEqual({
+      device_id: 'cast:1',
+      action: 'subtitle_offset',
+      value: -0.15,
+    });
+  });
 });

@@ -7,7 +7,7 @@ export interface CastBarProps {
   filename: string;
   status: CastStatusResponse | null;
   onControl: (
-    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle',
+    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle' | 'subtitle_offset',
     value?: number | boolean,
   ) => void;
   onDisconnect: () => void;
@@ -38,6 +38,7 @@ export function CastBar({
   const isMuted = status?.muted ?? false;
   const subtitles = status?.subtitles ?? [];
   const activeSubId = status?.active_subtitle_id ?? 0;
+  const subtitleOffset = status?.subtitle_offset ?? 0;
 
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
   const [scrubVolume, setScrubVolume] = useState<number | null>(null);
@@ -262,6 +263,62 @@ export function CastBar({
                           {activeSubId === track.track_id && <span className="text-brand-400">✓</span>}
                         </button>
                       ))}
+
+                      {/* Subtitle Sync / Delay Control */}
+                      <div className="mt-2 pt-2 border-t border-white/10 px-2 pb-1">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
+                            Sync / Delay
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span id="castSubOffsetVal" className="font-mono text-[11px] font-semibold text-brand-400">
+                              {subtitleOffset === 0
+                                ? '0.00s (Sync)'
+                                : subtitleOffset > 0
+                                ? `+${subtitleOffset.toFixed(2)}s`
+                                : `${subtitleOffset.toFixed(2)}s`}
+                            </span>
+                            {subtitleOffset !== 0 && (
+                              <button
+                                type="button"
+                                onClick={() => onControl('subtitle_offset', 0)}
+                                className="text-[9px] text-white/50 hover:text-white underline transition"
+                                title="Reset delay to 0.00s"
+                              >
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onControl(
+                                'subtitle_offset',
+                                Math.max(-5, Math.round((subtitleOffset - 0.05) * 100) / 100)
+                              )
+                            }
+                            title="Advance subtitles by 50ms (earlier)"
+                            className="flex-1 h-6 flex items-center justify-center rounded-lg border border-white/15 bg-white/5 text-[11px] font-mono text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
+                          >
+                            -50ms
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onControl(
+                                'subtitle_offset',
+                                Math.min(5, Math.round((subtitleOffset + 0.05) * 100) / 100)
+                              )
+                            }
+                            title="Delay subtitles by 50ms (later)"
+                            className="flex-1 h-6 flex items-center justify-center rounded-lg border border-white/15 bg-white/5 text-[11px] font-mono text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
+                          >
+                            +50ms
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </>
                 )}

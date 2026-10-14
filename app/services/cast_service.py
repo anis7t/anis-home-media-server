@@ -549,6 +549,8 @@ def dlna_command(device: dict, action: str, value=None) -> None:
             control, RENDERING_ST, 'SetMute',
             {'InstanceID': 0, 'Channel': 'Master', 'DesiredMute': 1 if value else 0},
         )
+    elif action == 'subtitle':
+        pass
     else:
         raise ValueError(f'unsupported action: {action}')
 
@@ -1054,7 +1056,15 @@ class CastRegistry:
             self._active.pop(device_id, None)
 
     # -- actions
-    def play(self, device_id: str, filename: str, position: float | None = None, origin: str | None = None) -> dict:
+    def play(
+        self,
+        device_id: str,
+        filename: str,
+        position: float | None = None,
+        origin: str | None = None,
+        subtitle_offset: float | None = None,
+        active_subtitle_id: int | None = None,
+    ) -> dict:
         device = self.resolve_device(device_id)
         if device is None:
             return {'ok': False, 'error': 'Unknown device - rescan and try again.'}
@@ -1086,6 +1096,7 @@ class CastRegistry:
         url = build_media_url(path, origin=origin, hls=use_hls)
         base_origin = validate_origin(origin or '') or f'http://{lan_ip()}:{server_port()}'
         sub_tracks = []
+        offset_val = float(subtitle_offset or 0.0)
         try:
             from app.services import subtitles_service
 
@@ -1093,6 +1104,9 @@ class CastRegistry:
             for idx, st in enumerate(raw_subs, start=1):
                 src = st.get('src', '')
                 full_src = src if src.startswith(('http://', 'https://')) else f'{base_origin}{src}'
+                if offset_val != 0.0:
+                    sep = '&' if '?' in full_src else '?'
+                    full_src = f'{full_src}{sep}offset={offset_val:.3f}'
                 sub_tracks.append({
                     'track_id': idx,
                     'label': st.get('label') or st.get('name') or f'Track {idx}',
@@ -1103,20 +1117,25 @@ class CastRegistry:
         except Exception as exc:  # noqa: BLE001
             log.debug('Failed to gather cast subtitles for %s: %s', path, exc)
 
-        default_sub_id = next((s['track_id'] for s in sub_tracks if s.get('default')), 0)
-        if not default_sub_id and sub_tracks:
-            default_sub_id = sub_tracks[0]['track_id']
+        if active_subtitle_id is not None:
+            selected_sub_id = int(active_subtitle_id)
+        else:
+            selected_sub_id = next((s['track_id'] for s in sub_tracks if s.get('default')), 0)
+            if not selected_sub_id and sub_tracks:
+                selected_sub_id = sub_tracks[0]['track_id']
 
         with self._lock:
             self._active[device_id] = {
                 'filename': filename,
+                'origin': origin,
                 'url': url,
                 'title': title,
+                'subtitle_offset': offset_val,
                 'subtitles': [
                     {'track_id': s['track_id'], 'label': s['label'], 'lang': s['lang']}
                     for s in sub_tracks
                 ],
-                'active_subtitle_id': default_sub_id,
+                'active_subtitle_id': selected_sub_id,
             }
 
         def _run():
@@ -1131,7 +1150,7 @@ class CastRegistry:
                     cast_load(
                         device, url, title, content_type, position,
                         subtitles=sub_tracks,
-                        active_subtitle_id=default_sub_id,
+                        active_subtitle_id=selected_sub_id,
                     )
                 with self._lock:
                     self._errors.pop(f'play:{device_id}', None)
@@ -1147,6 +1166,31 @@ class CastRegistry:
         device = self.resolve_device(device_id)
         if device is None:
             return {'ok': False, 'error': 'Unknown device - rescan and try again.'}
+
+        if action == 'subtitle_offset':
+            new_offset = float(value or 0.0)
+            with self._lock:
+                active = self._active.get(device_id)
+                if not active:
+                    return {'ok': False, 'error': 'No active playback'}
+                filename = active['filename']
+                origin = active.get('origin')
+                active_sub_id = active.get('active_subtitle_id', 0)
+            cur_pos = 0.0
+            try:
+                st = self.status(device_id)
+                cur_pos = st.get('position', 0.0)
+            except Exception:
+                pass
+            return self.play(
+                device_id,
+                filename,
+                position=cur_pos,
+                origin=origin,
+                subtitle_offset=new_offset,
+                active_subtitle_id=active_sub_id,
+            )
+
         try:
             if device['kind'] == 'dlna':
                 dlna_command(device, action, value)

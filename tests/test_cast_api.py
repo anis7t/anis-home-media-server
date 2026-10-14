@@ -586,3 +586,78 @@ def test_device_listing_keeps_the_shared_response_shape(client):
     assert body['ok'] is True
     assert isinstance(body['devices'], list)
     assert 'scanning' in body and 'errors' in body
+
+
+def test_cast_play_with_subtitle_offset(client, monkeypatch):
+    """Subtitle offset is passed in play payload and appended to subtitle track URLs."""
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, "_cast_connect", lambda device, timeout=12.0: fake)
+
+    reg = cs.CastRegistry()
+    reg._devices = {"cast:test": {"id": "cast:test", "kind": "cast", "name": "Cast TV", "model": "", "host": "192.168.1.60"}}
+    reg._scanned_at = cs.time.time()
+    monkeypatch.setattr(cs, "_REGISTRY", reg)
+
+    from app.services import subtitles_service
+    monkeypatch.setattr(
+        subtitles_service,
+        "tracks",
+        lambda path, m=None: [{"src": "/subtitles/Castable_Movie.2026.mp4/sub.vtt", "label": "English", "lang": "en", "default": True}],
+    )
+
+    response = client.post(
+        "/api/cast/play",
+        json={"device_id": "cast:test", "filename": "Castable_Movie.2026.mp4", "subtitle_offset": 0.25},
+    )
+    assert response.status_code == 200
+    for _ in range(50):
+        if fake.media_controller.calls:
+            break
+        cs.time.sleep(0.05)
+    assert fake.media_controller.calls
+    load_call = [c for c in fake.media_controller.calls if c[0] == 'play_media'][0]
+    media_info = load_call[3].get('media_info', {})
+    tracks = media_info.get('tracks', [])
+    assert len(tracks) == 1
+    assert "offset=0.250" in tracks[0]['trackContentId']
+
+    fake.media_controller.status = _FakeStatus()
+    status_resp = client.get("/api/cast/status?device_id=cast:test").get_json()
+    assert status_resp["ok"] is True
+    assert status_resp["subtitle_offset"] == pytest.approx(0.25)
+
+
+def test_cast_control_subtitle_offset_reloads_media(client, monkeypatch):
+    """Sending subtitle_offset action in cast control reloads playback with updated offset."""
+    fake = _FakeCast()
+    monkeypatch.setattr(cs, "_cast_connect", lambda device, timeout=12.0: fake)
+
+    reg = cs.CastRegistry()
+    reg._devices = {"cast:test": {"id": "cast:test", "kind": "cast", "name": "Cast TV", "model": "", "host": "192.168.1.60"}}
+    reg._scanned_at = cs.time.time()
+    monkeypatch.setattr(cs, "_REGISTRY", reg)
+
+    from app.services import subtitles_service
+    monkeypatch.setattr(
+        subtitles_service,
+        "tracks",
+        lambda path, m=None: [{"src": "/subtitles/Castable_Movie.2026.mp4/sub.vtt", "label": "English", "lang": "en", "default": True}],
+    )
+
+    client.post(
+        "/api/cast/play",
+        json={"device_id": "cast:test", "filename": "Castable_Movie.2026.mp4", "position": 50},
+    )
+    fake.media_controller.status = _FakeStatus(current_time=65.0)
+
+    ctrl_resp = client.post(
+        "/api/cast/control",
+        json={"device_id": "cast:test", "action": "subtitle_offset", "value": -0.15},
+    )
+    assert ctrl_resp.status_code == 200
+    assert ctrl_resp.get_json()["ok"] is True
+
+    status_resp = client.get("/api/cast/status?device_id=cast:test").get_json()
+    assert status_resp["ok"] is True
+    assert status_resp["subtitle_offset"] == pytest.approx(-0.15)
+

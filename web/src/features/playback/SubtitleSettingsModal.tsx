@@ -312,10 +312,10 @@ export function SubtitleSettingsModal({
               <div className="flex items-center gap-2">
                 <span id="subOffsetVal" className="font-mono text-xs font-semibold text-brand-400">
                   {prefs.offset === 0
-                    ? '0.0s (In Sync)'
+                    ? '0.00s (In Sync)'
                     : prefs.offset > 0
-                    ? `+${prefs.offset.toFixed(1)}s (Delayed)`
-                    : `${prefs.offset.toFixed(1)}s (Advanced)`}
+                    ? `+${prefs.offset.toFixed(2)}s (Delayed)`
+                    : `${prefs.offset.toFixed(2)}s (Advanced)`}
                 </span>
                 {prefs.offset !== 0 && (
                   <button
@@ -335,20 +335,20 @@ export function SubtitleSettingsModal({
                 onClick={() =>
                   onUpdatePref(
                     'offset',
-                    Math.max(-5, Math.round(((prefs.offset || 0) - 0.1) * 10) / 10)
+                    Math.max(-5, Math.round(((prefs.offset || 0) - 0.05) * 100) / 100)
                   )
                 }
-                title="Advance by 100ms (earlier)"
+                title="Advance by 50ms (earlier)"
                 className="flex h-7 px-2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
               >
-                -100ms
+                -50ms
               </button>
               <input
                 id="subOffsetRange"
                 type="range"
                 min={-3}
                 max={3}
-                step={0.1}
+                step={0.05}
                 value={prefs.offset || 0}
                 onChange={(e) => onUpdatePref('offset', Number(e.target.value))}
                 className="flex-1 h-1.5 rounded-full appearance-none bg-white/20 accent-brand-500 cursor-pointer"
@@ -358,17 +358,17 @@ export function SubtitleSettingsModal({
                 onClick={() =>
                   onUpdatePref(
                     'offset',
-                    Math.min(5, Math.round(((prefs.offset || 0) + 0.1) * 10) / 10)
+                    Math.min(5, Math.round(((prefs.offset || 0) + 0.05) * 100) / 100)
                   )
                 }
-                title="Delay by 100ms (later)"
+                title="Delay by 50ms (later)"
                 className="flex h-7 px-2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition active:scale-95"
               >
-                +100ms
+                +50ms
               </button>
             </div>
             <p className="text-[11px] text-white/40 mt-1">
-              Hotkeys: <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">Z</kbd> to delay (+100ms), <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">X</kbd> to advance (-100ms).
+              Hotkeys: <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">Z</kbd> to delay (+50ms), <kbd className="font-mono bg-white/10 px-1 py-0.5 rounded text-white/70">X</kbd> to advance (-50ms).
             </p>
           </div>
 

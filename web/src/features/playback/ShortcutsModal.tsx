@@ -122,7 +122,7 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
             <span className="sc-keys">
               <kbd>z</kbd> / <kbd>x</kbd>
             </span>
-            <span>Subtitle Delay ±100ms</span>
+            <span>Subtitle Delay ±50ms</span>
           </div>
           <div className="sc-row">
             <span className="sc-keys">

@@ -387,19 +387,24 @@ export function useSubtitles(
   );
 
   const adjustOffset = useCallback(
-    (delta: number) => {
+    (delta = 0.05) => {
+      let finalOffset = 0;
       setPrefs((prev) => {
-        const nextOffset = Math.round(((prev.offset || 0) + delta) * 10) / 10;
+        const nextOffset = Math.round(((prev.offset || 0) + delta) * 100) / 100;
         const clamped = Math.max(-5, Math.min(5, nextOffset));
+        finalOffset = clamped;
         const next = { ...prev, offset: clamped };
         savePrefs(next);
         if (onShowHud) {
-          const sign = clamped > 0 ? `+${clamped.toFixed(1)}s` : `${clamped.toFixed(1)}s`;
+          const ms = Math.round(clamped * 1000);
+          const sign = clamped > 0 ? `+${clamped.toFixed(2)}s` : `${clamped.toFixed(2)}s`;
+          const msStr = ms > 0 ? `+${ms}ms` : `${ms}ms`;
           const status = clamped > 0 ? ' (Delayed)' : clamped < 0 ? ' (Advanced)' : ' (In Sync)';
-          onShowHud(`💬 Subtitle Sync: ${sign}${status}`);
+          onShowHud(`💬 Subtitle Sync: ${sign} (${msStr})${status}`);
         }
         return next;
       });
+      return finalOffset;
     },
     [onShowHud]
   );

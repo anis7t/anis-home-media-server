@@ -233,4 +233,43 @@ describe('CastBar', () => {
     fireEvent.click(disconnectBtn);
     expect(handleDisconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('handles subtitle offset steppers (-50ms, +50ms) and reset in cast subtitle menu', () => {
+    const handleControl = vi.fn();
+    const statusWithSubs: CastStatusResponse = {
+      ...mockStatus,
+      subtitles: [
+        { track_id: 1, label: 'English', lang: 'en' },
+      ],
+      active_subtitle_id: 1,
+      subtitle_offset: 0.1,
+    };
+
+    render(
+      <CastBar
+        device={mockDevice}
+        filename="Interstellar.2014.mp4"
+        status={statusWithSubs}
+        onControl={handleControl}
+        onDisconnect={vi.fn()}
+      />,
+    );
+
+    const subBtn = screen.getByRole('button', { name: /cast subtitles/i });
+    fireEvent.click(subBtn);
+
+    expect(screen.getByText('+0.10s')).toBeInTheDocument();
+
+    const advanceBtn = screen.getByRole('button', { name: /-50ms/i });
+    fireEvent.click(advanceBtn);
+    expect(handleControl).toHaveBeenCalledWith('subtitle_offset', 0.05);
+
+    const delayBtn = screen.getByRole('button', { name: /\+50ms/i });
+    fireEvent.click(delayBtn);
+    expect(handleControl).toHaveBeenCalledWith('subtitle_offset', 0.15);
+
+    const resetBtn = screen.getByRole('button', { name: /reset/i });
+    fireEvent.click(resetBtn);
+    expect(handleControl).toHaveBeenCalledWith('subtitle_offset', 0);
+  });
 });
