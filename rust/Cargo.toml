@@ -6,7 +6,7 @@ authors = ["Anis Parvez <anis@anisparvez.in>"]
 description = "High-performance Rust API foundation for Anis' Home Media Server"
 
 [dependencies]
-axum = { version = "0.8", features = ["json"] }
+axum = { version = "0.8", features = ["json", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }

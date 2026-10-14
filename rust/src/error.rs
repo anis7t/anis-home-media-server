@@ -12,6 +12,7 @@ pub enum AppError {
     BadRequest(String),
     Forbidden(String),
     Unauthorized(String),
+    UnsupportedMediaType(String),
     Internal(String),
     Database(sqlx::Error),
 }
@@ -23,6 +24,7 @@ impl std::fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "Bad Request: {}", msg),
             AppError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
+            AppError::UnsupportedMediaType(msg) => write!(f, "Unsupported Media Type: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal Error: {}", msg),
             AppError::Database(err) => write!(f, "Database Error: {}", err),
         }
@@ -59,6 +61,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            AppError::UnsupportedMediaType(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::Database(err) => {
                 tracing::error!("Database query failed: {:?}", err);

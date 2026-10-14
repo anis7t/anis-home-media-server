@@ -49,6 +49,23 @@ pub fn create_app(
                 .head(routes::media::media_handler)
                 .options(routes::media::media_handler),
         )
+        .with_state(roots_arc.clone());
+
+    let subtitle_routes = Router::new()
+        .route(
+            "/subtitles/{*path}",
+            get(routes::subtitles::subtitle_stream_handler)
+                .head(routes::subtitles::subtitle_stream_handler)
+                .options(routes::subtitles::subtitle_stream_handler),
+        )
+        .route(
+            "/api/subtitles/{*filename}",
+            get(routes::subtitles::list_subtitles_handler),
+        )
+        .route(
+            "/api/upload-subtitle/{*filename}",
+            axum::routing::post(routes::subtitles::upload_subtitle_handler),
+        )
         .with_state(roots_arc);
 
     Router::new()
@@ -58,6 +75,7 @@ pub fn create_app(
         .merge(movie_routes)
         .merge(progress_routes)
         .merge(media_routes)
+        .merge(subtitle_routes)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }
