@@ -20,11 +20,13 @@ static TEST_COUNTER: AtomicUsize = AtomicUsize::new(100);
 struct TestSubtitleHarness {
     app: axum::Router,
     test_dir: PathBuf,
+    cache_dir: PathBuf,
 }
 
 impl Drop for TestSubtitleHarness {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.test_dir);
+        let _ = fs::remove_dir_all(&self.cache_dir);
     }
 }
 
@@ -35,7 +37,9 @@ async fn setup_subtitle_test() -> TestSubtitleHarness {
         .unwrap()
         .as_nanos();
     let test_dir = std::env::temp_dir().join(format!("rust_sub_test_{}_{}_{}", std::process::id(), now, count));
+    let cache_dir = std::env::temp_dir().join(format!("rust_sub_cache_{}_{}_{}", std::process::id(), now, count));
     fs::create_dir_all(&test_dir).expect("Failed to create test directory");
+    fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
     let config = AppConfig::from_env();
     let pool = db::create_pool(&config.database_url)
@@ -44,9 +48,9 @@ async fn setup_subtitle_test() -> TestSubtitleHarness {
     let system_service = SystemService::new();
 
     let roots = vec![test_dir.clone()];
-    let app = create_app(pool, system_service, roots, config.cache_dir);
+    let app = create_app(pool, system_service, roots, cache_dir.clone());
 
-    TestSubtitleHarness { app, test_dir }
+    TestSubtitleHarness { app, test_dir, cache_dir }
 }
 
 #[test]
@@ -352,4 +356,119 @@ async fn test_subtitle_traversal_denied() {
             || res.status() == StatusCode::NOT_FOUND
             || res.status() == StatusCode::BAD_REQUEST
     );
+}
+
+#[test]
+fn test_compute_opensubtitles_hash_under_size() {
+    let tmp = std::env::temp_dir().join(format!("small_{}.bin", std::process::id()));
+    fs::write(&tmp, b"small payload").unwrap();
+    let res = SubtitleService::compute_opensubtitles_hash(&tmp);
+    let _ = fs::remove_file(&tmp);
+    assert_eq!(res, None);
+}
+
+#[test]
+fn test_compute_opensubtitles_hash_exact() {
+    let tmp = std::env::temp_dir().join(format!("dummy_video_{}.bin", std::process::id()));
+    let dummy = vec![1u8; 131072]; // 128KB exactly
+    fs::write(&tmp, &dummy).unwrap();
+    let res = SubtitleService::compute_opensubtitles_hash(&tmp);
+    let _ = fs::remove_file(&tmp);
+    assert!(res.is_some());
+    let (hash, size) = res.unwrap();
+    assert_eq!(size, 131072);
+    assert_eq!(hash.len(), 16);
+}
+
+#[tokio::test]
+async fn test_embedded_subtitle_cached_serving() {
+    use sha2::{Digest, Sha256};
+    let harness = setup_subtitle_test().await;
+
+    let video_file = harness.test_dir.join("matrix.mkv");
+    fs::write(&video_file, b"fake video bytes").unwrap();
+
+    let canon_video = video_file.canonicalize().unwrap();
+    let meta = fs::metadata(&canon_video).unwrap();
+    let size = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+
+    let stamp = {
+        let path_str = canon_video.to_string_lossy();
+        let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+        format!("{}:{}:{}", clean_path, size, mtime)
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(stamp.as_bytes());
+    let short_hash = &hex::encode(hasher.finalize())[..16];
+
+    let embed_dir = harness.cache_dir.join("subtitles").join("embedded");
+    fs::create_dir_all(&embed_dir).unwrap();
+    let vtt_file = embed_dir.join(format!("{}_2.vtt", short_hash));
+    fs::write(&vtt_file, b"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFollow the white rabbit.\n").unwrap();
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/subtitles/embedded/matrix.mkv/2.vtt")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = harness.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/vtt; charset=utf-8"
+    );
+
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(text.contains("Follow the white rabbit."));
+}
+
+#[tokio::test]
+async fn test_online_subtitle_cached_serving() {
+    use sha2::{Digest, Sha256};
+    let harness = setup_subtitle_test().await;
+
+    let video_file = harness.test_dir.join("space.mp4");
+    fs::write(&video_file, b"fake video bytes").unwrap();
+
+    let canon_video = video_file.canonicalize().unwrap();
+    let meta = fs::metadata(&canon_video).unwrap();
+    let size = meta.len();
+    let stamp = {
+        let path_str = canon_video.to_string_lossy();
+        let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+        format!("{}:{}", clean_path, size)
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(stamp.as_bytes());
+    let short_hash = &hex::encode(hasher.finalize())[..16];
+
+    let online_dir = harness.cache_dir.join("subtitles").join("online");
+    fs::create_dir_all(&online_dir).unwrap();
+    let vtt_file = online_dir.join(format!("{}.vtt", short_hash));
+    fs::write(&vtt_file, b"WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nI am sorry Dave, I cannot do that.\n").unwrap();
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/subtitles/online/space.mp4.vtt")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = harness.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/vtt; charset=utf-8"
+    );
+
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(text.contains("I am sorry Dave, I cannot do that."));
 }

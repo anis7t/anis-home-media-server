@@ -27,7 +27,7 @@ impl PathResolver {
             }
         }
 
-        // Try candidate paths across media roots
+        // 1. Try direct candidate paths across media roots
         for root in roots {
             let candidate = root.join(rel_path);
             if candidate.is_file() {
@@ -39,6 +39,51 @@ impl PathResolver {
             }
         }
 
+        // 2. Fallback: Search media roots recursively if referenced by filename
+        if let Some(target_os_name) = rel_path.file_name() {
+            if let Some(target_name) = target_os_name.to_str() {
+                for root in roots {
+                    if let Ok(canon_root) = root.canonicalize() {
+                        if let Some(found) = Self::find_in_dir(&canon_root, target_name, 0) {
+                            return Ok(found);
+                        }
+                    }
+                }
+            }
+        }
+
         Err(AppError::NotFound(format!("Media file '{}' not found", filename)))
+    }
+
+    fn find_in_dir(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
+        if depth > 4 {
+            return None;
+        }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut subdirs = Vec::new();
+            for entry in entries.flatten() {
+                if let Ok(ft) = entry.file_type() {
+                    if ft.is_file() {
+                        if entry.file_name() == target {
+                            if let Ok(canon) = entry.path().canonicalize() {
+                                return Some(canon);
+                            }
+                        }
+                    } else if ft.is_dir() {
+                        let name = entry.file_name();
+                        let s = name.to_string_lossy();
+                        if !s.starts_with('.') && s != "node_modules" {
+                            subdirs.push(entry.path());
+                        }
+                    }
+                }
+            }
+            for sub in subdirs {
+                if let Some(found) = Self::find_in_dir(&sub, target, depth + 1) {
+                    return Some(found);
+                }
+            }
+        }
+        None
     }
 }

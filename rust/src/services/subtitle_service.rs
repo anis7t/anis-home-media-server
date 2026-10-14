@@ -1,8 +1,11 @@
 use crate::error::AppError;
-use crate::models::subtitle::SubtitleTrack;
+use crate::models::subtitle::{EmbeddedSubtitleStream, SubtitleTrack};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
 pub struct SubtitleService;
 
@@ -422,6 +425,446 @@ impl SubtitleService {
                         default: false,
                     });
                 }
+            }
+        }
+
+        // Mark the first English track as default
+        for t in &mut results {
+            if t.lang == "en" {
+                t.default = true;
+                break;
+            }
+        }
+
+        results
+    }
+
+    /// Compute 64-bit OpenSubtitles checksum hash for a media file.
+    pub fn compute_opensubtitles_hash(path: &Path) -> Option<(String, u64)> {
+        let file = fs::File::open(path).ok()?;
+        let metadata = file.metadata().ok()?;
+        let filesize = metadata.len();
+        if filesize < 65536 * 2 {
+            return None;
+        }
+
+        let mut hash_val: u64 = filesize;
+        let mut reader = BufReader::new(file);
+        let mut buf = [0u8; 8];
+
+        // Read first 64KB (8192 64-bit unsigned words in little-endian)
+        for _ in 0..(65536 / 8) {
+            reader.read_exact(&mut buf).ok()?;
+            let val = u64::from_le_bytes(buf);
+            hash_val = hash_val.wrapping_add(val);
+        }
+
+        // Read last 64KB
+        reader.seek(SeekFrom::Start(filesize - 65536)).ok()?;
+        for _ in 0..(65536 / 8) {
+            reader.read_exact(&mut buf).ok()?;
+            let val = u64::from_le_bytes(buf);
+            hash_val = hash_val.wrapping_add(val);
+        }
+
+        Some((format!("{:016x}", hash_val), filesize))
+    }
+
+    /// Fetch online English subtitles from OpenSubtitles via hash or movie title, saving to cache.
+    pub async fn fetch_online_subtitle(
+        video_path: &Path,
+        title: &str,
+        cache_dir: &Path,
+    ) -> Option<PathBuf> {
+        let meta = fs::metadata(video_path).ok()?;
+        let size = meta.len();
+        let path_str = video_path.to_string_lossy();
+        let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+        let stamp = format!("{}:{}", clean_path, size);
+        let mut hasher = Sha256::new();
+        hasher.update(stamp.as_bytes());
+        let short_hash = &hex::encode(hasher.finalize())[..16];
+
+        let online_cache_dir = cache_dir.join("subtitles").join("online");
+        tokio::fs::create_dir_all(&online_cache_dir).await.ok()?;
+        let target = online_cache_dir.join(format!("{}.vtt", short_hash));
+        if target.is_file() {
+            if let Ok(m) = target.metadata() {
+                if m.len() > 0 {
+                    return Some(target);
+                }
+            }
+        }
+
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+
+        let mut download_url: Option<String> = None;
+
+        // 1. Search by 64-bit MovieHash
+        if let Some((hash, sz)) = Self::compute_opensubtitles_hash(video_path) {
+            let url = format!(
+                "https://rest.opensubtitles.org/search/moviebytesize-{}/moviehash-{}/sublanguageid-eng",
+                sz, hash
+            );
+            if let Ok(res) = client
+                .get(&url)
+                .header("User-Agent", "TemporaryUserAgent")
+                .send()
+                .await
+            {
+                if res.status().is_success() {
+                    if let Ok(items) = res.json::<serde_json::Value>().await {
+                        if let Some(arr) = items.as_array() {
+                            for item in arr {
+                                if let Some(link) = item.get("SubDownloadLink").and_then(|l| l.as_str()) {
+                                    download_url = Some(link.to_string());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback search by title
+        if download_url.is_none() && !title.is_empty() {
+            let clean_title: String = title
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                .collect();
+            let encoded_title = clean_title.trim().replace(' ', "%20");
+            if !encoded_title.is_empty() {
+                let url = format!(
+                    "https://rest.opensubtitles.org/search/query-{}/sublanguageid-eng",
+                    encoded_title
+                );
+                if let Ok(res) = client
+                    .get(&url)
+                    .header("User-Agent", "TemporaryUserAgent")
+                    .send()
+                    .await
+                {
+                    if res.status().is_success() {
+                        if let Ok(items) = res.json::<serde_json::Value>().await {
+                            if let Some(arr) = items.as_array() {
+                                for item in arr {
+                                    if let Some(link) = item.get("SubDownloadLink").and_then(|l| l.as_str()) {
+                                        download_url = Some(link.to_string());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Download & decompress
+        let dl = download_url?;
+        let dl_res = client
+            .get(&dl)
+            .header("User-Agent", "TemporaryUserAgent")
+            .send()
+            .await
+            .ok()?;
+
+        if !dl_res.status().is_success() {
+            return None;
+        }
+
+        let raw_bytes = dl_res.bytes().await.ok()?;
+
+        // Decompress gzip payload or fallback to raw string
+        let text = {
+            let mut decoder = flate2::read::GzDecoder::new(&raw_bytes[..]);
+            let mut decompressed = String::new();
+            if decoder.read_to_string(&mut decompressed).is_ok() && !decompressed.is_empty() {
+                decompressed
+            } else {
+                String::from_utf8_lossy(&raw_bytes).to_string()
+            }
+        };
+
+        let vtt = Self::srt_to_vtt(&text, 0.0);
+        let temp_target = online_cache_dir.join(format!("{}.part.vtt", short_hash));
+        tokio::fs::write(&temp_target, vtt.as_bytes()).await.ok()?;
+        tokio::fs::rename(&temp_target, &target).await.ok()?;
+
+        Some(target)
+    }
+
+    /// Probe container media streams via ffprobe for embedded subtitle tracks.
+    pub async fn probe_embedded_subtitles(video_path: &Path) -> Vec<EmbeddedSubtitleStream> {
+        let output = match tokio::process::Command::new("ffprobe")
+            .args(&[
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                video_path.to_str().unwrap_or(""),
+            ])
+            .output()
+            .await
+        {
+            Ok(out) if out.status.success() => out,
+            _ => return Vec::new(),
+        };
+
+        let parsed: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+            Ok(v) => v,
+            Err(_) => return Vec::new(),
+        };
+
+        let streams = match parsed.get("streams").and_then(|s| s.as_array()) {
+            Some(s) => s,
+            None => return Vec::new(),
+        };
+
+        let supported_codecs = ["subrip", "webvtt", "mov_text", "ass", "ssa", "text"];
+        let mut results = Vec::new();
+
+        for s in streams {
+            if s.get("codec_type").and_then(|c| c.as_str()) != Some("subtitle") {
+                continue;
+            }
+            let codec = s
+                .get("codec_name")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !supported_codecs.contains(&codec.as_str()) {
+                continue;
+            }
+            let index = match s.get("index").and_then(|i| i.as_u64()) {
+                Some(idx) => idx as usize,
+                None => continue,
+            };
+
+            let tags = s.get("tags");
+            let language = tags
+                .and_then(|t| t.get("language"))
+                .and_then(|l| l.as_str())
+                .unwrap_or("und")
+                .to_lowercase();
+            let title = tags
+                .and_then(|t| t.get("title"))
+                .and_then(|t| t.as_str())
+                .map(String::from);
+
+            results.push(EmbeddedSubtitleStream {
+                index,
+                codec_name: codec,
+                language,
+                title,
+            });
+        }
+
+        results
+    }
+
+    /// Extract embedded subtitle track from container via ffmpeg, cached as WebVTT.
+    pub async fn extract_embedded_subtitle(
+        video_path: &Path,
+        stream_idx: usize,
+        cache_dir: &Path,
+    ) -> Result<PathBuf, AppError> {
+        let meta = fs::metadata(video_path).map_err(|e| {
+            AppError::NotFound(format!("Video file metadata not found: {}", e))
+        })?;
+        let size = meta.len();
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+
+        let stamp = {
+            let path_str = video_path.to_string_lossy();
+            let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+            format!("{}:{}:{}", clean_path, size, mtime)
+        };
+        let mut hasher = Sha256::new();
+        hasher.update(stamp.as_bytes());
+        let short_hash = &hex::encode(hasher.finalize())[..16];
+
+        let embed_cache_dir = cache_dir.join("subtitles").join("embedded");
+        tokio::fs::create_dir_all(&embed_cache_dir).await.ok();
+
+        let target = embed_cache_dir.join(format!("{}_{}.vtt", short_hash, stream_idx));
+        if target.is_file() {
+            if let Ok(m) = target.metadata() {
+                if m.len() > 0 {
+                    return Ok(target);
+                }
+            }
+        }
+
+        let temp_target = embed_cache_dir.join(format!("{}_{}.part.vtt", short_hash, stream_idx));
+        let status = tokio::process::Command::new("ffmpeg")
+            .args(&[
+                "-y",
+                "-i",
+                video_path.to_str().unwrap_or(""),
+                "-map",
+                &format!("0:{}", stream_idx),
+                "-c:s",
+                "webvtt",
+                "-f",
+                "webvtt",
+                temp_target.to_str().unwrap_or(""),
+            ])
+            .status()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to spawn ffmpeg: {}", e)))?;
+
+        if !status.success() || !temp_target.is_file() {
+            let _ = tokio::fs::remove_file(&temp_target).await;
+            return Err(AppError::Internal(format!(
+                "FFmpeg failed to extract subtitle stream {} from {}",
+                stream_idx,
+                video_path.display()
+            )));
+        }
+
+        let content = tokio::fs::read_to_string(&temp_target)
+            .await
+            .unwrap_or_default();
+        let vtt = Self::srt_to_vtt(&content, 0.0);
+        let _ = tokio::fs::write(&temp_target, vtt.as_bytes()).await;
+        tokio::fs::rename(&temp_target, &target).await.map_err(|e| {
+            AppError::Internal(format!("Failed to rename extracted subtitle to target: {}", e))
+        })?;
+
+        Ok(target)
+    }
+
+    /// List all subtitle tracks asynchronously: local sidecars, embedded container tracks,
+    /// and online OpenSubtitles fallback.
+    pub async fn list_tracks_async(
+        video_path: &Path,
+        rel_filename: &str,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+        movie_title: Option<&str>,
+    ) -> Vec<SubtitleTrack> {
+        let mut results = Vec::new();
+        let mut found_english = false;
+
+        // 1. Local directory sidecars
+        let local_tracks = Self::list_tracks(video_path, rel_filename, roots);
+        for track in local_tracks {
+            if track.lang == "en" {
+                found_english = true;
+            }
+            results.push(track);
+        }
+
+        // 2. Embedded subtitle tracks
+        let embedded = Self::probe_embedded_subtitles(video_path).await;
+        let lang_map = [
+            ("eng", "English"),
+            ("en", "English"),
+            ("hin", "Hindi"),
+            ("hi", "Hindi"),
+            ("spa", "Spanish"),
+            ("es", "Spanish"),
+            ("fre", "French"),
+            ("fra", "French"),
+            ("fr", "French"),
+            ("ger", "German"),
+            ("deu", "German"),
+            ("de", "German"),
+            ("ita", "Italian"),
+            ("it", "Italian"),
+            ("jpn", "Japanese"),
+            ("ja", "Japanese"),
+            ("kor", "Korean"),
+            ("ko", "Korean"),
+            ("chi", "Chinese"),
+            ("zho", "Chinese"),
+            ("zh", "Chinese"),
+            ("rus", "Russian"),
+            ("ru", "Russian"),
+            ("ind", "Indonesian"),
+            ("id", "Indonesian"),
+            ("por", "Portuguese"),
+            ("pt", "Portuguese"),
+        ];
+
+        for stream in embedded {
+            let is_eng = stream.language == "eng"
+                || stream.language == "en"
+                || stream
+                    .title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains("english")
+                || (stream.language == "und" && !found_english && results.is_empty());
+
+            if is_eng {
+                found_english = true;
+            }
+
+            let lang_code = if is_eng {
+                "en".to_string()
+            } else if stream.language != "und" {
+                stream.language.clone()
+            } else {
+                "und".to_string()
+            };
+
+            let lang_label = lang_map
+                .iter()
+                .find(|(k, _)| *k == stream.language.as_str())
+                .map(|(_, v)| *v)
+                .unwrap_or_else(|| {
+                    if stream.language != "und" {
+                        &stream.language
+                    } else {
+                        "Subtitles"
+                    }
+                });
+
+            let full_label = match &stream.title {
+                Some(t) if !t.is_empty() && !t.eq_ignore_ascii_case(lang_label) => {
+                    format!("{} - {} (Embedded)", lang_label, t)
+                }
+                _ => format!("{} (Embedded)", lang_label),
+            };
+
+            results.push(SubtitleTrack {
+                id: format!("embed:{}", stream.index),
+                name: format!("embedded_{}.vtt", stream.index),
+                src: format!("/subtitles/embedded/{}/{}.vtt", rel_filename, stream.index),
+                lang: lang_code,
+                label: full_label,
+                default: false,
+            });
+        }
+
+        // 3. Online OpenSubtitles fallback if no English subtitle found
+        if !found_english {
+            let title = movie_title.unwrap_or("");
+            if let Some(_target) = Self::fetch_online_subtitle(video_path, title, cache_dir).await {
+                results.push(SubtitleTrack {
+                    id: "online:en".to_string(),
+                    name: "online_en.vtt".to_string(),
+                    src: format!("/subtitles/online/{}.vtt", rel_filename),
+                    lang: "en".to_string(),
+                    label: "English (OpenSubtitles)".to_string(),
+                    default: false,
+                });
             }
         }
 

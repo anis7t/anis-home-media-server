@@ -22,3 +22,11 @@ pub struct SubtitleUploadResponse {
     pub language: String,
     pub path: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddedSubtitleStream {
+    pub index: usize,
+    pub codec_name: String,
+    pub language: String,
+    pub title: Option<String>,
+}

@@ -73,6 +73,14 @@ pub fn create_app_full(
         )
         .with_state(roots_arc.clone());
 
+    let cache_dir_arc = Arc::new(cache_dir);
+
+    let subtitle_state = routes::subtitles::SubtitleState {
+        roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc.clone(),
+        pool: pool.clone(),
+    };
+
     let subtitle_routes = Router::new()
         .route(
             "/subtitles/{*path}",
@@ -88,12 +96,12 @@ pub fn create_app_full(
             "/api/upload-subtitle/{*filename}",
             axum::routing::post(routes::subtitles::upload_subtitle_handler),
         )
-        .with_state(roots_arc.clone());
+        .with_state(subtitle_state);
 
     let preview_state = Arc::new(routes::preview::PreviewState {
         pool,
         media_roots: roots_arc.clone(),
-        cache_dir: cache_dir.clone(),
+        cache_dir: (*cache_dir_arc).clone(),
     });
 
     let preview_routes = Router::new()
@@ -114,8 +122,6 @@ pub fn create_app_full(
                 .options(routes::preview::get_preview_vtt_handler),
         )
         .with_state(preview_state);
-
-    let cache_dir_arc = Arc::new(cache_dir);
 
     let hls_state = routes::hls::HlsState {
         roots: roots_arc.clone(),

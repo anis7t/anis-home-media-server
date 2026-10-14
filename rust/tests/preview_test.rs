@@ -25,22 +25,23 @@ struct TestPreviewHarness {
     test_filename: String,
 }
 
+impl TestPreviewHarness {
+    pub async fn teardown(self) {
+        let _ = sqlx::query("DELETE FROM progress WHERE filename = $1")
+            .bind(&self.test_filename)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM movies WHERE filename = $1")
+            .bind(&self.test_filename)
+            .execute(&self.pool)
+            .await;
+    }
+}
+
 impl Drop for TestPreviewHarness {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.test_dir);
         let _ = fs::remove_dir_all(&self.cache_dir);
-        let pool = self.pool.clone();
-        let filename = self.test_filename.clone();
-        tokio::spawn(async move {
-            let _ = sqlx::query("DELETE FROM movies WHERE filename = $1")
-                .bind(&filename)
-                .execute(&pool)
-                .await;
-            let _ = sqlx::query("DELETE FROM progress WHERE filename = $1")
-                .bind(&filename)
-                .execute(&pool)
-                .await;
-        });
     }
 }
 
@@ -64,13 +65,11 @@ async fn setup_preview_test() -> TestPreviewHarness {
 
     let test_filename = format!("rust_test_movie_{}.mp4", count);
 
-    // Clean up before starting
-    let _ = sqlx::query("DELETE FROM movies WHERE filename = $1")
-        .bind(&test_filename)
+    // Clean up any lingering test rows
+    let _ = sqlx::query("DELETE FROM progress WHERE filename LIKE 'rust_test_movie_%'")
         .execute(&pool)
         .await;
-    let _ = sqlx::query("DELETE FROM progress WHERE filename = $1")
-        .bind(&test_filename)
+    let _ = sqlx::query("DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'")
         .execute(&pool)
         .await;
 
@@ -184,6 +183,7 @@ async fn test_get_preview_meta_endpoint() {
         meta.base_url,
         format!("/seek-preview/{}", harness.test_filename)
     );
+    harness.teardown().await;
 }
 
 #[tokio::test]
@@ -234,6 +234,7 @@ async fn test_get_preview_thumb_cached_serving() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.as_ref(), fake_jpeg.as_slice());
+    harness.teardown().await;
 }
 
 #[tokio::test]
@@ -285,6 +286,7 @@ async fn test_preview_thumb_head_and_options() {
         res_options.headers().get("access-control-allow-origin").unwrap(),
         "*"
     );
+    harness.teardown().await;
 }
 
 #[tokio::test]
@@ -313,6 +315,7 @@ async fn test_get_preview_vtt_storyboard() {
         harness.test_filename
     )));
     assert!(text.contains("00:00:00.000 --> 00:00:05.000"));
+    harness.teardown().await;
 }
 
 #[tokio::test]
@@ -330,6 +333,7 @@ async fn test_invalid_thumbnail_name_404() {
 
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    harness.teardown().await;
 }
 
 #[tokio::test]
@@ -348,4 +352,5 @@ async fn test_preview_traversal_denied() {
             || res.status() == StatusCode::NOT_FOUND
             || res.status() == StatusCode::BAD_REQUEST
     );
+    harness.teardown().await;
 }
