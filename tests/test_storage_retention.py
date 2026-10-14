@@ -412,15 +412,17 @@ class StorageRetentionTests(unittest.TestCase):
             shutil.rmtree(dedicated.parent, ignore_errors=True)
 
     def test_manage_page_storage_governance_render(self):
-        """Verify /manage and /library render storage governance UI without template errors."""
+        """Verify /manage returns the SPA shell and /api/storage/status exposes governance data."""
         res = self.client.get("/manage")
         self.assertEqual(res.status_code, 200)
-        html = res.data.decode("utf-8")
-        self.assertIn("Storage Retention & Transcode Cache Governance", html)
-        self.assertIn("Host Storage Pool", html)
-        self.assertIn("Post-Transcode Retention Policy", html)
-        self.assertIn("Orphaned Transcode Caches", html)
-        self.assertIn("cleanOrphansModal", html)
+        self.assertIn(b'<div id="root">', res.data)
+
+        # API governance endpoint verification
+        api_res = self.client.get("/api/storage/audit")
+        self.assertEqual(api_res.status_code, 200)
+        api_data = api_res.get_json()
+        self.assertIn("storage", api_data)
+        self.assertIn("audit", api_data)
     def test_multi_root_media_resolution_and_archive(self):
         """Verify safe_path and video_paths discover files on secondary roots and archive keeps them accessible."""
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_archive_dir:

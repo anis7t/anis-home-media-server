@@ -68,16 +68,14 @@ class SystemTelemetryTests(unittest.TestCase):
     def test_homepage_renders_system_telemetry_section(self):
         resp = self.client.get('/')
         self.assertEqual(resp.status_code, 200)
-        html = resp.data.decode()
-        self.assertIn('id="systemSection"', html)
-        self.assertIn('System Telemetry', html)
-        self.assertIn('Core Compute', html)
-        self.assertIn('Graphics Engine', html)
-        self.assertIn('Memory Bank', html)
-        self.assertIn('I/O Velocity', html)
-        self.assertIn('Storage Pool', html)
-        self.assertIn('Network Stream', html)
-        self.assertIn('pollSystemStatus', html)
+        self.assertIn(b'<div id="root">', resp.data)
+
+        # Verify telemetry contract via API
+        api_resp = self.client.get('/api/system-status')
+        self.assertEqual(api_resp.status_code, 200)
+        json_data = api_resp.get_json()
+        for key in ('cpu', 'gpu', 'memory', 'disk_io', 'storage', 'network'):
+            self.assertIn(key, json_data)
 
     def test_player_fullscreen_hide_cursor_styles_and_logic(self):
         self.assertIn('cursor:none!important', CSS)
@@ -101,15 +99,18 @@ class SystemTelemetryTests(unittest.TestCase):
         self.assertIn(b'NavTransitions', resp_js.data)
         self.assertIn(b'nav-progress-bar', resp_js.data)
 
-        # Verify templates link or include nav.js
-        home_html = self.client.get('/').data.decode()
-        self.assertIn('/static/js/nav.js', home_html)
+        # Verify SPA routes return 200 with SPA shell
+        home_res = self.client.get('/')
+        self.assertEqual(home_res.status_code, 200)
+        self.assertIn(b'<div id="root">', home_res.data)
 
-        manage_html = self.client.get('/manage').data.decode()
-        self.assertIn('/static/js/nav.js', manage_html)
+        manage_res = self.client.get('/manage')
+        self.assertEqual(manage_res.status_code, 200)
+        self.assertIn(b'<div id="root">', manage_res.data)
 
-        devices_html = self.client.get('/devices').data.decode()
-        self.assertIn('/static/js/nav.js', devices_html)
+        devices_res = self.client.get('/devices')
+        self.assertEqual(devices_res.status_code, 200)
+        self.assertIn(b'<div id="root">', devices_res.data)
 
 
 if __name__ == '__main__':

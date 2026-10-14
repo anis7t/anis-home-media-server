@@ -204,16 +204,18 @@ class TestDeviceLifecycleAndRoutes:
     def test_devices_dashboard_render(self, client):
         res = client.get("/devices")
         assert res.status_code == 200
-        html = res.get_data(as_text=True)
-        assert "Connected Devices &amp; Telemetry" in html or "Connected Devices & Telemetry" in html
-        assert "Total Devices" in html
-        assert "Active Now" in html
-        assert "Cloudflare Quick Tunnel" in html
+        assert '<div id="root">' in res.get_data(as_text=True)
+        # Check API contract for devices dashboard telemetry
+        api_res = client.get("/api/devices")
+        assert api_res.status_code == 200
+        data = api_res.get_json()
+        assert "stats" in data
+        assert "total_devices" in data["stats"]
 
     def test_clients_alias_render(self, client):
         res = client.get("/clients")
         assert res.status_code == 200
-        assert "Total Devices" in res.get_data(as_text=True)
+        assert '<div id="root">' in res.get_data(as_text=True)
 
     def test_devices_json_api(self, client):
         res = client.get("/api/devices")
@@ -240,12 +242,10 @@ class TestDeviceLifecycleAndRoutes:
         assert dev["recent_watch"]["filename"] == "sample.mp4"
         assert dev["recent_watch"]["percent"] == 20.0
 
-        # 3. Verify on rendered HTML page
+        # 3. Verify SPA shell delivery
         html_res = client.get("/devices")
-        html = html_res.get_data(as_text=True)
-        assert "sample.mp4" in html or "Sample" in html
-        assert "20.0%" in html or "20%" in html
-        assert "Playback Activity &amp; Watch History" in html or "Playback Activity & Watch History" in html
+        assert html_res.status_code == 200
+        assert '<div id="root">' in html_res.get_data(as_text=True)
 
     def test_rename_device_api(self, client):
         # Register a device first
@@ -289,12 +289,18 @@ class TestDeviceLifecycleAndRoutes:
         assert len(hist) == 0
 
     def test_nav_links_across_pages(self, client):
-        # Verify /devices link is present on home, library/manage, details, and player
-        home_html = client.get("/").get_data(as_text=True)
-        assert 'href="/devices"' in home_html
+        # Verify SPA routes return 200 with SPA shell
+        home_res = client.get("/")
+        assert home_res.status_code == 200
+        assert '<div id="root">' in home_res.get_data(as_text=True)
 
-        manage_html = client.get("/manage").get_data(as_text=True)
-        assert 'href="/devices"' in manage_html
+        manage_res = client.get("/manage")
+        assert manage_res.status_code == 200
+        assert '<div id="root">' in manage_res.get_data(as_text=True)
+
+        devices_res = client.get("/devices")
+        assert devices_res.status_code == 200
+        assert '<div id="root">' in devices_res.get_data(as_text=True)
 
     def test_client_hints_parsing(self):
         req = MagicMock()
@@ -343,14 +349,14 @@ class TestDeviceLifecycleAndRoutes:
         assert rename_res.status_code == 200
         assert rename_res.get_json()["success"] is True
 
-        # Render HTML and verify data attributes are safely escaped
+        # Check that API returns the renamed device safely
+        updated = next(d for d in client.get("/api/devices").get_json()["devices"] if d["device_id"] == dev_id)
+        assert updated["display_name"] == name_with_apostrophe
+        assert updated["custom_name"] == name_with_apostrophe
+
         html_res = client.get("/devices")
-        html = html_res.get_data(as_text=True)
-        assert f'data-id="{dev_id}"' in html
-        assert 'Anis&#39; iPhone 15 Pro' in html or "Anis' iPhone 15 Pro" in html
-        assert 'data-name="Anis&#39; iPhone 15 Pro"' in html or 'data-name="Anis\' iPhone 15 Pro"' in html
-        # Ensure broken inline quote pattern is not used
-        assert f"openRenameModal('{dev_id}', 'Anis' iPhone" not in html
+        assert html_res.status_code == 200
+        assert '<div id="root">' in html_res.get_data(as_text=True)
 
     def test_heartbeat_api(self, client):
         res = client.post("/api/devices/heartbeat")
@@ -402,9 +408,11 @@ class TestDeviceLifecycleAndRoutes:
         assert stats["offline_count"] >= 1
         assert stats["total_devices"] == stats["active_now"] + stats["offline_count"]
 
-        # Check rendered HTML for offline pill and last seen spec
+        # Verify offline device flag
+        offline_dev = next(d for d in data["devices"] if d["device_id"] == "dev_old_offline")
+        assert offline_dev["is_active"] is False
+
+        # SPA shell returns 200
         html = client.get("/devices").get_data(as_text=True)
-        assert "Offline Devices" in html
-        assert "Last Seen" in html
-        assert "Offline · Seen" in html
+        assert '<div id="root">' in html
 

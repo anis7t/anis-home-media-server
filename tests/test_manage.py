@@ -25,13 +25,15 @@ class ManageAndPurgeTests(unittest.TestCase):
 
         res_manage = self.client.get('/manage')
         self.assertEqual(res_manage.status_code, 200)
-        self.assertIn(b"My Library", res_manage.data)
-        self.assertIn(b"Media Storage", res_manage.data)
-        self.assertIn(b"Delete & Purge", res_manage.data)
+        self.assertIn(b'<div id="root">', res_manage.data)
 
         res_library = self.client.get('/library')
         self.assertEqual(res_library.status_code, 200)
-        self.assertIn(b"My Library", res_library.data)
+        self.assertIn(b'<div id="root">', res_library.data)
+
+        # Service-level verification that managed items discovers the file
+        items = get_managed_media_items()
+        self.assertTrue(any("ManageTest.2026.mp4" in item["filename"] for item in items))
 
         vid.unlink(missing_ok=True)
         app._paths = (0, [])

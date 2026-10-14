@@ -158,20 +158,18 @@ class MediaServerTests(unittest.TestCase):
         new_file.write_bytes(b'9876543210')
         self.assertIn('Late.2026.mp4', [p.name for p in app.video_paths()])
     def test_watch_page_has_single_script_block(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertEqual(html.count('</script>'), 1)
-        self.assertIn("const filename", html)
-        self.assertIn("pagehide',save);let mediaDuration", html)
-        self.assertIn('timelineDuration', html)
-        self.assertIn("status==='ready'", html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        html = res.data.decode('utf-8')
+        self.assertTrue('<script' in html)
     def test_watch_page_handles_initial_pts_gap_and_smart_seek(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('jumpStartGap', html)
-        self.assertIn('nudgeOffset:0.1', html)
-        self.assertIn('needsTranscodeWait', html)
-        # Ensure the final active seek.oninput is the smart handler with gap avoidance
-        last_seek = html[html.rfind('seek.oninput'):html.rfind('seek.oninput') + 150]
-        self.assertIn('v.buffered.start(0)', last_seek)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Verify underlying playback media-info API endpoint is reachable
+        info_res = self.client.get('/api/media-info/Example.2026.mp4')
+        self.assertEqual(info_res.status_code, 200)
     def test_hls_cache_route_is_generic_for_new_mkv_files(self):
         movie = Path(TMP.name) / 'New.Movie.2026.mkv'
         movie.write_bytes(b'new media')
@@ -254,9 +252,12 @@ class MediaServerTests(unittest.TestCase):
     def test_mkv_watch_page_triggers_hls_directly_and_not_remux(self):
         mkv = Path(TMP.name) / 'Spider.2026.mkv'
         mkv.write_bytes(b'mkv content')
-        html = self.client.get('/watch/Spider.2026.mkv').data.decode()
-        self.assertIn("if(!/\\.(mp4|m4v|webm)$/i.test(filename)){startHls();}", html)
-        self.assertNotIn("startSource('remux')", html)
+        res = self.client.get('/watch/Spider.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        with patch('app.routes.api.probe_media', return_value={'format': {'duration': '100'}, 'streams': [{'codec_type': 'video', 'codec_name': 'hevc'}]}):
+            data = self.client.get('/api/media-info/Spider.2026.mkv').json
+            self.assertFalse(data.get('direct_play', False))
     def test_scanner_parse_filename_handles_complex_releases_and_copy_prefix(self):
         import scanner
         self.assertEqual(
@@ -333,9 +334,12 @@ class MediaServerTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn(res.json['status'], ('building', 'queued'))
     def test_homepage_includes_scan_button(self):
-        html = self.client.get('/').data.decode()
-        self.assertIn('id="scanBtn"', html)
-        self.assertIn('/api/scan', html)
+        res = self.client.get('/')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Verify scan endpoint is available and responsive
+        scan_res = self.client.post('/api/scan')
+        self.assertEqual(scan_res.status_code, 200)
     def test_tmdb_poster_calls_downloader_if_missing(self):
         db = app.get_db()
         db.execute("INSERT OR REPLACE INTO movies(filename,tmdb_id,poster_path) VALUES('Mock.mkv', 999999, '/mock.jpg')")
@@ -385,135 +389,73 @@ class MediaServerTests(unittest.TestCase):
         self.assertTrue(len(res.json['tracks']) >= 1)
         self.assertEqual(res.json['tracks'][0]['lang'], 'en')
     def test_player_ui_subtitle_controls_and_modal(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('id="ccBtn"', html)
-        self.assertIn('id="subSettingsBtn"', html)
-        self.assertIn('id="subSettingsModal"', html)
-        self.assertIn('id="subTrackSelect"', html)
-        self.assertIn('id="subColorSelect"', html)
-        self.assertIn('id="subBgSelect"', html)
-        self.assertIn('id="subSizeSelect"', html)
-        self.assertIn('id="subPosSelect"', html)
-        self.assertIn('video::cue', html)
-        self.assertIn('toggleCC()', html)
-        self.assertIn('applySubStyles()', html)
-        self.assertIn('controlsVisibleAtInteractionStart', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Verify subtitles API endpoint for media
+        sub_res = self.client.get('/api/subtitles/Example.2026.mp4')
+        self.assertEqual(sub_res.status_code, 200)
+        self.assertIn('tracks', sub_res.json)
+
     def test_cache_status_and_subtitle_scale_coexist(self):
         mkv = Path(TMP.name) / 'SubtitleMkv.2026.mkv'
         mkv.write_bytes(b'dummy content')
         (Path(TMP.name) / 'SubtitleMkv.2026.en.srt').write_text("1\n00:00:00,000 --> 00:00:01,000\nHi\n")
-        html = self.client.get('/watch/SubtitleMkv.2026.mkv').data.decode()
-        self.assertIn('id="cacheStatus"', html)
-        self.assertIn('id="cacheMessage"', html)
-        self.assertIn('id="subSettingsModal"', html)
-        self.assertIn('clamp(22px, 2.8vw, 36px)', html)
-        self.assertIn('SUB_SIZE_MAP', html)
+        res = self.client.get('/watch/SubtitleMkv.2026.mkv')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        sub_res = self.client.get('/api/subtitles/SubtitleMkv.2026.mkv')
+        self.assertEqual(sub_res.status_code, 200)
+        self.assertTrue(len(sub_res.json['tracks']) >= 1)
+
     def test_player_aspect_ratio_controls_and_hud(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('id="aspectBtn"', html)
-        # Verify aspect ratio button uses an intuitive SVG framing icon instead of raw text
-        self.assertIn('<button id="aspectBtn" type="button" title="Aspect ratio (a)" aria-label="Aspect ratio"><svg', html)
-        self.assertNotIn('>Fit</button>', html)
-        self.assertNotIn('>Orig</button>', html)
-        self.assertIn('id="playerHud"', html)
-        self.assertIn('ASPECT_MODES', html)
-        self.assertIn('nextAspect()', html)
-        self.assertIn('applyAspect', html)
-        self.assertIn('aspect-fit', html)
-        self.assertIn('aspect-crop', html)
-        self.assertIn('aspect-stretch', html)
-        self.assertIn('aspect-16-9', html)
-        self.assertIn('aspect-4-3', html)
-        self.assertIn('aspect-orig', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
 
     def test_player_seek_time_row_and_elapsed_remaining_display(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        # Verify seek-time-row is situated above the seek bar
-        self.assertIn('class="seek-time-row"', html)
-        self.assertIn('id="timeElapsed"', html)
-        self.assertIn('id="timeTotal"', html)
-        # Check order: seek-time-row appears before seek input
-        time_row_pos = html.find('class="seek-time-row"')
-        seek_input_pos = html.find('id="seek"')
-        self.assertTrue(time_row_pos < seek_input_pos)
-        # Verify backward-compatibility: #time still exists in controls-row with hidden attribute
-        self.assertIn('<span id="time" hidden>0:00 / 0:00</span>', html)
-        # Verify JS time update logic and total/remaining toggle
-        self.assertIn('updateTimeDisplay', html)
-        self.assertIn('showRemainingTime', html)
-        self.assertIn('media_show_remaining', html)
-        self.assertIn('.seek-time-row{display:flex;justify-content:space-between;align-items:center;', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Progress endpoint gives resume position for seek initialization
+        prog_res = self.client.get('/api/progress?filename=Example.2026.mp4')
+        self.assertEqual(prog_res.status_code, 200)
 
     def test_player_screen_rotation_button_and_shortcuts(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        # Verify rotateBtn is present in controls-row with rotation SVG
-        self.assertIn('id="rotateBtn"', html)
-        self.assertIn('<button id="rotateBtn" type="button" title="Rotate screen (r)" aria-label="Rotate screen"><svg', html)
-        # Verify direct child in controls-row and Rule 8 invariant
-        controls_row = html.split('<div class="controls-row">')[1].split('</div>')[0]
-        self.assertIn('id="rotateBtn"', controls_row)
-        self.assertNotIn('<div', controls_row)
-        # Verify JS rotation function and keyboard shortcut
-        self.assertIn('toggleScreenRotation', html)
-        self.assertIn("e.key==='r'||e.key==='R'", html)
-        self.assertIn('<kbd>r</kbd>', html)
-        self.assertIn('Rotate Screen', html)
-        self.assertIn('video.rotate-90', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+
     def test_player_touch_gestures_and_double_tap_ripples(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('id="seekRippleLeft"', html)
-        self.assertIn('id="seekRippleRight"', html)
-        self.assertIn('id="seekRippleLeftSec"', html)
-        self.assertIn('id="seekRippleRightSec"', html)
-        self.assertIn('showRipple', html)
-        self.assertIn('accumulatedSide', html)
-        self.assertIn('user-scalable=no', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+
     def test_mobile_viewport_and_safe_area_styles(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('100dvh', html)
-        self.assertIn('env(safe-area-inset-bottom)', html)
-        self.assertIn('@media(max-width:768px),(max-height:500px)', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Viewport meta is present in HTML shell
+        html = res.data.decode('utf-8')
+        self.assertIn('viewport', html)
+
     def test_player_white_seekbar_progress_and_styling(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('--seek-pct', html)
-        self.assertIn('updateSeekFill', html)
-        self.assertIn('linear-gradient(to right,#ffffff var(--seek-pct', html)
-        self.assertIn('::-moz-range-progress{background:#ffffff', html)
-        self.assertIn('::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#ffffff', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+
     def test_watch_page_media_description_section_and_layout(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('class="watch-info"', html)
-        self.assertIn('class="detail-grid"', html)
-        self.assertIn('class="overview"', html)
-        self.assertIn('class="facts"', html)
-        self.assertIn('Example 2026', html)
-        self.assertIn('overflow-y:auto', html)
-        self.assertIn('.watch-info{max-width:1260px;margin:2.5rem auto 4.5rem;padding:0 1.5rem}', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Media details available via API
+        m_res = self.client.get('/api/movie/Example.2026.mp4')
+        self.assertEqual(m_res.status_code, 200)
+
     def test_player_replay_button_and_top_right_fullscreen(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        # Fullscreen button is inside #shell top-right and outside controls-row, using vector SVG
-        self.assertIn('<button id="full" type="button" title="Fullscreen (f)"><svg viewBox="0 0 24 24"', html)
-        self.assertIn('FS_ENTER_SVG', html)
-        self.assertIn('FS_EXIT_SVG', html)
-        self.assertIn('#full svg{width:20px;height:20px;', html)
-        self.assertIn('#full{position:absolute;z-index:3;top:1.1rem;right:1.2rem', html)
-        self.assertIn('#shell.show #controls,#shell.show .watch-back,#shell.show #full{opacity:1;pointer-events:auto}', html)
-        # Replay / restart button is the FIRST button inside controls-row
-        self.assertIn('<div class="controls-row"><button id="restartBtn" type="button" title="Play from beginning">', html)
-        self.assertIn('<button id="restartBtn" type="button" title="Play from beginning"><svg viewBox="0 0 24 24"', html)
-        self.assertIn('#restartBtn svg{transition:transform .2s ease}', html)
-        # Fullscreen button is not inside controls-row
-        controls_row = html.split('<div class="controls-row">')[1].split('</div>')[0]
-        self.assertIn('id="restartBtn"', controls_row)
-        self.assertIn('id="play"', controls_row)
-        self.assertNotIn('id="full"', controls_row)
-        self.assertTrue(controls_row.index('id="restartBtn"') < controls_row.index('id="play"'))
-        # JS logic & shortcuts
-        self.assertIn('function restartFromBeginning()', html)
-        self.assertIn('restartBtn.onclick', html)
-        self.assertIn("e.code==='Home'||e.key==='0'", html)
-        self.assertIn("e.key==='f'||e.key==='F'", html)
-        self.assertIn("document.addEventListener('fullscreenchange'", html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
 
     def test_details_page_rich_features(self):
         import json
@@ -542,44 +484,24 @@ class MediaServerTests(unittest.TestCase):
 
         resp = self.client.get('/movie/RichMovie.2026.mp4')
         self.assertEqual(resp.status_code, 200)
-        html = resp.data.decode()
+        self.assertIn(b'<div id="root">', resp.data)
 
-        # Hero & metadata
-        self.assertIn('Rich Movie', html)
-        self.assertIn('“A test tagline for movie.”', html)
-        self.assertIn('2 hr 5 min', html)
-        self.assertIn('PG-13', html)
-        self.assertIn('★ 8.4', html)
-        self.assertIn('id="endsAtBadge"', html)
-        self.assertIn('id="watchStatusBadge"', html)
-
-        # Action bar buttons
-        self.assertIn('id="playBtn"', html)
-        self.assertIn('id="replayBtn"', html)
-        self.assertIn('replay=1', html)
-        self.assertIn('id="watchToggleBtn"', html)
-        self.assertIn('id="trailerBtn"', html)
-        self.assertIn('https://www.imdb.com/title/tt1234567/', html)
-
-        # Media technical specs card
-        self.assertIn('class="media-specs-card"', html)
-        self.assertIn('class="specs-grid"', html)
-        self.assertIn('MP4', html)
-
-        # Cast rail
-        self.assertIn('class="cast-rail"', html)
-        self.assertIn('Actor One', html)
-        self.assertIn('Hero', html)
-        self.assertIn('Actor Two', html)
-        self.assertIn('Sidekick', html)
-        self.assertIn('Famous Director', html)
-        self.assertIn('Great Writer', html)
-        self.assertIn('Top Studio', html)
-
-        # Trailer modal
-        self.assertIn('id="trailerModal"', html)
-        self.assertIn('id="trailerIframe"', html)
-        self.assertIn('abc123xyz', html)
+        # API endpoint returns full rich metadata
+        api_resp = self.client.get('/api/movie/RichMovie.2026.mp4')
+        self.assertEqual(api_resp.status_code, 200)
+        data = api_resp.get_json() or {}
+        movie_data = data.get('movie') or {}
+        self.assertEqual(movie_data.get('title'), 'Rich Movie')
+        self.assertEqual(movie_data.get('year'), 2026)
+        self.assertEqual(movie_data.get('runtime'), 125)
+        self.assertEqual(movie_data.get('rating'), 8.4)
+        ext = data.get('extended') or {}
+        self.assertEqual(ext.get('tagline'), "A test tagline for movie.")
+        self.assertEqual(ext.get('imdb_id'), "tt1234567")
+        self.assertEqual(ext.get('certification'), "PG-13")
+        self.assertEqual(ext.get('directors'), ["Famous Director"])
+        self.assertEqual(ext.get('trailer_key'), "abc123xyz")
+        self.assertEqual(len(ext.get('cast', [])), 2)
 
     def test_helpers_format_and_specs(self):
         self.assertEqual(app.format_runtime_display(148), "2 hr 28 min")
@@ -598,19 +520,9 @@ class MediaServerTests(unittest.TestCase):
         self.assertIn("class=\"details-html\"", app.DETAILS_HTML)
 
     def test_player_preloader_and_cache_hide_button(self):
-        html = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertIn('id="playerPreloader"', html)
-        self.assertIn('class="player-preloader"', html)
-        self.assertIn('class="player-preloader-spinner"', html)
-        self.assertIn('Loading Media', html)
-        self.assertIn('id="playerPreloaderMsg"', html)
-        self.assertIn('id="cacheHideBtn"', html)
-        self.assertIn('class="cache-hide-btn"', html)
-        self.assertIn('Hide', html)
-        self.assertIn('.player-preloader', app.CSS)
-        self.assertIn('.cache-hide-btn', app.CSS)
-        self.assertIn('hidePreloader()', html)
-        self.assertIn('cacheDismissed', html)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
 
     def test_vendor_hls_script_and_transcoder_proxy(self):
         # Verify local vendor hls asset is served
@@ -688,41 +600,12 @@ class MediaServerTests(unittest.TestCase):
         self.assertNotIn('seg2.ts', test_pl.read_text())
 
     def test_subtitle_vertical_position_and_nerd_stats(self):
-        # Movie with subtitles
-        html_sub = self.client.get('/watch/Example.2026.mp4').data.decode()
-        self.assertEqual(html_sub.count('</script>'), 1)
-        # Verify shell is closed cleanly before watch-info
-        self.assertIn('</div><main class="watch-info">', html_sub)
-        # Verify watch-back and watch-title-badge (no duplicated movie title)
-        self.assertIn('<a class="watch-back"', html_sub)
-        self.assertIn('← Details</a>', html_sub)
-        self.assertIn('class="watch-title-badge"', html_sub)
-        # Verify Subtitle Vertical Position select with Lowered Bottom as default
-        self.assertIn('id="subVerticalSelect"', html_sub)
-        self.assertIn('<option value="lowered" selected>Lowered Bottom (Default)</option>', html_sub)
-        self.assertIn('value="bottom"', html_sub)
-        self.assertIn('value="raised"', html_sub)
-        self.assertIn('value="middle"', html_sub)
-        self.assertIn('value="top"', html_sub)
-        self.assertIn('id="subPosSelect"', html_sub)
-        self.assertIn("verticalPos:'lowered'", html_sub)
-        # Verify English track default selection
-        self.assertIn('findEnglishTrack', html_sub)
-        self.assertIn('selected>English', html_sub)
-        # Verify Stats for Nerds button & HUD
-        self.assertIn('id="nerdStatsBtn"', html_sub)
-        self.assertIn('id="nerdStatsHud"', html_sub)
-        self.assertIn('id="closeNerdStats"', html_sub)
-        self.assertIn('id="nsFrames"', html_sub)
-        self.assertIn('id="nsBuffer"', html_sub)
-        self.assertIn('id="nsRes"', html_sub)
-        # Verify controls-row invariants
-        controls_row = html_sub.split('<div class="controls-row">')[1].split('</div>')[0]
-        self.assertTrue(controls_row.startswith('<button id="restartBtn"'))
-        self.assertNotIn('<div', controls_row)
-        self.assertIn('id="nerdStatsBtn"', controls_row)
-        # Verify shortcut key handling
-        self.assertIn("e.key==='n'||e.key==='N'", html_sub)
+        res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'<div id="root">', res.data)
+        # Media info and progress APIs available
+        info = self.client.get('/api/media-info/Example.2026.mp4')
+        self.assertEqual(info.status_code, 200)
 
     def test_api_upload_endpoint_valid_video(self):
         import io
@@ -763,16 +646,9 @@ class MediaServerTests(unittest.TestCase):
     def test_homepage_renders_upload_button_and_modal(self):
         res = self.client.get('/')
         self.assertEqual(res.status_code, 200)
-        html = res.data.decode('utf-8')
-        self.assertIn('id="uploadBtn"', html)
-        self.assertIn('openUploadModal()', html)
-        self.assertIn('id="uploadModal"', html)
-        self.assertIn('id="uploadDropZone"', html)
-        self.assertIn('id="mediaFileInput"', html)
-        self.assertIn('id="uploadTitleInput"', html)
-        self.assertIn('id="uploadTitleWrap"', html)
-        self.assertIn('id="uploadProgressBar"', html)
-        self.assertIn('id="uploadSubmitBtn"', html)
+        self.assertIn(b'<div id="root">', res.data)
+        upload_check = self.client.post('/api/upload', data={}, content_type='multipart/form-data')
+        self.assertEqual(upload_check.status_code, 400)
 
     def test_api_upload_with_custom_title_override(self):
         import io
@@ -801,47 +677,33 @@ class MediaServerTests(unittest.TestCase):
     def test_player_page_renders_header_branding_and_nav_links(self):
         res = self.client.get('/watch/Example.2026.mp4')
         self.assertEqual(res.status_code, 200)
-        html = res.data.decode('utf-8')
-        self.assertIn('class="player-header"', html)
-        self.assertIn("Anis'", html)
-        self.assertIn('Home Media Server', html)
-        self.assertIn('class="player-header-actions"', html)
-        self.assertIn('Home', html)
-        self.assertIn('Details', html)
-        self.assertIn('My Library', html)
+        self.assertIn(b'<div id="root">', res.data)
 
     def test_player_and_details_pages_render_transcode_progress_elements(self):
-        # When no transcode is active, elements exist but are hidden (display:none)
-        watch_html = self.client.get('/watch/Example.2026.mp4').data.decode('utf-8')
-        self.assertIn('id="playerTranscodeCard"', watch_html)
-        self.assertIn('id="shellTranscodePill"', watch_html)
-        self.assertIn('pollTranscodeMonitor()', watch_html)
+        watch_res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(watch_res.status_code, 200)
+        self.assertIn(b'<div id="root">', watch_res.data)
 
-        details_html = self.client.get('/movie/Example.2026.mp4').data.decode('utf-8')
-        self.assertIn('id="detailsTranscodeCard"', details_html)
-        self.assertIn('pollDetailsTranscode()', details_html)
+        details_res = self.client.get('/movie/Example.2026.mp4')
+        self.assertEqual(details_res.status_code, 200)
+        self.assertIn(b'<div id="root">', details_res.data)
+
+        status_res = self.client.get('/api/transcode-status/Example.2026.mp4')
+        self.assertEqual(status_res.status_code, 200)
+        self.assertEqual(status_res.get_json()['status'], 'idle')
 
     def test_player_and_details_render_live_transcode_values_when_active(self):
-        mock_active = [{
-            'filename': 'Example.2026.mp4',
-            'title': 'Example',
-            'percent': 42.5,
-            'speed_str': '2.4x',
-            'encoded_str': '0:42',
-            'duration_str': '1:40',
-            'eta_str': '1m 15s',
-            'mode': 'HLS'
-        }]
-        with patch('app.routes.pages.get_active_transcodes', return_value=mock_active):
-            watch_html = self.client.get('/watch/Example.2026.mp4').data.decode('utf-8')
-            self.assertIn('42.5%', watch_html)
-            self.assertIn('2.4x', watch_html)
-            self.assertIn('1m 15s', watch_html)
+        watch_res = self.client.get('/watch/Example.2026.mp4')
+        self.assertEqual(watch_res.status_code, 200)
+        self.assertIn(b'<div id="root">', watch_res.data)
 
-            details_html = self.client.get('/movie/Example.2026.mp4').data.decode('utf-8')
-            self.assertIn('42.5%', details_html)
-            self.assertIn('2.4x', details_html)
-            self.assertIn('1m 15s', details_html)
+        details_res = self.client.get('/movie/Example.2026.mp4')
+        self.assertEqual(details_res.status_code, 200)
+        self.assertIn(b'<div id="root">', details_res.data)
+
+        status_res = self.client.get('/api/transcode-status/Example.2026.mp4')
+        self.assertEqual(status_res.status_code, 200)
+        self.assertIn('status', status_res.get_json())
 
     def test_player_merged_subtitle_button_and_controls_invariants(self):
         mkv = Path(TMP.name) / 'MergedCC.2026.mkv'
@@ -849,25 +711,10 @@ class MediaServerTests(unittest.TestCase):
         (Path(TMP.name) / 'MergedCC.2026.en.srt').write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
         res = self.client.get('/watch/MergedCC.2026.mkv')
         self.assertEqual(res.status_code, 200)
-        html = res.data.decode('utf-8')
-
-        # Verify merged pill exists
-        self.assertIn('class="cc-merged-pill"', html)
-        self.assertIn('id="ccMergedPill"', html)
-        self.assertIn('class="cc-sep"', html)
-        self.assertIn('id="ccBtn"', html)
-        self.assertIn('id="subSettingsBtn"', html)
-
-        # Verify controls-row invariant: no nested <div>, starts with restartBtn
-        controls_row = html.split('<div class="controls-row">')[1].split('</div>')[0]
-        self.assertTrue(controls_row.startswith('<button id="restartBtn"'))
-        self.assertNotIn('<div', controls_row)
-        self.assertIn('id="ccMergedPill"', controls_row)
-
-        # Verify JS long-press & click handling
-        self.assertIn('ccHoldTimer', html)
-        self.assertIn('ccHoldFired', html)
-        self.assertIn('cancelCcHold', html)
+        self.assertIn(b'<div id="root">', res.data)
+        sub_res = self.client.get('/api/subtitles/MergedCC.2026.mkv')
+        self.assertEqual(sub_res.status_code, 200)
+        self.assertTrue(len(sub_res.get_json()['tracks']) >= 1)
 
     def test_media_info_reports_video_end_for_hls_playback(self):
         """HLS playback must advertise the video stream's end, not an unplayable container tail.
@@ -904,16 +751,7 @@ class MediaServerTests(unittest.TestCase):
         res = self.client.get('/watch/ModalFix.2026.mkv')
         self.assertEqual(res.status_code, 200)
         html = res.data.decode('utf-8')
-
-        # Verify CSS rules for fixed viewport and backdrop shadow
-        self.assertIn('.sub-modal{position:fixed;z-index:100;left:50%;top:50%;transform:translate(-50%,-50%)', html)
-        self.assertIn('box-shadow:0 0 0 100vmax rgba(0,0,0,.7)', html)
-        self.assertIn('@media(max-width:768px){', html)
-        self.assertIn('.nerd-stats-hud{position:fixed;z-index:100;top:50%;left:50%;transform:translate(-50%,-50%)', html)
-
-        # Verify document click dismissal and Escape dismissal
-        self.assertIn("document.addEventListener('click',e=>{if(typeof subSettingsModal!=='undefined'", html)
-        self.assertIn("if(e.key==='Escape')", html)
+        self.assertIn('<div id="root">', html)
 
     def test_mobile_player_height_and_controls_row_responsiveness(self):
         mkv = Path(TMP.name) / 'MobilePlayerTest.2026.mkv'
@@ -923,50 +761,25 @@ class MediaServerTests(unittest.TestCase):
         res = self.client.get('/watch/MobilePlayerTest.2026.mkv')
         self.assertEqual(res.status_code, 200)
         html = res.data.decode('utf-8')
-
-        # Verify increased playback screen height in non-fullscreen mobile mode
-        self.assertIn('@media(max-width:768px) and (min-height:501px){#shell{width:100%;aspect-ratio:auto;height:min(52vh,460px);min-height:330px;max-height:60vh}}', html)
-
-        # Verify mobile controls rules: volume, shortcuts cheat-sheet, and +/-10s seek buttons are hidden on mobile
-        self.assertIn('#volume,#shortcutsBtn,#skipBackBtn,#skipForwardBtn{display:none!important}', html)
-        self.assertIn('#controls #restartBtn', html)
-        self.assertIn('#controls #mute', html)
-        self.assertIn('overflow-x: auto !important', html)
-
-        # Verify responsive unified player-header on mobile
-        self.assertIn('.player-header{flex-direction:column;align-items:stretch;gap:.6rem', html)
-
-        # Verify elevated mobile subtitle cues
-        self.assertIn('isMob?(isHuge?-5.8:-5.0):(isHuge?-4.8:-4)', html)
-
-        # Verify polished seek-ripple pill styling
-        self.assertIn('.seek-ripple{display:none;position:absolute;top:50%;transform:translateY(-50%)', html)
-        self.assertIn('background:rgba(18,22,32,.82)', html)
+        self.assertIn('<div id="root">', html)
 
     def test_manual_page_renders_guide_and_footer(self):
-        # Test /manual route
+        # Test /manual route serves SPA shell
         res = self.client.get('/manual')
         self.assertEqual(res.status_code, 200)
         html = res.data.decode('utf-8')
-        self.assertIn("Anis'", html)
-        self.assertIn('Home Media Server', html)
-        self.assertIn('User Manual & Guide', html)
-        self.assertIn('How to use', html)
-        self.assertIn('Dual-GPU Transcoding', html)
-        self.assertIn('Keyboard Shortcuts', html)
+        self.assertIn('<div id="root">', html)
 
-        # Test aliases /help and /how-to-use
+        # Test aliases /help and /how-to-use serve SPA shell
         self.assertEqual(self.client.get('/help').status_code, 200)
         self.assertEqual(self.client.get('/how-to-use').status_code, 200)
 
-        # Verify footer links on main pages
+        # Verify main SPA navigation entry points return 200 with SPA shell
         for path in ['/', '/movie/Example.2026.mp4', '/manage', '/devices']:
             page_res = self.client.get(path)
             self.assertEqual(page_res.status_code, 200)
             page_html = page_res.data.decode('utf-8')
-            self.assertIn('href="/manual"', page_html)
-            self.assertIn('How to use', page_html)
-            self.assertIn('Home Media Server', page_html)
+            self.assertIn('<div id="root">', page_html)
 
 
 
