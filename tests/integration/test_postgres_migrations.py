@@ -235,7 +235,7 @@ def test_migration_is_idempotent_and_preserves_data(pg_session, pg_schema, admin
     assert _indexes(admin_conn, pg_schema) == before_indexes
     versions = _applied_versions(admin_conn, pg_schema)
     assert versions == sorted(set(versions)), "duplicate version rows"
-    assert versions == [1]
+    assert versions == [m[0] for m in app_db.POSTGRES_MIGRATIONS]
     row = pg_session.execute("SELECT title FROM movies WHERE filename = 'keep.mkv'").fetchone()
     assert row["title"] == "Keep Me"
 
@@ -248,7 +248,7 @@ def test_migration_is_idempotent_and_preserves_data(pg_session, pg_schema, admin
 def test_migration_version_recorded_once(pg_session, pg_schema, admin_conn):
     """The applied version is persisted in PostgreSQL."""
     app_db.run_postgres_migrations(pg_session)
-    assert _applied_versions(admin_conn, pg_schema) == [1]
+    assert _applied_versions(admin_conn, pg_schema) == [m[0] for m in app_db.POSTGRES_MIGRATIONS]
 
 
 def test_future_version_is_rejected(pg_session, pg_schema, admin_conn):
@@ -265,7 +265,7 @@ def test_empty_history_applies_migration(pg_session, pg_schema, admin_conn):
     """Empty schema_migrations leads to a full apply."""
     assert _tables(admin_conn, pg_schema) == set()
     app_db.run_postgres_migrations(pg_session)
-    assert _applied_versions(admin_conn, pg_schema) == [1]
+    assert _applied_versions(admin_conn, pg_schema) == [m[0] for m in app_db.POSTGRES_MIGRATIONS]
 
 
 def test_invalid_definitions_fail_before_ddl(pg_session, pg_schema, admin_conn, monkeypatch):
@@ -374,7 +374,7 @@ def test_concurrent_runners_serialize_and_record_once(pg_pool, pg_schema, admin_
 
     assert not errors, f"runner errors: {errors}"
     versions = _applied_versions(admin_conn, pg_schema)
-    assert versions == [1], f"version recorded more than once: {versions}"
+    assert versions == [m[0] for m in app_db.POSTGRES_MIGRATIONS], f"version recorded more than once: {versions}"
 
 
 # --------------------------------------------------------------------------- #

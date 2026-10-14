@@ -99,17 +99,21 @@ The current project includes:
 
 ## 4. Known unresolved issues & active roadmap
 
+### Completed high-priority items
+
+- **Production concurrency tuning & remote streaming benchmarks:** (Completed 2026-10-14)
+  Evaluated Waitress WSGI (16 threads, PID 17644) against local origin and Cloudflare named tunnel (`media.anisparvez.in`) across Direct Play, HLS segment streaming, and mixed API workloads (concurrency 1–16). Local aggregate throughput reached **447.88 Mbps** with 100% success; remote throughput capped at **18.43 Mbps** due to physical ISP uplink (~20 Mbps). Waitress memory remained rock-solid at 80–95 MB RSS across all loads. Documented in [`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md), backed by [`scripts/benchmark_streaming.py`](scripts/benchmark_streaming.py) and JSON artifacts in `tests/load/`.
+
 ### Highest priority — immediate work queue
 
-1. **Production concurrency tuning & remote streaming benchmarks:**
-   Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent client playback.
+1. **Phase 3 PostgreSQL Migration Preparation:**
+   With database backup/restore ([`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md)) and concurrency/streaming benchmarks ([`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md)) complete, proceed to Phase 3: PostgreSQL schema DDL, SQLAlchemy repository mapping, and SQLite-to-PostgreSQL automated data migration tooling.
 
 ### Secondary / parked
 
 4. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
 5. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
 6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
-7. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
 ### Admin authorisation invariants (`app/routes/api.py`)
 

@@ -180,6 +180,7 @@ class TestGeoIpAndIspLookup:
 
     def test_cached_public_ip(self, client):
         db = get_db()
+        db.execute("DELETE FROM ip_cache WHERE ip = '1.1.1.1'")
         db.execute(
             "INSERT INTO ip_cache(ip, isp, org, city, country) VALUES(?, ?, ?, ?, ?)",
             ("1.1.1.1", "Cloudflare, Inc.", "Cloudflare", "Melbourne", "Australia")
@@ -393,6 +394,7 @@ class TestDeviceLifecycleAndRoutes:
         # Create an active device and an older (offline) device
         client.get("/devices")
         db = get_db()
+        db.execute("DELETE FROM devices WHERE device_id = 'dev_old_offline'")
         db.execute(
             "INSERT INTO devices(device_id, device_name, device_type, device_os, browser, connection_type, client_ip, first_seen, last_seen) "
             "VALUES('dev_old_offline', 'Old Laptop', 'Desktop', 'Windows 10', 'Chrome 100', 'Local Network (LAN)', '192.168.1.99', datetime('now', '-10 minutes'), datetime('now', '-10 minutes'))"

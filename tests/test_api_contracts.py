@@ -166,6 +166,19 @@ def api_test_env(tmp_path, monkeypatch):
 
     # Seed movies table
     db = get_db()
+    test_files = (mp4_file.name, mkv_file.name)
+    db.execute("DELETE FROM device_watch_history WHERE filename IN (?, ?)", test_files)
+    db.execute("DELETE FROM progress WHERE filename IN (?, ?)", test_files)
+    db.execute("DELETE FROM movies WHERE filename IN (?, ?)", test_files)
+
+    # Ensure test device exists for foreign key constraints
+    db.execute(
+        "INSERT INTO devices (device_id, device_name, device_type, first_seen, last_seen) "
+        "VALUES (?, 'Contract Test Client', 'Desktop', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+        "ON CONFLICT (device_id) DO NOTHING",
+        (TEST_DEVICE,),
+    )
+
     details_json = json.dumps({
         "tagline": "Contract verified.",
         "certification": "PG",
@@ -221,13 +234,25 @@ def api_test_env(tmp_path, monkeypatch):
     with open(spec_path, "r", encoding="utf-8") as f:
         spec = yaml.safe_load(f)
 
-    return {
+    yield {
         "client": client,
         "spec": spec,
         "media_dir": media_dir,
         "mp4_file": mp4_file,
         "mkv_file": mkv_file,
     }
+
+    # Teardown
+    try:
+        cleanup_db = get_db()
+        cleanup_db.execute("DELETE FROM device_watch_history WHERE filename IN (?, ?)", test_files)
+        cleanup_db.execute("DELETE FROM progress WHERE filename IN (?, ?)", test_files)
+        cleanup_db.execute("DELETE FROM movies WHERE filename IN (?, ?)", test_files)
+        cleanup_db.execute("DELETE FROM devices WHERE device_id = ?", (TEST_DEVICE,))
+        cleanup_db.commit()
+        cleanup_db.close()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

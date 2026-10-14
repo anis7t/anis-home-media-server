@@ -39,6 +39,11 @@ def client(tmp_path, monkeypatch):
 
     # Seed database
     db = get_db()
+    test_files = ("Movie_One.2026.mp4", "Movie_Two_No_Meta.2025.mkv", "Movie_Three_Watching.2024.mp4")
+    db.execute("DELETE FROM device_watch_history WHERE filename IN (?, ?, ?)", test_files)
+    db.execute("DELETE FROM progress WHERE filename IN (?, ?, ?)", test_files)
+    db.execute("DELETE FROM movies WHERE filename IN (?, ?, ?)", test_files)
+
     details_json = json.dumps({
         "tagline": "The ultimate test.",
         "imdb_id": "tt9999999",
@@ -117,6 +122,13 @@ def client(tmp_path, monkeypatch):
         "INSERT INTO progress (filename, position, duration, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
         ("Movie_One.2026.mp4", 5.0, 7200.0)
     )
+    # Ensure test device exists in devices table (required by PostgreSQL foreign key)
+    db.execute(
+        "INSERT INTO devices (device_id, device_name, device_type, first_seen, last_seen) "
+        "VALUES (?, 'Test Browser', 'Desktop', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+        "ON CONFLICT (device_id) DO NOTHING",
+        (TEST_DEVICE,),
+    )
     # The same rows for this device: resume positions are read from
     # device_watch_history, never from another device's progress.
     db.execute(
@@ -135,6 +147,14 @@ def client(tmp_path, monkeypatch):
     flask_app.config["TESTING"] = True
     with flask_app.test_client() as c:
         yield c
+
+    # Teardown
+    cleanup_db = get_db()
+    cleanup_db.execute("DELETE FROM device_watch_history WHERE filename IN (?, ?, ?)", test_files)
+    cleanup_db.execute("DELETE FROM progress WHERE filename IN (?, ?, ?)", test_files)
+    cleanup_db.execute("DELETE FROM movies WHERE filename IN (?, ?, ?)", test_files)
+    cleanup_db.commit()
+    cleanup_db.close()
 
 
 def test_get_movies_structure(client):
@@ -257,6 +277,13 @@ def test_watch_progress_is_scoped_per_device(client):
     """A device resumes from its own position only - never from another device's."""
     filename = "Movie_Three_Watching.2024.mp4"
     db = get_db()
+    for dev_id, name in [('dev_phone', 'Phone'), ('dev_laptop', 'Laptop'), ('dev_never_watched', 'Never')]:
+        db.execute(
+            "INSERT INTO devices (device_id, device_name, device_type, first_seen, last_seen) "
+            "VALUES (?, ?, 'Device', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+            "ON CONFLICT (device_id) DO NOTHING",
+            (dev_id, name),
+        )
     db.execute(
         "INSERT OR REPLACE INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
         ('dev_phone', filename, 111.0, 1000.0),
@@ -292,6 +319,11 @@ def test_api_marks_and_resumes_only_the_calling_device(client):
     """GET /api/progress returns the calling device's row, not the shared one."""
     filename = "Movie_Three_Watching.2024.mp4"
     db = get_db()
+    db.execute(
+        "INSERT INTO devices (device_id, device_name, device_type, first_seen, last_seen) "
+        "VALUES ('dev_phone', 'Phone', 'Device', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+        "ON CONFLICT (device_id) DO NOTHING"
+    )
     db.execute(
         "INSERT OR REPLACE INTO device_watch_history (device_id, filename, position, duration) VALUES (?, ?, ?, ?)",
         ('dev_phone', filename, 42.5, 1000.0),

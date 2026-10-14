@@ -868,9 +868,9 @@ def get_all_devices(current_device_id=None):
         total_devices = len(devices)
         active_now = sum(1 for d in devices if d['is_active'])
         offline_count = total_devices - active_now
-        cf_count = sum(1 for d in devices if 'Cloudflare' in d['connection_type'])
-        lan_count = sum(1 for d in devices if 'LAN' in d['connection_type'])
-        local_count = sum(1 for d in devices if 'Localhost' in d['connection_type'])
+        cf_count = sum(1 for d in devices if d.get('connection_type') and 'Cloudflare' in d['connection_type'])
+        lan_count = sum(1 for d in devices if d.get('connection_type') and 'LAN' in d['connection_type'])
+        local_count = sum(1 for d in devices if d.get('connection_type') and 'Localhost' in d['connection_type'])
 
         stats = {
             "total_devices": total_devices,

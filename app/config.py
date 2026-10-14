@@ -48,6 +48,7 @@ SUBTITLE_CACHE = CACHE_DIR / "subtitles"
 SUBTITLE_EMBEDDED_CACHE = SUBTITLE_CACHE / "embedded"
 SUBTITLE_ONLINE_CACHE = SUBTITLE_CACHE / "online"
 UPDATES_DIR = Path(os.environ.get("MEDIA_SERVER_UPDATES_DIR", BASE_DIR / "updates")).resolve()
+BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()
 
 # --------------------------------------------------------------------------- #
 # Cache-root safety boundary (Phase 3.8D)

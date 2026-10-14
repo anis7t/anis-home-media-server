@@ -41,14 +41,74 @@ _SQL_TOKEN_RE = re.compile(
 )
 
 
-def normalize_sql(sql: str, backend: str = None) -> str:
-    """Normalize SQL parameter placeholders (? to %s) outside string literals and comments for PostgreSQL."""
+_TABLE_CONFLICT_TARGETS = {
+    "movies": "filename",
+    "devices": "device_id",
+    "progress": "filename",
+    "device_watch_history": "device_id, filename",
+    "ip_cache": "ip",
+    "settings": "key",
+    "users": "id",
+    "auth_tokens": "id",
+    "oauth_attempts": "state",
+}
+
+_INSERT_REPLACE_RE = re.compile(
+    r"^\s*INSERT\s+OR\s+REPLACE\s+INTO\s+([a-zA-Z0-9_]+)\s*\(([^)]+)\)\s*VALUES\s*(.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_DATETIME_MATH_RE = re.compile(
+    r"datetime\s*\(\s*'now'\s*,\s*'([+-])(\d+)\s*(minute|hour|day)s?'\s*\)",
+    re.IGNORECASE,
+)
+_DATETIME_NOW_RE = re.compile(r"datetime\s*\(\s*'now'\s*\)", re.IGNORECASE)
+
+
+def normalize_sql(sql: str, backend: str = None, has_params: bool = True) -> str:
+    """Normalize SQL parameter placeholders (? to %s) outside string literals and comments for PostgreSQL.
+
+    When has_params is True, literal '%' inside string literals and comments are escaped to '%%'
+    so psycopg does not mistake them for parameter formatting directives. Also translates common
+    SQLite-isms (INSERT OR REPLACE INTO and datetime('now', ...)) to PostgreSQL equivalents.
+    """
     if backend is None:
         backend = get_backend()
     if backend == "sqlite":
         return sql
+
+    # Translate SQLite datetime functions for PostgreSQL
+    sql = _DATETIME_MATH_RE.sub(r"(CURRENT_TIMESTAMP \1 INTERVAL '\2 \3s')", sql)
+    sql = _DATETIME_NOW_RE.sub("CURRENT_TIMESTAMP", sql)
+
+    # Translate INSERT OR REPLACE INTO for PostgreSQL
+    m_rep = _INSERT_REPLACE_RE.match(sql)
+    if m_rep:
+        tbl_name = m_rep.group(1)
+        tbl_lower = tbl_name.lower()
+        cols_raw = m_rep.group(2)
+        values_part = m_rep.group(3)
+        conflict_target = _TABLE_CONFLICT_TARGETS.get(tbl_lower)
+        if conflict_target:
+            cols = [c.strip() for c in cols_raw.split(",")]
+            target_set = {x.strip().lower() for x in conflict_target.split(",")}
+            non_conflict = [c for c in cols if c.lower() not in target_set]
+            if non_conflict:
+                update_clause = ", ".join(f"{c}=EXCLUDED.{c}" for c in non_conflict)
+                sql = f"INSERT INTO {tbl_name} ({cols_raw}) VALUES {values_part} ON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}"
+            else:
+                sql = f"INSERT INTO {tbl_name} ({cols_raw}) VALUES {values_part} ON CONFLICT ({conflict_target}) DO NOTHING"
+
     tokens = _SQL_TOKEN_RE.findall(sql)
-    return "".join("%s" if t == "?" else t for t in tokens)
+    normalized = []
+    for t in tokens:
+        if t == "?":
+            normalized.append("%s")
+        elif has_params and (t.startswith("'") or t.startswith("--") or t.startswith("/*")):
+            normalized.append(t.replace("%", "%%"))
+        else:
+            normalized.append(t)
+    return "".join(normalized)
 
 
 def get_backend() -> str:
@@ -178,9 +238,10 @@ class PostgresSession:
         if self._closed:
             raise RuntimeError("Cannot execute query on a closed database connection.")
         self._trans_clean = False
-        normalized = normalize_sql(sql, backend="postgres")
+        has_params = params is not None
+        normalized = normalize_sql(sql, backend="postgres", has_params=has_params)
         cur = self._conn.cursor()
-        if params is not None:
+        if has_params:
             cur.execute(normalized, params)
         else:
             cur.execute(normalized)
@@ -190,7 +251,7 @@ class PostgresSession:
         if self._closed:
             raise RuntimeError("Cannot execute query on a closed database connection.")
         self._trans_clean = False
-        normalized = normalize_sql(sql, backend="postgres")
+        normalized = normalize_sql(sql, backend="postgres", has_params=True)
         cur = self._conn.cursor()
         cur.executemany(normalized, seq_of_params)
         return cur

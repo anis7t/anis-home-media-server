@@ -16,8 +16,8 @@ Active branch: `feat/rust-react-postgres-migration`
 |:---:|---|:---:|
 | 0 | Architecture Audit | ✅ COMPLETE — [`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md) |
 | 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
-| 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 146 Vitest tests passing |
-| 3 | PostgreSQL Migration | 📋 Planned |
+| 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 172 Vitest tests passing |
+| 3 | PostgreSQL Migration | ✅ COMPLETE — Automated migration utility (`scripts/migrate_sqlite_to_postgres.py`) with 100% row parity (852/852 rows), dual psycopg 3 adapter with parameter tokenization & ON CONFLICT translation, 26/26 real-PG integration tests, all core suites verified |
 | 4 | Rust API Foundation | 📋 Planned |
 
 ---
@@ -50,6 +50,84 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and carries the paste-ready prompt, the P0-P7 migration phase table, the test coverage,
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+
+### 2026-10-14 — Frontend Technical Debt Resolution: ManagePage Modularization & Typed API Client (Option C)
+
+**1. Typed Library & Storage Management API Engine ([`web/src/lib/api/manage.ts`](../web/src/lib/api/manage.ts))**
+- Eliminated all bare `fetch()` calls from `ManagePage.tsx`, routing all network traffic through the typed API client with request deadlines (`DEFAULT_TIMEOUT_MS = 20_000`, `MEDIA_PROBE_TIMEOUT_MS = 45_000`).
+- Implemented strongly typed endpoints:
+  - `fetchManageMovies()`: Fetches movie inventory with deadline and error mapping.
+  - `fetchStorageSettings(adminPin)`: Reads post-transcode retention policies with `X-Admin-Pin`.
+  - `fetchStorageAudit(adminPin)`: Evaluates storage pool allocation and HLS cache integrity.
+  - `verifyAdminPin(pin)`: Verifies Admin PIN without triggering false-positive session locks.
+  - `updateStoragePolicy(policy, adminPin)`: Updates retention policy.
+  - `purgeOrphanedCaches(adminPin)`: Purges unreferenced transcode directories.
+  - `triggerLibraryScan(adminPin)`: Triggers library ingestion and metadata synchronization.
+  - `archiveMovieMedia(filename, adminPin)`: Offloads raw MKVs to cold storage (`D:\Flicks\.archive`).
+  - `deleteMovieMedia(filename, adminPin)`: Performs permanent deletion and cache purging.
+- Extended base `RequestOptions` in [`web/src/lib/api/client.ts`](../web/src/lib/api/client.ts) to support `DELETE` and `PUT` methods along with custom `headers`.
+- Authored test suite in [`web/src/lib/api/manage.test.ts`](../web/src/lib/api/manage.test.ts) (11/11 tests passing).
+
+**2. Modular Subcomponent Decomposition (`web/src/features/manage/components/`)**
+- Decomposed monolithic `ManagePage.tsx` (1,284 lines → 430 lines, ~66% code reduction) into 7 single-responsibility, highly reusable presentation components:
+  - `AdminAccessGate.tsx`: Ambient obsidian Access Denied shield, 4 capability overview cards, and PIN unlock action.
+  - `AdminPinModal.tsx`: Portaled modal with auto-focus PIN input, live error alerts, and escape-key dismissal.
+  - `StoragePoolHud.tsx`: Utilization progress bar with aggregate free/total space and drive-by-drive breakdown (`E:` SSD runtime, `D:` raw media).
+  - `RetentionPolicyCard.tsx`: Interactive policy selection cards (*Keep Both*, *Move to Archive*, *Purge After Watch*).
+  - `OrphanedCacheAudit.tsx`: Orphaned directory telemetry, reclaimable space calculator, and one-click cache purge button.
+  - `InventoryToolbar.tsx`: Search input with clear button, category filter chips (All, HLS, Direct, Watched, Unwatched), and sort dropdown.
+  - `InventoryList.tsx`: Responsive media cards with poster thumbnails, stream badges (*Cached HLS*, *Direct Stream*, *On-Demand HLS*), watch progress, and actions (Watch, Details, Archive, Delete).
+  - `DeleteConfirmationModal.tsx`: Portaled destructive deletion confirmation modal with media details, wipe checklist, and inline PIN authorization.
+- Validated with Vitest: all 172 tests passed across 25 test files (up from 161 tests). Production bundle compiled cleanly in 780ms.
+
+### 2026-10-14 — Production Concurrency Tuning & Remote Streaming Benchmark (Waitress WSGI & Cloudflare Tunnel)
+
+**1. Cross-Platform Concurrency Benchmark Engine ([`scripts/benchmark_streaming.py`](../scripts/benchmark_streaming.py))**
+- Developed an automated benchmark suite tailored for Windows 11 host architecture and the production Waitress WSGI server (PID 17644) under NSSM.
+- Evaluated 3 distinct workload profiles across concurrency levels 1, 2, 4, 8, 12, 16:
+  - **Direct RFC 7233 Byte-Range Streaming:** Simulates full 1080p MP4/AAC playback via staggered 2 MB byte-range chunks across *2001: A Space Odyssey* (2.44 GB).
+  - **HLS Segment Delivery:** Simulates HLS players polling playlists and streaming consecutive transport segments across *Ghost in the Cell* (4K) and *2001: A Space Odyssey* (1080p).
+  - **Mixed Workload:** 75% video streaming + 25% interactive API queries (`/api/movies`, `/api/system/status`, `/api/devices`, `/api/admin/status`) measuring latency and thread starvation under load.
+- Integrated Windows host hardware and process telemetry via `psutil`: tracks CPU utilization, RAM usage, Waitress RSS memory, Waitress OS thread count, and network throughput.
+- Enforced descriptive Client `User-Agent` (`MediaServerClient/1.0`), preventing Cloudflare WAF bot-mitigation false positives (`403 Forbidden`).
+
+**2. Local Origin Scaling & 448 Mbps Throughput Validation**
+- Validated that the 16-thread Waitress WSGI server effortlessly scales on LAN/Local loopback (`http://127.0.0.1:8000`), achieving **447.88 Mbps** aggregate throughput (~56 MB/s) with 100% request success and zero dropped connections.
+- Direct stream TTFB scaled smoothly from 57ms (2 clients) to 543ms (16 clients), with per-client bandwidth averaging ~30–32 Mbps at 16 concurrent streams—well above the 5–8 Mbps bitrate required for 1080p playback.
+- Waitress RSS memory remained completely flat between **80.6 MB and 94.9 MB**, and OS thread count remained constant at 22–24 threads.
+
+**3. Cloudflare Tunnel Characteristics & Upload Pipe Bottleneck Identification**
+- Characterized the remote streaming capacity through the Cloudflare named tunnel (`https://media.anisparvez.in`):
+  - Remote aggregate throughput capped at **18.43 Mbps** regardless of concurrency, directly matching the host ISP's home broadband WAN upload ceiling (~20 Mbps).
+  - Direct stream TTFB increased from ~2.8s at 1 client to ~15.4s at 16 clients, identifying an optimal operational limit of **3–4 concurrent 1080p remote streams**.
+  - HLS segment streaming exhibited lower and flatter TTFB (~1.2s–1.5s) over the tunnel than raw MP4 byte ranges, confirming HLS's advantage for remote mobile and WAN playback.
+  - Mixed API traffic under full remote video saturation revealed head-of-line tunnel queuing (~15–19s latency), while local origin API requests remained instantaneous (29–115ms), proving the bottleneck is the WAN uplink pipe, not Waitress thread exhaustion.
+
+**4. Comprehensive Master Benchmark Report ([`docs/STREAMING_BENCHMARK_REPORT.md`](STREAMING_BENCHMARK_REPORT.md))**
+- Authored a publication-grade benchmark report comparing current Windows 11 Waitress results (+328% local throughput over Gunicorn) against the September 2026 Linux baseline, complete with full data matrices, operational capacity guidelines, and reproducibility commands.
+
+### 2026-10-14 — Database Backup, Recovery & Disaster Runbook (Phase 3 Blocker Resolved)
+
+**1. Crash-Safe Online SQLite WAL Backup Engine ([`app/services/backup_service.py`](../app/services/backup_service.py))**
+- Implemented zero-lock online SQLite database backup using the native SQLite Online Backup API (`source_conn.backup(dest_conn, pages=100)`). Transfers data page-by-page without blocking concurrent HTTP readers or writers, incorporating all committed WAL frames into a defragmented single-file database.
+- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, `auth_tokens`, etc.).
+- Integrated configurable retention rotation (`prune_backups()`, default: retain 7 newest) safely pruning older snapshots and matching manifests.
+
+**2. Atomic Database Restoration & Pre-Restore Rollback Points**
+- Engineered safe atomic database restoration (`restore_database()`) with mandatory pre-verification (`verify_backup()`) guarding against corrupt or truncated files.
+- Automatically captures a pre-restore safety rollback point of the active database before overwriting.
+- Implemented Windows SQLite WAL/SHM cleanup: unlinks stale `media.db-wal` and `media.db-shm` sidecars prior to atomic staging swap, eliminating database disk image corruption from mismatched WAL replay.
+- Post-validates the restored database with `PRAGMA integrity_check` and ensures `PRAGMA journal_mode=WAL` is active.
+
+**3. CLI Automation & Windows Scheduled Task Batch Script**
+- Created CLI utilities [`scripts/backup_database.py`](../scripts/backup_database.py) and [`scripts/restore_database.py`](../scripts/restore_database.py) with options for target directories, labels, retention counts, JSON output, and interactive confirmation prompts.
+- Created [`scripts/backup_database.bat`](../scripts/backup_database.bat) for one-click backups and Windows Task Scheduler automated daily execution.
+- Added `BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()` to [`app/config.py`](../app/config.py) and added `backups/` to [`.gitignore`](../.gitignore).
+
+**4. Comprehensive Master Runbook & Verification Suite**
+- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return).
+- Authored test suite [`tests/test_backup_restore.py`](../tests/test_backup_restore.py) passing 8/8 tests with 100% coverage.
+- Captured live host baseline backup (`E:\MediaServer\backups\media_backup_20261014_160426_pre-migration-baseline.db`, 516,096 bytes, SHA-256 `f5287598106a...`, 852 rows) and successfully verified with an end-to-end recovery drill.
 
 ### 2026-10-14 — Issues 1–7 Resolution & Comprehensive User Manual Overhaul
 

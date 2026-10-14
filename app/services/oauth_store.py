@@ -15,9 +15,12 @@ def store(state, nonce, verifier, redirect_uri, next_path):
             "next_path TEXT, started_at INTEGER, used INTEGER DEFAULT 0)"
         )
         db.execute(
-            "INSERT OR REPLACE INTO oauth_attempts "
+            "INSERT INTO oauth_attempts "
             "(state, nonce, verifier, redirect_uri, next_path, started_at, used) "
-            "VALUES (?, ?, ?, ?, ?, ?, 0)",
+            "VALUES (?, ?, ?, ?, ?, ?, 0) "
+            "ON CONFLICT(state) DO UPDATE SET "
+            "nonce=excluded.nonce, verifier=excluded.verifier, redirect_uri=excluded.redirect_uri, "
+            "next_path=excluded.next_path, started_at=excluded.started_at, used=0",
             (state, nonce, verifier, redirect_uri, next_path, int(time.time())),
         )
         db.commit()

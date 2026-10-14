@@ -1,5 +1,11 @@
 # Media Server Project Guidelines & Invariants
 
+## 0. Implementation Planning, User Approval & Walkthrough Protocol (Strict Guardrail)
+- **Implementation Plan Markdown Document**: Always formulate the implementation plan in a dedicated Markdown (`.md`) file before modifying code, altering databases, or applying system changes.
+- **In-Chat Plan Presentation**: The full content of the implementation plan `.md` file MUST be presented and rendered directly in the conversational chat response as well for user review.
+- **Strict Approval Gate**: Under no circumstances should the agent begin writing production implementation code, modifying files, or executing migration actions without first presenting the implementation plan `.md` file and obtaining explicit user confirmation and sign-off.
+- **Post-Completion Walkthrough Document**: After implementation and verification are completed, the agent MUST present a comprehensive walkthrough Markdown (`.md`) file detailing all deliverables, changes, test outcomes, and verification results, with its full content rendered directly in the chat.
+
 ## 1. Process Safety & Task Management (Strict Guardrail)
 - **Zero Lingering Test Tasks**: Under no circumstances should background automation tasks (Selenium, WebDriver, FFmpeg) be left running indefinitely or orphaned.
 - **Selenium Cleanup**: All browser automation scripts must wrap driver lifecycles in `try ... finally: if driver: driver.quit()`.

@@ -25,12 +25,14 @@ import type {
 export class ApiError extends Error {
   readonly status: number;
   readonly url: string;
+  readonly body?: unknown;
 
-  constructor(message: string, status: number, url: string) {
+  constructor(message: string, status: number, url: string, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.url = url;
+    this.body = body;
   }
 }
 
@@ -81,9 +83,10 @@ const DEVICE_HEADER = 'X-Device-Id';
 export interface RequestOptions {
   readonly signal?: AbortSignal;
   readonly deviceId?: string;
-  readonly method?: 'GET' | 'POST';
+  readonly method?: 'GET' | 'POST' | 'DELETE' | 'PUT';
   readonly body?: unknown;
   readonly timeoutMs?: number;
+  readonly headers?: Record<string, string>;
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -93,9 +96,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     method = 'GET',
     body,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    headers: customHeaders,
   } = options;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...(customHeaders ?? {}) };
   if (deviceId) headers[DEVICE_HEADER] = deviceId;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -139,23 +143,26 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (!response.ok) {
-    // Non-2xx is a real failure, not an empty payload: surface the status so
-    // callers can distinguish "not found" from "transcode still building".
-    //
-    // A 401 additionally means this client can do nothing until someone signs
-    // in, so it is announced to the app rather than left for each screen to
-    // rediscover as its own error.
-    if (response.status === 401) {
-      // A 401 additionally means this client can do nothing until someone signs
-      // in, so it is announced to the app rather than left for each screen to
-      // rediscover as its own error.
+    let errorBody: unknown = undefined;
+    try {
+      errorBody = await response.json();
+    } catch {
+      // Body is not JSON
+    }
+
+    // A 401 on standard routes announces auth session expiration to the app.
+    // Admin PIN verification failure on /api/admin/verify is an incorrect PIN,
+    // not a global session revocation.
+    if (response.status === 401 && path !== '/api/admin/verify') {
       notifyAuthLocked();
     }
-    throw new ApiError(
-      `Request failed: ${response.status} ${response.statusText}`,
-      response.status,
-      path,
-    );
+
+    const message =
+      errorBody && typeof errorBody === 'object' && 'error' in errorBody && typeof errorBody.error === 'string'
+        ? errorBody.error
+        : `Request failed: ${response.status} ${response.statusText}`;
+
+    throw new ApiError(message, response.status, path, errorBody);
   }
 
   return (await response.json()) as T;
