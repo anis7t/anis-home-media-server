@@ -638,3 +638,15 @@ Rules:
   or the `session_model_usage` table rather than assuming.
 - Task state, assignment and verification gates live on the kanban board (`media-server`), not in
   chat.
+
+## 9. Native Rust Subtitle Engine, Database Test Isolation & Routing Invariants
+
+- **Native Independence Invariant (Zero Proxy Shims During Migration):**
+  When migrating features or endpoints to the Rust API foundation (port 8001), always build 100% native Rust implementations directly (e.g. native gzip decompression via `flate2`, HTTP queries via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`). Do not create temporary reverse-proxy shims or delegators to the legacy Flask backend unless a specific migration phase explicitly mandates an interim fallback. The architectural goal is full decommission of Flask.
+- **Database Test Isolation & Teardown Guardrail:**
+  Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL) or `media.db` (SQLite) MUST clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`), implement an explicit teardown hook (`harness.teardown().await` or fixture cleanup) deleting test rows, and guarantee zero phantom test movies remain in development or production databases.
+- **Axum Wildcard Routing & Internal Prefix Dispatcher:**
+  Axum's radix router strictly forbids overlapping wildcard parameters under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`). Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
+- **Recursive Media Path Resolution Fallback:**
+  Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, preserving strict directory traversal (`..`) security defenses.
+

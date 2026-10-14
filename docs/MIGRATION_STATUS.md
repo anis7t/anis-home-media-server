@@ -67,9 +67,10 @@
 > All 5 sub-phase slices delivered and verified on `feat/rust-api-foundation` with 47/47 passing tests:
 > - **Phase 5A**: Watch progress and history API (`/api/progress` GET/POST) with PostgreSQL upserts.
 > - **Phase 5B**: Safe multi-root path resolution and RFC 7233 byte-range streaming (`/media/{*path}`).
-> - **Phase 5C**: Subtitle delivery engine, SRT-to-WebVTT parsing, and dynamic timing offset shifting (`/subtitles/{*path}`, `/api/subtitles`).
+> - **Phase 5C**: 100% Native Subtitle Engine — embedded container track discovery (`ffprobe`) and extraction (`ffmpeg`) to WebVTT, OpenSubtitles 64-bit LE hash downloads with native gzip streaming decompression (`reqwest` + `flate2`), local sidecar parsing with dynamic time offset shifting (`?offset=`), and multipart uploads. Full test coverage (16/16 tests passing).
 > - **Phase 5D**: Seek-hover frame previews engine, WebVTT storyboards, and multi-root thumbnail cache (`/api/seek-preview-meta`, `/seek-preview`, `/preview-vtt`).
 > - **Phase 5E**: HLS manifest/segment delivery, RFC 8216 target duration healing, transcode MP4 cache serving, and concurrency benchmarking (510.86 Mbps aggregate throughput, 32.5 MB RAM footprint).
+> - **Catalog Test Artifacts Purge & Isolation**: Purged all 11 phantom test movies from PostgreSQL and SQLite (leaving exactly 39 genuine library movies); hardened preview tests with automated teardown hooks preventing catalog pollution. All 61 Rust tests passing.
 >
 > **Phase 2 (React) began 2026-10-12** on `feat/react-web-frontend`, scoped to
 > roadmap sequence items 1, 3 and 5. Acceptance thresholds are recorded in the
@@ -79,8 +80,8 @@
 > Full static SPA hosting and reverse-proxy bridge delivered on `MediaServerRust` (port 8001):
 > - **Phase 2R-A**: Vite dual-origin dev proxy configured for seamless frontend development.
 > - **Phase 2R-B**: Native Axum static SPA embedding with SPA fallback routing to `index.html`.
-> - **Phase 2R-C**: Streaming reverse-proxy bridge (`rust/src/routes/proxy.rs`) forwarding unmigrated endpoints (`/tmdb-poster/*`, `/poster/*`, `/api/devices/*`, `/auth/*`, `/api/cast/*`, `/api/storage/*`) to Flask port 8000 with 57/57 Rust integration tests passing.
-> - **Phase 2R-D**: Live End-to-End browser verification (visible non-headless Chrome) validating catalog (53 titles), movie details, player direct streaming, devices dashboard, storage management gate, and user manual.
+> - **Phase 2R-C**: Streaming reverse-proxy bridge (`rust/src/routes/proxy.rs`) forwarding unmigrated endpoints (`/tmdb-poster/*`, `/poster/*`, `/api/devices/*`, `/auth/*`, `/api/cast/*`, `/api/storage/*`) to Flask port 8000 with 61/61 Rust integration tests passing.
+> - **Phase 2R-D**: Live End-to-End browser verification validating clean catalog (39 titles), movie details, player direct streaming, active subtitle tracks, devices dashboard, storage management gate, and user manual.
 > - **Production Service**: `MediaServerRust` deployed as persistent Windows Service with 1-click restart parity (`scripts/restart_rust_service.bat`).
 
 **Authoritative Roadmap:** [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)

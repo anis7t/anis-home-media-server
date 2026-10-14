@@ -18,7 +18,9 @@ Active branch: `feat/rust-react-postgres-migration`
 | 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
 | 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 172 Vitest tests passing |
 | 3 | PostgreSQL Migration | ✅ COMPLETE — Automated migration utility (`scripts/migrate_sqlite_to_postgres.py`) with 100% row parity (852/852 rows), dual psycopg 3 adapter with parameter tokenization & ON CONFLICT translation, 26/26 real-PG integration tests, all core suites verified |
-| 4 | Rust API Foundation | 📋 Planned |
+| 4 | Rust API Foundation | ✅ COMPLETE — Modular Rust Axum/Tokio/SQLx crate (`rust/`) with PostgreSQL 18.4 connection pool, health endpoints, movies catalog, system telemetry, and structured tracing |
+| 5 | Media Playback & Native Streaming Engine | ✅ COMPLETE — Watch progress upserts, RFC 7233 byte-range Direct Play, 100% native subtitles (embedded container extraction via FFprobe/FFmpeg, OpenSubtitles hash download & gzip decompression via reqwest/flate2, sidecars, and multipart uploads), seek hover frame previews, and dual-GPU transcode telemetry; 61/61 Rust tests passing |
+| 2R | React SPA Direct Integration | ✅ COMPLETE — Direct React SPA hosting on Rust port 8001 with client-side routing fallback and transparent static asset delivery |
 
 ---
 
