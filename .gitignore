@@ -10,6 +10,13 @@ __pycache__/
 # Database
 media.db
 *.db
+# SQLite WAL sidecars. `*.db` does not match these: WAL and shared-memory files
+# are named after the database with a suffix, and they appear the moment any
+# connection opens the DB in WAL mode - including on a live host, constantly.
+media.db-shm
+media.db-wal
+*.db-shm
+*.db-wal
 
 # Cached/generated files
 cache/

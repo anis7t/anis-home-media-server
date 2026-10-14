@@ -108,6 +108,27 @@ The current project includes:
 6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 7. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
+### Admin authorisation invariants (`app/routes/api.py`)
+
+Routes behind `@require_admin` can **delete the library, purge caches, move originals into the
+archive and rewrite the retention policy.** They are reachable from the public internet through
+the Cloudflare tunnel. Treat them as the most destructive surface in the application.
+
+- **The Admin PIN fails closed, and has no default.** `get_setting('admin_pin', '')`, never a
+  literal. A hard-coded default (there was one: `'6361'`) is not a safe fallback for a secret —
+  it makes "no PIN configured" mean "anyone who guesses four digits may delete the library".
+  Unset must mean the PIN channel is **closed**, leaving only a Google admin session, which is
+  what sets the first PIN deliberately. `/api/admin/status` reports `has_pin` against the same
+  empty-string default so the two answers cannot disagree.
+- **Never accept the PIN from a query string.** `?pin=` writes the secret into Waitress access
+  logs, Cloudflare's edge logs, browser history and `Referer` headers. Header (`X-Admin-Pin`)
+  and JSON body only.
+- **A closed probe is not a closed door.** Any test asserting the PIN is refused must also
+  assert a destructive route returns 403 — see
+  `tests/test_admin_auth.py::test_no_configured_pin_means_no_pin_is_accepted`.
+- **Do not weaken `is_admin_authorized()` to make a test pass.** The
+  `PYTEST_CURRENT_TEST` pass-through is a test seam, not a model for production auth.
+
 ## 5. Platform/dependency rules
 
 ### Windows
@@ -121,6 +142,7 @@ The current project includes:
 - In tests and cache audits, always call `get_cache_dir()` rather than referencing `app.config.CACHE_DIR` directly, as test harnesses patch `app.CACHE_DIR`.
 - Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database, active HLS streams, and preview thumbnails. `C:` is not part of this project's storage.
 - All media path, cache lookup, and subtitle delivery routines must resolve across `config.get_media_roots()`.
+- **Mandatory User Notification on Service Restart**: Whenever backend Python code (`app/*.py`, `app/routes/*.py`, `app/services/*.py`, `app/config.py`, `app/db.py`) is created or edited, the agent MUST explicitly instruct the user to restart the persistent Windows service by running `e:\MediaServer\scripts\restart_service.bat` (or via elevated PowerShell `Restart-Service MediaServer`). Production Waitress caches Python bytecode in memory and does not auto-reload.
 
 ### Linux/Kali
 - Python 3.10+; current development uses Python 3.14.x.
@@ -357,6 +379,14 @@ The current project includes:
   (cache-maintenance-worker) strips ENDLIST from caches that claim completion but are short, so the
   pipeline re-renders them. It never relabels: a genuinely short cache must be re-rendered, not
   rewritten. The accepted shortfall is **recorded** to `hls.loss.json`, not silently swallowed.
+- **`_is_hls_truly_complete()` is a predicate and must never write.** Its only input is
+  `cumulative / source_duration`, which is label arithmetic - the exact measure recorded above
+  as having masked 277.2s of missing frames across 101 chunks. Appending `#EXT-X-ENDLIST`
+  there would seal precisely the frame-deficient caches the frame accounting exists to catch,
+  and did so from a 1Hz progress callback, unserialised and non-atomically, violating the
+  `_PLAYLIST_WRITE_LOCK` + `write_text_atomic` rule below. Sealing a verified-complete cache is
+  `scripts/hls_restore_endlist.py`, which re-checks with frame counting. **A function named
+  `is_*complete` has no business mutating the thing it is judging.**
 - **Frame measurement must respect the cache's layout.** Per-chunk windows are exact *only* on the
   strided grid (`.seg_layout` = `stride32`). On a legacy dense cache chunk N's overflow segment
   sits on chunk N+1's first index, so a strided window reads a neighbour's segments for most
@@ -500,6 +530,29 @@ Verify at minimum:
 - Subtitles remain correctly positioned.
 - No mobile horizontal/vertical layout regression.
 
+### Frontend API client invariants (`web/src/lib/`)
+
+- **Every request has a deadline.** `request()` owns one `AbortController` covering both
+  caller cancellation and a timeout, and the socket is actually released when the deadline
+  fires — not merely abandoned. Without it a hung fetch and a slow one are indistinguishable:
+  the viewer gets an indefinite skeleton, no error, and no recovery short of a reload. This is
+  not hypothetical; `/api/movie/{filename}` was observed exceeding 30s during a service restart.
+- **Budgets are measured, not guessed.** Cold `/api/movie/` costs 2.5–8s because the route
+  probes the file server-side, so `DEFAULT_TIMEOUT_MS` is 20s and the media-probing endpoints
+  get `MEDIA_PROBE_TIMEOUT_MS` (45s). Ten simultaneous cold details requests finish in ~3.5s
+  wall. Re-measure before changing either number — a deadline below the real cold path fails
+  the slowest titles *deterministically*.
+- **A deadline reports as `ApiTimeoutError`, never as an abort.** Check `timedOut` before
+  rethrowing, or the platform's opaque "The operation was aborted" hides the cause. Equally, a
+  *caller* abort must stay an `AbortError`: reported as a timeout, every route change away
+  from a slow page would flash a spurious "server took too long" on the way out.
+- **A failed load is never terminal.** `useAsync` exposes `reload()` and `StateMessage` renders
+  a retry. When you add a screen, wire `onRetry` — do not leave the viewer needing a page reload
+  to recover from a dropped connection.
+- **Never hard-code a duration in a test's mock.** A `fetch` mock that never settles *and never
+  rejects on abort* leaves `await fetch()` pending after a timeout, so the deadline test hangs
+  instead of failing — the one outcome indistinguishable from a broken timeout. Mock the abort.
+
 ### Frontend migration: the Android client must not break
 
 The shipped Flutter app (`flutter_client/`) is a **working, not-yet-migrated consumer** and
@@ -529,8 +582,19 @@ into `200`s — that would be changing a documented behaviour to satisfy a bad p
 **Corollary for the web UI:** removing or rewriting a Jinja page cannot break the Android
 app, so it is a *product* decision, not a compatibility constraint. What must not be
 deleted is the **coverage**: any test asserting on a page that is being replaced should be
-migrated to its React equivalent or retired deliberately, never left failing. See
-`docs/PROJECT_STATUS.md` for the current standing of that work.
+migrated to its React equivalent or retired deliberately, never left failing. All 36 legacy
+HTML tests have been ported to assert SPA shell status and real API contracts. See
+`docs/PROJECT_STATUS.md` for details.
+
+- **Werkzeug SPA Route Catch-All Invariant:**
+  When mounting a React SPA catch-all route alongside backend API routes in Flask/Werkzeug,
+  never use a naive `/<path:path>`. Werkzeug rule dispatch prioritizes rules matching the
+  requested HTTP method over returning `405 MethodNotAllowed` on non-matching blueprint routes.
+  A naive catch-all intercepts GET requests on POST-only API routes (e.g. `GET /api/transcode/start/...`)
+  and unknown API routes, incorrectly serving 200 `index.html`.
+  Always enforce routing isolation via `SpaPathConverter` using negative lookahead:
+  `r'(?!(?:api|auth|media|hls|subtitles|poster|tmdb-poster|tmdb-backdrop|static)/).+'`,
+  registered as `app_instance.url_map.converters['spa_path']` and `@app_instance.route("/<spa_path:path>")`.
 
 ## 8. Model routing, verification and project memory
 

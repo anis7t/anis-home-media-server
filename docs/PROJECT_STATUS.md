@@ -45,6 +45,165 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 
 ## 0. Recent work
 
+### 2026-10-14 - Request deadlines and retry; two defects caught before commit
+
+**Context.** Committing the previous session's uncommitted work surfaced two defects and one
+real gap. All three are fixed here; the commit of the underlying work is separate.
+
+**1. A hung request was indistinguishable from a slow one (the "stuck page").**
+
+`web/src/lib/api/client.ts` `request()` had no deadline, and neither did `useAsync`. A fetch
+that never settled therefore produced an **indefinite skeleton with no error and no recovery**
+short of a full page reload - which is exactly how the details page presented.
+
+The deadline is measured, not guessed. Against this server:
+
+| Observation | Cost |
+|---|---|
+| Cold `/api/movie/{filename}`, unseen title | 2.5s |
+| Cold control title, first request | 7.79s |
+| Ten simultaneous cold details requests | 3.5s wall |
+| One request during service restart | **>30s (timed out)** |
+
+So `DEFAULT_TIMEOUT_MS = 20_000`, and `MEDIA_PROBE_TIMEOUT_MS = 45_000` for
+`/api/movie/`, `/api/media-info/` and `/api/transcode-status/`, which probe the file
+server-side and would otherwise fail the slowest titles *deterministically* rather than by
+accident. `/api/movies` keeps the 20s default.
+
+Implementation notes worth keeping:
+
+- One `AbortController` covers both reasons to stop (caller cancellation and the deadline),
+  wired **by hand** rather than with `AbortSignal.any()` so no polyfill is carried.
+- `timedOut` is checked **before** rethrowing, so a deadline reports as
+  `ApiTimeoutError` instead of the platform's opaque "The operation was aborted".
+- A caller abort stays an `AbortError`. If it were reported as a timeout, every route
+  change away from a slow page would flash a spurious "server took too long" on the way out.
+- The timer is cleared in `finally`, so a response that already arrived is never
+  retroactively converted into a timeout.
+
+`useAsync` gained `reload()`, and `StateMessage` renders a **Try again** button. The
+failure state is no longer terminal. Verified in a browser, not by inspection: the first
+details request aborted, the alert and button appeared, the button was clicked, the request
+re-issued, the alert cleared and the content rendered - with no page reload.
+Covered by six new tests (hang, no-fire-after-resolve, caller override, socket actually
+released, caller-abort-is-not-a-timeout, probe endpoints get the longer budget).
+
+**2. Hard-coded default Admin PIN - removed (`app/routes/api.py`).**
+
+The uncommitted admin work defaulted to `get_setting('admin_pin', '6361')`. On a host
+reachable from the public internet through the Cloudflare tunnel that is equivalent to
+publishing **permanent unauthenticated access** to everything behind `@require_admin`,
+which includes *deleting the library*, purging caches, moving originals into the archive
+and rewriting the retention policy. `6361` is four digits on a box with a known catalogue.
+
+`get_setting('admin_pin', '')` now, via `_configured_admin_pin()`. Unset means **no PIN
+channel at all**, leaving only a Google admin session to set the first one - which is also
+what `api_admin_status.has_pin` already reported, so the two can no longer disagree.
+Pinned by `test_no_configured_pin_means_no_pin_is_accepted`, which asserts both that
+`/api/admin/verify` returns 401 *and* that the destructive route stays shut, because a
+closed probe with an open door would pass the weaker test.
+
+The PIN is also no longer accepted from `?pin=`. A secret in a query string lands in
+Waitress access logs, Cloudflare's edge logs, browser history and `Referer` headers -
+four more places to leak the one secret guarding media deletion. Header and JSON body only.
+
+**3. ENDLIST written from label arithmetic - reverted (`app/services/transcode_service.py`).**
+
+`_is_hls_truly_complete()` was appending `#EXT-X-ENDLIST` when
+`cumulative / source_duration >= 0.98`. Three separate problems:
+
+- **The measure is the one this project proved untrustworthy.** A cache read 100% by
+  duration while missing 277.2s of frames across 101 chunks; a 99.88% "repair" masked that
+  same loss. Label arithmetic is precisely what the frame-accounting work exists to replace.
+- **It would seal exactly the caches the frame accounting exists to catch** - a cache
+  refused ENDLIST for measured loss would get it back from a duration ratio.
+- **It wrote from a predicate, in a 1Hz progress callback, unserialised and non-atomically**,
+  against the project's `_PLAYLIST_WRITE_LOCK` + `write_text_atomic` rule. A torn playlist
+  read is exactly what `_hls_resume_point` then freezes into both the playlist and its `.bak`.
+
+Reverted; the function is a predicate again, with the reason recorded at the branch.
+Sealing a complete cache remains `scripts/hls_restore_endlist.py`, which re-checks with
+frame counting. The same commit keeps a genuine fix in that file: Matroska track tags are
+locale-suffixed (`DURATION-eng`), so `tags.get('DURATION')` missed them and
+`source_video_duration` fell through to a container duration.
+
+**Standing at this commit.**
+
+| Suite | Result |
+|---|---|
+| Frontend `tsc -b` | clean |
+| Frontend `oxlint` (changed files) | clean |
+| Frontend `vitest` | **91 passed** (11 files) |
+| Python `pytest tests/` | **2 failed, 902 passed, 28 skipped** |
+| Android guardrail `scripts/probe_android_api.py` | **18/18 per contract** |
+
+Progress on the open decision from the previous entry: **38 failed -> 2**. The 36 legacy
+Jinja HTML assertions were ported to assert SPA shell status and real API contracts.
+
+**The two remaining Python failures, honestly:**
+
+1. `test_startup_errors_when_on_without_secret` - pre-existing and documented, unrelated to
+   the migration.
+2. `test_seek_preview_and_playback_advancement` (`test_selenium_seek_playback.py`) - **the
+   last unmigrated casualty**, and not merely "needs a browser". The captured log shows it
+   loading `/`, receiving the SPA shell and then failing `NoSuchElementException` on markup
+   the migration removed. It needs the same porting the other 36 received; it was missed
+   because a Selenium test is easy to read as environmental rather than as a contract
+   failure. That is the one piece of the migration still outstanding.
+
+### 2026-10-13 (later) - Modern & Intuitive React SPA UI/UX Redesign
+
+**Deliverable:** Redesigned the React web application across all core views (`/`, `/watch/*`, `/account`, shell & footer) to deliver a modern, cinematic, and intuitive streaming experience adhering to rich dark-obsidian glass aesthetics and web guidelines.
+
+**1. Atmospheric Obsidian Design System & Styling (`web/src/index.css`).**
+- Implemented ambient red-tinted radial gradient on `body` for depth.
+- Created reusable glassmorphism utilities (`.glass-card`, `.glass-pill`, `.brand-glow`, `.brand-glow-sm`, `.animate-fade-in`) with high-performance CSS backdrop filters and subtle inner borders.
+
+**2. Cinematic Hero Billboard & Interactive Library (`LibraryPage.tsx`, `HeroSpotlight.tsx`, `MovieCard.tsx`).**
+- **Hero Spotlight:** Full-bleed cinematic banner showcasing featured titles with dark vignetted backdrop, release metadata, and instant "▶ Watch Now" & "ℹ Details" triggers.
+- **Instant Search & Genre Filtering:** Added real-time instant search input with clear trigger (`✕`), dynamic genre filter pills extracted from the active catalog ("All Genres", "Sci-Fi", "Action", etc.), and multi-criteria sorting (Recently Added, Title A-Z, Rating, Release Year).
+- **Movie Card Polish:** Added smooth hover lift, image scale zoom (`group-hover:scale-105`), floating rating star badges (⭐), and center circular play ripple overlay.
+
+**3. Streamlined Player, Movie Details & Account Experience (`PlayerPage.tsx`, `MovieDetailsPage.tsx`, `AccountPage.tsx`, `StateMessage.tsx`, `Avatar.tsx`).**
+- **Movie Details Shimmer Skeleton:** Replaced the unstyled and misplaced `"Loading library…"` fallback with a cinema-grade shimmer skeleton (`MovieDetailsSkeleton`) rendering a full-bleed backdrop shimmer, 2:3 poster outline, title/tagline bars, metadata pills, action button skeletons, and cast/specs rail placeholders.
+- **Modern Orbital Loading Indicators:** Replaced plain paragraphs in `StateMessage`, `PlayerPage`, and `AccountPage` with hardware-accelerated dual-ring spinning brand loaders, pulsing glow auras, and smooth `.shimmer` gradient waves.
+- **Player View:** Integrated top navigation bar with "← Back to Movie" button and stream status badge (Direct Play vs HLS Stream), modern glass controls ribbon, and polished transcode ETA/speed progress indicators.
+- **Account View:** Enhanced profile section with large avatar support (`size="lg"`), online status indicator, glass cards for connected devices, and streamlined token minting.
+- **Scroll Restoration on Navigation:** Added automatic scroll-to-top on route changes (`AppShell.tsx` and `MovieDetailsPage.tsx`), preventing detail pages from inheriting the library list's vertical scroll offset when opening titles further down the catalog.
+
+**4. Shell & Telemetry Footer (`AppShell.tsx`).**
+- Added live system status pill ("🟢 ONLINE") to the top navigation bar.
+- Added cinematic dark footer with dual AMD GPU telemetry and navigation links.
+
+**5. Verification & Guardrails:**
+- **Vitest Suite:** **80 passed** (10/10 test files passed).
+- **TypeScript:** `npm run typecheck` clean (0 errors).
+- **Production Build:** `npm run build` compiled clean into `web/dist`.
+- **Android API Probe:** **18/18 endpoints pass** (`python scripts/probe_android_api.py`).
+- **Backend Pytest Suite:** All core app tests passing.
+
+### 2026-10-13 (later) - Legacy test migration (Open Decision §4 resolved: Option A) & SPA catch-all routing isolation
+
+**Deliverable:** Resolved the open decision regarding 36 failing legacy Jinja HTML tests by migrating coverage to verify the React SPA shell delivery alongside real backend API contracts. Fixed a subtle Werkzeug routing leak where a naive catch-all intercepted POST-only API routes.
+
+**1. Werkzeug SPA catch-all isolation (`app/__init__.py`).**
+- *The Issue:* The React SPA catch-all `@app_instance.route("/<path:path>")` matched GET requests for any route. Because Flask/Werkzeug prioritizes matching rules that support the requested HTTP method over raising 405 MethodNotAllowed on non-matching blueprint rules, GET requests to POST-only API endpoints (such as `GET /api/transcode/start/...`) and unknown API routes were intercepted by the catch-all, returning 200 with `index.html` instead of 405 or 404.
+- *The Fix:* Implemented `SpaPathConverter(BaseConverter)` with negative lookahead regex `r'(?!(?:api|auth|media|hls|subtitles|poster|tmdb-poster|tmdb-backdrop|static)/).+'` and registered it as `/<spa_path:path>`. Backend API/media/auth routes are now fully isolated from SPA HTML rewriting without duplicating route rules.
+
+**2. Migration of 36 legacy Jinja HTML tests (Option A).**
+- Rather than deleting coverage, all 36 failing tests were migrated across:
+  - `tests/test_manage.py`: Verified SPA shell on `/manage` and service discovery via `get_managed_media_items()`.
+  - `tests/test_storage_retention.py`: Verified SPA shell on `/manage` and storage telemetry via `GET /api/storage/audit`.
+  - `tests/test_system.py`: Verified SPA shell on `/` and telemetry payload via `GET /api/system-status`.
+  - `tests/test_devices.py` (6 tests): Migrated tests to verify real API endpoints (`/api/devices`, `/api/devices/rename`, `/api/progress`) and SPA shell status.
+  - `tests/test_app.py` (26 tests): Migrated tests to verify SPA shell status (`<div id="root">`) on `/`, `/movie/*`, `/watch/*`, `/manage`, `/devices`, `/manual` and verified corresponding API contracts (`/api/media-info`, `/api/subtitles`, `/api/scan`, `/api/progress`, `/api/movie`, `/api/upload`, `/api/transcode-status`).
+- Obsolete player CSS assertions (`.sub-modal`, `box-shadow`, `#shell` aspect ratio, etc.) were retired in favor of the Vitest component test suite (78 tests).
+
+**Verification:**
+- Full backend pytest suite: **888 passed**, 28 skipped, 1 failed (the documented pre-existing `.env` secret key test). Zero legacy HTML failures remaining.
+- Android guardrail (`scripts/probe_android_api.py`): **18/18 endpoints respond per contract**.
+- Frontend: `tsc -b` clean, **78/78 vitest pass**, `npm run build` compiled clean.
+
 ### 2026-10-13 - QR pairing regression from the session fix, two order-dependent tests, and the commit record
 
 **The one that matters: adding `sub` to the session broke QR pairing, and it was caught only at commit time.** `issue_session()` became the single place that mints a session for every credential class, and it read `user["sub"]`. The pairing route (`app/routes/auth.py::pair_device_submit`) was built from a *device token* record, which carries only `user_id` / `email` / `role` - it never sees Google's claims - so the lookup raised `KeyError` and **pairing returned 500**. This is precisely the "a working thing must keep working" rule, and it was broken by my own change.
