@@ -21,13 +21,13 @@ impl MovieService {
                     m.filename,
                     m.title,
                     m.year,
-                    m.tmdb_id,
+                    m.tmdb_id::BIGINT as tmdb_id,
                     m.overview,
                     m.poster_path,
                     m.backdrop_path,
                     m.runtime,
                     m.genres,
-                    m.vote_average,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
                     m.updated_at,
                     COALESCE(h.position, 0.0) as position,
@@ -36,8 +36,7 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $1
                 ORDER BY m.title ASC
-                "#,
-            )
+                "#)
             .bind(dev_id)
             .fetch_all(pool)
             .await?
@@ -48,13 +47,13 @@ impl MovieService {
                     m.filename,
                     m.title,
                     m.year,
-                    m.tmdb_id,
+                    m.tmdb_id::BIGINT as tmdb_id,
                     m.overview,
                     m.poster_path,
                     m.backdrop_path,
                     m.runtime,
                     m.genres,
-                    m.vote_average,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
                     m.updated_at,
                     COALESCE(p.position, 0.0) as position,
@@ -63,8 +62,7 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename
                 ORDER BY m.title ASC
-                "#,
-            )
+                "#)
             .fetch_all(pool)
             .await?
         };
@@ -86,13 +84,26 @@ impl MovieService {
                         .to_string()
                 });
             let year: Option<i32> = r.try_get("year").ok();
-            let tmdb_id: Option<i64> = r.try_get("tmdb_id").ok();
+            let tmdb_id: Option<i64> = r
+                .try_get::<Option<i64>, _>("tmdb_id")
+                .ok()
+                .flatten()
+                .or_else(|| r.try_get::<Option<i32>, _>("tmdb_id").ok().flatten().map(|id| id as i64));
             let overview: Option<String> = r.try_get("overview").ok();
             let poster_path: Option<String> = r.try_get("poster_path").ok();
             let backdrop_path: Option<String> = r.try_get("backdrop_path").ok();
             let runtime: Option<i32> = r.try_get("runtime").ok();
             let genres: Option<String> = r.try_get("genres").ok();
-            let vote_avg: Option<f64> = r.try_get("vote_average").ok();
+            let vote_avg: Option<f64> = r
+                .try_get::<Option<f64>, _>("vote_average")
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    r.try_get::<Option<f32>, _>("vote_average")
+                        .ok()
+                        .flatten()
+                        .map(|v| (v as f64 * 10.0).round() / 10.0)
+                });
             let release_date: Option<String> = r.try_get("release_date").ok();
             let position: f64 = r.try_get("position").unwrap_or(0.0);
             let duration: f64 = r.try_get("duration").unwrap_or(0.0);
@@ -209,13 +220,13 @@ impl MovieService {
                 m.filename,
                 m.title,
                 m.year,
-                m.tmdb_id,
+                m.tmdb_id::BIGINT as tmdb_id,
                 m.overview,
                 m.poster_path,
                 m.backdrop_path,
                 m.runtime,
                 m.genres,
-                m.vote_average,
+                m.vote_average::DOUBLE PRECISION as vote_average,
                 m.release_date,
                 m.details_json,
                 m.updated_at,
@@ -224,7 +235,7 @@ impl MovieService {
             FROM movies m
             LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $2
             WHERE m.filename = $1
-            "#,
+            "#
         )
         .bind(filename)
         .bind(device_id.unwrap_or(""))
@@ -250,13 +261,26 @@ impl MovieService {
                     .to_string()
             });
         let year: Option<i32> = r.try_get("year").ok();
-        let tmdb_id: Option<i64> = r.try_get("tmdb_id").ok();
+        let tmdb_id: Option<i64> = r
+            .try_get::<Option<i64>, _>("tmdb_id")
+            .ok()
+            .flatten()
+            .or_else(|| r.try_get::<Option<i32>, _>("tmdb_id").ok().flatten().map(|id| id as i64));
         let overview: Option<String> = r.try_get("overview").ok();
         let poster_path: Option<String> = r.try_get("poster_path").ok();
         let backdrop_path: Option<String> = r.try_get("backdrop_path").ok();
         let runtime: Option<i32> = r.try_get("runtime").ok();
         let genres: Option<String> = r.try_get("genres").ok();
-        let vote_avg: Option<f64> = r.try_get("vote_average").ok();
+        let vote_avg: Option<f64> = r
+            .try_get::<Option<f64>, _>("vote_average")
+            .ok()
+            .flatten()
+            .or_else(|| {
+                r.try_get::<Option<f32>, _>("vote_average")
+                    .ok()
+                    .flatten()
+                    .map(|v| (v as f64 * 10.0).round() / 10.0)
+            });
         let release_date: Option<String> = r.try_get("release_date").ok();
         let details_json_str: Option<String> = r.try_get("details_json").ok();
         let position: f64 = r.try_get("position").unwrap_or(0.0);

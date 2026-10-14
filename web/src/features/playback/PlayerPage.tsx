@@ -134,6 +134,12 @@ export function PlayerPage() {
 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  const [isControlsHovered, setIsControlsHovered] = useState(false);
+  const [isSeekbarHovered, setIsSeekbarHovered] = useState(false);
+  const isControlsHoveredRef = useRef(false);
+  const isSeekbarHoveredRef = useRef(false);
+  isControlsHoveredRef.current = isControlsHovered;
+  isSeekbarHoveredRef.current = isSeekbarHovered;
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cast state
@@ -174,14 +180,19 @@ export function PlayerPage() {
     return () => clearTimeout(timer);
   }, []);
 
-
   const resetControlsTimer = useCallback(() => {
     setControlsVisible(true);
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    if (playing && !isScrubbing) {
+    // Never auto-hide while the user's pointer is over the controls overlay, hovering the seekbar, or actively scrubbing
+    if (isControlsHoveredRef.current || isSeekbarHoveredRef.current || isScrubbing) {
+      return;
+    }
+    if (playing) {
       controlsTimerRef.current = setTimeout(() => {
-        setControlsVisible(false);
-      }, 2500);
+        if (!isControlsHoveredRef.current && !isSeekbarHoveredRef.current && !isScrubbing) {
+          setControlsVisible(false);
+        }
+      }, 3000);
     }
   }, [playing, isScrubbing]);
 
@@ -1256,6 +1267,10 @@ export function PlayerPage() {
           id="full"
           type="button"
           onClick={toggleFullscreen}
+          onPointerEnter={() => {
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+          }}
+          onPointerLeave={resetControlsTimer}
           disabled={!ready}
           title={isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)'}
           aria-label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
@@ -1316,7 +1331,21 @@ export function PlayerPage() {
         )}
 
         {/* Controls Overlay Ribbon */}
-        <div id="controls" className="player-controls-overlay absolute inset-x-0 bottom-0 z-30 p-3 sm:p-5 bg-gradient-to-t from-black/95 via-black/70 to-transparent">
+        <div
+          id="controls"
+          className="player-controls-overlay absolute inset-x-0 bottom-0 z-30 p-3 sm:p-5 bg-gradient-to-t from-black/95 via-black/70 to-transparent"
+          onPointerEnter={() => {
+            setIsControlsHovered(true);
+            isControlsHoveredRef.current = true;
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            setControlsVisible(true);
+          }}
+          onPointerLeave={() => {
+            setIsControlsHovered(false);
+            isControlsHoveredRef.current = false;
+            resetControlsTimer();
+          }}
+        >
           {/* YouTube Seekbar */}
           <div className="mb-3">
             <PlayerSeekbar
@@ -1327,8 +1356,22 @@ export function PlayerPage() {
               onSeek={onSeek}
               onScrubbingChange={(scrub) => {
                 setIsScrubbing(scrub);
-                if (scrub) setControlsVisible(true);
-                else resetControlsTimer();
+                if (scrub) {
+                  setControlsVisible(true);
+                  if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+                } else {
+                  resetControlsTimer();
+                }
+              }}
+              onHoverChange={(hovered) => {
+                setIsSeekbarHovered(hovered);
+                isSeekbarHoveredRef.current = hovered;
+                if (hovered) {
+                  setControlsVisible(true);
+                  if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+                } else {
+                  resetControlsTimer();
+                }
               }}
               canPreview={isPlaybackReady}
               disabled={!ready}

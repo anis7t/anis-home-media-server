@@ -19,6 +19,7 @@ export interface PlayerSeekbarProps {
   buffered?: { start: number; end: number }[] | null;
   onSeek: (seconds: number) => void;
   onScrubbingChange?: (isScrubbing: boolean) => void;
+  onHoverChange?: (isHovered: boolean) => void;
   disabled?: boolean;
   canPreview?: boolean;
 }
@@ -41,6 +42,7 @@ export function PlayerSeekbar({
   buffered,
   onSeek,
   onScrubbingChange,
+  onHoverChange,
   disabled = false,
   canPreview = true,
 }: PlayerSeekbarProps) {
@@ -160,18 +162,21 @@ export function PlayerSeekbar({
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled) return;
     setHoverActive(true);
+    onHoverChange?.(true);
     calculateHover(e.clientX);
   };
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled) return;
     setHoverActive(true);
+    onHoverChange?.(true);
     calculateHover(e.clientX);
   };
 
   const handleMouseLeave = () => {
     if (!isScrubbing) {
       setHoverActive(false);
+      onHoverChange?.(false);
     }
   };
 
@@ -303,6 +308,18 @@ export function PlayerSeekbar({
         step="any"
         value={playedPct}
         onChange={handleInputChange}
+        onPointerEnter={() => {
+          if (!disabled) {
+            setHoverActive(true);
+            onHoverChange?.(true);
+          }
+        }}
+        onPointerLeave={() => {
+          if (!isScrubbing) {
+            setHoverActive(false);
+            onHoverChange?.(false);
+          }
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onTouchMove={handleTouchMove}

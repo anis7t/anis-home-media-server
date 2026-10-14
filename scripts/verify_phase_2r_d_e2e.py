@@ -21,6 +21,7 @@ from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -111,38 +112,46 @@ def main():
         assert len(movie_cards) > 0, "No movie cards rendered in catalog!"
 
         # Verify posters load via proxy bridge
+        try:
+            wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, "img[src*='/tmdb-poster/'], img[src*='/poster/']")) > 0)
+        except Exception:
+            pass
         images = driver.find_elements(By.CSS_SELECTOR, "img[src*='/tmdb-poster/'], img[src*='/poster/']")
         print(f"  -> Found {len(images)} poster images on home catalog.")
+        assert len(images) > 0, "No poster images rendered in catalog!"
         
         shot1 = SHOTS_DIR / "phase_2r_d_home_catalog.png"
         driver.save_screenshot(str(shot1))
         copy_shot_to_artifacts(shot1, "phase_2r_d_home_catalog.png")
-        print(f"  [OK] Home catalog verified with {len(movie_cards)} titles.")
-        time.sleep(1.5)
+        print(f"  [OK] Home catalog verified with {len(movie_cards)} titles and active poster artwork.")
+        time.sleep(2.0)
 
         # -----------------------------------------------------------------
         # TEST 2: MOVIE DETAILS PAGE
         # -----------------------------------------------------------------
-        encoded_fn = urllib.parse.quote(sample_filename)
+        encoded_fn = '/'.join(urllib.parse.quote(seg) for seg in sample_filename.split('/'))
         details_url = f"{BASE_URL}/movie/{encoded_fn}"
         print(f"\n[4/7] Testing Movie Details ({details_url})...")
         driver.get(details_url)
         time.sleep(2.5)  # Allow user to view details
 
-        # Verify details page elements
+        # Verify details page elements & artwork
         play_btn = wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/watch/'], button, .btn-primary"))
         )
         assert play_btn is not None, "Play button not found on movie details page!"
 
+        details_art = driver.find_elements(By.CSS_SELECTOR, "img[src*='/tmdb-poster/'], img[src*='/tmdb-backdrop/'], img[src*='/poster/']")
+        print(f"  -> Found {len(details_art)} artwork images on movie details page.")
+
         shot2 = SHOTS_DIR / "phase_2r_d_movie_details.png"
         driver.save_screenshot(str(shot2))
         copy_shot_to_artifacts(shot2, "phase_2r_d_movie_details.png")
         print(f"  [OK] Movie details verified for '{movie.get('title')}'.")
-        time.sleep(1.5)
+        time.sleep(2.0)
 
         # -----------------------------------------------------------------
-        # TEST 3: CINEMA VIDEO PLAYER
+        # TEST 3: CINEMA VIDEO PLAYER & SEEKBAR HOVER IMMUNITY
         # -----------------------------------------------------------------
         player_url = f"{BASE_URL}/watch/{encoded_fn}"
         print(f"\n[5/7] Testing Cinema Video Player ({player_url})...")
@@ -153,6 +162,18 @@ def main():
         video_el = wait.until(EC.presence_of_element_located((By.TAG_NAME, "video")))
         src = video_el.get_attribute("src") or ""
         print(f"  -> Video element loaded (src: '{src[:60]}...')")
+
+        # Test seekbar hover immunity
+        print("  -> Testing seekbar hover immunity: hovering over seekbar for 4.0s...")
+        seek_bar = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#seekTrack, #seek, .seek-track")))
+        ActionChains(driver).move_to_element(seek_bar).perform()
+        time.sleep(4.0)
+
+        shell_el = driver.find_element(By.ID, "shell")
+        shell_classes = shell_el.get_attribute("class") or ""
+        print(f"  -> Shell classes after 4s hover on seekbar: '{shell_classes}'")
+        assert "show" in shell_classes, "Controls unexpectedly hid while pointer was hovering over seekbar!"
+        print("  [OK] Seekbar hover immunity verified: controls remained visible for >4 seconds without moving cursor.")
 
         shot3 = SHOTS_DIR / "phase_2r_d_player.png"
         driver.save_screenshot(str(shot3))
