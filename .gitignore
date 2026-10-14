@@ -66,6 +66,7 @@ opencode/db/*.db.tmp
 
 # Rust toolchain (cargo build artifacts)
 target/
+rust/target/
 **/*.rs.bk
 
 # Node / React toolchain

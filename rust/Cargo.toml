@@ -1,0 +1,24 @@
+[package]
+name = "media-server-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["Anis Parvez <anis@anisparvez.in>"]
+description = "High-performance Rust API foundation for Anis' Home Media Server"
+
+[dependencies]
+axum = { version = "0.8", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros", "chrono", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sysinfo = "0.33"
+dotenvy = "0.15"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+http-body-util = "0.1"
