@@ -25,6 +25,14 @@ pub fn create_app(pool: PgPool, system_service: SystemService) -> Router {
     let movie_routes = Router::new()
         .route("/api/movies", get(routes::movies::list_movies_handler))
         .route("/api/movie/{filename}", get(routes::movies::get_movie_details_handler))
+        .with_state(pool.clone());
+
+    let progress_routes = Router::new()
+        .route(
+            "/api/progress",
+            get(routes::progress::get_progress_handler)
+                .post(routes::progress::post_progress_handler),
+        )
         .with_state(pool);
 
     Router::new()
@@ -32,6 +40,7 @@ pub fn create_app(pool: PgPool, system_service: SystemService) -> Router {
         .route("/api/health", get(routes::health::health_handler))
         .merge(system_routes)
         .merge(movie_routes)
+        .merge(progress_routes)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
 }
