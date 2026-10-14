@@ -10,6 +10,7 @@ export interface CastDevice {
   readonly model?: string;
   readonly manufacturer?: string;
   readonly ip?: string;
+  readonly host?: string;
   readonly location?: string;
 }
 

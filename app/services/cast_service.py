@@ -601,8 +601,68 @@ CAST_STREAM_TYPE = 'BUFFERED'
 CAST_SESSION_WAIT_SECONDS = 4.0
 
 
-def discover_cast(timeout: float = 5.0) -> list[dict]:
-    """mDNS discovery via CastBrowser (``discover_chromecasts`` is deprecated).
+def _collect_candidate_cast_hosts(known_hints: list[str] | None = None) -> tuple[list[str], list[dict]]:
+    """Collect candidate IPv4 addresses and directly detected Cast devices on the LAN.
+
+    Queries the local ARP cache alongside any provided hints (e.g. DLNA hosts
+    or previously cached devices) and performs a fast concurrent probe against
+    the Google Cast setup endpoint (http://<ip>:8008/setup/eureka_info).
+    Directly detected devices are returned alongside verified candidate host IPs,
+    bypassing Windows Firewall and multi-adapter mDNS multicast packet loss.
+    """
+    candidates = set(known_hints or [])
+    try:
+        import subprocess
+
+        output = subprocess.check_output(['arp', '-a'], text=True, timeout=1.0)
+        for match in re.finditer(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', output):
+            ip = match.group(1)
+            # Filter broadcast, multicast, loopback, link-local, and Tailscale (100.x.x.x)
+            if not ip.startswith(('127.', '169.254.', '224.', '239.', '255.', '100.')) and not ip.endswith('.255'):
+                candidates.add(ip)
+    except Exception as exc:  # noqa: BLE001
+        log.debug('ARP candidate lookup failed: %s', exc)
+
+    if not candidates:
+        return [], []
+
+    import concurrent.futures
+
+    def probe_eureka(ip: str) -> tuple[str, dict | None] | None:
+        try:
+            r = requests.get(f'http://{ip}:8008/setup/eureka_info', timeout=0.6)
+            if r.status_code == 200:
+                data = r.json()
+                udn = data.get('ssdp_udn') or data.get('bssid') or ip
+                name = data.get('name') or 'Cast device'
+                dev = {
+                    'id': f'cast:{udn}',
+                    'kind': 'cast',
+                    'name': name,
+                    'model': 'Chromecast',
+                    'host': ip,
+                    'uuid': str(udn),
+                }
+                return (ip, dev)
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    verified_hosts: list[str] = []
+    direct_devices: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(20, max(1, len(candidates)))) as executor:
+        for result in executor.map(probe_eureka, candidates):
+            if result:
+                ip, dev = result
+                verified_hosts.append(ip)
+                if dev:
+                    direct_devices.append(dev)
+
+    return verified_hosts, direct_devices
+
+
+def discover_cast(timeout: float = 5.0, known_hosts: list[str] | None = None) -> list[dict]:
+    """mDNS discovery via CastBrowser with candidate known_hosts and direct eureka fallbacks.
 
     Returns CastInfo-derived dicts without connecting to each device - connecting is
     deferred until something actually needs to be cast.
@@ -611,24 +671,35 @@ def discover_cast(timeout: float = 5.0) -> list[dict]:
     import zeroconf
     from pychromecast.discovery import CastBrowser, SimpleCastListener
 
+    direct_devices: list[dict] = []
+    if known_hosts is not None:
+        active_hosts = known_hosts
+    else:
+        active_hosts, direct_devices = _collect_candidate_cast_hosts()
+
+    found_by_id: dict[str, dict] = {d['id']: d for d in direct_devices}
+
     zconf = zeroconf.Zeroconf()
-    browser = CastBrowser(SimpleCastListener(), zconf)
+    browser = CastBrowser(SimpleCastListener(), zconf, known_hosts=active_hosts or None)
     browser.start_discovery()
     try:
         deadline = time.time() + timeout
         while time.time() < deadline:
             time.sleep(0.25)
-        devices = []
         for info in list(browser.devices.values()):
-            devices.append({
-                'id': f'cast:{info.uuid}',
+            model = info.model_name
+            if not model or model == 'Unknown model name':
+                model = 'Chromecast'
+            dev_id = f'cast:{info.uuid}'
+            found_by_id[dev_id] = {
+                'id': dev_id,
                 'kind': 'cast',
                 'name': info.friendly_name or 'Cast device',
-                'model': info.model_name or '',
+                'model': model,
                 'host': info.host or '',
                 'uuid': str(info.uuid),
-            })
-        return devices
+            }
+        return list(found_by_id.values())
     finally:
         for stop in (browser.stop_discovery, zconf.close):
             try:
@@ -642,8 +713,12 @@ def _cast_connect(device: dict, timeout: float = 12.0):
     cached = _REGISTRY.cast_connection(device['id'])
     if cached is not None:
         return cached
+    known_hosts = [device['host']] if device.get('host') else None
     casts, browser = _cast_module().get_listed_chromecasts(
-        friendly_names=[device['name']], timeout=timeout, discovery_timeout=timeout,
+        friendly_names=[device['name']],
+        known_hosts=known_hosts,
+        timeout=timeout,
+        discovery_timeout=timeout,
     )
     if not casts:
         raise RuntimeError(f'Cast device "{device["name"]}" did not answer')
@@ -769,14 +844,34 @@ class CastRegistry:
     def _scan(self) -> None:
         found: dict[str, dict] = {}
         errors: dict[str, str] = {}
+        candidate_hints: list[str] = []
+
         try:
             for device in discover_dlna():
                 found[device['id']] = device
+                if device.get('host'):
+                    candidate_hints.append(device['host'])
         except Exception as exc:  # noqa: BLE001
             errors['dlna'] = _error_text(exc)
             log.warning('DLNA discovery failed: %s', exc)
+
+        with self._lock:
+            for device in self._devices.values():
+                if device.get('host'):
+                    candidate_hints.append(device['host'])
+
+        active_cast_hosts, direct_devices = _collect_candidate_cast_hosts(candidate_hints)
+        for dev in direct_devices:
+            found[dev['id']] = dev
+
         try:
-            for device in discover_cast():
+            for device in discover_cast(known_hosts=active_cast_hosts):
+                # If model is generic, check if DLNA on the same host has a specific model name
+                if device.get('model') == 'Chromecast' and device.get('host'):
+                    for d in found.values():
+                        if d.get('kind') == 'dlna' and d.get('host') == device['host'] and d.get('model'):
+                            device['model'] = f"Chromecast ({d['model']})"
+                            break
                 found[device['id']] = device
         except Exception as exc:  # noqa: BLE001
             errors['cast'] = _error_text(exc)

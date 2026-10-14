@@ -172,7 +172,8 @@ export function CastModal({
                         <span className="uppercase text-[10px] font-mono tracking-wider px-1.5 py-0.2 rounded bg-white/10">
                           {device.kind === 'cast' ? 'Google Cast' : 'DLNA TV'}
                         </span>
-                        {device.ip && <span>{device.ip}</span>}
+                        {device.model && <span className="truncate">{device.model}</span>}
+                        {(device.host || device.ip) && <span className="text-white/30 hidden sm:inline">{device.host || device.ip}</span>}
                       </div>
                     </div>
                   </div>
