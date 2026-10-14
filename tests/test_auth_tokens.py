@@ -237,14 +237,80 @@ class TestTokenRoutes:
         response = client.post("/api/auth/tokens", json={"label": "TV"})
         assert response.status_code == 403
 
-    def test_minting_requires_admin(self, client, admin_user, monkeypatch):
+    def test_viewer_can_mint_in_own_scope(self, client, monkeypatch):
         monkeypatch.setenv("MEDIA_SERVER_AUTH", "1")
+        db = get_db()
+        try:
+            db.execute("DELETE FROM auth_tokens")
+            db.execute("DELETE FROM users")
+            db.execute(
+                "INSERT INTO users (google_sub, email, role, created_at)"
+                " VALUES ('sub-viewer','viewer@example.com','viewer',?)",
+                (int(time.time()),),
+            )
+            db.commit()
+            viewer_id = db.execute("SELECT id FROM users WHERE email='viewer@example.com'").fetchone()["id"]
+        finally:
+            db.close()
+
         with client.session_transaction() as sess:
-            sess["uid"] = 1
-            sess["email"] = "owner@example.com"
+            sess["uid"] = viewer_id
+            sess["email"] = "viewer@example.com"
             sess["role"] = "viewer"
             sess["issued_at"] = int(time.time())
-        assert client.post("/api/auth/tokens", json={"label": "TV"}).status_code == 403
+
+        res = client.post("/api/auth/tokens", json={"label": "Viewer TV"})
+        assert res.status_code == 201
+        body = res.get_json()
+        assert body["token"].startswith("ms_")
+
+        # Verify viewer only sees their own token
+        list_res = client.get("/api/auth/tokens")
+        assert list_res.status_code == 200
+        tokens = list_res.get_json()["tokens"]
+        assert len(tokens) == 1
+        assert tokens[0]["user_id"] == viewer_id
+
+    def test_viewer_cannot_revoke_other_users_token(self, client, monkeypatch):
+        monkeypatch.setenv("MEDIA_SERVER_AUTH", "1")
+        now = int(time.time())
+        db = get_db()
+        try:
+            db.execute("DELETE FROM auth_tokens")
+            db.execute("DELETE FROM users")
+            db.execute(
+                "INSERT INTO users (google_sub, email, role, created_at)"
+                " VALUES ('sub-admin','admin@example.com','admin',?), ('sub-viewer','viewer@example.com','viewer',?)",
+                (now, now),
+            )
+            db.commit()
+            admin_id = db.execute("SELECT id FROM users WHERE email='admin@example.com'").fetchone()["id"]
+            viewer_id = db.execute("SELECT id FROM users WHERE email='viewer@example.com'").fetchone()["id"]
+        finally:
+            db.close()
+
+        _, admin_token_rec = token_service.create_token(admin_id, "Admin TV")
+
+        # Viewer session
+        with client.session_transaction() as sess:
+            sess["uid"] = viewer_id
+            sess["email"] = "viewer@example.com"
+            sess["role"] = "viewer"
+            sess["issued_at"] = int(time.time())
+
+        # Attempt to revoke admin's token
+        res = client.delete(f"/api/auth/tokens/{admin_token_rec['id']}")
+        assert res.status_code == 403
+
+    def test_admin_pin_allows_minting_without_google_session(self, client):
+        from app.db import set_setting
+        set_setting("admin_pin", "8899")
+
+        res = client.post("/api/auth/tokens", json={"label": "PIN TV"}, headers={"X-Admin-Pin": "8899"})
+        assert res.status_code == 201
+        body = res.get_json()
+        assert body["token"].startswith("ms_")
+        assert body["label"] == "PIN TV"
 
     def test_a_viewer_token_cannot_mint_tokens(self, client, admin_user, monkeypatch):
         """A leaked TV token must not be able to enrol further devices."""

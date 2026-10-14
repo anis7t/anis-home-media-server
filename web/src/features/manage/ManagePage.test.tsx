@@ -26,6 +26,8 @@ const sampleMovies = [
     position: 4000,
     percent: 49,
     poster: 'tmdb:603',
+    hls_cached: true,
+    needs_transcode: true,
   },
   {
     filename: 'Inception.2010.mp4',
@@ -35,6 +37,8 @@ const sampleMovies = [
     position: 8880,
     percent: 100,
     poster: 'tmdb:27205',
+    hls_cached: false,
+    needs_transcode: false,
   },
 ];
 
@@ -127,17 +131,28 @@ function renderManage() {
 }
 
 describe('ManagePage Comprehensive Edge Cases', () => {
-  it('renders movie inventory, storage stats, and Unlock Admin badge', async () => {
+  it('renders access-denied gate when not authenticated as admin, blocking settings & audit', async () => {
     renderManage();
 
-    expect(await screen.findByText('The Matrix')).toBeInTheDocument();
-    expect(screen.getByText('Inception')).toBeInTheDocument();
+    expect(await screen.findByText('Administrator Access Required')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unlock with admin pin/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
 
-    // Verification badge indicates unauthenticated / locked state
-    expect(screen.getByText(/unlock admin/i)).toBeInTheDocument();
+    // Sensitive settings and drive audit must NOT be crawled while locked
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/storage/settings'),
+      expect.anything()
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/storage/audit'),
+      expect.anything()
+    );
   });
 
   it('filters movies by search query and category chips', async () => {
+    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
+
     renderManage();
     const user = userEvent.setup();
 
@@ -171,8 +186,8 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     renderManage();
     const user = userEvent.setup();
 
-    const unlockBadge = await screen.findByText(/unlock admin/i);
-    await user.click(unlockBadge);
+    const unlockBtn = await screen.findByRole('button', { name: /unlock with admin pin/i });
+    await user.click(unlockBtn);
 
     // Modal opens
     const pinInput = screen.getByPlaceholderText(/admin pin…/i);
@@ -193,11 +208,41 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     await waitFor(() => {
       expect(screen.getByText(/admin verified/i)).toBeInTheDocument();
     });
+    expect(screen.getByText('The Matrix')).toBeInTheDocument();
     expect(sessionStorage.getItem('ms_admin_pin')).toBe('6361');
     expect(sessionStorage.getItem('ms_admin_unlocked')).toBe('true');
   });
 
   it('prompts for PIN when deleting a movie while locked', async () => {
+    // Admin role via Google session but PIN not entered yet
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return jsonResponse({
+          authenticated: true,
+          email: 'admin@example.com',
+          name: 'Admin',
+          role: 'admin',
+        });
+      }
+      if (url === '/api/movies') {
+        return jsonResponse({ movies: sampleMovies });
+      }
+      if (url === '/api/storage/settings') {
+        return jsonResponse(sampleSettings);
+      }
+      if (url === '/api/storage/audit') {
+        return jsonResponse(sampleAudit);
+      }
+      if (url === '/api/admin/verify') {
+        return jsonResponse({ success: true, admin: true, method: 'pin' });
+      }
+      if (url.startsWith('/api/media/') && init?.method === 'DELETE') {
+        return jsonResponse({ success: true, message: 'Purged' });
+      }
+      return jsonResponse({});
+    });
+
     renderManage();
     const user = userEvent.setup();
 
@@ -252,5 +297,41 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         })
       );
     });
+  });
+
+  it('renders HLS Cached badge instantly from movie metadata even while storage audit is pending', async () => {
+    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
+
+    // Delay /api/storage/audit to simulate a 10s drive crawl
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return jsonResponse({ authenticated: false, email: null, name: null, role: 'viewer' });
+      }
+      if (url === '/api/movies') {
+        return jsonResponse({ movies: sampleMovies });
+      }
+      if (url === '/api/storage/settings') {
+        return jsonResponse(sampleSettings);
+      }
+      if (url === '/api/storage/audit') {
+        // Return a pending promise that doesn't resolve immediately
+        return new Promise((resolve) => {
+          setTimeout(() => resolve(jsonResponse(sampleAudit)), 2000);
+        });
+      }
+      return jsonResponse({});
+    });
+
+    renderManage();
+
+    // The Matrix should be visible and immediately show "HLS Cached" without waiting for audit
+    await screen.findByText('The Matrix');
+    const hlsBadges = screen.getAllByText(/hls cached/i);
+    expect(hlsBadges.length).toBeGreaterThanOrEqual(2);
+
+    // And the storage pool section should show the auditing loading indicator
+    expect(screen.getByText(/auditing storage pool & cache integrity/i)).toBeInTheDocument();
   });
 });

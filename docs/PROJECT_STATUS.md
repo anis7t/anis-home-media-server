@@ -51,6 +51,35 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 
+### 2026-10-14 — Issues 1–7 Resolution & Comprehensive User Manual Overhaul
+
+**1. Manage Page Performance & Instant Cache Detection (Issue 1)**
+- Implemented `probe_hls_cache_instant()` in `app/services/media_service.py` performing synchronous directory existence probing without invoking FFmpeg or directory walking.
+- Hydrated `/manage` media inventory in `< 100ms`, displaying real-time accurate badges (*Cached HLS* vs *Direct Play* vs *On-Demand HLS*) immediately without 5–20s delay or false optimistic labels.
+- Added animated skeleton loading shimmer placeholders for the Storage Pool HUD and audit cards.
+
+**2. Auth Architecture Clarification & Guest Mode Polish (Issues 2 & 3)**
+- Documented open-door Guest Mode vs enforced `MEDIA_SERVER_AUTH=1` security model.
+- Transferred device pairing from `/devices` to `/account`, reserving `/devices` purely for client presence and network telemetry.
+- Replaced confusing "Signed in as Unknown" with an informative obsidian **Guest Mode** card explaining hardware cookie identification (`ms_device_id`), and replaced the unauthenticated Sign Out button with a prominent **Sign in with Google** button.
+
+**3. Device Token Pairing, Admin PIN Support & Watch History Drawer (Issues 4, 5, 6)**
+- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords.
+- Added user-scoped interactive Watch History Drawer on `/account` with poster thumbnails, timestamps, watch percentages, resume points, and a **Clear All History** action.
+- Permitted non-admin authenticated users (`role: 'viewer'`) to pair devices in their own scope.
+- Added Admin PIN authorization support to token minting, eliminating 403 barriers for administrators.
+
+**4. Admin-Only Gating, Fleet Privacy Scoping & Route Hardening (Issue 7)**
+- Gated `/manage` storage pool settings and audits behind administrator authorization (`role: 'admin'` or verified Admin PIN). Unauthorized visitors are presented with a rich obsidian Access-Denied card with ambient radial lighting, glowing pulse shield, 4 capability overview cards, and a portaled Admin PIN unlock modal.
+- Scoped `GET /api/devices` to the caller's current device only (`is_current == True`) when unauthorized as admin, concealing other household IP addresses and sessions. Added an amber privacy scoping notice and an **"Unlock Fleet Telemetry"** header button.
+- Restricted `POST /api/devices/rename` and `POST /api/devices/delete` to the caller's own `device_id` unless authorized as admin.
+- Hardened `POST /api/scan`, `POST /upload`, `POST /upload/chunk/init`, and `GET /api/storage/audit` to require admin authorization (`403 Forbidden` on non-admin).
+
+**5. Comprehensive Structured Manual & In-App Guide Overhaul**
+- Fully rewrote and structured [`docs/MANUAL.md`](MANUAL.md) into a comprehensive 13-section master operator guide covering dual-drive storage tiering (E: SSD + D: Mass storage; C: strictly unused), authentication & PIN security, TV remote 2-zone navigation, touch gestures, device pairing, dual-GPU chunked transcoding, casting, retention policies, and Windows persistent services.
+- Overhauled [`web/src/features/manual/ManualPage.tsx`](../web/src/features/manual/ManualPage.tsx) with modern web guidance and rich obsidian UI elements: quick-jump category navigation rail, keyboard shortcuts table, gesture grid, 10-foot TV remote focus cards, and pairing workflow cards.
+- Added test coverage in [`web/src/features/manual/ManualPage.test.tsx`](../web/src/features/manual/ManualPage.test.tsx).
+
 ### 2026-10-14 — React Modal Portaling, CSS Transform Isolation & Manage Loading Latency Tracking
 
 **1. Modal Dialog Viewport Centering & CSS Transform Isolation (`ManagePage.tsx`, `CastModal.tsx`, `AppShell.tsx`, `index.css`)**

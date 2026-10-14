@@ -44,9 +44,73 @@ def check_which(cmd):
     return shutil_which(cmd)
 
 
+def _configured_admin_pin():
+    """The configured Admin PIN, or `''` when none has been set.
+
+    Fails closed by design, and this is load-bearing rather than stylistic.
+
+    An earlier revision of this code defaulted to a hard-coded PIN. On a host
+    reachable from the public internet through the Cloudflare tunnel, that is
+    equivalent to publishing permanent unauthenticated access to every route
+    behind `@require_admin` - which includes *deleting the library*, purging
+    caches, and moving originals into the archive. A default is not a safe
+    fallback for a secret: "no PIN configured" must mean "no PIN accepted", so
+    the only way in is a Google admin session, which sets the first PIN
+    deliberately.
+
+    An empty string is also what `api_admin_status` already reports `has_pin`
+    against, so the two answers cannot disagree about whether a PIN exists.
+    """
+    from app.db import get_setting
+    return str(get_setting('admin_pin', '') or '').strip()
+
+
+def is_admin_authorized():
+    """Verify whether caller is authenticated as an admin or supplied the valid Admin PIN."""
+    # Automated pytest harness pass-through
+    if os.environ.get('PYTEST_CURRENT_TEST') and not os.environ.get('MEDIA_SERVER_AUTH'):
+        return True
+
+    from app.services import auth_service
+    identity = auth_service.resolve_identity()
+    if identity and auth_service.role_satisfies(identity.role, auth_service.ROLE_ADMIN):
+        return True
+
+    # Header or JSON body only. A PIN accepted from the query string would be
+    # written into Waitress access logs, Cloudflare's edge logs, the browser
+    # history and Referer headers - putting the one secret that guards media
+    # deletion into four more places to leak it from.
+    pin = request.headers.get('X-Admin-Pin')
+    if not pin and request.is_json:
+        data = request.get_json(silent=True) or {}
+        pin = data.get('admin_pin') or data.get('pin')
+
+    stored_pin = _configured_admin_pin()
+    if pin and stored_pin and str(pin).strip() == stored_pin:
+        return True
+
+    return False
+
+
+def require_admin(fn):
+    """Decorator to enforce administrator privileges (Google admin session or Admin PIN)."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_admin_authorized():
+            return jsonify({
+                'success': False,
+                'error': 'Administrator verification required. Sign in as admin or provide the Admin PIN.'
+            }), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 @api_bp.route('/api/scan', methods=['GET', 'POST'])
 def api_scan():
     """Scan the library and start HLS transcoding for media missing a completed cache."""
+    if request.method == 'POST' and not is_admin_authorized():
+        return jsonify(error="Administrator verification required to trigger library scan."), 403
     started = trigger_library_scan(refresh_metadata=True, force_refresh=True)
     transcode_result = trigger_missing_transcodes()
     return jsonify(
@@ -447,6 +511,7 @@ def tmdb_backdrop(tmdb_id):
 
 
 @api_bp.route('/api/upload', methods=['POST'])
+@require_admin
 def upload():
     """Upload media file, save to MEDIA_ROOT, and run all new-media tasks."""
     if 'file' not in request.files:
@@ -580,68 +645,6 @@ def upload():
     )
 
 
-def _configured_admin_pin():
-    """The configured Admin PIN, or `''` when none has been set.
-
-    Fails closed by design, and this is load-bearing rather than stylistic.
-
-    An earlier revision of this code defaulted to a hard-coded PIN. On a host
-    reachable from the public internet through the Cloudflare tunnel, that is
-    equivalent to publishing permanent unauthenticated access to every route
-    behind `@require_admin` - which includes *deleting the library*, purging
-    caches, and moving originals into the archive. A default is not a safe
-    fallback for a secret: "no PIN configured" must mean "no PIN accepted", so
-    the only way in is a Google admin session, which sets the first PIN
-    deliberately.
-
-    An empty string is also what `api_admin_status` already reports `has_pin`
-    against, so the two answers cannot disagree about whether a PIN exists.
-    """
-    from app.db import get_setting
-    return str(get_setting('admin_pin', '') or '').strip()
-
-
-def is_admin_authorized():
-    """Verify whether caller is authenticated as an admin or supplied the valid Admin PIN."""
-    # Automated pytest harness pass-through
-    if os.environ.get('PYTEST_CURRENT_TEST') and not os.environ.get('MEDIA_SERVER_AUTH'):
-        return True
-
-    from app.services import auth_service
-    identity = auth_service.resolve_identity()
-    if identity and auth_service.role_satisfies(identity.role, auth_service.ROLE_ADMIN):
-        return True
-
-    # Header or JSON body only. A PIN accepted from the query string would be
-    # written into Waitress access logs, Cloudflare's edge logs, the browser
-    # history and Referer headers - putting the one secret that guards media
-    # deletion into four more places to leak it from.
-    pin = request.headers.get('X-Admin-Pin')
-    if not pin and request.is_json:
-        data = request.get_json(silent=True) or {}
-        pin = data.get('admin_pin') or data.get('pin')
-
-    stored_pin = _configured_admin_pin()
-    if pin and stored_pin and str(pin).strip() == stored_pin:
-        return True
-
-    return False
-
-
-def require_admin(fn):
-    """Decorator to enforce administrator privileges (Google admin session or Admin PIN)."""
-    from functools import wraps
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not is_admin_authorized():
-            return jsonify({
-                'success': False,
-                'error': 'Administrator verification required. Sign in as admin or provide the Admin PIN.'
-            }), 403
-        return fn(*args, **kwargs)
-    return wrapper
-
-
 @api_bp.route('/api/admin/verify', methods=['POST'])
 def api_admin_verify():
     """Verify if caller is admin or if the provided PIN matches stored admin_pin."""
@@ -706,6 +709,19 @@ def api_devices():
     from app.services.device_service import get_all_devices, register_device_request
     current_dev_id, _ = register_device_request(request)
     devices, stats = get_all_devices(current_device_id=current_dev_id)
+    if not is_admin_authorized():
+        devices = [d for d in devices if d.get('is_current')]
+        total_devices = len(devices)
+        active_now = sum(1 for d in devices if d.get('is_active'))
+        offline_count = total_devices - active_now
+        stats = {
+            "total_devices": total_devices,
+            "active_now": active_now,
+            "offline_count": offline_count,
+            "cloudflare_count": sum(1 for d in devices if 'Cloudflare' in d.get('connection_type', '')),
+            "lan_count": sum(1 for d in devices if 'LAN' in d.get('connection_type', '')),
+            "localhost_count": sum(1 for d in devices if 'Localhost' in d.get('connection_type', '')),
+        }
     return jsonify(devices=devices, stats=stats, current_device_id=current_dev_id)
 
 
@@ -717,7 +733,10 @@ def api_devices_rename():
     name = data.get('name', '').strip()
     if not device_id:
         return jsonify(error="device_id is required"), 400
-    from app.services.device_service import rename_device
+    from app.services.device_service import current_device_id, rename_device
+    cur_id = current_device_id()
+    if not is_admin_authorized() and device_id != cur_id:
+        return jsonify(error="Unauthorized: You can only rename your current device."), 403
     rename_device(device_id, name)
     return jsonify(success=True)
 
@@ -729,7 +748,10 @@ def api_devices_delete():
     device_id = data.get('device_id', '').strip()
     if not device_id:
         return jsonify(error="device_id is required"), 400
-    from app.services.device_service import delete_device
+    from app.services.device_service import current_device_id, delete_device
+    cur_id = current_device_id()
+    if not is_admin_authorized() and device_id != cur_id:
+        return jsonify(error="Unauthorized: You can only remove your current device."), 403
     delete_device(device_id)
     res = jsonify(success=True)
     if request.cookies.get('ms_device_id') == device_id:
@@ -829,6 +851,7 @@ def api_upload_subtitle(filename):
 # ---------------------------------------------------------------------------
 
 @api_bp.route('/api/storage/audit', methods=['GET'])
+@require_admin
 def storage_audit():
     """Audit HLS and preview cache directories for active vs orphaned status."""
     from app.services.transcode_service import audit_orphaned_caches

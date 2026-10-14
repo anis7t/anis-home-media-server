@@ -171,6 +171,9 @@ def _prepare_media(target_path):
 
 @api_bp.route('/api/upload/chunk/init', methods=['POST'])
 def chunk_upload_init():
+    from app.routes.api import is_admin_authorized
+    if not is_admin_authorized():
+        return jsonify(error="Administrator verification required to upload media."), 403
     data = request.get_json(silent=True) or {}
     try:
         clean_name, suffix = _safe_filename(data.get('filename', ''))

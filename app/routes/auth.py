@@ -202,68 +202,140 @@ def whoami():
 # --------------------------------------------------------------------------- #
 
 
+def _is_admin_pin_provided() -> bool:
+    from app.db import get_setting
+    stored_pin = str(get_setting('admin_pin', '') or '').strip()
+    if not stored_pin:
+        return False
+    pin = request.headers.get('X-Admin-Pin')
+    if not pin and request.is_json:
+        data = request.get_json(silent=True) or {}
+        pin = data.get('admin_pin') or data.get('pin')
+    return bool(pin and str(pin).strip() == stored_pin)
+
+
 @auth_bp.route("/api/auth/tokens", methods=["GET", "POST"])
-@require_auth("admin")
 def api_tokens():
+    import time
     from app.services import token_service
+    from app.db import get_db
+
+    # Bearer tokens cannot mint or manage tokens
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return jsonify({"error": "Device tokens cannot manage or mint further tokens."}), 403
 
     identity = auth_service.resolve_identity()
-    # `require_auth` is a pass-through while enforcement is off, so this view
-    # must refuse an absent identity itself rather than dereferencing None.
-    if identity is None:
-        return jsonify({"error": "Sign in as an administrator to manage tokens."}), 403
+    pin_authed = _is_admin_pin_provided()
 
-    if request.method == "GET":
-        return jsonify({"tokens": token_service.list_tokens()})
-
-    data = request.get_json(silent=True) or {}
-    label = (data.get("label") or "").strip()
-    if not label:
-        # A bare token in a list of opaque ids is how you end up revoking the
-        # wrong one.
-        return jsonify({"error": "A label is required so the token can be identified later."}), 400
-    validity = data.get("validity_days", token_service.DEFAULT_VALIDITY_DAYS)
-    try:
-        validity = int(validity) if validity is not None else None
-        if validity is not None and validity <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        return jsonify({"error": "validity_days must be a positive integer or null."}), 400
-
-    from app.db import get_db
+    if config.auth_enabled() and identity is None and not pin_authed:
+        return auth_service._reject_anonymous()
+    if identity is None and not pin_authed:
+        return jsonify({"error": "Sign in or provide the Admin PIN to manage device tokens."}), 403
 
     db = get_db()
     try:
-        row = db.execute("SELECT id FROM users WHERE email=?", (identity.subject,)).fetchone()
+        user_row = None
+        if identity is not None:
+            user_row = db.execute("SELECT id, role, email FROM users WHERE email=?", (identity.subject,)).fetchone()
+
+        # If authorized via Admin PIN without an admin Google session, bind to admin user
+        if pin_authed and (user_row is None or user_row["role"] != "admin"):
+            admin_row = db.execute("SELECT id, role, email FROM users WHERE role='admin' ORDER BY id ASC").fetchone()
+            if not admin_row:
+                now = int(time.time())
+                cur = db.execute(
+                    "INSERT INTO users (google_sub, email, name, role, created_at)"
+                    " VALUES ('admin_pin', 'admin@local', 'Administrator', 'admin', ?)",
+                    (now,)
+                )
+                db.commit()
+                admin_row = {"id": cur.lastrowid, "role": "admin", "email": "admin@local"}
+            if user_row is None:
+                user_row = admin_row
+
+        if user_row is None:
+            return jsonify({"error": "The signed-in account no longer exists."}), 403
+
+        is_admin = pin_authed or (user_row["role"] == "admin")
+        current_user_id = user_row["id"]
+
+        if request.method == "GET":
+            # Admin sees all tokens; non-admin viewer sees only their own tokens
+            tokens = token_service.list_tokens(None if is_admin else current_user_id)
+            return jsonify({"tokens": tokens})
+
+        # POST: mint token
+        data = request.get_json(silent=True) or {}
+        label = (data.get("label") or "").strip()
+        if not label:
+            return jsonify({"error": "A label is required so the token can be identified later."}), 400
+        validity = data.get("validity_days", token_service.DEFAULT_VALIDITY_DAYS)
+        try:
+            validity = int(validity) if validity is not None else None
+            if validity is not None and validity <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "validity_days must be a positive integer or null."}), 400
+
+        plaintext, record = token_service.create_token(current_user_id, label, validity)
+        pairing = token_service.pairing_payload(plaintext, request.host_url)
+
+        log.info("AUTH: token minted for user_id=%s label=%r", current_user_id, label)
+        return jsonify({
+            "token": plaintext,
+            "pairing_url": pairing,
+            "id": record["id"],
+            "label": record["label"],
+            "expires_at": record["expires_at"],
+            "warning": "This token is displayed once and cannot be retrieved again.",
+        }), 201
     finally:
         db.close()
-    if row is None:
-        return jsonify({"error": "The signed-in account no longer exists."}), 403
-
-    plaintext, record = token_service.create_token(row["id"], label, validity)
-    pairing = token_service.pairing_payload(plaintext, request.host_url)
-
-    log.info("AUTH: token minted for user_id=%s label=%r", row["id"], label)
-    return jsonify({
-        # Shown ONCE. Not recoverable afterwards.
-        "token": plaintext,
-        "pairing_url": pairing,
-        "id": record["id"],
-        "label": record["label"],
-        "expires_at": record["expires_at"],
-        "warning": "This token is displayed once and cannot be retrieved again.",
-    }), 201
 
 
 @auth_bp.route("/api/auth/tokens/<int:token_id>", methods=["DELETE"])
-@require_auth("admin")
 def revoke_api_token(token_id):
     from app.services import token_service
+    from app.db import get_db
 
-    if not token_service.revoke_token(token_id):
-        return jsonify({"error": "No such active token."}), 404
-    log.info("AUTH: token revoked id=%s", token_id)
-    return jsonify({"revoked": token_id})
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return jsonify({"error": "Device tokens cannot manage or revoke tokens."}), 403
+
+    identity = auth_service.resolve_identity()
+    pin_authed = _is_admin_pin_provided()
+
+    if config.auth_enabled() and identity is None and not pin_authed:
+        return auth_service._reject_anonymous()
+    if identity is None and not pin_authed:
+        return jsonify({"error": "Sign in or provide the Admin PIN to manage device tokens."}), 403
+
+    db = get_db()
+    try:
+        target_token = db.execute("SELECT id, user_id FROM auth_tokens WHERE id=?", (token_id,)).fetchone()
+        if not target_token:
+            return jsonify({"error": "No such active token."}), 404
+
+        is_admin = pin_authed
+        user_id = None
+        if identity is not None:
+            user_row = db.execute("SELECT id, role FROM users WHERE email=?", (identity.subject,)).fetchone()
+            if user_row:
+                user_id = user_row["id"]
+                if user_row["role"] == "admin":
+                    is_admin = True
+
+        # Non-admins can only revoke their own tokens
+        if not is_admin and (user_id is None or target_token["user_id"] != user_id):
+            return jsonify({"error": "You can only revoke tokens belonging to your own account."}), 403
+
+        if not token_service.revoke_token(token_id):
+            return jsonify({"error": "No such active token."}), 404
+        log.info("AUTH: token revoked id=%s", token_id)
+        return jsonify({"revoked": token_id})
+    finally:
+        db.close()
 
 
 @auth_bp.route("/auth/pair")

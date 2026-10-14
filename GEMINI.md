@@ -126,6 +126,12 @@
 - **Zero Vertical Scrolling on Mobile Modals**:
   - Mobile modals must be designed with compact vertical footprints (total height \(\le 260\text{px}\)) using `max-height: min(90vh, 90dvh)`, reduced padding (\(\le 1\text{rem}\)), and concise checklist copy (\(\le 3\) items).
   - Modals must fit within compact 375×667 mobile viewports without forcing vertical scrolling.
+- **Modal Dialog Portaling & CSS Transform Isolation**:
+  - All modal dialogs, confirmation popups, backdrops, and full-screen overlays with `position: fixed` MUST be portaled to `document.body` via `createPortal(..., document.body)` (or a dedicated root `#portal-root`).
+  - Never render `position: fixed` modals inline within deep component trees or page layouts, as ancestor `transform`, `filter`, `perspective`, or `contain` properties will trap the modal's containing block.
+  - Keyframes for page-level or container entrance animations using `animation-fill-mode: forwards` (such as `fadeIn`) must terminate on `transform: none;` rather than `transform: translateY(0)` or `transform: translateZ(0)`. Any non-none computed transform permanently traps fixed-position children inside that container.
+  - Modal overlay backdrops must declare `className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"`.
+  - Modal content cards must declare `my-auto` so they center vertically when height permits and scroll naturally without top clipping when the viewport height is smaller than the modal.
 
 ## 10. Upload Telemetry & Post-Upload Ingestion Invariants
 - **Post-Upload Abort Concealment**:

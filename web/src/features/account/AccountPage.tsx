@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import Avatar from '../../components/Avatar';
 import {
+  getStoredAdminPin,
   listTokens,
   mintToken,
   revokeToken,
@@ -25,7 +26,7 @@ function statusOf(token: TokenRecord): { label: string; className: string } {
 }
 
 export function AccountPage() {
-  const { email, name, role, signOut } = useAuth();
+  const { authenticated, email, name, role, signIn, signOut } = useAuth();
   const [tokens, setTokens] = useState<TokenRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState('');
@@ -87,34 +88,61 @@ export function AccountPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="relative">
-              <Avatar size="lg" label={name ?? 'Account'} />
-              <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-obsidian-900" title="Online">
+              <Avatar size="lg" label={authenticated ? (name ?? email ?? 'Account') : 'Guest'} />
+              <div
+                className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-obsidian-900 ${
+                  authenticated ? 'bg-emerald-500' : 'bg-amber-500'
+                }`}
+                title={authenticated ? 'Online' : 'Guest'}
+              >
                 <span className="h-2 w-2 rounded-full bg-white"></span>
               </div>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
                 <h1 className="text-2xl font-bold tracking-tight text-white">Account</h1>
-                {role ? (
+                {authenticated && role ? (
                   <span className="rounded-full bg-brand-500/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-brand-300 border border-brand-500/30">
                     {role}
                   </span>
-                ) : null}
+                ) : (
+                  <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-white/60 border border-white/10">
+                    Guest Mode
+                  </span>
+                )}
               </div>
-              <p className="mt-1 text-sm text-white/60">
-                Signed in as <span className="text-white/90 font-medium">{name ?? email ?? 'unknown'}</span>
-              </p>
-              <p className="text-xs text-white/40">{email}</p>
+              {authenticated ? (
+                <>
+                  <p className="mt-1 text-sm text-white/60">
+                    Signed in as <span className="text-white/90 font-medium">{name ?? email}</span>
+                  </p>
+                  {email ? <p className="text-xs text-white/40">{email}</p> : null}
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-white/60">
+                  Not signed in · Browsing as a local guest
+                </p>
+              )}
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={signOut}
-            className="self-start sm:self-auto rounded-full border border-white/15 bg-white/5 px-5 py-2 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-          >
-            Sign out
-          </button>
+          {authenticated ? (
+            <button
+              type="button"
+              onClick={signOut}
+              className="self-start sm:self-auto rounded-full border border-white/15 bg-white/5 px-5 py-2 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            >
+              Sign out
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={signIn}
+              className="card-ring brand-gradient brand-glow-sm self-start sm:self-auto rounded-full px-5 py-2 text-xs font-semibold text-white shadow-md transition hover:scale-105 active:scale-95"
+            >
+              Sign in with Google →
+            </button>
+          )}
         </div>
       </section>
 
@@ -136,36 +164,50 @@ export function AccountPage() {
           <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs text-white/65">
             <span className="text-brand-400 font-semibold shrink-0">💡 Note for Web Users:</span>
             <span>
-              Your web browser is already signed in! You only need to add a device here when pairing an external screen like an Android TV, Fire TV Stick, or phone.
+              {authenticated
+                ? 'Your web browser is already signed in! You only need to add a device here when pairing an external screen like an Android TV, Fire TV Stick, or phone.'
+                : 'You are currently in guest mode. Sign in with Google to generate pairing tokens for external screens like an Android TV, Fire TV Stick, or phone.'}
             </span>
           </div>
         </div>
 
-        {role === 'admin' ? (
-          <form onSubmit={onMint} className="flex flex-wrap items-center gap-3">
-            <label htmlFor="token-label" className="sr-only">
-              Device name
-            </label>
-            <input
-              id="token-label"
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="Living room TV"
-              maxLength={60}
-              className="min-w-64 flex-1 rounded-full border border-white/15 bg-obsidian-900/80 px-4 py-2.5 text-sm text-white placeholder:text-white/30 shadow-inner transition focus:border-brand-500/60 focus:bg-obsidian-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            />
-            <button
-              type="submit"
-              disabled={busy || label.trim().length === 0}
-              className="card-ring rounded-full brand-gradient brand-glow-sm px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
-            >
-              {busy ? 'Working…' : 'Add device'}
-            </button>
+        {authenticated || Boolean(getStoredAdminPin()) ? (
+          <form onSubmit={onMint} className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="token-label" className="sr-only">
+                Device name
+              </label>
+              <input
+                id="token-label"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder="e.g. Living room TV or Bedroom Fire Stick"
+                maxLength={60}
+                className="min-w-64 flex-1 rounded-full border border-white/15 bg-obsidian-900/80 px-4 py-2.5 text-sm text-white placeholder:text-white/30 shadow-inner transition focus:border-brand-500/60 focus:bg-obsidian-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              />
+              <button
+                type="submit"
+                disabled={busy || label.trim().length === 0}
+                className="card-ring rounded-full brand-gradient brand-glow-sm px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+              >
+                {busy ? 'Working…' : 'Add device'}
+              </button>
+            </div>
+            <p className="text-[11px] text-white/40">
+              Entering a name generates a one-time pairing token and QR code to sign in on your TV or phone.
+            </p>
           </form>
         ) : (
-          <p className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/50">
-            Only an administrator can add devices.
-          </p>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span>Sign in with Google to generate pairing tokens for your Android TV, Fire TV Stick, or phone.</span>
+            <button
+              type="button"
+              onClick={signIn}
+              className="card-ring brand-gradient brand-glow-sm self-start sm:self-auto rounded-full px-4 py-1.5 text-xs font-semibold text-white whitespace-nowrap shadow-sm hover:scale-105 active:scale-95 transition"
+            >
+              Sign in to pair →
+            </button>
+          </div>
         )}
 
         {minted ? <MintedTokenPanel minted={minted} onDismiss={() => setMinted(null)} /> : null}
@@ -230,18 +272,35 @@ export function AccountPage() {
       {/* Session Management Section */}
       <section aria-labelledby="session-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
         <h2 id="session-heading" className="text-lg font-bold text-white">
-          Active Session
+          {authenticated ? 'Active Session' : 'Guest Session'}
         </h2>
-        <p className="text-xs text-white/50">
-          Sign out will clear your session cookie on this browser. You can sign back in at any time with Google Sign-In.
-        </p>
-        <button
-          type="button"
-          onClick={signOut}
-          className="card-ring rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 active:scale-95 transition"
-        >
-          Sign out
-        </button>
+        {authenticated ? (
+          <>
+            <p className="text-xs text-white/50">
+              Sign out will clear your session cookie on this browser. You can sign back in at any time with Google Sign-In.
+            </p>
+            <button
+              type="button"
+              onClick={signOut}
+              className="card-ring rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 active:scale-95 transition"
+            >
+              Sign out
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-white/50">
+              You are currently browsing as an anonymous guest. Signing in connects your Google account to sync your watch progress across devices and pair Android TV apps.
+            </p>
+            <button
+              type="button"
+              onClick={signIn}
+              className="card-ring brand-gradient brand-glow-sm rounded-full px-5 py-2.5 text-sm font-semibold text-white hover:scale-105 active:scale-95 transition"
+            >
+              Sign in with Google
+            </button>
+          </>
+        )}
       </section>
     </div>
   );

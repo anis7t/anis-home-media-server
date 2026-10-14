@@ -254,6 +254,26 @@ def poster_for(path, row):
     return None
 
 
+def is_hls_cached_fast(path):
+    """Fast check whether an HLS transcode is complete for this file.
+
+    Checks only playlist.m3u8 for #EXT-X-ENDLIST. Microsecond execution per title.
+    """
+    from app.services.transcode_service import needs_transcode, hls_cache_dir
+    if not needs_transcode(path):
+        return False
+    try:
+        hd = hls_cache_dir(path)
+        pl = hd / 'playlist.m3u8'
+        if pl.is_file():
+            txt = pl.read_text(errors='replace')
+            if '#EXT-X-ENDLIST' in txt:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def movie(path, db, device_id=None):
     """Build movie metadata dictionary for a video path combining database and filesystem data.
 
@@ -291,6 +311,11 @@ def movie(path, db, device_id=None):
         if meta and meta['tmdb_id'] and (config.POSTER_CACHE / f"{meta['tmdb_id']}.jpg").exists()
         else None
     )
+
+    from app.services.transcode_service import needs_transcode
+    needs_tc = needs_transcode(path)
+    hls_cached = is_hls_cached_fast(path) if needs_tc else False
+
     return dict(
         filename=name,
         path=path,
@@ -309,7 +334,9 @@ def movie(path, db, device_id=None):
         updated_at=format_db_timestamp(value(progress, 'updated_at', '')),
         backdrop_path=value(meta, 'backdrop_path', ''),
         details_json=value(meta, 'details_json', ''),
-        last_metadata_refresh=value(meta, 'last_metadata_refresh')
+        last_metadata_refresh=value(meta, 'last_metadata_refresh'),
+        needs_transcode=needs_tc,
+        hls_cached=hls_cached,
     )
 
 

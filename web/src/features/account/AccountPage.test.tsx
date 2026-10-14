@@ -53,6 +53,27 @@ function renderAccount() {
 }
 
 describe('AccountPage', () => {
+  it('shows the guest mode status and sign in prompt when unauthenticated', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') {
+        return jsonResponse({
+          authenticated: false,
+          email: null,
+          name: null,
+          role: null,
+        });
+      }
+      return jsonResponse({ tokens: [] });
+    });
+
+    renderAccount();
+    expect(await screen.findByText('Guest Mode')).toBeInTheDocument();
+    expect(screen.getByText('Not signed in · Browsing as a local guest')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in with google →/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /guest session/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^sign in with google$/i })).toBeInTheDocument();
+  });
+
   it('shows the signed-in identity', async () => {
     renderAccount();
     expect(await screen.findByText('Anis Parvez')).toBeInTheDocument();
@@ -231,7 +252,7 @@ describe('AccountPage', () => {
     });
   });
 
-  it('hides device management from a non-admin', async () => {
+  it('allows a non-admin viewer to add devices in their own scope', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       if (String(input) === '/api/auth/me') {
         return jsonResponse({ authenticated: true, email: 'viewer@example.com', role: 'viewer' });
@@ -240,7 +261,20 @@ describe('AccountPage', () => {
     });
 
     renderAccount();
-    expect(await screen.findByText(/only an administrator can add devices/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /add device/i })).toBeInTheDocument();
+    expect(screen.queryByText(/only an administrator can add devices/i)).not.toBeInTheDocument();
+  });
+
+  it('prompts unauthenticated guests to sign in before adding devices', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') {
+        return jsonResponse({ authenticated: false, email: null, role: null });
+      }
+      return jsonResponse({ tokens: [] });
+    });
+
+    renderAccount();
+    expect(await screen.findByRole('button', { name: /sign in to pair →/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add device/i })).not.toBeInTheDocument();
   });
 

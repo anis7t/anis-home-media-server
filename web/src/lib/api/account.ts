@@ -62,11 +62,44 @@ export function saveAllowlist(emails: string[]): Promise<{ stored: string[] }> {
   });
 }
 
+export function getStoredAdminPin(): string | null {
+  try {
+    if (typeof sessionStorage !== 'undefined' && typeof sessionStorage?.getItem === 'function') {
+      const pin = sessionStorage.getItem('ms_admin_pin');
+      if (pin) return pin;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof localStorage !== 'undefined' && typeof localStorage?.getItem === 'function') {
+      const pin = localStorage.getItem('admin_pin');
+      if (pin) return pin;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 async function accountRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const pin = getStoredAdminPin();
+  let headers: Record<string, string> | undefined = undefined;
+
+  if (options.body) {
+    headers = { 'Content-Type': 'application/json' };
+  }
+  if (pin) {
+    headers = { ...(headers || {}), 'X-Admin-Pin': pin };
+  }
+  if (options.headers) {
+    headers = { ...(headers || {}), ...(options.headers as Record<string, string>) };
+  }
+
   const response = await fetch(path, {
     credentials: 'same-origin',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
     ...options,
+    headers,
   });
 
   if (!response.ok) {

@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router';
 import { Icon } from '../../components/icons';
+import { getStoredAdminPin } from '../../lib/api/account';
+
+export interface WatchHistoryItem {
+  filename: string;
+  title: string;
+  year: string | number;
+  position: number;
+  duration: number;
+  position_str: string;
+  duration_str: string;
+  percent: number;
+  completed: boolean;
+  last_watched: string;
+  last_watched_ago: string;
+  poster_url: string | null;
+}
 
 interface DeviceItem {
   device_id: string;
@@ -21,10 +38,8 @@ interface DeviceItem {
   is_active: boolean;
   is_current: boolean;
   total_watched?: number;
-  recent_watch?: {
-    filename: string;
-    percent: number;
-  } | null;
+  recent_watch?: WatchHistoryItem | { filename: string; percent: number } | null;
+  watch_history?: WatchHistoryItem[];
 }
 
 interface DevicesResponse {
@@ -45,10 +60,27 @@ export function DevicesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selectedDeviceHistory, setSelectedDeviceHistory] = useState<DeviceItem | null>(null);
+
+  // Fleet Telemetry Admin PIN Unlock State
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInputValue, setPinInputValue] = useState('');
+  const [pinModalError, setPinModalError] = useState<string | null>(null);
+  const [isFleetUnlocked, setIsFleetUnlocked] = useState(false);
+
+  const getAdminHeaders = useCallback((): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const pin = getStoredAdminPin();
+    if (pin) headers['X-Admin-Pin'] = pin;
+    return headers;
+  }, []);
 
   const loadDevices = useCallback(async () => {
     try {
-      const res = await fetch('/api/devices');
+      const pin = getStoredAdminPin();
+      const headers: Record<string, string> = {};
+      if (pin) headers['X-Admin-Pin'] = pin;
+      const res = await fetch('/api/devices', { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as DevicesResponse;
       setData(body);
@@ -59,6 +91,32 @@ export function DevicesPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleVerifyFleetPin = async (candidatePin: string) => {
+    setPinModalError(null);
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: candidatePin }),
+      });
+      const resData = (await res.json()) as { success?: boolean; error?: string };
+      if (res.ok && resData.success) {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('ms_admin_pin', candidatePin);
+          sessionStorage.setItem('ms_admin_unlocked', 'true');
+        }
+        setIsFleetUnlocked(true);
+        setShowPinModal(false);
+        setPinInputValue('');
+        await loadDevices();
+      } else {
+        setPinModalError(resData.error || 'Incorrect Admin PIN');
+      }
+    } catch {
+      setPinModalError('Failed to verify Admin PIN');
+    }
+  };
 
   useEffect(() => {
     void loadDevices();
@@ -73,7 +131,7 @@ export function DevicesPage() {
     try {
       const res = await fetch('/api/devices/rename', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminHeaders(),
         body: JSON.stringify({ device_id: deviceId, name: editName.trim() }),
       });
       if (res.ok) {
@@ -92,8 +150,10 @@ export function DevicesPage() {
     if (!confirm('Forget this device and clear its registered session?')) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}`, {
-        method: 'DELETE',
+      const res = await fetch('/api/devices/delete', {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ device_id: deviceId }),
       });
       if (res.ok) {
         await loadDevices();
@@ -110,6 +170,10 @@ export function DevicesPage() {
     if (filter === 'offline') return !d.is_active;
     return true;
   });
+
+  const hasStoredPin = Boolean(getStoredAdminPin());
+  const isSingleCurrentDevice = Boolean(data && data.devices.length === 1 && data.devices[0].is_current);
+  const isPrivacyScoped = isSingleCurrentDevice && !hasStoredPin && !isFleetUnlocked;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 animate-fade-in pb-12">
@@ -130,7 +194,24 @@ export function DevicesPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {isPrivacyScoped ? (
+              <button
+                type="button"
+                onClick={() => setShowPinModal(true)}
+                className="card-ring rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-300 hover:text-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Unlock full fleet telemetry across all household devices with Admin PIN"
+              >
+                <Icon name="shield" size={13} />
+                <span>Unlock Fleet Telemetry</span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm">
+                <Icon name="shield" size={13} />
+                <span>Fleet Admin View</span>
+              </span>
+            )}
+
             <NavLink
               to="/account"
               className="card-ring rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition"
@@ -139,6 +220,21 @@ export function DevicesPage() {
             </NavLink>
           </div>
         </div>
+
+        {/* Fleet Privacy Scoping Notice */}
+        {isPrivacyScoped ? (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4 text-xs text-amber-200/80 flex items-start gap-3 animate-fade-in">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 text-sm">
+              🛡️
+            </span>
+            <div className="space-y-0.5">
+              <span className="font-semibold text-amber-200 block">Fleet Privacy Scoping Active</span>
+              <p className="text-white/60">
+                Displaying telemetry and playback history for your current device only. Server administrators can unlock complete household fleet presence with the Admin PIN.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Live Vitals Metric Cards */}
         {data ? (
@@ -157,6 +253,22 @@ export function DevicesPage() {
             </div>
           </div>
         ) : null}
+
+        {/* Educational Callout */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/70 space-y-1.5">
+          <div className="flex items-center gap-2 font-semibold text-white">
+            <span className="text-brand-400">💡</span>
+            <span>How Device Pairing &amp; Watch History Work</span>
+          </div>
+          <p>
+            <strong>Browser vs. External Screens:</strong> Your web browser signs in directly with your Google account.
+            To connect a TV (Android TV or Fire TV Stick) without typing Google passwords with a remote control,
+            visit <NavLink to="/account" className="text-brand-400 underline hover:text-brand-300 font-medium">Account &gt; Pair New TV App</NavLink> to mint a pairing token and QR code.
+          </p>
+          <p className="text-white/50">
+            All playback progress, resume positions, and watch history are synchronized automatically across your account and all paired devices.
+          </p>
+        </div>
       </section>
 
       {/* Filter Tabs & Device List */}
@@ -324,12 +436,31 @@ export function DevicesPage() {
                 </div>
 
                 {/* Watch Activity */}
-                {d.recent_watch ? (
-                  <div className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 flex items-center justify-between text-xs">
-                    <span className="text-white/60 truncate max-w-[80%]">
-                      🎬 Recent: <strong>{d.recent_watch.filename}</strong>
-                    </span>
-                    <span className="font-semibold text-brand-400">{d.recent_watch.percent}%</span>
+                {(d.recent_watch || (d.watch_history && d.watch_history.length > 0)) ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3.5 py-2.5 text-xs">
+                    <div className="flex items-center gap-2 truncate max-w-[75%]">
+                      <span className="text-white/40 shrink-0">🎬</span>
+                      <span className="text-white/70 truncate">
+                        {d.recent_watch ? (
+                          <>
+                            Recent: <strong className="text-white font-medium">{('title' in d.recent_watch && d.recent_watch.title) || d.recent_watch.filename}</strong>
+                            <span className="ml-2 font-semibold text-brand-400">{d.recent_watch.percent}%</span>
+                          </>
+                        ) : (
+                          <span>{d.watch_history?.length} watched titles recorded</span>
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDeviceHistory(d)}
+                      className="card-ring self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition whitespace-nowrap active:scale-95"
+                    >
+                      <span>📜 Watch History</span>
+                      <span className="rounded-full bg-brand-500/20 px-1.5 py-0.2 text-[10px] font-bold text-brand-300 border border-brand-500/30">
+                        {d.total_watched || d.watch_history?.length || 0}
+                      </span>
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -337,6 +468,197 @@ export function DevicesPage() {
           </div>
         )}
       </section>
+
+      {/* Portaled Watch History Modal */}
+      {selectedDeviceHistory ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="watch-history-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/80 backdrop-blur-md animate-fade-in"
+          onClick={() => setSelectedDeviceHistory(null)}
+        >
+          <div
+            className="glass-card relative my-auto w-full max-w-2xl rounded-3xl border border-white/15 bg-obsidian-950 p-6 sm:p-8 shadow-2xl space-y-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{selectedDeviceHistory.device_icon}</span>
+                  <h2 id="watch-history-title" className="text-xl font-bold text-white truncate">
+                    {selectedDeviceHistory.display_name}
+                  </h2>
+                </div>
+                <p className="mt-1 text-xs text-white/50">
+                  {selectedDeviceHistory.watch_history?.length ?? 0} titles recorded on this device · Synced with your profile
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDeviceHistory(null)}
+                className="rounded-full p-2 text-white/40 hover:bg-white/10 hover:text-white transition"
+                aria-label="Close dialog"
+              >
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3 custom-scrollbar">
+              {!selectedDeviceHistory.watch_history || selectedDeviceHistory.watch_history.length === 0 ? (
+                <div className="py-12 text-center text-sm text-white/40">
+                  No watch history recorded on this device yet.
+                </div>
+              ) : (
+                selectedDeviceHistory.watch_history.map((item, idx) => (
+                  <div
+                    key={`${item.filename}-${idx}`}
+                    className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.06]"
+                  >
+                    <div className="h-16 w-11 shrink-0 overflow-hidden rounded-xl bg-obsidian-900 border border-white/10 flex items-center justify-center">
+                      {item.poster_url ? (
+                        <img
+                          src={item.poster_url}
+                          alt={item.title}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Icon name="play" size={16} className="text-white/20" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-bold text-white text-sm truncate" title={item.title}>
+                          {item.title}
+                        </h4>
+                        {item.completed ? (
+                          <span className="shrink-0 rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                            Completed
+                          </span>
+                        ) : (
+                          <span className="shrink-0 rounded-full bg-brand-500/20 border border-brand-500/30 px-2 py-0.5 text-[10px] font-bold text-brand-300">
+                            {item.percent}%
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${item.completed ? 'bg-emerald-400' : 'brand-gradient'}`}
+                          style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-white/50">
+                        <span>
+                          {item.position_str} / {item.duration_str}
+                        </span>
+                        <span>{item.last_watched_ago}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="border-t border-white/10 pt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedDeviceHistory(null)}
+                className="card-ring rounded-full border border-white/15 bg-white/5 px-5 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+
+      {/* Fleet Telemetry Admin PIN Unlock Dialog */}
+      {showPinModal && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="fleet-pin-modal-title"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-overlay-fade"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setShowPinModal(false);
+              }}
+            >
+              <div
+                className="relative w-full max-w-sm my-auto rounded-3xl border border-brand-500/40 bg-obsidian-950 p-6 shadow-2xl space-y-4 animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-brand-500/20 text-brand-400 border border-brand-500/40">
+                      <Icon name="shield" size={18} />
+                    </span>
+                    <div>
+                      <h3 id="fleet-pin-modal-title" className="font-bold text-white text-base">Unlock Fleet Telemetry</h3>
+                      <p className="text-xs text-white/50">Enter your 4-digit PIN</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPinModal(false)}
+                    className="text-white/40 hover:text-white cursor-pointer"
+                    aria-label="Close dialog"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {pinModalError ? (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+                    ⚠️ {pinModalError}
+                  </div>
+                ) : null}
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleVerifyFleetPin(pinInputValue);
+                  }}
+                  className="space-y-4"
+                >
+                  <input
+                    type="password"
+                    maxLength={8}
+                    autoFocus
+                    value={pinInputValue}
+                    onChange={(e) => setPinInputValue(e.target.value)}
+                    placeholder="Admin PIN…"
+                    className="w-full text-center tracking-widest text-lg rounded-xl border border-white/20 bg-obsidian-900 py-2.5 px-4 text-white focus:border-brand-500 focus:outline-none"
+                  />
+
+                  <div className="flex items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowPinModal(false)}
+                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!pinInputValue}
+                      className="rounded-full brand-gradient px-5 py-2 text-xs font-bold text-white shadow-md disabled:opacity-40 cursor-pointer"
+                    >
+                      Unlock Fleet
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

@@ -1,267 +1,574 @@
 # User Manual & Operator Guide — Anis' Home Media Server
 
-Welcome to **Anis' Home Media Server**, a high-performance, self-hosted personal streaming suite designed for streaming private movie libraries across local networks and remote connections.
+Welcome to **Anis' Home Media Server**, a high-performance, self-hosted personal streaming suite designed for private movie collections across local home networks and remote connections.
 
-This document serves as the official user manual and operator guide covering playback, player gestures, dual-GPU acceleration, subtitle management, resumable uploads, storage tiering, and device telemetry.
+This document serves as the authoritative, end-to-end operator manual and user guide covering the full feature suite: web streaming, 10-foot TV & Fire TV Stick controls, mobile gestures, hardware-accelerated dual-GPU transcoding, device token pairing, user watch history, subtitle customization, LAN/DLNA casting, dual-drive storage tiering, and Windows service management.
 
 ---
 
 ## Table of Contents
 
-1. [Accessing the Server](#1-accessing-the-server)
-   - [Local Network Streaming](#local-network-streaming)
-   - [Remote Access via Cloudflare Named Tunnel](#remote-access-via-cloudflare-named-tunnel)
+1. [System Architecture & Storage Topology](#1-system-architecture--storage-topology)
+   - [Dual-Drive Storage Tiering (E: SSD + D: Mass Storage)](#dual-drive-storage-tiering-e-ssd--d-mass-storage)
+   - [Core Service Topology](#core-service-topology)
+2. [Accessing the Server & Client Ecosystem](#2-accessing-the-server--client-ecosystem)
+   - [Web Browser (Desktop, Mobile & Tablet)](#web-browser-desktop-mobile--tablet)
+   - [Universal Android Client (Phone, Fire TV Stick 4K & Android TV)](#universal-android-client-phone-fire-tv-stick-4k--android-tv)
+   - [Local Network Streaming (LAN)](#local-network-streaming-lan)
+   - [Remote Access via Cloudflare Named Tunnel (WAN)](#remote-access-via-cloudflare-named-tunnel-wan)
    - [Progressive Web App (PWA) Installation](#progressive-web-app-pwa-installation)
-2. [Browsing & Library Navigation](#2-browsing--library-navigation)
-   - [Search & Filtering](#search--filtering)
+3. [Authentication, Roles & Security Policies](#3-authentication-roles--security-policies)
+   - [Guest Mode vs Google Authentication](#guest-mode-vs-google-authentication)
+   - [The `MEDIA_SERVER_AUTH` Enforcement Flag](#the-media_server_auth-enforcement-flag)
+   - [Administrator PIN Channel](#administrator-pin-channel)
+   - [Admin-Only Gated Routes & Protected Capabilities](#admin-only-gated-routes--protected-capabilities)
+4. [Device Pairing, Tokens & Fleet Privacy](#4-device-pairing-tokens--fleet-privacy)
+   - [The Passwordless TV Pairing Model](#the-passwordless-tv-pairing-model)
+   - [How to Pair a TV or Secondary Device (Step-by-Step)](#how-to-pair-a-tv-or-secondary-device-step-by-step)
+   - [Token Lifespans & Auto-Recovery](#token-lifespans--auto-recovery)
+   - [Fleet Presence Privacy Scoping & Admin Unlock](#fleet-presence-privacy-scoping--admin-unlock)
+5. [Watch Progress, Resume Sync & Watch History](#5-watch-progress-resume-sync--watch-history)
+   - [Millisecond-Accurate Continuous Progress](#millisecond-accurate-continuous-progress)
+   - [Interactive Watch History Drawer](#interactive-watch-history-drawer)
    - [Continue Watching Rail](#continue-watching-rail)
-   - [Movie Details, Cast & Codecs](#movie-details-cast--codecs)
-3. [Video Player & Touch Controls](#3-video-player--touch-controls)
-   - [YouTube-Style Layered Seekbar](#youtube-style-layered-seekbar)
-   - [Live Hover Thumbnail Previews](#live-hover-thumbnail-previews)
-   - [Touch Gestures & Mobile Controls](#touch-gestures--mobile-controls)
-   - [Aspect Ratio & Hardware Rotation](#aspect-ratio--hardware-rotation)
-4. [Keyboard Shortcuts Cheatsheet](#4-keyboard-shortcuts-cheatsheet)
-5. [Streaming Architecture: Direct Play vs Multi-GPU Transcoding](#5-streaming-architecture-direct-play-vs-multi-gpu-transcoding)
-   - [Direct Play (Zero-Copy RFC 7233)](#direct-play-zero-copy-rfc-7233)
-   - [Dynamic Multi-GPU Chunked Transcoding](#dynamic-multi-gpu-chunked-transcoding)
-   - [Live Telemetry & Stats for Nerds](#live-telemetry--stats-for-nerds)
-6. [Subtitles & Dual-Axis Positioning](#6-subtitles--dual-axis-positioning)
-   - [Dual-Axis Customization](#dual-axis-customization)
-   - [In-Player & Details Subtitle Upload](#in-player--details-subtitle-upload)
-   - [Intelligent Language Auto-Detection](#intelligent-language-auto-detection)
-7. [Uploading Media & Metadata Ingestion](#7-uploading-media--metadata-ingestion)
-   - [Resumable Chunked Transfers](#resumable-chunked-transfers)
-   - [Automated TMDb Enrichment](#automated-tmdb-enrichment)
+6. [Library Browsing, Metadata & Uploads](#6-library-browsing-metadata--uploads)
+   - [Instant Search & Genre Filtering](#instant-search--genre-filtering)
+   - [Movie Details Screen](#movie-details-screen)
+   - [Resumable Chunked File Uploads](#resumable-chunked-file-uploads)
+   - [Automated TMDb Enrichment & 4-Hour Background Refresh](#automated-tmdb-enrichment--4-hour-background-refresh)
    - [Forensic Media Resolver](#forensic-media-resolver)
-8. [Storage Retention & Cache Management](#8-storage-retention--cache-management)
-   - [Dual-Drive Storage Tiering (C: SSD + D: HDD)](#dual-drive-storage-tiering-c-ssd--d-hdd)
-   - [Configurable Retention Policies](#configurable-retention-policies)
-   - [Safe Orphaned Cache Purging](#safe-orphaned-cache-purging)
-9. [Connected Devices Dashboard](#9-connected-devices-dashboard)
-   - [Chromium High-Entropy Client Hints](#chromium-high-entropy-client-hints)
-   - [Friendly Renaming & Watch History](#friendly-renaming--watch-history)
-10. [Troubleshooting & FAQs](#10-troubleshooting--faqs)
+7. [Playback Engine: Direct Play vs Dual-GPU Transcoding](#7-playback-engine-direct-play-vs-dual-gpu-transcoding)
+   - [Direct Play (Zero-Copy RFC 7233)](#direct-play-zero-copy-rfc-7233)
+   - [Dynamic Multi-GPU Chunked Transcoder (AMD RX 560X + Vega 8)](#dynamic-multi-gpu-chunked-transcoder-amd-rx-560x--vega-8)
+   - [Instant HLS Cache Detection (< 100ms)](#instant-hls-cache-detection--100ms)
+   - [Live Seek Hover Thumbnail Previews](#live-seek-hover-thumbnail-previews)
+   - [Stats for Nerds (Technical Telemetry HUD)](#stats-for-nerds-technical-telemetry-hud)
+   - [Cinematic Brand Opening Sequence](#cinematic-brand-opening-sequence)
+8. [Player Controls, Shortcuts & Remote Navigation](#8-player-controls-shortcuts--remote-navigation)
+   - [Desktop Keyboard Shortcuts Cheatsheet](#desktop-keyboard-shortcuts-cheatsheet)
+   - [Mobile Touch Gestures](#mobile-touch-gestures)
+   - [10-Foot TV Remote Navigation (Fire TV & Android TV)](#10-foot-tv-remote-navigation-fire-tv--android-tv)
+   - [Aspect Ratio & Hardware Screen Rotation](#aspect-ratio--hardware-screen-rotation)
+9. [Subtitles & Dual-Axis Customization](#9-subtitles--dual-axis-customization)
+   - [Dual-Axis Positioning & Controls Elevation](#dual-axis-positioning--controls-elevation)
+   - [Live Subtitle Upload (In-Player & Details)](#live-subtitle-upload-in-player--details)
+   - [Intelligent Language Auto-Detection](#intelligent-language-auto-detection)
+10. [Second-Screen Playback: LAN Cast & DLNA](#10-second-screen-playback-lan-cast--dlna)
+    - [Smart TV Casting via DLNA (Samsung Tizen & LG webOS)](#smart-tv-casting-via-dlna-samsung-tizen--lg-webos)
+    - [Google Cast (Chromecast & Nest Hub)](#google-cast-chromecast--nest-hub)
+    - [In-Cast Volume Sync, Subtitles & Disconnect](#in-cast-volume-sync-subtitles--disconnect)
+11. [Storage Retention Policies & Cache Maintenance](#11-storage-retention-policies--cache-maintenance)
+    - [Configurable Retention Policies (`keep`, `archive`, `purge_cache`)](#configurable-retention-policies-keep-archive-purge_cache)
+    - [Safe Windows-Resilient Orphan Cache Purging](#safe-windows-resilient-orphan-cache-purging)
+12. [Windows Persistent Services & Operational Runbook](#12-windows-persistent-services--operational-runbook)
+    - [Service Architecture (Waitress + Cloudflared via NSSM)](#service-architecture-waitress--cloudflared-via-nssm)
+    - [Service Restart Instructions](#service-restart-instructions)
+    - [Logs & Diagnostics](#logs--diagnostics)
+13. [Frequently Asked Questions & Troubleshooting](#13-frequently-asked-questions--troubleshooting)
 
 ---
 
-## 1. Accessing the Server
+## 1. System Architecture & Storage Topology
 
-Anis' Home Media Server can be streamed from any modern web browser without installing custom client software.
+### Dual-Drive Storage Tiering (E: SSD + D: Mass Storage)
 
-### Local Network Streaming
-- **Origin Address:** `http://127.0.0.1:8000` (on the host machine) or `http://<LAN-IP>:8000` from other devices on the same Wi-Fi network.
-- **Benefits:** Maximum fidelity, zero WAN bandwidth limits, and instant direct playback.
+The server enforces an explicit hardware tiering model separating high-throughput runtime I/O from bulk file storage:
 
-### Remote Access via Cloudflare Named Tunnel
-- **Public Address:** `https://media.anisparvez.in`
-- **Architecture:** Powered by Cloudflare Named Tunnels (`cloudflared`). The tunnel creates an outbound TLS connection from your host machine to Cloudflare's edge network, bypassing CGNAT and ISP firewall restrictions without opening router ports.
+| Storage Tier | Drive & Location | Role & Contents | Performance Characteristics |
+|---|---|---|---|
+| **Primary Fast Tier** | `E:\MediaServer` | Application code, SQLite database (`media.db`), live seek hover thumbnails (`cache\previews`), in-progress transcode scratch, completed HLS stream cache (`cache\hls`). | Fast NVMe/SATA SSD; guarantees instant seek responses, stutter-free HLS delivery, and sub-100ms database reads. |
+| **Secondary Mass Tier** | `D:\Flicks` | Raw video files, cold archives (`D:\Flicks\.archive`), chunk upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`). | High-capacity mechanical HDD or bulk storage; optimized for long-term media preservation without consuming SSD endurance. |
+| **Drive C:** | *Not Used* | **Strict Invariant:** Drive `C:` is strictly isolated and never stores project media, databases, or transcode caches. | Reserved for Windows operating system only. |
 
-### Android APK installation
-The universal Android client supports Android phones, Android TV, and Fire TV:
-
-1. Open [`https://media.anisparvez.in/download`](https://media.anisparvez.in/download), or select **Get the app** in the web app.
-2. Download the production APK.
-3. Open the downloaded file and approve Android's installation prompt. Android may ask you to allow installation from your browser or file manager.
-4. Open the app and connect it to the media server.
-
-The current release, APK checksum, publishing command, and troubleshooting
-details are maintained in [`ANDROID_APP_DISTRIBUTION.md`](ANDROID_APP_DISTRIBUTION.md).
-
-### Progressive Web App (PWA) Installation
-The server provides a certified PWA manifest and vector SVG brand icon for native app feel:
-- **iOS (Safari):** Open `https://media.anisparvez.in`, tap the **Share** button, and select **Add to Home Screen**.
-- **Android (Chrome):** Tap the menu (`⋮`) and select **Install App** or tap the install banner.
-- **Desktop (Chrome/Edge):** Click the **Install** button on the right side of the URL bar.
-
----
-
-## 2. Browsing & Library Navigation
-
-The library interface (`/`) organizes your movie collection with an obsidian glass aesthetic:
-
-- **Instant Search:** Type any title, year, or genre into the search bar. Filtering occurs live across your metadata.
-- **Continue Watching Rail:** Media you began streaming (between 10 seconds and completion) appears in a swipeable top rail. Progress bars indicate exactly how far you watched. Resuming starts from your saved position with millisecond accuracy.
-- **Movie Details Hero (`/movie/<filename>`):**
-  - High-resolution TMDb posters and backdrops.
-  - Runtime, vote average ratings, certification age rating, and genre tags.
-  - Full plot synopsis and director/writer/cast credits.
-  - Technical Media Specs Card: video container, resolution, display aspect ratio, video codec/profile, audio codec, channels, sample rate, and total file size.
-
----
-
-## 3. Video Player & Touch Controls
-
-The custom HTML5 player (`/watch/<filename>`) provides desktop-grade playback and responsive mobile controls.
-
-### YouTube-Style Layered Seekbar
-The seekbar visualizes four independent layers:
-1. **Played Fill:** Crimson red progress bar showing current playback position.
-2. **Buffered Progress:** Semi-transparent track showing browser-buffered audio/video chunks.
-3. **Ghost Hover Scrubber:** Follows cursor/pointer movement with accurate timestamps.
-4. **Buffered Commit:** Byte-range `currentTime` commits strictly when you release your pointer (`pointerup`), preventing network flooding during scrubbing.
-
-### Live Hover Thumbnail Previews
-When you hover or scrub across the seekbar, the server's input-seeking thumbnail engine (`preview_service.py`) dynamically extracts high-definition frame thumbnails from the video and caches them in `cache/previews/` for zero-lag subsequent lookups.
-
-### Touch Gestures & Mobile Controls
-- **Tap-to-Reveal:** Tapping anywhere on the video canvas reveals the controls bar without accidentally pausing playback.
-- **Double-Tap Seeking:** Double-tap the left 30% of the screen to seek backward 10s; double-tap the right 30% to seek forward 10s.
-- **Mobile Controls Rail:** On smartphones, essential controls (Restart, Mute, Speed, Subtitles, Aspect, Rotate, PiP, Nerd Stats) sit in a swipeable horizontal rail, keeping controls accessible without vertical clutter.
-- **Elapsed vs Remaining Time:** Tap the elapsed time on the bottom left (e.g. `14:20`) to toggle between elapsed time and negative countdown time (e.g. `-1:22:10`).
-
-### Aspect Ratio & Hardware Rotation
-- **Aspect Ratio Button (`a`):** Cycles between *Best Fit (Contain)*, *16:9 Wide*, *4:3 Classic*, *Crop (Fill)*, and *Original*.
-- **Rotate Screen (`r`):** Locks screen orientation to landscape or cycles hardware CSS video rotation by 90°.
-
----
-
-## 4. Keyboard Shortcuts Cheatsheet
-
-| Shortcut | Action | Description |
-|---|---|---|
-| <kbd>Space</kbd> / <kbd>k</kbd> | Play / Pause | Toggle playback state |
-| <kbd>Home</kbd> / <kbd>0</kbd> | Replay from start | Instantly replay from `0:00` |
-| <kbd>←</kbd> / <kbd>→</kbd> | Seek ±5 seconds | Fine-grained timestamp scrubbing |
-| <kbd>j</kbd> / <kbd>l</kbd> | Seek ±10 seconds | Rapid skipping |
-| <kbd>1</kbd> – <kbd>9</kbd> | Jump 10%–90% | Timeline percentage navigation |
-| <kbd>f</kbd> | Fullscreen | Toggle native full-screen mode |
-| <kbd>m</kbd> | Mute / Unmute | Silence or restore audio output |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Volume ±5% | Step volume up or down |
-| <kbd>c</kbd> | Toggle Subtitles | Turn captions on or off |
-| <kbd>&lt;</kbd> / <kbd>&gt;</kbd> | Playback Speed | Step between 0.75×, 1×, 1.25×, 1.5×, 2× |
-| <kbd>a</kbd> | Aspect Ratio | Cycle fit, crop, 16:9, 4:3, original |
-| <kbd>r</kbd> | Rotate Screen | Toggle 90° orientation |
-| <kbd>p</kbd> / <kbd>i</kbd> | Picture-in-Picture | Detach video to floating OS window |
-| <kbd>n</kbd> | Stats for Nerds | Toggle telemetry and GPU load HUD |
-| <kbd>?</kbd> | Shortcuts Help | View on-screen shortcut modal |
-
----
-
-## 5. Streaming Architecture: Direct Play vs Multi-GPU Transcoding
+### Core Service Topology
 
 ```text
-Browser / Client (Desktop, Phone, Tablet)
+Browser / Mobile / TV Client
          │
+         ├── LAN Ingress: http://192.168.x.x:8000
+         └── WAN Ingress: https://media.anisparvez.in (Cloudflare Named Tunnel)
+                  │
+                  ▼
+         Waitress WSGI Server (127.0.0.1:8000) [NSSM Service: MediaServer]
+                  │
+                  ▼
+         Flask Application Factory (app/)
+         ├── Routes: /api/*, /media/*, /subtitles/*, /upload/*, /auth/*
+         ├── Database: SQLite (E:\MediaServer\media.db)
+         ├── Hardware Transcoding Pipeline:
+         │    ├── GPU 1 (Discrete): AMD Radeon RX 560X (dx11:1)
+         │    └── GPU 0 (Integrated): AMD Radeon Vega 8 (dx11:0)
+         ├── Storage Engine:
+         │    ├── Fast Cache: E:\MediaServer\cache\
+         │    └── Raw Media Roots: D:\Flicks, D:\Flicks\.archive
+         └── Casting & Second-Screen Engine:
+              ├── DLNA / UPnP Controller (Samsung Tizen, LG webOS)
+              └── Google Cast Controller (Chromecast, Google TV, Nest Hub)
+```
+
+---
+
+## 2. Accessing the Server & Client Ecosystem
+
+### Web Browser (Desktop, Mobile & Tablet)
+The React single-page application runs on any modern browser (Chrome, Safari, Firefox, Edge) without client software:
+- **Local Network (LAN):** `http://<HOST-IP>:8000` (e.g. `http://192.168.1.100:8000`)
+- **Remote Access (WAN):** `https://media.anisparvez.in`
+
+### Universal Android Client (Phone, Fire TV Stick 4K & Android TV)
+A single universal release APK (`in.anisparvez.media_server_client`) automatically configures itself for touchphones, tablets, and 10-foot TV remotes:
+- **Download Link:** Open [`https://media.anisparvez.in/download`](https://media.anisparvez.in/download) or click **Get the app** in the navigation header.
+- **TV Direct Installation:** Use the **Downloader** app on Fire TV / Android TV to enter `https://media.anisparvez.in/download` and install the APK directly.
+- **Hardware Decoders:** Supports hardware-accelerated MediaCodec video decoding with automatic driver lock prevention on Fire TV Stick 4K (`AFTMM`).
+
+### Local Network Streaming (LAN)
+Direct connection over your home Wi-Fi or Ethernet:
+- Provides unlimited local bandwidth (no ISP data consumption).
+- Allows uncompressed, zero-copy RFC 7233 byte-range playback.
+- Instantaneous seeking and lowest possible latency.
+
+### Remote Access via Cloudflare Named Tunnel (WAN)
+- Uses an outbound TLS tunnel (`cloudflared`) to Cloudflare's global edge network.
+- **No Port Forwarding Required:** Eliminates router port exposure, CGNAT hurdles, and dynamic IP issues.
+- Automatic SSL/TLS encryption via Cloudflare certificates.
+
+### Progressive Web App (PWA) Installation
+Install the media server as a standalone application on mobile and desktop:
+- **iOS (Safari):** Tap **Share** (`↑`) → select **Add to Home Screen**.
+- **Android (Chrome):** Tap menu (`⋮`) → select **Install App** or tap the install pill.
+- **Desktop (Chrome/Edge):** Click the **Install** button on the right side of the URL address bar.
+
+---
+
+## 3. Authentication, Roles & Security Policies
+
+The media server features a flexible, multi-tiered authentication and role system designed to balance seamless home streaming with strict administrative security.
+
+```mermaid
+flowchart TD
+    Req[Incoming Request] --> AuthCheck{MEDIA_SERVER_AUTH enforced?}
+    AuthCheck -- No (Default) --> GuestMode[Guest Mode: Stream, Browse, Watch]
+    AuthCheck -- Yes --> TokenCheck{Valid Token or Session?}
+    TokenCheck -- No --> Deny[401 Unauthorized]
+    TokenCheck -- Yes --> UserMode[User Session]
+
+    GuestMode --> ActionCheck{Destructive or Admin Action?}
+    UserMode --> ActionCheck
+
+    ActionCheck -- No --> AllowAction[Allow Media Playback & Details]
+    ActionCheck -- Yes --> RoleCheck{User Role == 'admin'?}
+    RoleCheck -- Yes --> AllowAdmin[Grant Admin Action]
+    RoleCheck -- No --> PinCheck{Valid X-Admin-Pin Provided?}
+    PinCheck -- Yes --> AllowAdmin
+    PinCheck -- No --> DenyAdmin[403 Forbidden]
+```
+
+### Guest Mode vs Google Authentication
+
+1. **Guest Mode (Default):**
+   - In standard household setups, any family member or guest on the network can immediately browse the catalog, stream movies, search, adjust subtitles, and cast to smart TVs without typing credentials.
+   - Devices in guest mode are identified by a local hardware device cookie (`ms_device_id`).
+2. **Google Authentication:**
+   - Users can link their Google Account via Google Identity Services (`/api/auth/login`).
+   - Signing in associates watch progress, device tokens, and preferences with your personal user account.
+   - If your Google email is listed in `ADMIN_EMAILS` (defined in `app/config.py`), you are automatically granted the `admin` role.
+
+### The `MEDIA_SERVER_AUTH` Enforcement Flag
+
+- **When `MEDIA_SERVER_AUTH` is unset (default):** Open-door guest mode is active. Read-only streaming endpoints are accessible without login, while destructive administration endpoints remain strictly protected.
+- **When `MEDIA_SERVER_AUTH=1`:** Strict enforcement mode is active. Every request requires an authorized Google session, a valid bearer token, or a pre-shared device token. Unauthorized requests are rejected with `401 Unauthorized`.
+
+### Administrator PIN Channel
+
+For situations where an administrator is using a browser without a Google account, or needs quick elevated authorization:
+- The server supports an **Admin PIN** configured in server settings (`settings.admin_pin`).
+- **Fail-Closed Security Invariant:** The PIN has no default fallback. If no PIN is configured, the PIN channel is completely closed.
+- **Header & Body Only:** The PIN is **never** accepted via URL query strings (preventing leakages into proxy logs, edge history, and referrer headers). It is transmitted strictly via `X-Admin-Pin` HTTP request headers or JSON request bodies.
+
+### Admin-Only Gated Routes & Protected Capabilities
+
+The following actions are strictly restricted to administrators (Google Admin session or verified Admin PIN):
+
+| Protected Action | Endpoint / Surface | Security Reason |
+|---|---|---|
+| **Storage Management & Policies** | `/manage`, `/api/storage/settings` | Prevents unauthorized modification of disk retention rules. |
+| **Orphaned Cache Purging** | `/api/storage/audit`, `/api/storage/purge-orphans` | Protects in-progress and cached transcode files. |
+| **Permanent Media Deletion** | `DELETE /api/media/<filename>` | Irreversible deletion of original files from disk. |
+| **Cold Archival Movement** | `POST /api/storage/archive/<filename>` | Moves original media files into secondary storage. |
+| **Media File Uploads** | `POST /upload`, `POST /upload/chunk/init` | Protects server storage from unauthorized uploads. |
+| **Library Re-indexing** | `POST /api/scan` | CPU/GPU intensive background scan. |
+| **Household Fleet Telemetry** | `/devices`, `GET /api/devices` | Masks IP addresses and other household device sessions. |
+
+---
+
+## 4. Device Pairing, Tokens & Fleet Privacy
+
+### The Passwordless TV Pairing Model
+
+Typing lengthy email addresses and complex passwords on smart TVs, Fire TV Sticks, or Apple TVs using a remote D-pad is frustrating. The media server solves this with a **zero-password pairing token workflow**:
+
+```text
+Step 1: Admin or User generates Pairing Token on Phone/PC (/account)
+         │  Token: "K9X2P4" (Valid for 15 minutes)
          ▼
-Cloudflare Named Tunnel (media.anisparvez.in)
-         │
+Step 2: User opens Android TV / Fire TV app
+         │  Prompts: "Enter 6-character Pairing Code"
          ▼
-Waitress WSGI (127.0.0.1:8000) [NSSM Service]
-         │
+Step 3: TV submits Code to POST /api/devices/pair
+         │  Server verifies code & generates permanent Device Token (1-year lifespan)
          ▼
-Flask Media Routing Layer (app/routes/media.py)
-   ├── Direct Stream (MP4/WebM) ──► RFC 7233 Zero-Copy Range Delivery
-   └── Incompatible (MKV/HEVC)  ──► Dynamic Multi-GPU Chunk Transcoder
-                                      ├── Worker 0: AMD Radeon RX 560X (dx11:1)
-                                      └── Worker 1: AMD Radeon Vega 8 (dx11:0)
+Step 4: TV stores Token in secure storage
+         └── Seamlessly authenticates as that User Account for 365 days!
+```
+
+### How to Pair a TV or Secondary Device (Step-by-Step)
+
+1. **On your phone or computer:**
+   - Navigate to **Account & Devices** (`/account`).
+   - If unauthenticated, sign in with your Google Account or enter your Admin PIN.
+   - In the **Pair a New Device** section, enter a friendly name for the device (e.g. *"Master Bedroom Fire TV"* or *"Living Room Sony TV"*).
+   - Click **Generate Pairing Token**.
+2. **Retrieve the Token:**
+   - A 6-character code (e.g. `B8F3Q1`) appears on screen along with an instant pairing link.
+   - The token remains valid for 15 minutes.
+3. **On the Target TV or Device:**
+   - Open the **Anis' Media Server** app on the TV.
+   - Enter the 6-character code into the prompt and press **Confirm**.
+   - The TV instantly pairs, downloads your library, and adopts the user account's watch history.
+
+### Token Lifespans & Auto-Recovery
+
+- **Pairing Codes:** Ephemeral, single-use, 6-character alphanumeric tokens valid for **15 minutes**.
+- **Device Tokens (`ms_device_token`):** Cryptographically random 64-character bearer tokens valid for **1 year** (365 days).
+- **Auto-Recovery:** If a browser clears local storage, the server uses the hardware device cookie (`ms_device_id`) to automatically recover the device's friendly name and link it back to its active sessions.
+
+### Fleet Presence Privacy Scoping & Admin Unlock
+
+To safeguard household privacy against cross-device surveillance or IP leakage:
+- **Non-Admin View:** Visiting `/devices` displays **only the caller's current device**. Other household devices, their IP addresses, connection types (LAN vs WAN), and specific watch histories are completely hidden.
+- **Privacy Notice:** An amber banner (*"Fleet Privacy Scoping Active"*) informs the user that only their current device is visible.
+- **Admin Fleet Unlock:** Clicking **Unlock Fleet Telemetry** opens a modal where entering the Admin PIN instantly reveals the entire household fleet table, live activity statuses, and network path telemetry.
+
+---
+
+## 5. Watch Progress, Resume Sync & Watch History
+
+### Millisecond-Accurate Continuous Progress
+
+As you watch any movie, the client automatically dispatches playback heartbeats to `POST /api/progress`:
+- **Tracking Frequency:** Progress updates every 5–10 seconds during playback, and immediately upon pause, seek, or navigation.
+- **Completion Threshold:** When you reach 90% of the runtime, the movie is automatically marked as **Watched** (`watched = 1`).
+- **Resumption Accuracy:** Returning to the movie prompts an instant **Resume from mm:ss** button that seeks to the exact millisecond where you stopped.
+
+### Interactive Watch History Drawer
+
+View and manage your viewing history across all paired devices:
+1. Navigate to **Account & Devices** (`/account`).
+2. Scroll to the **Viewing History** card and click **Open History Drawer**.
+3. A sleek obsidian sliding drawer opens displaying:
+   - High-resolution poster artwork.
+   - Movie title and release year.
+   - Watched date and exact timestamp.
+   - Visual progress bar showing percentage completed.
+   - One-click resume action button.
+4. **Clearing History:** You can remove individual entries or click **Clear All History** to reset watch history for your account.
+
+### Continue Watching Rail
+
+On the home library page (`/`), movies with in-progress watch states (between 10 seconds and 90% completion) automatically appear in the horizontal **Continue Watching** carousel at the top of the screen for one-click instant resumption.
+
+---
+
+## 6. Library Browsing, Metadata & Uploads
+
+### Instant Search & Genre Filtering
+- **Live Debounced Search:** Type any keyword into the search bar. The library instantaneously filters matching titles, years, directors, and actors with zero server roundtrips.
+- **Genre & Category Chips:** Filter by *All*, *Action*, *Sci-Fi*, *Drama*, *Comedy*, *Thriller*, or *Recently Added*.
+
+### Movie Details Screen
+Each movie features a dedicated cinema details page (`/movie/<filename>`):
+- High-definition official backdrops and promotional posters.
+- TMDb community rating score and release year.
+- Age certification badge (e.g. *PG-13*, *R*, *U/A*).
+- Complete plot synopsis and director/cast photo credits rail.
+- **Technical Media Specs Card:** Container type, runtime, resolution, display aspect ratio, video codec and profile, audio stream format, channel configuration, and total file size.
+
+### Resumable Chunked File Uploads
+
+Upload new media files directly through the browser without needing FTP or SMB shares:
+1. Click **Upload** in the navigation header on any page.
+2. Drag and drop any video file (`.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.m4v`).
+3. *(Optional)* Enter a clean Movie Title in the rename box if your original file has a cryptic scene name.
+4. Click **Start Upload**.
+5. The client partitions the file into binary chunks, transferring them sequentially with exponential speed smoothing and an accurate remaining time countdown (ETA).
+6. Once the transfer reaches 100%, client abort is automatically concealed as server-side background ingestion begins.
+
+### Automated TMDb Enrichment & 4-Hour Background Refresh
+
+Upon file upload or library scan:
+1. `ffprobe` analyzes the container for video/audio streams, duration, bitrates, and subtitles.
+2. The server queries the **The Movie Database (TMDb) API** using title and year heuristics.
+3. High-resolution poster and backdrop artwork are downloaded and cached permanently on the SSD (`cache/posters/`).
+4. **4-Hour Periodic Worker:** A background daemon refreshes ratings, vote counts, cast credits, and certifications every 4 hours automatically.
+
+### Forensic Media Resolver
+
+If a media file has an unconventional filename (e.g., `Inception.2010.REMASTERED.1080p.BluRay.x264.DTS-WiKi.mkv`), the server's forensic resolver (`app/services/media_resolver.py`):
+- Strips release group tags, video codecs, and audio formats.
+- Checks parent directory naming conventions.
+- Cross-references parsed years and aliases against TMDb multi-search to guarantee accurate matching.
+
+---
+
+## 7. Playback Engine: Direct Play vs Dual-GPU Transcoding
+
+```text
+                           Incoming Media File
+                                    │
+           ┌────────────────────────┴────────────────────────┐
+           ▼                                                 ▼
+   Compatible Stream                                Incompatible Stream
+   (MP4/WebM + H.264/AAC)                           (MKV, HEVC/H.265, DTS, etc.)
+           │                                                 │
+           ▼                                                 ▼
+  RFC 7233 Zero-Copy                               Dynamic Multi-GPU Chunked
+  Byte-Range Delivery                                Transcoding Engine
+  (send_file OS kernel)                                      │
+           │                                 ┌───────────────┴───────────────┐
+           ▼                                 ▼                               ▼
+    Instant Playback                  GPU 1: RX 560X                  GPU 0: Vega 8
+    Zero CPU/GPU Load                (Discrete dx11:1)               (Integrated dx11:0)
+                                             │                               │
+                                             └───────────────┬───────────────┘
+                                                             ▼
+                                                    Unified HLS Stream
+                                                (#EXT-X-PLAYLIST-TYPE:EVENT)
+                                                             │
+                                                             ▼
+                                                     Starts in 2–4 secs
 ```
 
 ### Direct Play (Zero-Copy RFC 7233)
-Compatible files (MP4, M4V, WebM with H.264 video and AAC audio) stream directly via `send_file(conditional=True, etag=True)`. The operating system kernel performs zero-copy socket transfers, bypassing transcoding entirely and enabling instantaneous seeking.
+When streaming files encoded in web-native formats (MP4 container with H.264 video and AAC audio):
+- Flask streams the file via RFC 7233 partial byte-range requests (`send_file(conditional=True)`).
+- The Windows operating system kernel uses zero-copy DMA memory transfer directly to the network interface.
+- Result: **0% CPU usage, 0% GPU usage, and instantaneous seeking**.
 
-### Dynamic Multi-GPU Chunked Transcoding
-For containers or codecs browsers cannot decode natively (e.g., MKV container, HEVC / H.265 video):
-1. **Dynamic Chunk Partitioning:** `chunk_transcode_service.py` segments the video into keyframe-aligned timeline chunks.
-2. **Concurrent Hardware Workers:** Chunk jobs are dispatched across available GPU adapters:
-   - Discrete **AMD Radeon RX 560X** (`dx11:1`)
-   - Integrated **AMD Radeon Vega 8** (`dx11:0`)
-3. **Monotonic Presentation Timestamps:** Workers apply `-output_ts_offset` to guarantee zero timeline drift across chunk boundaries.
-4. **Progressive HLS Playlist:** Playback begins within seconds using `#EXT-X-PLAYLIST-TYPE:EVENT` while the remainder transcodes in the background.
+### Dynamic Multi-GPU Chunked Transcoder (AMD RX 560X + Vega 8)
+When streaming non-web containers or advanced codecs (MKV container, HEVC / H.265 10-bit video, DTS audio):
+1. **Dynamic Chunk Partitioning:** `chunk_transcode_service.py` splits the video timeline into aligned segment chunks.
+2. **Concurrent Dual-GPU Load Balancing:** Worker processes are dispatched simultaneously across:
+   - **GPU 1 (Discrete):** AMD Radeon RX 560X (`dx11:1`)
+   - **GPU 0 (Integrated):** AMD Radeon Vega 8 (`dx11:0`)
+3. **Monotonic Presentation Timestamps:** Workers apply `-output_ts_offset` to guarantee zero timestamp drift across chunk boundaries.
+4. **Low-Latency Startup:** The player receives a progressive HLS playlist (`#EXT-X-PLAYLIST-TYPE:EVENT`) and begins playing within 2–4 seconds while subsequent chunks transcode in the background.
 
-### Live Telemetry & Stats for Nerds
-Press <kbd>n</kbd> in the player to open **Stats for Nerds**, reporting:
-- Dropped frames vs total rendered frames via `getVideoPlaybackQuality()`.
-- Stream type (`Direct Stream`, `HLS.js fMP4`, or `Transcoded MP4`).
-- Forward buffer length (seconds).
-- Active GPU engine utilization.
+### Instant HLS Cache Detection (< 100ms)
+On the library management page (`/manage`), previously transcoded HLS stream directories are detected instantly using synchronous directory existence probing. The page renders complete cache statuses in under 100ms without blocking on FFmpeg processes.
+
+### Live Seek Hover Thumbnail Previews
+When you hover your mouse or drag your finger across the seekbar:
+- The server dynamically extracts thumbnail frames via input-seeking FFmpeg (`app/services/preview_service.py`).
+- Thumbnails are cached permanently in `E:\MediaServer\cache\previews\`.
+- Hovering shows an instant high-resolution frame preview with the exact timestamp.
+
+### Stats for Nerds (Technical Telemetry HUD)
+Press <kbd>n</kbd> on desktop or tap the **Stats for Nerds** icon in player controls to toggle the live engineering HUD:
+- **Render Quality:** Dropped frames vs total rendered frames via `getVideoPlaybackQuality()`.
+- **Stream Pipeline:** Displays whether the stream is `Direct RFC 7233`, `HLS.js fMP4`, or `Transcoded MP4`.
+- **Buffer Health:** Real-time forward audio/video buffer length in seconds.
+- **Hardware Telemetry:** Live discrete and integrated GPU engine utilization, memory consumption, and active transcoding speed.
+
+### Cinematic Brand Opening Sequence
+- On cold boot launch, the application displays a brand opening sting with custom original audio.
+- **Resilient Web Audio:** Non-blocking playback that handles browser autoplay restrictions gracefully.
+- **Once-Per-Session Gating:** Displays once per session; can be replayed at any time via **Settings → Replay Brand Intro**.
 
 ---
 
-## 6. Subtitles & Dual-Axis Positioning
+## 8. Player Controls, Shortcuts & Remote Navigation
 
-### Dual-Axis Customization
-Open the Subtitle Settings modal (gear icon `⚙` or <kbd>c</kbd>) to configure:
-- **Horizontal Alignment:** `Center` (default), `Left`, `Right`.
-- **Vertical Position:** `Lowered Bottom` (default), `Bottom`, `Raised`, `Middle`, `Top`.
-- **Cue Elevation:** Cues automatically elevate above the player controls bar to prevent overlapping buttons during playback.
-- **Appearance:** Text color (White, Yellow, Cyan, Green, Magenta), background opacity (0% to 100%), and font size scaling.
+### Desktop Keyboard Shortcuts Cheatsheet
 
-### In-Player & Details Subtitle Upload
-Upload sidecar `.srt` or `.vtt` files directly from:
-- The **Movie Details** page (`/movie/<filename>`).
-- Inside the player via **Subtitle Settings modal → Upload**.
-Uploaded files are saved alongside the video file and immediately become available as an active selectable track without restarting playback.
+| Key | Action | Details |
+|---|---|---|
+| <kbd>Space</kbd> or <kbd>k</kbd> | **Play / Pause** | Toggles media playback state. |
+| <kbd>←</kbd> / <kbd>→</kbd> | **Seek ±5s** | Fine-grained seek; frame-by-frame when paused. |
+| <kbd>j</kbd> / <kbd>l</kbd> | **Seek ±10s** | Rapid skip backward or forward with animated ripples. |
+| <kbd>0</kbd> – <kbd>9</kbd> | **Jump %** | Jumps directly to 0%, 10%, 20%... 90% of the timeline. |
+| <kbd>Home</kbd> | **Restart** | Replays movie from beginning (`0:00`). |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | **Volume ±5%** | Adjusts volume with an on-screen HUD percentage bar. |
+| <kbd>m</kbd> | **Mute / Unmute** | Silences or restores audio output. |
+| <kbd>f</kbd> | **Fullscreen** | Toggles native cinema fullscreen mode. |
+| <kbd>c</kbd> | **Subtitles** | Toggles active subtitle track on or off. |
+| <kbd>&lt;</kbd> / <kbd>&gt;</kbd> | **Speed** | Steps speed through 0.75×, 1×, 1.25×, 1.5×, 2×. |
+| <kbd>a</kbd> | **Aspect Ratio** | Cycles *Contain (Best Fit)*, *16:9*, *4:3*, *Fill (Crop)*, *Original*. |
+| <kbd>r</kbd> | **Rotate** | Hardware CSS 90° video rotation. |
+| <kbd>p</kbd> or <kbd>i</kbd> | **Picture-in-Picture** | Detaches video to floating desktop OS window. |
+| <kbd>n</kbd> | **Stats for Nerds** | Toggles technical telemetry HUD. |
+| <kbd>?</kbd> | **Shortcuts Cheatsheet** | Displays keyboard shortcuts modal. |
+| <kbd>Esc</kbd> | **Dismiss / Exit** | Closes modals, exits fullscreen, or returns to details. |
+
+### Mobile Touch Gestures
+
+| Gesture | Location | Action |
+|---|---|---|
+| **Tap Canvas** | Anywhere on screen | Reveals player controls. Controls auto-hide after 3 seconds of inactivity. |
+| **Double Tap Left** | Left 35% of video | Skips backward 10 seconds with animated ripple effect. |
+| **Double Tap Right** | Right 35% of video | Skips forward 10 seconds with animated ripple effect. |
+| **Vertical Swipe Left** | Left 50% of screen | Adjusts screen brightness smoothly without leaving the app. |
+| **Vertical Swipe Right** | Right 50% of screen | Adjusts device media volume with real-time level HUD. |
+| **Tap Elapsed Time** | Bottom left timestamp | Toggles between elapsed time (`14:25`) and remaining countdown (`-1:42:10`). |
+
+### 10-Foot TV Remote Navigation (Fire TV & Android TV)
+
+The TV interface is optimized for standard D-pad remotes (Fire TV Remote, Android TV Remote, Shield Remote):
+
+```text
+┌────────────────────────────────────────────────────────┐
+│ Zone 1: Timeline Scrubber (Seek, Scrub, Preview)       │
+├────────────────────────────────────────────────────────┤
+│ Zone 2: Transport Controls                             │
+│   [↺]  [⏮ 10s]  [▶ / ⏸]  [10s ⏭]  [🔊]  [1×]  [CC]     │
+└────────────────────────────────────────────────────────┘
+```
+
+- **Two-Zone Remote Focus Model:**
+  - **Zone 1 (Timeline):** Pressing `Left` / `Right` scrubs across the timeline. Pressing `Center / Select` commits the seek.
+  - **Zone 2 (Controls):** Pressing `Down` enters the controls bar (Restart, Skip, Play/Pause, Volume, Speed, Subtitles). Pressing `Up` returns focus to Zone 1.
+- **The Back Button Protocol:**
+  - **1st Back Press (Controls Hidden):** Reveals player controls and focuses the timeline scrubber without interrupting playback.
+  - **2nd Back Press (Controls Visible):** Saves watch progress, stops playback, and exits to the movie details screen cleanly.
+- **Hardware Decoder Fallback on Fire TV Stick 4K:**
+  - Fire TV Stick 4K (`AFTMM`) uses `mediacodec-copy` decoding to prevent driver desynchronization. If video dimensions are non-16-byte aligned (e.g. 1916px wide), the engine automatically falls back to software decoding with zero crashes.
+
+### Aspect Ratio & Hardware Screen Rotation
+- **Aspect Ratio Button:** Toggle between *Best Fit (Contain)*, *16:9 Cinema*, *4:3 Classic*, and *Crop to Fill (Zoom)* to eliminate black letterbox bars on ultrawide monitors and modern smartphones.
+- **Hardware Screen Rotation:** Rotate video by 90°, 180°, or 270° directly inside the player for devices with fixed orientation locks.
+
+---
+
+## 9. Subtitles & Dual-Axis Customization
+
+### Dual-Axis Positioning & Controls Elevation
+
+The subtitle engine supports complete customization of caption typography and positioning:
+- **Horizontal Alignment:** `Left`, `Center` (default), or `Right`.
+- **Vertical Placement:** `Top`, `Middle`, `Raised`, `Bottom` (default), or `Lowered`.
+- **Controls Collision Elevation:** When player controls appear on screen, subtitle cues automatically elevate upward to prevent text from being obscured by the seekbar.
+- **Visual Styling:** Configurable font size scaling (75% to 150%), text color (White, Yellow, Cyan, Green), and background contrast opacity.
+
+### Live Subtitle Upload (In-Player & Details)
+Missing subtitles can be added at any time:
+1. Open the **Subtitle Settings** modal (`⚙`) inside the player, or visit the movie details page.
+2. Click **Upload Subtitle** and select any `.srt` or `.vtt` file.
+3. The subtitle file is saved directly on the server alongside the movie file and instantly becomes available as an active track without interrupting playback.
 
 ### Intelligent Language Auto-Detection
-The server's subtitle engine analyzes Unicode script characters and NLP word frequency:
-- Detects Devanagari (Hindi), Hanzi (Chinese), Cyrillic (Russian), Arabic, Bengali, Japanese (Hiragana/Katakana), Korean (Hangul), and Latin languages.
-- Renames uploaded files into the canonical format: `<movie_name>_<detected_lang>_<counter>.<ext>`.
+Uploaded subtitle files without explicit language tags are automatically analyzed by the server's heuristic engine (`app/services/subtitles_service.py`):
+- Analyzes Unicode script blocks (Devanagari, Cyrillic, Hanzi, Arabic, Hangul, Latin).
+- Analyzes stop-word frequency for English, Spanish, French, German, Italian, and Hindi.
+- Automatically renames the file into canonical server format: `<movie_name>_<language>_<counter>.<ext>`.
 
 ---
 
-## 7. Uploading Media & Metadata Ingestion
+## 10. Second-Screen Playback: LAN Cast & DLNA
 
-### Resumable Chunked Transfers
-1. Click **Upload** in the top navigation header on any page.
-2. Drag and drop any video file (`.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.m4v`).
-3. Optional: Provide a Movie Title in the rename field if the file has an obscure name (e.g. `1000403712.mkv`).
-4. Click **Upload Media**. The client transfers data in staged chunks with exponential moving average speed smoothing and remaining ETA.
+Stream media from your phone, tablet, or PC directly to big-screen smart TVs:
 
-### Automated TMDb Enrichment
-Once the upload finishes, the server's background ingestion worker:
-1. Probes technical video and audio parameters with `ffprobe`.
-2. Queries the TMDb API for official movie title, release year, tagline, synopsis, cast, ratings, and backdrop artwork.
-3. Automatically caches high-resolution artwork and updates the SQLite database.
+### Smart TV Casting via DLNA (Samsung Tizen & LG webOS)
+1. Ensure your Smart TV is powered on and connected to the same Wi-Fi network.
+2. In the video player, click the **Cast** icon in the controls bar.
+3. The server discovers nearby UPnP / DLNA receivers automatically.
+4. Select your TV (e.g. *"Samsung QLED TV"* or *"LG OLED TV"*).
+5. The TV opens its native media player and begins direct streaming via RFC 7233 byte-range delivery.
 
-### Forensic Media Resolver
-If a file has a non-standard name, the forensic resolver (`media_resolver.py`) inspects parent directories, release tags, and container metadata to pinpoint the correct TMDb match automatically.
+### Google Cast (Chromecast & Nest Hub)
+1. Select any Google Cast target (e.g. *"Living Room Chromecast"* or *"Google Nest Hub"*).
+2. The server loads the media receiver application on the device.
+3. MKV and HEVC files are converted dynamically to Cast-compatible HLS streams.
 
----
-
-## 8. Storage Retention & Cache Management
-
-### Dual-Drive Storage Tiering (E: SSD + D: Mass Storage)
-- **Fast SSD (`E:\MediaServer`):** Hosts the application and runtime, SQLite database (`E:\MediaServer\media.db`), live seek preview thumbnails (`E:\MediaServer\cache\previews`), and completed HLS transcode streams (`E:\MediaServer\cache\hls`).
-- **Mass Storage Drive (`D:\Flicks`):** Dedicated to high-capacity cold storage, holding raw movie files, upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`), and source archives (`D:\Flicks\.archive`).
-- The system telemetry Storage Pool combines `D:` and `E:` into one capacity figure with a per-drive breakdown. Drive `C:` is not used by the media server.
-
-### Configurable Retention Policies
-In **My Library (`/manage`)**, configure post-transcode policies:
-- `keep` — Retain both raw source video and HLS transcoded cache indefinitely.
-- `archive` — Move cold source video to `.archive` on secondary storage to free primary space while keeping HLS streams active.
-- `purge_cache` — Delete HLS cache after playback completes, freeing SSD headroom.
-
-### Safe Orphaned Cache Purging
-Click **Purge Orphaned Caches** on `/manage` to reconcile cache directories against current media files. The engine terminates any lingering FFmpeg processes safely on Windows and removes stale transcode directories with zero risk of database corruption.
+### In-Cast Volume Sync, Subtitles & Disconnect
+- **Live Volume & Mute Sync:** Adjusting volume or toggling mute in the web app synchronizes with the TV's hardware volume in real time.
+- **Remote Subtitle Selection:** Select subtitle tracks from the in-cast popover; WebVTT tracks are delivered directly to the TV screen.
+- **Clean Disconnect:** Clicking **Disconnect Cast** calls `cast.quit_app()`, returning your TV to its home screen cleanly.
 
 ---
 
-## 9. Connected Devices Dashboard
+## 11. Storage Retention Policies & Cache Maintenance
 
-Navigate to `/devices` to view all active and historical client connections:
+### Configurable Retention Policies (`keep`, `archive`, `purge_cache`)
 
-- **Client Hints Hardware Decoding:** Identifies exact device models (e.g. *Apple iPhone 15 Pro*, *Samsung Galaxy S24 Ultra*, *Google Pixel 8 Pro*) via Chromium High-Entropy Client Hints (`Sec-CH-UA-Model`).
-- **Network Path Classification:** Classifies client connections as **Local LAN** or **Remote WAN** with public IP, reverse DNS, and ISP organization.
-- **Friendly Renaming:** Give any device a custom human-readable name (e.g. *"Living Room TV"* or *"Anis' MacBook Air"*).
-- **Per-Device Watch History:** Review what each device watched, last active timestamps, and completion rates.
+Manage disk headroom on `/manage` by choosing a post-transcode retention policy:
 
----
+| Policy | Raw File on D: | HLS Stream Cache on E: | Recommended For |
+|---|---|---|---|
+| `keep` *(Default)* | Retained in `D:\Flicks` | Retained in `E:\MediaServer\cache\hls` | Ample storage; fastest possible subsequent plays. |
+| `archive` | Moved to `D:\Flicks\.archive` | Retained on fast SSD `E:` | Keeps SSD streaming instant while offloading raw files to cold archive. |
+| `purge_cache` | Retained in `D:\Flicks` | Purged automatically after viewing | Conserves fast SSD storage headroom on smaller drives. |
 
-## 10. Troubleshooting & FAQs
-
-### Why does an MKV file take 3–5 seconds to begin playing?
-Browsers do not natively play MKV containers. When you press play, the server's dual-GPU engine starts converting the file to browser-compatible fMP4 HLS segments. Playback begins as soon as the first 3 seconds are ready, while the rest encodes in the background.
-
-### Subtitles are overlapping player controls. How do I adjust them?
-Click the gear icon (<code>⚙</code>) in the player controls or press <kbd>c</kbd> to open Subtitle Settings. Set **Vertical Position** to *Raised Bottom* or *Middle*.
-
-### Video is distorted or letterboxed improperly on my ultrawide / tablet screen.
-Press <kbd>a</kbd> or click the **Aspect Ratio** button in the player controls to cycle through *Best Fit*, *16:9*, *4:3*, and *Crop (Zoom)*.
-
-### How do I refresh library metadata after renaming a file?
-Click **Scan Library** in the top navigation header or wait for the automatic 4-hour background TMDb refresh worker.
+### Safe Windows-Resilient Orphan Cache Purging
+- When files are renamed or deleted, abandoned transcode directories may remain on disk.
+- Clicking **Purge Orphaned Caches** on `/manage` reconciles all cache folders against the active database.
+- Uses Windows process termination safety (`is_pid_alive()`) to guarantee background FFmpeg workers terminate cleanly before unlinking directories, preventing `[WinError 32]` file-lock exceptions.
 
 ---
 
-*© 2026 Anis' Home Media Server. Designed and built with Flask, Waitress, FFmpeg, and Cloudflare Named Tunnels.*
+## 12. Windows Persistent Services & Operational Runbook
+
+### Service Architecture (Waitress + Cloudflared via NSSM)
+
+The server runs as two continuous Windows background services configured via **NSSM (Non-Sucking Service Manager)**:
+1. **`MediaServer` Service:** Runs Python Waitress WSGI on `127.0.0.1:8000`. Starts automatically on Windows boot before user login.
+2. **`Cloudflared` Service:** Maintains the secure outbound tunnel to `media.anisparvez.in`.
+
+Both services include automatic crash restart policies and 10 MB rotating log files.
+
+### Service Restart Instructions
+
+Whenever backend Python code (`app/*.py`, `app/routes/*.py`, `app/services/*.py`) is modified, the persistent Windows service must be restarted:
+
+**Option 1: Using the Automated Batch Script**
+Double-click or run from terminal:
+```cmd
+e:\MediaServer\scripts\restart_service.bat
+```
+*(Automatically prompts for UAC administrator elevation)*
+
+**Option 2: Using Elevated PowerShell**
+Open PowerShell as Administrator:
+```powershell
+Restart-Service MediaServer
+```
+
+### Logs & Diagnostics
+
+Service logs are stored with automatic rotation in:
+- `E:\MediaServer\logs\media_server.log`
+- `E:\MediaServer\logs\media_server_error.log`
+
+---
+
+## 13. Frequently Asked Questions & Troubleshooting
+
+### Why does an MKV file take 2–4 seconds to start playing?
+MKV containers cannot be decoded directly by web browsers. When you click play, the server's dual-GPU transcode engine partitions the file and encodes the first few chunks into browser-compatible fMP4 HLS segments. Playback begins as soon as the first segment is ready, while subsequent segments transcode in the background.
+
+### Why do I see "Fleet Privacy Scoping Active" on the Devices page?
+To protect household privacy, non-administrative sessions only show telemetry and history for your own active device. To view the full household fleet table, click **Unlock Fleet Telemetry** and enter your 4-digit Admin PIN.
+
+### How do I pair my Fire TV Stick without typing a password?
+Visit `/account` on your phone or PC, enter your TV name, and click **Generate Pairing Token**. Then enter the 6-character code into the prompt on your Fire TV app.
+
+### Subtitles are overlapping the player seekbar. How do I fix this?
+Open the Subtitle Settings modal (`⚙` or press <kbd>c</kbd>) and select **Vertical Position: Raised** or **Middle**. The player also features automatic cue elevation when controls are visible.
+
+### Video is distorted or letterboxed on my phone or ultrawide screen.
+Press <kbd>a</kbd> or click the **Aspect Ratio** button in the player controls to cycle through *Best Fit (Contain)*, *16:9*, *4:3*, and *Crop to Fill (Zoom)*.
+
+### How do I refresh movie metadata after renaming a file?
+If you are an administrator, click **Scan Library** in the navigation header or wait for the automatic 4-hour background metadata refresh worker.
+
+---
+
+*© 2026 Anis' Home Media Server. Engineered with Flask, Waitress, React 19, FFmpeg dual-GPU acceleration, and Cloudflare Named Tunnels.*

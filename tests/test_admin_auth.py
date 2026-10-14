@@ -326,6 +326,90 @@ class ComprehensiveAdminAuthEdgeCaseTests(unittest.TestCase):
             self.assertEqual(res.status_code, 404)
             self.assertFalse(res.get_json().get('success'))
 
+    def test_storage_audit_requires_admin(self):
+        with patch.dict(os.environ, {'PYTEST_CURRENT_TEST': ''}):
+            # 1. Without PIN -> 403
+            res = self.client.get('/api/storage/audit')
+            self.assertEqual(res.status_code, 403)
+
+            # 2. With wrong PIN -> 403
+            res = self.client.get('/api/storage/audit', headers={'X-Admin-Pin': '0000'})
+            self.assertEqual(res.status_code, 403)
+
+            # 3. With correct PIN -> 200
+            res = self.client.get('/api/storage/audit', headers={'X-Admin-Pin': '6361'})
+            self.assertEqual(res.status_code, 200)
+            self.assertIn('storage', res.get_json())
+            self.assertIn('audit', res.get_json())
+
+    def test_scan_post_requires_admin(self):
+        with patch.dict(os.environ, {'PYTEST_CURRENT_TEST': ''}):
+            # 1. POST without PIN -> 403
+            res = self.client.post('/api/scan')
+            self.assertEqual(res.status_code, 403)
+
+            # 2. POST with wrong PIN -> 403
+            res = self.client.post('/api/scan', headers={'X-Admin-Pin': 'wrong'})
+            self.assertEqual(res.status_code, 403)
+
+            # 3. POST with correct PIN -> 200
+            res = self.client.post('/api/scan', headers={'X-Admin-Pin': '6361'})
+            self.assertEqual(res.status_code, 200)
+
+    def test_upload_chunk_init_requires_admin(self):
+        with patch.dict(os.environ, {'PYTEST_CURRENT_TEST': ''}):
+            # 1. Without PIN -> 403
+            res = self.client.post('/api/upload/chunk/init', json={'filename': 'movie.mp4', 'size': 100})
+            self.assertEqual(res.status_code, 403)
+
+            # 2. With correct PIN -> passes auth (validation error or 200, not 403)
+            res = self.client.post(
+                '/api/upload/chunk/init',
+                json={'filename': 'movie.mp4', 'size': 100},
+                headers={'X-Admin-Pin': '6361'}
+            )
+            self.assertNotEqual(res.status_code, 403)
+
+    def test_device_privacy_scoping_and_management_auth(self):
+        with patch.dict(os.environ, {'PYTEST_CURRENT_TEST': ''}):
+            db = app.get_db()
+            db.execute(
+                "INSERT OR REPLACE INTO devices(device_id, device_name, device_type, device_os, browser, connection_type, client_ip, first_seen, last_seen) "
+                "VALUES('dev_other_victim', 'Victim Device', 'Mobile', 'iOS 17', 'Safari', 'Local Network (LAN)', '192.168.1.50', datetime('now'), datetime('now'))"
+            )
+            db.commit()
+            db.close()
+
+            # 1. Non-admin GET /api/devices only sees their own device
+            res_anon = self.client.get('/api/devices')
+            self.assertEqual(res_anon.status_code, 200)
+            data_anon = res_anon.get_json()
+            # None of the other devices should be returned
+            self.assertTrue(all(d['is_current'] for d in data_anon['devices']))
+            self.assertFalse(any(d['device_id'] == 'dev_other_victim' for d in data_anon['devices']))
+
+            # 2. Admin GET /api/devices sees all devices
+            res_admin = self.client.get('/api/devices', headers={'X-Admin-Pin': '6361'})
+            self.assertEqual(res_admin.status_code, 200)
+            data_admin = res_admin.get_json()
+            self.assertTrue(any(d['device_id'] == 'dev_other_victim' for d in data_admin['devices']))
+
+            # 3. Non-admin renaming another device -> 403
+            res_rename = self.client.post('/api/devices/rename', json={'device_id': 'dev_other_victim', 'name': 'Hacked'})
+            self.assertEqual(res_rename.status_code, 403)
+
+            # 4. Non-admin deleting another device -> 403
+            res_del = self.client.post('/api/devices/delete', json={'device_id': 'dev_other_victim'})
+            self.assertEqual(res_del.status_code, 403)
+
+            # 5. Admin can rename any device
+            res_rename_admin = self.client.post(
+                '/api/devices/rename',
+                json={'device_id': 'dev_other_victim', 'name': 'Admin Renamed'},
+                headers={'X-Admin-Pin': '6361'}
+            )
+            self.assertEqual(res_rename_admin.status_code, 200)
+
     # =========================================================================
     # 4. IDENTITY & ROLE COMBINATIONS (OAUTH SESSION + BEARER TOKEN)
     # =========================================================================
@@ -395,9 +479,6 @@ class ComprehensiveAdminAuthEdgeCaseTests(unittest.TestCase):
 
             res_hints = self.client.post('/api/devices/client-hints', json={'model': 'AFTMM'})
             self.assertEqual(res_hints.status_code, 200)
-
-            res_audit = self.client.get('/api/storage/audit')
-            self.assertEqual(res_audit.status_code, 200)
 
             # Progress endpoint is open (never 403)
             res_progress_get = self.client.get('/api/progress')
