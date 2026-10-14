@@ -17,6 +17,7 @@
 > - **Mobile Gestures & Ripples:** Double-tap seek (±10s), seek ripples, player preloader.
 > - **Transcode Staging Gate & Previews:** 100% transcode completion gate, live dual AMD GPU telemetry, seekbar hover frame previews in paused & playing states.
 > - **LAN Cast & DLNA Remote Controller:** Device discovery, Cast remote HUD, receiver hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle delivery, live in-cast subtitle selector, and clean receiver app quit (`cast.quit_app()`).
+> - **Google Cast Receiver Hardening:** Direct IP/port host connection bypassing mDNS packet loss, CORS headers on WebVTT subtitle routes (`/subtitles/*`), and status polling guards preventing app relaunch cycles during receiver loading.
 >
 > Legacy test migration is **COMPLETE**: `tests/test_selenium_seek_playback.py` and the full E2E Selenium suite (`tests/test_selenium_exhaustive_player_suite.py` and `tests/test_selenium_cast_integration.py`) pass 100%. Frontend Vitest stands at **149/149 passed**, backend Cast tests at **56/56 passed**.
 >

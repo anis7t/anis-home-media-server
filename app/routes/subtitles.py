@@ -1,5 +1,5 @@
 """Subtitle delivery and track catalog routes."""
-from flask import Blueprint, Response, abort, jsonify, send_file
+from flask import Blueprint, Response, abort, jsonify, request, send_file
 
 from app import config
 from app.db import get_db
@@ -14,10 +14,27 @@ from app.utils.subtitles import srt_to_vtt
 
 subtitles_bp = Blueprint('subtitles', __name__)
 
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Origin, Accept, Content-Type',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+}
 
-@subtitles_bp.route('/subtitles/<path:filename>/<name>')
+
+@subtitles_bp.after_request
+def _allow_subtitle_cors(response):
+    """Allow cast receivers and external players to fetch WebVTT subtitle tracks in CORS mode."""
+    response.headers.update(CORS_HEADERS)
+    return response
+
+
+@subtitles_bp.route('/subtitles/<path:filename>/<name>', methods=['GET', 'HEAD', 'OPTIONS'])
 def subtitle(filename, name):
     """Serve sidecar subtitle file converted on-the-fly to WebVTT."""
+    if request.method == 'OPTIONS':
+        return Response('', 200)
     video = safe_path(filename)
     roots = config.get_media_roots() if hasattr(config, 'get_media_roots') else [config.MEDIA_ROOT]
     sub = (video.parent / name).resolve()
@@ -50,9 +67,11 @@ def subtitle(filename, name):
     return Response(srt_to_vtt(text), mimetype='text/vtt', headers={'Cache-Control': 'private, max-age=3600'})
 
 
-@subtitles_bp.route('/subtitles/embedded/<path:filename>/<int:stream_idx>.vtt')
+@subtitles_bp.route('/subtitles/embedded/<path:filename>/<int:stream_idx>.vtt', methods=['GET', 'HEAD', 'OPTIONS'])
 def subtitle_embedded(filename, stream_idx):
     """Extract and serve embedded subtitle track as WebVTT."""
+    if request.method == 'OPTIONS':
+        return Response('', 200)
     video = safe_path(filename)
     if not is_video(video):
         abort(404)
@@ -62,9 +81,11 @@ def subtitle_embedded(filename, stream_idx):
     return send_file(vtt, mimetype='text/vtt', conditional=True, max_age=3600)
 
 
-@subtitles_bp.route('/subtitles/online/<path:filename>.vtt')
+@subtitles_bp.route('/subtitles/online/<path:filename>.vtt', methods=['GET', 'HEAD', 'OPTIONS'])
 def subtitle_online(filename):
     """Fetch and serve online subtitle from OpenSubtitles as WebVTT."""
+    if request.method == 'OPTIONS':
+        return Response('', 200)
     video = safe_path(filename)
     if not is_video(video):
         abort(404)

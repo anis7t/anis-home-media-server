@@ -741,6 +741,23 @@ def _cast_connect(device: dict, timeout: float = 12.0):
     cached = _REGISTRY.cast_connection(device['id'])
     if cached is not None:
         return cached
+    if device.get('host'):
+        import uuid as _uuid
+        raw_uuid = str(device.get('id', '')).replace('cast:', '')
+        try:
+            parsed_uuid = _uuid.UUID(raw_uuid)
+        except Exception:
+            parsed_uuid = _uuid.uuid4()
+        try:
+            cast = _cast_module().get_chromecast_from_host(
+                (device['host'], 8009, parsed_uuid, device.get('model', 'Chromecast'), device.get('name', 'Cast device')),
+                timeout=timeout,
+            )
+            cast.wait(timeout=timeout)
+            _REGISTRY.remember_cast_connection(device['id'], cast, None)
+            return cast
+        except Exception as exc:
+            log.debug('Direct cast connect to %s failed, falling back to mDNS: %s', device.get('host'), exc)
     known_hosts = [device['host']] if device.get('host') else None
     casts, browser = _cast_module().get_listed_chromecasts(
         friendly_names=[device['name']],
@@ -853,22 +870,31 @@ def cast_command(device: dict, action: str, value=None) -> None:
     elif action == 'subtitle':
         _wait_for_cast_session(controller)
         track_id = int(value or 0)
-        if track_id > 0:
-            controller.enable_subtitle(track_id)
-        else:
-            controller.disable_subtitle()
+        try:
+            if track_id > 0:
+                controller.enable_subtitle(track_id)
+            else:
+                controller.disable_subtitle()
+        except Exception as exc:  # noqa: BLE001
+            log.debug('Cast subtitle command failed: %s', exc)
     else:
         raise ValueError(f'unsupported action: {action}')
 
 
-def _refresh_cast_status(controller, timeout: float = 2.0) -> None:
+def _refresh_cast_status(controller, timeout: float = 1.0) -> None:
     """Ask the receiver for its current media status before reading the cached one.
 
     A Cast receiver pushes MEDIA_STATUS on transitions only - measured minutes apart while
     playing - so a cached read freezes the phone's cast bar and can make a position from
     minutes ago look like a command that never landed. The request is fire-and-forget, so
     bound the wait for its answer; whatever arrives lands in ``controller.status``.
+
+    Guarded: only call update_status() if controller is active. Calling update_status()
+    while an app is still launching or inactive causes pychromecast to call launch_app()
+    on every poll, trapping the receiver in an infinite launch loop.
     """
+    if hasattr(controller, 'is_active') and not controller.is_active:
+        return
     answered = threading.Event()
     try:
         controller.update_status(callback_function=lambda _ok, _response: answered.set())
@@ -891,9 +917,12 @@ def cast_status(device: dict) -> dict:
         if cast.status.volume_muted is not None:
             muted = bool(cast.status.volume_muted)
     if status is None:
-        return {'state': 'unknown', 'position': 0.0, 'duration': 0.0, 'volume': volume, 'muted': muted}
+        state = 'buffering' if getattr(cast, 'app_id', None) == 'CC1AD845' else 'unknown'
+        return {'state': state, 'position': 0.0, 'duration': 0.0, 'volume': volume, 'muted': muted}
     raw = (status.player_state or '').upper()
     state = {'PLAYING': 'playing', 'PAUSED': 'paused', 'BUFFERING': 'buffering', 'IDLE': 'stopped'}.get(raw, raw.lower())
+    if (not state or state == 'unknown') and getattr(cast, 'app_id', None) == 'CC1AD845':
+        state = 'buffering'
     return {
         'state': state,
         'position': float(status.current_time or 0.0),
