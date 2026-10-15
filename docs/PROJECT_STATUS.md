@@ -53,6 +53,40 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 
+### 2026-10-16 — Catalog Reconciliation & USB-Dropout Service Watchdog
+
+**1. Outage & diagnosis.** `media.anisparvez.in` returned 502 with
+`dial tcp 127.0.0.1:8000: refused` in `C:\Cloudflared\cloudflared.log`:
+`MediaServer` (`:8000`), `MediaServerRust` (`:8001`) and PostgreSQL were
+all Stopped. Structural cause: everything except Cloudflared lives on USB
+`E:` (`nssm.exe`, PG binaries + `pgdata`); E: glitched mid-run (USB
+paging error + volume re-enumeration in System log, PG crash-recovery
+traces) and SCM never restarts Stopped services on volume return — NSSM
+cannot self-heal because `nssm.exe` itself was on the missing volume.
+All three restored (elevated restarts); public site 200.
+
+**2. Catalog reconciliation (PG `media_server` vs SQLite `media.db`).**
+Flask served 36 titles, Rust 39. Full disk audit: SQLite 36/36 valid
+(truth); PG held 6 stale rows — 3 bare keys for files now under
+`subdir/file` layout (28 Days, Hail Mary, Oak Street) fixed by `UPDATE
+filename`, 1 bare-key duplicate (28 Weeks) deleted, 2 fully orphaned rows
+(Odyssey, WALL-E) deleted plus 1 orphaned WALL-E progress row (user
+approved full clean). One transaction, JSON backup of affected rows.
+Result: **36/36 parity, 0 missing on disk**; `cargo test` re-run
+**61/61 green**, zero post-suite artifacts. Full account:
+[`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
+
+**3. Watchdog delivered & drill-passed.** New `MediaServerWatchdog`
+scheduled task (`awais\anis7`, highest privileges, once-plus-repeat
+heartbeat every 5 min) running [`../scripts/service_watchdog.ps1`](../scripts/service_watchdog.ps1)
+(checks E: presence, PG via `pg_ctl`, then Rust, then Flask; logs to
+`C:\MediaServerLogs\watchdog.log`). Live drill: stopped Rust, next tick
+restarted it, `:8001` 200. Two traps recorded in the walkthrough:
+repo `.ps1` files must stay pure ASCII (PS 5.1 mangles UTF-8 dashes into
+parse errors), and repetition on AtLogOn triggers never fires — heartbeat
+must be Once+Repetition. Known limit: Interactive principal means it
+guards while logged on; boot-without-logon still relies on SCM autostart.
+
 ### 2026-10-14 — Frontend Technical Debt Resolution: ManagePage Modularization & Typed API Client (Option C)
 
 **1. Typed Library & Storage Management API Engine ([`web/src/lib/api/manage.ts`](../web/src/lib/api/manage.ts))**
