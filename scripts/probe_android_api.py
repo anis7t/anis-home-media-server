@@ -9,13 +9,22 @@ affected by a template change.
 Expectations are the routes' *contract*, not a wish for 200: `/api/app/*` answers
 404 when nothing is published for that channel, which is a working route.
 """
+import argparse
 import json
 import sys
 import urllib.error
 import urllib.request
 from urllib.parse import quote
 
-BASE = "http://127.0.0.1:8000"
+parser = argparse.ArgumentParser(description="Android client API contract probe")
+parser.add_argument(
+    "--base",
+    default="http://127.0.0.1:8000",
+    help="origin to probe (default: the Flask origin the installed APKs use). "
+         "Pass http://127.0.0.1:8001 to probe the Rust service.",
+)
+args = parser.parse_args()
+BASE = args.base.rstrip("/")
 
 with urllib.request.urlopen(f"{BASE}/api/movies", timeout=20) as r:
     movies = json.loads(r.read().decode()).get("movies") or []
@@ -24,6 +33,9 @@ if not movies:
 sample = movies[0]
 enc = "/".join(quote(p, safe="") for p in sample["filename"].split("/"))
 fid = quote(sample["filename"], safe="")
+
+# Never a real title: used to probe mutating routes without side effects.
+SYNTHETIC_FILENAME = "rust_probe_nonexistent_title.mkv"
 
 # (method, path, acceptable statuses, note)
 CALLS = [
@@ -41,6 +53,26 @@ CALLS = [
     # nothing is casting. `CastRepository.status()` catches the DioException and
     # returns null, so polling while idle is normal, not a failure.
     ("GET", "/api/cast/status?device_id=probe-device-0001", (200, 400), "cast status (400 = idle)"),
+    # NOTE: these four were NOT probed at all before 2026-10-16. They are
+    # real, shipped app features (manual library scan, manual transcode
+    # start, cast play, cast control) and were missed because the probe
+    # mirrored ApiEndpoints incompletely - ApiEndpoints also declares
+    # /api/scan and /api/transcode/start, and the cast repository has its
+    # own four paths of which only two were checked. A guardrail that
+    # silently omits endpoints it is meant to guard is worse than none.
+    #
+    # `/api/transcode/start` is deliberately aimed at a SYNTHETIC filename.
+    # It was originally probed against a real title, which is a live
+    # side-effect: on an untranscoded film that call starts a real
+    # multi-GPU transcode of the user's library. It happened to be a no-op
+    # on 2001 only because that title was already complete, which is luck,
+    # not design. A missing file exercises the route contract without
+    # touching content.
+    ("POST", "/api/scan", (200, 400, 401, 403, 404), "manual scan trigger"),
+    ("POST", f"/api/transcode/start/{quote(SYNTHETIC_FILENAME, safe='')}",
+     (200, 400, 401, 403, 404), "manual transcode start (synthetic name: no side effect)"),
+    ("POST", "/api/cast/play", (200, 400, 401, 403, 404), "cast play"),
+    ("POST", "/api/cast/control", (200, 400, 401, 403, 404), "cast control"),
     # 404 = route present, nothing published for that channel.
     ("GET", "/api/app/update?channel=production", (200, 404), "app update manifest"),
     ("GET", "/api/app/download?channel=production", (200, 404), "apk download"),
