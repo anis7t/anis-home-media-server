@@ -1,10 +1,49 @@
 # Agent Instructions — Anis' Media Server
 
+## 0. Standing working rules
+
+These two rules govern **all** work in this repository. Added 2026-10-16.
+
+### 0.1 Plan first, then ask for approval
+
+Before implementing anything non-trivial, **present an implementation plan and
+explicitly request approval.** Do not begin the work on the strength of having
+described it.
+
+A plan must state, at minimum:
+
+- **Scope** — what changes and what deliberately does not.
+- **Exit criteria** — how completion is judged, stated as something checkable.
+- **Risks** — what could break, and how it would be caught.
+- **Open decisions** — choices that are the user's to make, not defaults to pick silently.
+
+If the plan is revised mid-implementation, re-present it before continuing.
+
+### 0.2 Flask and Waitress are deprecated — migrate, do not extend
+
+`app/` (Flask, `:8000`, Waitress) and its Jinja templates are **on the way out**.
+Treat every new requirement as a Rust (`:8001`) requirement.
+
+- **Do not add capability to Flask.** No new route, service, page or background
+  worker in `app/`. If something is needed there today, port it to Rust instead.
+- **Prefer retiring over bridging.** Each slice should *remove* a Flask
+  responsibility. `rust/src/routes/proxy.rs` forwards `/auth/*`, `/api/devices/*`,
+  `/api/cast/*`, `/api/storage/*`, `/api/scan`, `/api/media-info/*`,
+  `/tmdb-poster/*`, `/tmdb-backdrop/*` and `/poster/*` to `:8000`. That bridge is
+  temporary hybrid-hosting scaffolding and now **contradicts §9's Native
+  Independence Invariant**: its endpoint list is the debt backlog, to be paid down
+  natively and deleted, not extended.
+- **The rollback artifact is a tagged commit, not a live code path.** Do not gate
+  retirement behind "feature flags so Flask stays viable" — that keeps the thing
+  being retired permanently alive.
+- Keep the Flutter/Fire TV client working throughout (see §7's probe guardrail);
+  `/api/*` shapes it depends on must not change underneath it.
+
 ## 1. Project identity and source of truth
 
 - Repository: `anis7t/media-server`
-- Framework: **Flask**, not Django.
-- The application is modularized under `app/` with routes, services, utilities, configuration, and database layers.
+- **Stack: Rust/Axum (`:8001`) + React + PostgreSQL.** Flask and Waitress (`:8000`) are **DEPRECATED and being retired as the migration proceeds.** Read `AGENTS.md` §0 for the two standing working rules that govern all new work.
+- Legacy backend: Flask (not Django), modularized under `app/`. It survives only for endpoints not yet ported; do not extend it, and do not add new capability to it.
 - Root `app.py` is intentionally a lightweight executable entry point; `app/__init__.py` owns the application factory and compatibility exports.
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
 - **Session handoffs live in `Handoffs/`**, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST. Start a session by reading the newest one: `Handoffs/2026-10-14_21-20_antigravity_issues-1-7-and-manual-complete.md` is current and carries the paste-ready prompt, the migration phase table, the known-failing and known-flaky tests, and the traps. Each handoff names the code commits it describes rather than a single `HEAD` — a handoff citing its own hash is wrong the moment it is committed — so read the newest file, and let it supersede older ones.
