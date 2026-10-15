@@ -53,6 +53,37 @@ touching content. Verified: 404 on both origins, nothing written to
 
 ## 2. Measured status per Android client endpoint
 
+> **Updated 2026-10-16, after Phase C1a + C1b.** All three artwork endpoints
+> are now native and removed from the proxy map, leaving **9 proxied**
+> (was 10) and **2 absent**:
+>
+> | Endpoint | Rust status now |
+> |---|---|
+> | `GET /poster/{*filename}` | **native** (C1a) |
+> | `GET /tmdb-poster/{id}` | **native** (C1b) |
+> | `GET /tmdb-backdrop/{id}` | **native** (C1b) |
+> | `GET/POST /api/devices*` | proxied |
+> | `GET /api/media-info/{f}` | proxied |
+> | `GET/POST /api/cast/*` | proxied |
+> | `POST /api/scan` | proxied |
+> | `POST /api/transcode/start/{f}` | **absent** |
+> | `GET /api/app/update`, `/api/app/download` | **absent** (not proxied either) |
+>
+> Verified live against Flask: byte-identical artwork, identical
+> `Content-Length` and identical `Last-Modified` (so cached copies survive the
+> port swap), traversal refused on both, download failure is 404 and never
+> 500. TMDb download behaviour was measured before choosing the retry policy:
+> 420 requests across 70 distinct assets at concurrency 12 over 6 rounds,
+> 420/420 × 200, p95 0.66 s, no `Retry-After`, no throttling — so retries
+> cover transient network errors, not rate limits.
+>
+> **Pre-existing limitation, inherited rather than introduced:** artwork cache
+> files are keyed only on `tmdb_id`, so if TMDb re-encodes an image the cache
+> never refreshes it. Observed live: two posters differed from their
+> previously-cached copies at the same 500×750 dimensions, and a Python fetch
+> of the identical URL returned exactly the bytes Rust wrote — i.e. upstream
+> drift, not a defect. Flask behaves identically.
+
 Probe run 2026-10-16, both origins, 22 endpoints.
 
 | Endpoint | Flask :8000 | Rust :8001 | Rust status |
