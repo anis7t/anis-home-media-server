@@ -130,7 +130,7 @@ fn video_stream_end(v: &ProbeStream) -> f64 {
     }
     for (k, val) in &v.tags {
         if k.eq_ignore_ascii_case("DURATION") || k.to_ascii_uppercase().starts_with("DURATION") {
-            if let Ok(parsed) = val.parse::<f64>() {
+            if let Some(parsed) = parse_duration_value(val) {
                 if parsed > 0.0 {
                     return parsed;
                 }
@@ -138,6 +138,33 @@ fn video_stream_end(v: &ProbeStream) -> f64 {
         }
     }
     0.0
+}
+
+/// Parse a duration that may be either plain seconds (`"8254.6"`) or a
+/// Matroska timestamp (`"01:40:06.042000000"`).
+///
+/// The timestamp form is what Matroska actually emits in its `DURATION` track
+/// tags, and it is very often the *only* video-end signal there is: measured on
+/// a library MKV, `stream.duration` and `duration_ts` were both absent and the
+/// tag was the sole source. Parsing it as a float fails silently, which drops
+/// the answer to the container duration - the exact denominator error this
+/// function exists to avoid.
+fn parse_duration_value(raw: &str) -> Option<f64> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return None;
+    }
+    if let Ok(f) = v.parse::<f64>() {
+        return Some(f);
+    }
+    if !v.contains(':') {
+        return None;
+    }
+    let mut total = 0.0f64;
+    for part in v.split(':') {
+        total = total * 60.0 + part.trim().parse::<f64>().ok()?;
+    }
+    Some(total)
 }
 
 /// Memoized `source_video_duration`, keyed by path + size + mtime so an
@@ -269,6 +296,20 @@ mod tests {
         tags.insert("DURATION-eng".to_string(), "1234.5".to_string());
         let s = ProbeStream { tags, ..Default::default() };
         assert_eq!(video_stream_end(&s), 1234.5);
+    }
+
+    #[test]
+    fn duration_value_parses_plain_seconds() {
+        assert_eq!(parse_duration_value("8254.6"), Some(8254.6));
+    }
+
+    #[test]
+    fn duration_value_parses_matroska_timestamp() {
+        // The form Matroska actually writes, and frequently the only signal.
+        assert!((parse_duration_value("01:40:06.042000000").unwrap() - 6006.042).abs() < 1e-6);
+        assert_eq!(parse_duration_value("00:00:00.5"), Some(0.5));
+        assert_eq!(parse_duration_value(""), None);
+        assert_eq!(parse_duration_value("not-a-duration"), None);
     }
 
     #[test]

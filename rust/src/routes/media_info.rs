@@ -210,27 +210,39 @@ async fn movie_metadata(state: &MediaInfoState, filename: &str) -> serde_json::M
         None => return serde_json::Map::new(),
     };
 
-    let sql = "SELECT title, year, overview, genres, vote_average, runtime \
-               FROM movies WHERE filename = $1 LIMIT 1";
-    let mut meta: Option<(Option<String>, Option<i32>, Option<String>, Option<Value>, Option<f64>, Option<i32>)> =
-        sqlx::query_as(sql)
-            .bind(filename)
+    // `vote_average` is a PostgreSQL `real` (float4). Decoding it straight into
+    // an f64 makes the whole row fail to decode, and because the failure was
+    // swallowed it silently produced an all-null metadata block - every title
+    // reported no title, genres, rating or runtime. f32 is used here, which is
+    // the same defensive pattern `progress_service` applies to its floats.
+    type MovieMeta = (
+        Option<String>,
+        Option<i32>,
+        Option<String>,
+        Option<String>,
+        Option<f32>,
+        Option<i32>,
+    );
+
+    async fn fetch_meta(pool: &PgPool, key: &str) -> Option<MovieMeta> {
+        let sql = "SELECT title, year, overview, genres, vote_average, runtime \
+                   FROM movies WHERE filename = $1 LIMIT 1";
+        sqlx::query_as::<_, MovieMeta>(sql)
+            .bind(key)
             .fetch_optional(pool)
             .await
             .ok()
-            .flatten();
+            .flatten()
+    }
+
+    let mut meta = fetch_meta(pool, filename).await;
 
     if meta.is_none() {
         let base = FsPath::new(filename)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(filename);
-        meta = sqlx::query_as(sql)
-            .bind(format!("%{}%", base))
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+        meta = fetch_meta(pool, &format!("%{}%", base)).await;
     }
 
     let (title, year, overview, genres, rating, runtime) = match meta {
@@ -242,12 +254,11 @@ async fn movie_metadata(state: &MediaInfoState, filename: &str) -> serde_json::M
     map.insert("title".into(), title.map(Value::from).unwrap_or(Value::Null));
     map.insert("year".into(), year.map(Value::from).unwrap_or(Value::Null));
     map.insert("overview".into(), overview.map(Value::from).unwrap_or(Value::Null));
-    map.insert("genres".into(), genres.unwrap_or(Value::Null));
-    map.insert("vote_average".into(), rating.map(Value::from).unwrap_or(Value::Null));
+    map.insert("genres".into(), genres.map(Value::from).unwrap_or(Value::Null));
+    map.insert(
+        "vote_average".into(),
+        rating.map(|v| Value::from(v as f64)).unwrap_or(Value::Null),
+    );
     map.insert("runtime".into(), runtime.map(Value::from).unwrap_or(Value::Null));
     map
 }
-
-/// Keep the pool type referenced even when the field is unused in tests.
-#[allow(dead_code)]
-fn _pool_type_is_used(_p: &PgPool) {}
