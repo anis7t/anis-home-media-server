@@ -174,6 +174,23 @@ pub fn create_app_full(
             pool: Arc::new(pool.clone()),
         });
 
+    // Phase C1a: locally stored poster art, native. Registered BEFORE the proxy
+    // router so it cannot be shadowed; the `/poster/{*path}` proxy entry is
+    // removed below now that this owns the prefix.
+    let asset_state = routes::assets::AssetState {
+        roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc.clone(),
+    };
+
+    let asset_routes = Router::new()
+        .route(
+            "/poster/{*filename}",
+            get(routes::assets::poster_handler)
+                .head(routes::assets::poster_handler)
+                .options(routes::assets::poster_handler),
+        )
+        .with_state(asset_state);
+
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
         Router::new()
@@ -187,7 +204,6 @@ pub fn create_app_full(
             .route("/api/cast/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/tmdb-poster/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/tmdb-backdrop/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/poster/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))
@@ -211,6 +227,7 @@ pub fn create_app_full(
         .merge(hls_routes)
         .merge(transcode_routes)
         .merge(job_routes)
+        .merge(asset_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

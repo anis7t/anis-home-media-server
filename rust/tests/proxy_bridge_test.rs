@@ -105,29 +105,33 @@ async fn setup_test_app(upstream_url: Option<String>) -> Router {
     )
 }
 
+/// `/poster/*` is served natively as of Phase C1a, so it must NOT reach the
+/// upstream any more. This replaced a test that asserted the opposite
+/// (that the proxy forwarded it) when the proxy entry was removed.
+///
+/// The assertion is deliberately "not the upstream's answer": a mock that
+/// returns 200 for everything would otherwise let a re-introduced proxy
+/// entry pass unnoticed.
 #[tokio::test]
-async fn test_proxy_forwards_poster_get() {
+async fn test_poster_is_not_proxied_to_flask() {
     let (addr, handle) = spawn_mock_flask().await;
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
+    // No media root contains this file, so the native handler must 404.
+    // If the proxy entry were still registered, the mock upstream would
+    // answer 200 and this would fail.
     let req = axum::http::Request::builder()
         .uri("/poster/avatar.jpg")
         .body(Body::empty())
         .unwrap();
 
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-
-    let content_type = res
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    assert_eq!(content_type, "image/jpeg");
-
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(bytes.as_ref(), &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "/poster must be answered natively, not forwarded to Flask"
+    );
 
     handle.abort();
 }

@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod health;
 pub mod hls;
 pub mod jobs;
