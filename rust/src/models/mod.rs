@@ -1,3 +1,4 @@
+pub mod job;
 pub mod movie;
 pub mod preview;
 pub mod progress;

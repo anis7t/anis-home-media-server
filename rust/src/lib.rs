@@ -99,7 +99,7 @@ pub fn create_app_full(
         .with_state(subtitle_state);
 
     let preview_state = Arc::new(routes::preview::PreviewState {
-        pool,
+        pool: pool.clone(),
         media_roots: roots_arc.clone(),
         cache_dir: (*cache_dir_arc).clone(),
     });
@@ -139,7 +139,8 @@ pub fn create_app_full(
 
     let transcode_state = routes::transcode::TranscodeState {
         roots: roots_arc.clone(),
-        cache_dir: cache_dir_arc,
+        cache_dir: cache_dir_arc.clone(),
+        pool: Some(pool.clone()),
     };
 
     let transcode_routes = Router::new()
@@ -154,6 +155,24 @@ pub fn create_app_full(
             get(routes::transcode::transcode_status_handler),
         )
         .with_state(transcode_state);
+
+    // Phase 6A: durable transcode job queue. Admission, listing and cancel
+    // are exposed now; nothing spawns FFmpeg yet (that is 6C).
+    //
+    // ONE wildcard route, dispatched internally by suffix. Axum's radix
+    // router forbids `/jobs/{*filename}` and `/jobs/{*filename}/cancel`
+    // together (AGENTS.md s9): the wildcard swallows the whole tail, so the
+    // two patterns conflict and the router panics at startup - which is what
+    // broke every other suite until it was found.
+    let job_routes = Router::new()
+        .route("/api/transcode/jobs", get(routes::jobs::list_jobs_handler))
+        .route(
+            "/api/transcode/jobs/{*path}",
+            axum::routing::post(routes::jobs::jobs_dispatch_handler),
+        )
+        .with_state(routes::jobs::JobState {
+            pool: Arc::new(pool.clone()),
+        });
 
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
@@ -191,6 +210,7 @@ pub fn create_app_full(
         .merge(preview_routes)
         .merge(hls_routes)
         .merge(transcode_routes)
+        .merge(job_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

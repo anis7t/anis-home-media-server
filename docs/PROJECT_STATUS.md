@@ -76,16 +76,17 @@ Result: **36/36 parity, 0 missing on disk**; `cargo test` re-run
 **61/61 green**, zero post-suite artifacts. Full account:
 [`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
 
-**3. Watchdog delivered & drill-passed.** New `MediaServerWatchdog`
-scheduled task (`awais\anis7`, highest privileges, once-plus-repeat
-heartbeat every 5 min) running [`../scripts/service_watchdog.ps1`](../scripts/service_watchdog.ps1)
-(checks E: presence, PG via `pg_ctl`, then Rust, then Flask; logs to
-`C:\MediaServerLogs\watchdog.log`). Live drill: stopped Rust, next tick
-restarted it, `:8001` 200. Two traps recorded in the walkthrough:
-repo `.ps1` files must stay pure ASCII (PS 5.1 mangles UTF-8 dashes into
-parse errors), and repetition on AtLogOn triggers never fires — heartbeat
-must be Once+Repetition. Known limit: Interactive principal means it
-guards while logged on; boot-without-logon still relies on SCM autostart.
+**3. Watchdog delivered, drill-passed, then removed.** A `MediaServerWatchdog`
+scheduled task was built and proven (stopped Rust → next tick restarted it,
+`:8001` 200), then **unregistered by user decision** once NSSM's own restart
+covered the crash case, because its 5-minute interactive run flashed a
+console window on the desktop. `scripts/service_watchdog.ps1` /
+`install_watchdog.ps1` / `uninstall_watchdog.ps1` are retained so it can be
+re-armed on demand. Three traps recorded in the walkthrough: repo `.ps1` files
+must stay pure ASCII (PS 5.1 mangles UTF-8 dashes into parse errors);
+repetition on AtLogOn triggers never fires (use Once+Repetition); and
+`pg_ctl status` reports a healthy NetworkService cluster as stopped, so PG
+liveness must be probed with a TCP connect to 127.0.0.1:5432.
 
 **Follow-up, same session:** NSSM rehomed to `C:\MediaServer\bin` and
 PostgreSQL binaries to `C:\postgres` (data stays `E:\pgdata`),

@@ -1,5 +1,6 @@
 pub mod health;
 pub mod hls;
+pub mod jobs;
 pub mod media;
 pub mod movies;
 pub mod preview;

@@ -1,6 +1,8 @@
 use crate::error::AppError;
+use crate::models::job::JobStatus;
 use crate::models::transcode::TranscodeStatusResponse;
 use crate::services::hls_service::HlsService;
+use crate::services::job_service::JobService;
 use crate::services::path_resolver::PathResolver;
 use crate::services::range_service::RangeService;
 use axum::{
@@ -13,10 +15,45 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Media-root-relative key with forward slashes - the same shape as
+/// `movies.filename` / Flask's `get_rel_path()`. Job rows are keyed on it so
+/// the same title resolves to one row regardless of which root holds it.
+///
+/// The roots are compared longest-first so a root nested inside another
+/// (`E:/MediaServer` inside a configured `E:/`) cannot win and leave a
+/// half-stripped key behind.
+fn video_path_key(video_path: &PathBuf, roots: &[PathBuf]) -> String {
+    let raw = video_path.to_string_lossy().replace('\\', "/");
+
+    let mut prefixes: Vec<String> = roots
+        .iter()
+        .map(|r| {
+            let s = r.to_string_lossy().replace('\\', "/");
+            if s.ends_with('/') {
+                s
+            } else {
+                format!("{}/", s)
+            }
+        })
+        .collect();
+    prefixes.sort_by_key(|p| std::cmp::Reverse(p.len()));
+
+    for prefix in prefixes {
+        if let Some(rest) = raw.strip_prefix(&prefix) {
+            return rest.to_string();
+        }
+    }
+    raw
+}
+
 #[derive(Clone)]
 pub struct TranscodeState {
     pub roots: Arc<Vec<PathBuf>>,
     pub cache_dir: Arc<PathBuf>,
+    /// Present from 6A onward. `None` keeps the handler filesystem-only,
+    /// which is how the pre-6A behaviour is reproduced for callers that
+    /// build a state without a pool.
+    pub pool: Option<sqlx::PgPool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +122,42 @@ pub async fn transcode_status_handler(
     Path(filename): Path<String>,
 ) -> Result<Json<TranscodeStatusResponse>, AppError> {
     let video_path = PathResolver::resolve_media_path(&filename, &state.roots)?;
+
+    // 6A: a live job row is authoritative when one exists. Anything else -
+    // including every terminal state, and every title with no row at all -
+    // falls through to the filesystem derivation below, so this change
+    // cannot alter the response for any title that has no job record.
+    if let Some(pool) = state.pool.as_ref() {
+        match JobService::get_by_filename(pool, &video_path_key(&video_path, &state.roots), "hls")
+            .await
+        {
+            Ok(Some(job)) => {
+                let live = JobStatus::parse(&job.status).map(|s| s.is_live()).unwrap_or(false);
+                if live {
+                    let status = if job.status == "queued" {
+                        "queued".to_string()
+                    } else {
+                        "transcoding".to_string()
+                    };
+                    return Ok(Json(TranscodeStatusResponse {
+                        status,
+                        progress: job.progress,
+                        speed: job.speed,
+                        fps: job.fps,
+                        eta: job.eta,
+                        is_complete: false,
+                        error: job.error,
+                    }));
+                }
+            }
+            // A pool read failure must not take status down: the filesystem
+            // derivation is still correct for everything except a job in
+            // flight, which is strictly better than a 500.
+            Err(_) => {}
+            Ok(None) => {}
+        }
+    }
+
     let hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
 
     // 1. Check if completed HLS playlist exists

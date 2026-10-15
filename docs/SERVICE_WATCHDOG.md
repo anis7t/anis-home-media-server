@@ -1,8 +1,29 @@
-# Walkthrough: Catalog Reconciliation & USB-Dropout Service Watchdog
+# Walkthrough: Catalog Reconciliation & USB-Dropout Service Resilience
 
 **Date:** 2026-10-16 IST
 **Branch:** `feat/rust-api-foundation`
 **Status:** Delivered & verified live (failover drill passed)
+
+> **Status update — the watchdog is NOT installed (user decision, 2026-10-16).**
+> After NSSM and PostgreSQL were rehomed to `C:`, the watchdog's value
+> collapsed and it was unregistered
+> (`scripts/uninstall_watchdog.ps1`). It ran an interactive PowerShell
+> process every 5 minutes, which flashed a console window on the desktop -
+> unacceptable for a background safety net.
+>
+> The scripts are **retained on purpose**: `scripts/install_watchdog.ps1`
+> re-arms it on demand, and §3 records the two bugs that must not be
+> reintroduced if it is ever brought back.
+>
+> **What now covers service loss without the watchdog:** NSSM restarts
+> Flask/Rust within ~5s of a crash; `MediaServerPG` has restart-x3 recovery
+> actions; the "NSSM itself missing" failure is gone with the C: move.
+>
+> **Accepted gap (deliberate):** recovery actions are finite. If all three
+> attempts fail, or the host boots with `E:` unplugged so no service can
+> start, the services stay Stopped until someone runs
+> `scripts/restart_service.bat`. That was the original outage, so this is a
+> real trade, not an oversight.
 
 ---
 
@@ -71,11 +92,14 @@ Two traps found while building it (both now fixed):
    decision. Verified: PID 21412 serving, `select count(*) from movies`
    returns 36, and the probe agrees.
 
-## 4. Failover drill (live, passed)
+## 4. Failover drill (live, passed, then retired)
 
-Stopped `MediaServerRust` (`:8001` refusing). Next tick detected
-`Stopped`, restarted it, `:8001` 200 on health + movies. Full log in
-`C:\MediaServerLogs\watchdog.log`.
+Stopped `MediaServerRust` (`:8001` refusing). The next tick detected
+`Stopped`, restarted it, and `:8001` returned 200 on health and movies - so
+the mechanism was proven correct, not merely assumed. It was then removed by
+user decision (see the status banner) once NSSM's own restart covered the
+crash case, because its 5-minute interactive run flashed a console window
+on the desktop. Log history preserved at `C:\MediaServerLogs\watchdog.log`.
 
 ## 5. C:-resident hosting (2026-10-16 follow-up)
 
