@@ -180,6 +180,7 @@ pub fn create_app_full(
     let asset_state = routes::assets::AssetState {
         roots: roots_arc.clone(),
         cache_dir: cache_dir_arc.clone(),
+        pool: Some(pool.clone()),
     };
 
     let asset_routes = Router::new()
@@ -188,6 +189,18 @@ pub fn create_app_full(
             get(routes::assets::poster_handler)
                 .head(routes::assets::poster_handler)
                 .options(routes::assets::poster_handler),
+        )
+        .route(
+            "/tmdb-poster/{id}",
+            get(routes::assets::tmdb_poster_handler)
+                .head(routes::assets::tmdb_poster_handler)
+                .options(routes::assets::tmdb_poster_handler),
+        )
+        .route(
+            "/tmdb-backdrop/{id}",
+            get(routes::assets::tmdb_backdrop_handler)
+                .head(routes::assets::tmdb_backdrop_handler)
+                .options(routes::assets::tmdb_backdrop_handler),
         )
         .with_state(asset_state);
 
@@ -202,8 +215,6 @@ pub fn create_app_full(
             .route("/api/devices/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/cast", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/cast/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/tmdb-poster/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/tmdb-backdrop/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))

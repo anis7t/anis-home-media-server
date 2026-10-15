@@ -136,6 +136,36 @@ async fn test_poster_is_not_proxied_to_flask() {
     handle.abort();
 }
 
+/// Phase C1b: `/tmdb-poster/*` and `/tmdb-backdrop/*` are served natively, so
+/// they must not reach the upstream. Same reasoning as the poster test: a
+/// mock that answers 200 to everything would let a re-introduced proxy entry
+/// pass unnoticed, so the assertion is "not the upstream's answer".
+#[tokio::test]
+async fn test_tmdb_artwork_is_not_proxied_to_flask() {
+    let (addr, handle) = spawn_mock_flask().await;
+    let upstream_url = format!("http://{}", addr);
+    let app = setup_test_app(Some(upstream_url)).await;
+
+    // An id with no database row: the native handler answers 404 without any
+    // network access, whereas the proxy would return the mock's 200.
+    for uri in ["/tmdb-poster/123456", "/tmdb-backdrop/123456"] {
+        let req = axum::http::Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::NOT_FOUND,
+            "{} must be answered natively, not forwarded to Flask",
+            uri
+        );
+    }
+
+    handle.abort();
+}
+
 #[tokio::test]
 async fn test_proxy_forwards_api_devices() {
     let (addr, handle) = spawn_mock_flask().await;
