@@ -24,6 +24,12 @@
 4. **Two traps fixed**: non-ASCII (em-dash) kills PS 5.1 scripts — repo
    `.ps1` must stay ASCII; repetition on AtLogOn triggers never fires —
    use Once+Repetition heartbeat.
+5. **Follow-up, same session**: NSSM moved to `C:\MediaServer\bin`
+   (`scripts/move_nssm_to_c.ps1`) and PostgreSQL binaries to
+   `C:\postgres` with data on `E:\pgdata`, registered as `MediaServerPG`
+   (NetworkService, Automatic, restart-x3 recovery;
+   `scripts/move_pg_to_c.ps1`). Watchdog + `start/stop_postgres.bat`
+   prefer `C:` with `E:` fallback; catalog still 36/36 after the move.
 
 ## 2. Active Services & Ports
 - **MediaServer** (Waitress/Flask): `:8000` Running (Automatic)

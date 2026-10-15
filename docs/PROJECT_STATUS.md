@@ -87,6 +87,12 @@ parse errors), and repetition on AtLogOn triggers never fires — heartbeat
 must be Once+Repetition. Known limit: Interactive principal means it
 guards while logged on; boot-without-logon still relies on SCM autostart.
 
+**Follow-up, same session:** NSSM rehomed to `C:\MediaServer\bin` and
+PostgreSQL binaries to `C:\postgres` (data stays `E:\pgdata`),
+registered as `MediaServerPG` (NetworkService, Automatic, restart-x3
+recovery). Catalog still 36/36 after the move; `:8000`/`:8001`/public
+all 200.
+
 ### 2026-10-14 — Frontend Technical Debt Resolution: ManagePage Modularization & Typed API Client (Option C)
 
 **1. Typed Library & Storage Management API Engine ([`web/src/lib/api/manage.ts`](../web/src/lib/api/manage.ts))**

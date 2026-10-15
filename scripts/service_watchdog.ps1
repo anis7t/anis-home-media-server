@@ -11,7 +11,8 @@ $ErrorActionPreference = "Continue"
 $LogDir = "C:\MediaServerLogs"
 $LogFile = Join-Path $LogDir "watchdog.log"
 $NssmProbe = "E:\MediaServer\bin\nssm.exe"
-$PgCtl = "E:\postgres\pgsql\bin\pg_ctl.exe"
+$PgCtl = "C:\postgres\pgsql\bin\pg_ctl.exe"
+if (-not (Test-Path $PgCtl)) { $PgCtl = "E:\postgres\pgsql\bin\pg_ctl.exe" }
 $PgData = "E:\pgdata"
 
 function Write-WatchdogLog([string]$msg) {
@@ -29,26 +30,40 @@ if (-not (Test-Path $NssmProbe)) {
 
 if ($DryRun) { Write-WatchdogLog "DRYRUN mode - no changes will be made" }
 
-# 2. PostgreSQL first - Rust depends on it.
-$pgRunning = $false
-try {
+# 2. PostgreSQL first — Rust depends on it.
+# Prefer the MediaServerPG Windows service when registered; pg_ctl is fallback.
+function Test-PgUp() {
     & $PgCtl status -D $PgData > $null 2>&1
-    $pgRunning = ($LASTEXITCODE -eq 0)
-} catch { $pgRunning = $false }
+    return ($LASTEXITCODE -eq 0)
+}
+function Wait-PgUp() {
+    for ($i = 0; $i -lt 6; $i++) {
+        Start-Sleep -Seconds 5
+        if (Test-PgUp) { return $true }
+    }
+    return $false
+}
 
-if ($pgRunning) {
+if (Test-PgUp) {
     Write-WatchdogLog "OK postgres already running"
 } else {
-    Write-WatchdogLog "START postgres ($PgData)"
-    if (-not $DryRun) {
-        & $PgCtl -D $PgData -l "$PgData\pg.log" start > $null 2>&1
-        $ready = $false
-        for ($i = 0; $i -lt 6; $i++) {
-            Start-Sleep -Seconds 5
-            & $PgCtl status -D $PgData > $null 2>&1
-            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    $pgSvc = Get-Service -Name "MediaServerPG" -ErrorAction SilentlyContinue
+    if ($pgSvc -and (-not $DryRun)) {
+        Write-WatchdogLog "START service MediaServerPG"
+        try {
+            Start-Service -Name "MediaServerPG" -ErrorAction Stop
+            if (Wait-PgUp) { Write-WatchdogLog "OK postgres started (service)" }
+            else { Write-WatchdogLog "FAIL postgres did not start; see $PgData\pg.log" }
+        } catch {
+            Write-WatchdogLog "FAIL MediaServerPG failed to start: $($_.Exception.Message)"
         }
-        Write-WatchdogLog ($(if ($ready) { "OK postgres started" } else { "FAIL postgres did not start; see $PgData\pg.log" }))
+    } else {
+        Write-WatchdogLog "START postgres ($PgData)"
+        if (-not $DryRun) {
+            & $PgCtl -D $PgData -l "$PgData\pg.log" start > $null 2>&1
+            if (Wait-PgUp) { Write-WatchdogLog "OK postgres started" }
+            else { Write-WatchdogLog "FAIL postgres did not start; see $PgData\pg.log" }
+        }
     }
 }
 

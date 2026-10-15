@@ -4,7 +4,8 @@ echo ====================================================
 echo   Media Server PostgreSQL 18.4 Starter
 echo ====================================================
 
-set "PG_BIN=E:\postgres\pgsql\bin"
+set "PG_BIN=C:\postgres\pgsql\bin"
+if not exist "%PG_BIN%\pg_ctl.exe" set "PG_BIN=E:\postgres\pgsql\bin"
 set "PG_DATA=E:\pgdata"
 
 if not exist "%PG_BIN%\pg_ctl.exe" (

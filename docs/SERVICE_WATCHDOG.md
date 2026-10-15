@@ -66,7 +66,31 @@ Stopped `MediaServerRust` (`:8001` refusing). Next tick detected
 `Stopped`, restarted it, `:8001` 200 on health + movies. Full log in
 `C:\MediaServerLogs\watchdog.log`.
 
-## 5. Known limits
+## 5. C:-resident hosting (2026-10-16 follow-up)
+
+NSSM and PostgreSQL no longer depend on `E:` to *start*:
+
+- `C:\MediaServer\bin\nssm.exe` hosts `MediaServer` + `MediaServerRust`
+  (`scripts/move_nssm_to_c.ps1`; `E:` copy kept as fallback). The
+  watchdog now survives an `E:` drop and NSSM keeps retrying the `E:`-bound
+  app until the volume returns.
+- `C:\postgres` holds the PG binaries; `E:\pgdata` keeps the data.
+  `MediaServerPG` runs as `NT AUTHORITY\NetworkService` (postmaster
+  refuses admin/LocalSystem) with full control on the data dir
+  (`scripts/move_pg_to_c.ps1`), Automatic start + restart-x3 recovery.
+  `start/stop_postgres.bat` and the watchdog prefer `C:` with `E:` fallback;
+  the watchdog uses the service when registered.
+- Remaining gap is unchanged: at boot without `E:`, SCM start fails and
+  the logged-on watchdog starts PG once the volume appears.
+
+## 6. Known limits
+
+- Task principal is Interactive: it runs while logged on. Boot without
+  logon still relies on SCM autostart (works when E: is present).
+- Mid-run E: drops still kill in-flight transcodes/progress writes; the
+  watchdog restores service liveness, not interrupted jobs.
+- ~~Longer-term hardening: move `nssm.exe`/PG binaries to C:~~ Done (§5).
+  Remaining: disable USB selective suspend.
 
 - Task principal is Interactive: it runs while logged on. Boot without
   logon still relies on SCM autostart (works when E: is present).
