@@ -204,6 +204,20 @@ pub fn create_app_full(
         )
         .with_state(asset_state);
 
+    // Phase C2: technical media details, native.
+    let media_info_routes = Router::new()
+        .route(
+            "/api/media-info/{*filename}",
+            get(routes::media_info::media_info_handler)
+                .head(routes::media_info::media_info_handler)
+                .options(routes::media_info::media_info_handler),
+        )
+        .with_state(routes::media_info::MediaInfoState {
+            roots: roots_arc.clone(),
+            cache_dir: cache_dir_arc.clone(),
+            pool: Some(pool.clone()),
+        });
+
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
         Router::new()
@@ -220,7 +234,6 @@ pub fn create_app_full(
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/scan", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/media-info/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .with_state(proxy_state)
     } else {
         Router::new()
@@ -239,6 +252,7 @@ pub fn create_app_full(
         .merge(transcode_routes)
         .merge(job_routes)
         .merge(asset_routes)
+        .merge(media_info_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

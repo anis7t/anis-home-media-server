@@ -3,6 +3,7 @@ pub mod health;
 pub mod hls;
 pub mod jobs;
 pub mod media;
+pub mod media_info;
 pub mod movies;
 pub mod preview;
 pub mod progress;
