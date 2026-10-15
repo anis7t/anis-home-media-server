@@ -44,7 +44,7 @@ artifacts. SQLite untouched.
 
 | File | Purpose |
 |---|---|
-| `scripts/service_watchdog.ps1` | The check: E: present? PG up (`pg_ctl status`, else `start`)? `MediaServerRust` then `MediaServer` Running (else `Start-Service`)? Logs to `C:\MediaServerLogs\watchdog.log` (C: survives E: absence). `-DryRun` supported. Idempotent. |
+| `scripts/service_watchdog.ps1` | The check: E: present? PG up (TCP 5432)? `MediaServerRust` then `MediaServer` Running (else `Start-Service`)? Logs to `C:\MediaServerLogs\watchdog.log` (C: survives E: absence). `-DryRun` supported. Idempotent. |
 | `scripts/install_watchdog.ps1` / `.bat` | Registration: principal `awais\anis7`, highest privileges, once-plus-repeat heartbeat every 5 min for 10 years, file-logged with visible result. |
 
 Order matters: PG first (Rust's pool connects on first try), then Rust,
@@ -59,6 +59,17 @@ Two traps found while building it (both now fixed):
    stays empty — only manual runs fire). The heartbeat must be an
    **Once trigger + RepetitionInterval**; verified `NextRunTime`
    advances every 5 min.
+3. **`pg_ctl status` reports a healthy cluster as stopped.** Once the
+   postmaster runs as `NetworkService`, `pg_ctl status` executed by the
+   logged-on admin account cannot open the process and prints `no server
+   running` (exit 3) against a cluster that is serving queries. The same
+   false negative appeared from the stale `postmaster.pid` left by the
+   C: move. A watchdog built on that probe would have re-issued a start on
+   every single tick and logged a false failure forever, while the real
+   value it was added for went unnoticed. The probe is now a **TCP
+   connect to 127.0.0.1:5432**; the service name is used for the start
+   decision. Verified: PID 21412 serving, `select count(*) from movies`
+   returns 36, and the probe agrees.
 
 ## 4. Failover drill (live, passed)
 

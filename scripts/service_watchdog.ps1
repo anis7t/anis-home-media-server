@@ -30,11 +30,21 @@ if (-not (Test-Path $NssmProbe)) {
 
 if ($DryRun) { Write-WatchdogLog "DRYRUN mode - no changes will be made" }
 
-# 2. PostgreSQL first — Rust depends on it.
-# Prefer the MediaServerPG Windows service when registered; pg_ctl is fallback.
+# 2. PostgreSQL first - Rust depends on it.
+# Liveness is a TCP connect, NOT `pg_ctl status`: the probe is run by the
+# logged-on admin account while the postmaster runs as NetworkService, so
+# pg_ctl cannot open the process and reports "no server running" against a
+# healthy cluster. The stale postmaster.pid left by the C: move is the
+# same symptom. 5432 accepting a connection is the authoritative check.
 function Test-PgUp() {
-    & $PgCtl status -D $PgData > $null 2>&1
-    return ($LASTEXITCODE -eq 0)
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $iar = $c.BeginConnect("127.0.0.1", 5432, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(3000)) { $c.Close(); return $false }
+        $c.EndConnect($iar)
+        $c.Close()
+        return $true
+    } catch { return $false }
 }
 function Wait-PgUp() {
     for ($i = 0; $i -lt 6; $i++) {
@@ -45,23 +55,25 @@ function Wait-PgUp() {
 }
 
 if (Test-PgUp) {
-    Write-WatchdogLog "OK postgres already running"
+    Write-WatchdogLog "OK postgres already running (5432 open)"
 } else {
     $pgSvc = Get-Service -Name "MediaServerPG" -ErrorAction SilentlyContinue
-    if ($pgSvc -and (-not $DryRun)) {
-        Write-WatchdogLog "START service MediaServerPG"
-        try {
-            Start-Service -Name "MediaServerPG" -ErrorAction Stop
-            if (Wait-PgUp) { Write-WatchdogLog "OK postgres started (service)" }
-            else { Write-WatchdogLog "FAIL postgres did not start; see $PgData\pg.log" }
-        } catch {
-            Write-WatchdogLog "FAIL MediaServerPG failed to start: $($_.Exception.Message)"
+    if ($pgSvc) {
+        Write-WatchdogLog "START service MediaServerPG (was $($pgSvc.Status))"
+        if (-not $DryRun) {
+            try {
+                Start-Service -Name "MediaServerPG" -ErrorAction Stop
+                if (Wait-PgUp) { Write-WatchdogLog "OK postgres started (service)" }
+                else { Write-WatchdogLog "FAIL postgres did not start; see $PgData\pg.log" }
+            } catch {
+                Write-WatchdogLog "FAIL MediaServerPG failed to start: $($_.Exception.Message)"
+            }
         }
     } else {
-        Write-WatchdogLog "START postgres ($PgData)"
+        Write-WatchdogLog "START postgres via pg_ctl ($PgData)"
         if (-not $DryRun) {
             & $PgCtl -D $PgData -l "$PgData\pg.log" start > $null 2>&1
-            if (Wait-PgUp) { Write-WatchdogLog "OK postgres started" }
+            if (Wait-PgUp) { Write-WatchdogLog "OK postgres started (pg_ctl)" }
             else { Write-WatchdogLog "FAIL postgres did not start; see $PgData\pg.log" }
         }
     }

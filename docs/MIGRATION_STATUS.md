@@ -1,11 +1,25 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-14
+> ## Current session handoff — 2026-10-16
 >
-> **Read `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md` first.** It carries the
-> paste-ready prompt, the P0–P7 phase table, the known-failing and known-flaky tests, and the
-> traps that have already cost time here. This document remains the detailed record; the
-> handoff is the orientation layer.
+> **Read `Handoffs/2026-10-16_00-40_opencode_watchdog-and-recon-complete.md` first.**
+> It carries the paste-ready prompt, the standing topology, and this session's
+> two operational deliverables: the SQLite/PostgreSQL catalog reconciliation
+> (36/36 parity) and the USB-dropout resilience work (C:-resident NSSM and
+> PostgreSQL binaries, `MediaServerPG` service, `MediaServerWatchdog` 5-minute
+> task, live failover drill passed). See [`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
+>
+> Repository state: branch `feat/rust-api-foundation`, `1a36af7`, **not pushed**
+> (pushing is reserved for the user). Rust suite **61/61 passing**; both origins
+> (`:8000`, `:8001`) and `media.anisparvez.in` verified 200.
+>
+> Next objective: **Phase 6 slice 1** — transcode job model and queue ownership
+> in Rust (persistent job records, single-scheduler claim/lease,
+> `/api/transcode-status` reading Rust-owned state), before any FFmpeg spawn.
+>
+> ### Previous handoff — 2026-10-14
+>
+> **Read `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md` for that snapshot.**
 >
 > Verified against the repository at `72c89f1` on `feat/react-web-frontend` (22 commits ahead
 > of origin, **not pushed**):
@@ -186,7 +200,8 @@ Status key: **Complete** · **Partially complete** · **Blocked** · **Not start
 | **P3.4–3.7 — Test isolation & write guards** | No test may write to a deployed path | `tests/conftest.py` (+374), `tests/test_app.py` (+59), `tests/_isolation_paths.py`, `tests/_write_guard.py`, `tests/test_write_guard.py`, `tests/test_isolation_guard.py` (all untracked) | Reported 45 guard tests passing; `git diff --check` exit 0 | **Partially complete** — never executed under authorization in this history | Authorized run; `CachePurgeSafetyTests` isolation defect (§6, item 8) |
 | **P3.8 — Cache/destructive-path hardening** | `MEDIA_SERVER_CACHE_DIR`; centralized cache-root boundary; refusal reporting | `app/config.py` (+115): `CacheRootUnsafe`, `approved_cache_root` (:81), `require_within_cache_root` (:122). `transcode_service.py` (+116), `media_service.py` (+46), `subtitles_service.py` (+63), `api.py` (+5), `worker_service.py` (+10) | One disposable `verify` run exited 0 with `VERIFY OK` (Phase 3.8G8P) | **Partially complete** | Enumeration completeness; A8/A13/A14; C3–C6 |
 | **P4 — Rust API foundation** | Modular Axum app with SQLx and PostgreSQL 18.4 connection pool | `rust/` crate, `scripts/cargo.bat`, `docs/PHASE_4_RUST_API_PLAN.md`, `docs/PHASE_4_RUST_API_WALKTHROUGH.md` | **Verified (2026-10-15)**: 4/4 integration contract tests passing against PostgreSQL 18.4 (`media_server`), 0 warnings on `cargo check`, release binary compiled | **Complete** | None (Phase 5 will add media streaming & transcode worker) |
-| **P5 — Rust media/playback/streaming** | Library, range streaming, HLS in Rust | None | None | **Not started** | Entire phase |
+| **P5 — Rust media/playback/streaming** | Library, range streaming, HLS in Rust | `rust/src/routes/{media,hls,transcode,subtitles,preview,progress}.rs`, `rust/src/services/{range,hls,subtitle,preview}_service.rs` | **Verified (2026-10-15/16)**: 61/61 integration tests passing; live `:8001` streaming at 510 Mbps peak; catalog reconciled to SQLite truth (36/36) | **Complete (5A-5E)** | Phase 6 transcoding worker remains |
+| **Operational resilience** | Survive reboots and USB-volume (`E:`) dropouts | `C:\MediaServer\bin\nssm.exe`, `C:\postgres` binaries, `MediaServerPG` service (NetworkService), `MediaServerWatchdog` 5-min task (`scripts/service_watchdog.ps1`) | Live failover drill passed 2026-10-16 (stopped Rust, watchdog restarted it); all origins + public 200 | **Complete** | Boot without logon *and* without `E:` remains unhandled by design |
 | **P6 — Rust transcoding worker** | Queue ownership + FFmpeg orchestration | None | None | **Not started** | Entire phase |
 | **P7 — Cutover, hardening, Flask retirement** | Staged cutover, tested rollback | None | None | **Not started** | Entire phase; blocked by P2–P6 |
 | **Deployment / operations** | Preserve NSSM + Cloudflare topology | Unmodified; `.gitignore` (uncommitted) already anticipates `target/`, `node_modules/`, `pgdata/`, `.pgpass` | None in this branch | **Not started** | Cutover evidence (roadmap §9) |

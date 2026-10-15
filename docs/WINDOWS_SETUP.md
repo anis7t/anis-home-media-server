@@ -49,13 +49,16 @@ The Windows host features two AMD graphics processors:
 
 ## 3. Persistent Windows Services
 
-The system runs completely detached as two persistent Windows Services that survive reboots without active user login:
+The system runs completely detached as persistent Windows Services that survive reboots without active user login.
+
+> **C:-resident hosting (2026-10-16).** The application lives on the removable USB volume `E:`. NSSM now runs from `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries from `C:\postgres` (data remains on `E:\pgdata`), so both can start even while `E:` is absent. `scripts\move_nssm_to_c.ps1` and `scripts\move_pg_to_c.ps1` performed the move; `E:` copies are retained as fallbacks. A 5-minute watchdog (`MediaServerWatchdog` scheduled task running `scripts\service_watchdog.ps1`) restarts PostgreSQL, then `MediaServerRust`, then `MediaServer` whenever they are not running, logging to `C:\MediaServerLogs\watchdog.log`. See [`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
 
 ### A. MediaServer (Waitress WSGI)
 Registered using NSSM (Non-Sucking Service Manager):
 - **Service Name:** `MediaServer`
 - **Display Name:** `Media Server WSGI (Waitress)`
 - **Startup Type:** `Automatic`
+- **Service Wrapper:** `C:\MediaServer\bin\nssm.exe` (previously `E:\MediaServer\bin\nssm.exe`)
 - **Binary:** `E:\MediaServer\venv\Scripts\python.exe`
 - **Arguments:** `run_production.py`
 - **Working Directory:** `E:\MediaServer`
@@ -73,6 +76,7 @@ Registered using NSSM (Non-Sucking Service Manager):
 - **Service Name:** `MediaServerRust`
 - **Display Name:** `Media Server API (Rust/Axum)`
 - **Startup Type:** `Automatic`
+- **Service Wrapper:** `C:\MediaServer\bin\nssm.exe`
 - **Binary:** `E:\MediaServer\rust\target\release\media-server-api.exe`
 - **Port:** `8001`
 - **Working Directory:** `E:\MediaServer`
@@ -84,6 +88,16 @@ Registered using NSSM (Non-Sucking Service Manager):
 - Uninstall: `scripts\uninstall_rust_service.bat` (Run as Administrator)
 - Restart (Auto-recompile + restart): `scripts\restart_rust_service.bat`
 - Health Diagnostic: `powershell -ExecutionPolicy Bypass -File scripts\rust_service_status.ps1`
+
+### B2. MediaServerPG (PostgreSQL 18.4)
+Registered via `pg_ctl register` (`scripts\move_pg_to_c.ps1`):
+- **Service Name:** `MediaServerPG`
+- **Startup Type:** `Automatic`, with SCM recovery actions (restart x3 with backoff)
+- **Account:** `NT AUTHORITY\NetworkService` — postmaster refuses to run as an administrator/LocalSystem account
+- **Service Wrapper:** `C:\postgres\pgsql\bin\pg_ctl.exe runservice -N MediaServerPG -D E:\pgdata -w`
+- **Data Directory:** `E:\pgdata` (NetworkService granted full control on the tree)
+- **Port:** `5432`, database `media_server`
+- **Management Scripts:** `scripts\start_postgres.bat`, `scripts\stop_postgres.bat` (prefer `C:\postgres`, fall back to `E:\postgres`)
 
 ### C. Cloudflared (Remote Named Tunnel)
 Runs as an automatic Windows Service pointing to `C:\Users\<USER>\.cloudflared\config.yml`:
