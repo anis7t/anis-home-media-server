@@ -9,10 +9,76 @@ use axum::{routing::get, Router};
 use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::services::system_service::SystemService;
+
+/// Paths a cast receiver fetches itself, and therefore the only paths that
+/// may be readable from another origin.
+const RECEIVER_CORS_PATHS: [&str; 2] = ["/media/", "/hls/"];
+
+/// Receiver CORS, scoped exactly as Flask scopes it.
+///
+/// A cast receiver is a web runtime (CAF), not a dumb player: it fetches the
+/// HLS manifest and every segment **cross-origin**. Without these headers the
+/// TV downloads the playlist, requests *no segment*, and the session ends at
+/// `stopped` with no error this server can see - the whole of "MP4 casts,
+/// MKV does not". A loader that sends `Range` also preflights, because
+/// `Range` is not a safelisted header, so OPTIONS is answered here too.
+///
+/// The scope is the security half. Flask applies these in an `after_request`
+/// over `/media/` and `/hls/` and deliberately leaves `/api/*` unreadable
+/// from another origin. A blanket `CorsLayer` over the whole app does the
+/// opposite and is a live regression, not a style question:
+///
+/// * any page the user visits can read the library, the device fleet and
+///   host telemetry, and
+/// * the preflight stops failing, so browsers stop blocking cross-origin
+///   writes to `/api/*`. The missing ACAO *was* the defence in depth for
+///   `/api/scan`, `/api/storage/*` and `/api/admin*`.
+///
+/// Measured on both engines before this change: Flask sent no
+/// `Access-Control-Allow-Origin` on `/api/movies`; Rust sent `*`.
+async fn receiver_cors(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let path = req.uri().path();
+    if !RECEIVER_CORS_PATHS.iter().any(|p| path.starts_with(p)) {
+        return next.run(req).await;
+    }
+
+    // Answered here rather than in each handler so the preflight cannot drift
+    // from the response headers.
+    let mut res = if req.method() == axum::http::Method::OPTIONS {
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .body(axum::body::Body::empty())
+            .expect("static response is valid")
+    } else {
+        next.run(req).await
+    };
+
+    let h = res.headers_mut();
+    h.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("*"),
+    );
+    h.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+        axum::http::HeaderValue::from_static("GET, HEAD, OPTIONS"),
+    );
+    h.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+        axum::http::HeaderValue::from_static("Range, Origin, Accept, Content-Type"),
+    );
+    h.insert(
+        axum::http::header::ACCESS_CONTROL_EXPOSE_HEADERS,
+        axum::http::HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges"),
+    );
+    h.insert(
+        axum::http::header::HeaderName::from_static("cross-origin-resource-policy"),
+        axum::http::HeaderValue::from_static("cross-origin"),
+    );
+    res
+}
 
 pub fn create_app(
     pool: PgPool,
@@ -41,11 +107,6 @@ pub fn create_app_full(
     static_dir: Option<PathBuf>,
     flask_origin: Option<String>,
 ) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     let system_routes = Router::new()
         .route("/api/system-status", get(routes::system::system_status_handler))
         .with_state(system_service);
@@ -310,5 +371,7 @@ pub fn create_app_full(
         })
     };
 
-    app.layer(cors).layer(TraceLayer::new_for_http())
+    // Path-scoped, deliberately NOT a blanket CorsLayer - see `receiver_cors`.
+    app.layer(axum::middleware::from_fn(receiver_cors))
+        .layer(TraceLayer::new_for_http())
 }
