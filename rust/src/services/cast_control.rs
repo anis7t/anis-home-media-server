@@ -173,36 +173,6 @@ async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
         .or(Some(MEDIA_RECEIVER_ID.to_string()))
 }
 
-/// Is `app_id` running?
-///
-/// The DU7000 reports the launched app under `status.applications[]`, while
-/// other receivers report it as `status.appId`. Reading only one path reports
-/// a perfectly working app as absent - which is how the first version of this
-/// waited fifteen seconds for an app that had already launched.
-async fn receiver_has_app(conn: &mut CastConnection, app_id: &str) -> bool {
-    let reply = match conn
-        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
-        .await
-    {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    let status = match reply.get("status") {
-        Some(s) => s,
-        None => return false,
-    };
-    if status.get("appId").and_then(|v| v.as_str()) == Some(app_id) {
-        return true;
-    }
-    status
-        .get("applications")
-        .and_then(|v| v.as_array())
-        .map(|apps| {
-            apps.iter()
-                .any(|a| a.get("appId").and_then(|v| v.as_str()) == Some(app_id))
-        })
-        .unwrap_or(false)
-}
 
 /// Hand a URL to the receiver.
 ///
