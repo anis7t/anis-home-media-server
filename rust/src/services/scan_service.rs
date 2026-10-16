@@ -106,33 +106,7 @@ impl ScanService {
         headers: &HeaderMap,
         body_pin: Option<&str>,
     ) -> bool {
-        // Query stored pin from PostgreSQL settings table
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let stored = stored_pin.unwrap_or_default().trim().to_string();
-        if stored.is_empty() {
-            // Fail closed: without a deliberately configured PIN, PIN auth is closed.
-            return false;
-        }
-
-        let pin_header = headers
-            .get("X-Admin-Pin")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.trim());
-
-        let candidate_pin = pin_header.or_else(|| body_pin.map(|s| s.trim()));
-
-        if let Some(pin) = candidate_pin {
-            if pin == stored {
-                return true;
-            }
-        }
-
-        false
+        crate::services::auth_service::AuthService::is_admin_authorized(pool, headers, body_pin).await
     }
 }
 

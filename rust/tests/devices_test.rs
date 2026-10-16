@@ -43,8 +43,15 @@ async fn harness() -> (axum::Router, PgPool) {
 }
 
 async fn cleanup(pool: &PgPool) {
+    let _ = sqlx::query("DELETE FROM device_watch_history WHERE device_id LIKE $1")
+        .bind(format!("{}%", TEST_PREFIX))
+        .execute(pool)
+        .await;
     let _ = sqlx::query("DELETE FROM devices WHERE device_id LIKE $1")
         .bind(format!("{}%", TEST_PREFIX))
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM settings WHERE key = 'admin_pin' AND value = '1234'")
         .execute(pool)
         .await;
 }
@@ -58,6 +65,18 @@ fn request(
     body: Option<&str>,
     user_agent: Option<&str>,
 ) -> Request<Body> {
+    request_with_headers(method, uri, device_id, body, user_agent, None, None)
+}
+
+fn request_with_headers(
+    method: Method,
+    uri: &str,
+    device_id: Option<&str>,
+    body: Option<&str>,
+    user_agent: Option<&str>,
+    admin_pin: Option<&str>,
+    cookie: Option<&str>,
+) -> Request<Body> {
     let mut builder = Request::builder().method(method).uri(uri);
     if let Some(id) = device_id {
         builder = builder.header("x-device-id", id);
@@ -65,8 +84,12 @@ fn request(
     if let Some(ua) = user_agent {
         builder = builder.header(header::USER_AGENT, ua);
     }
-    // Flask reads the body with `get_json`, which likewise requires a JSON
-    // content type; without it both engines see an empty payload.
+    if let Some(pin) = admin_pin {
+        builder = builder.header("X-Admin-Pin", pin);
+    }
+    if let Some(c) = cookie {
+        builder = builder.header(header::COOKIE, c);
+    }
     if body.is_some() {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
     }
@@ -81,6 +104,14 @@ async fn call(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+async fn call_full(app: &axum::Router, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let res = app.clone().oneshot(req).await.unwrap();
+    let status = res.status();
+    let headers = res.headers().clone();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
 #[tokio::test]
@@ -201,7 +232,7 @@ async fn test_client_hints_updates_a_known_device() {
 #[tokio::test]
 async fn test_client_hints_reports_not_updated_for_an_unknown_device() {
     let _serial = SERIAL.lock().await;
-    let (app, pool) = harness().await;
+    let (app, _pool) = harness().await;
     let (status, body) = call(
         &app,
         request(
@@ -293,6 +324,407 @@ async fn test_non_ascii_user_agent_keeps_its_identity() {
             .await
             .unwrap();
     assert_eq!(stored.as_deref(), Some("caf\u{e9}-tracker/1.0"));
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_get_devices_unauthenticated_returns_only_current_device() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let id1 = format!("{}dev1", TEST_PREFIX);
+    let id2 = format!("{}dev2", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Dev One', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), \
+                ($2, 'Dev Two', 'Mobile', 'Android', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&id1)
+    .bind(&id2)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = call(
+        &app,
+        request(Method::GET, "/api/devices", Some(&id1), None, Some(UA_WINDOWS)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let devices = body["devices"].as_array().expect("devices array");
+    assert_eq!(devices.len(), 1, "unauthenticated user must only see own device");
+    assert_eq!(devices[0]["device_id"], id1.as_str());
+    assert_eq!(devices[0]["is_current"], true);
+    assert_eq!(body["current_device_id"], id1.as_str());
+    assert_eq!(body["stats"]["total_devices"], 1);
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_get_devices_with_admin_pin_returns_all_devices() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '1234') ON CONFLICT (key) DO UPDATE SET value = '1234'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let id1 = format!("{}dev1", TEST_PREFIX);
+    let id2 = format!("{}dev2", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Dev One', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), \
+                ($2, 'Dev Two', 'Mobile', 'Android', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&id1)
+    .bind(&id2)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let req = request_with_headers(
+        Method::GET,
+        "/api/devices",
+        Some(&id1),
+        None,
+        Some(UA_WINDOWS),
+        Some("1234"),
+        None,
+    );
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let devices = body["devices"].as_array().expect("devices array");
+    assert!(devices.len() >= 2, "admin must see all devices");
+
+    let d1 = devices.iter().find(|d| d["device_id"] == id1.as_str()).unwrap();
+    assert_eq!(d1["is_current"], true);
+
+    let d2 = devices.iter().find(|d| d["device_id"] == id2.as_str()).unwrap();
+    assert_eq!(d2["is_current"], false);
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_rename_own_device_succeeds() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let id = format!("{}rename_own", TEST_PREFIX);
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Original Name', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": id,
+        "name": "My Custom Laptop"
+    })
+    .to_string();
+
+    let req = request(Method::POST, "/api/devices/rename", Some(&id), Some(&body_payload), Some(UA_WINDOWS));
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+
+    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(custom_name.as_deref(), Some("My Custom Laptop"));
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_rename_other_device_without_admin_is_forbidden_403() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let target_id = format!("{}rename_target", TEST_PREFIX);
+    let caller_id = format!("{}rename_caller", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Target Original', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), \
+                ($2, 'Caller Device', 'Mobile', 'Android', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&target_id)
+    .bind(&caller_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": target_id,
+        "name": "Hacked Name"
+    })
+    .to_string();
+
+    let req = request(Method::POST, "/api/devices/rename", Some(&caller_id), Some(&body_payload), Some(UA_WINDOWS));
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body["error"].as_str().unwrap().contains("Unauthorized"));
+
+    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+        .bind(&target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(custom_name, None);
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_rename_other_device_with_admin_pin_succeeds() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '1234') ON CONFLICT (key) DO UPDATE SET value = '1234'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let target_id = format!("{}rename_target", TEST_PREFIX);
+    let caller_id = format!("{}rename_caller", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Target Original', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&target_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": target_id,
+        "name": "Admin Authorized Rename"
+    })
+    .to_string();
+
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/rename",
+        Some(&caller_id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+        Some("1234"),
+        None,
+    );
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+
+    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+        .bind(&target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(custom_name.as_deref(), Some("Admin Authorized Rename"));
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_rename_missing_device_id_returns_400() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let body_payload = serde_json::json!({
+        "device_id": "",
+        "name": "New Name"
+    })
+    .to_string();
+
+    let req = request(Method::POST, "/api/devices/rename", None, Some(&body_payload), Some(UA_WINDOWS));
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "device_id is required");
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_delete_own_device_succeeds_and_unsets_cookie() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let id = format!("{}del_own", TEST_PREFIX);
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'To Delete', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO device_watch_history (device_id, filename, position, duration, completed, last_watched) \
+         VALUES ($1, 'sample.mkv', 120.0, 3600.0, 0, CURRENT_TIMESTAMP)",
+    )
+    .bind(&id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": id
+    })
+    .to_string();
+
+    let cookie = format!("ms_device_id={}", id);
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/delete",
+        Some(&id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+        None,
+        Some(&cookie),
+    );
+
+    let (status, headers, body) = call_full(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+
+    let set_cookie = headers.get(header::SET_COOKIE).and_then(|v| v.to_str().ok()).unwrap_or("");
+    assert!(set_cookie.contains("ms_device_id=; Max-Age=0"), "cookie must be cleared on self delete");
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id = $1")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+
+    let h_count: i64 = sqlx::query_scalar("SELECT count(*) FROM device_watch_history WHERE device_id = $1")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(h_count, 0);
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_delete_other_device_without_admin_is_forbidden_403() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let target_id = format!("{}del_target", TEST_PREFIX);
+    let caller_id = format!("{}del_caller", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Target Device', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), \
+                ($2, 'Caller Device', 'Mobile', 'Android', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&target_id)
+    .bind(&caller_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": target_id
+    })
+    .to_string();
+
+    let req = request(Method::POST, "/api/devices/delete", Some(&caller_id), Some(&body_payload), Some(UA_WINDOWS));
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body["error"].as_str().unwrap().contains("Unauthorized"));
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id = $1")
+        .bind(&target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "target device must not be deleted");
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_delete_other_device_with_admin_pin_succeeds() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '1234') ON CONFLICT (key) DO UPDATE SET value = '1234'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let target_id = format!("{}del_target", TEST_PREFIX);
+    let caller_id = format!("{}del_caller", TEST_PREFIX);
+
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, first_seen, last_seen) \
+         VALUES ($1, 'Target Device', 'Desktop', 'Linux', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), \
+                ($2, 'Caller Device', 'Mobile', 'Android', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&target_id)
+    .bind(&caller_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body_payload = serde_json::json!({
+        "device_id": target_id
+    })
+    .to_string();
+
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/delete",
+        Some(&caller_id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+        Some("1234"),
+        None,
+    );
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id = $1")
+        .bind(&target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "device must be deleted by admin");
 
     cleanup(&pool).await;
 }

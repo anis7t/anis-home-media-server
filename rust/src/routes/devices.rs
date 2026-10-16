@@ -14,9 +14,13 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use std::path::PathBuf;
+
 #[derive(Clone)]
 pub struct DeviceState {
     pub pool: Arc<PgPool>,
+    pub media_roots: Arc<Vec<PathBuf>>,
+    pub cache_dir: Arc<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -25,6 +29,19 @@ pub struct ClientHintsBody {
     pub platform: Option<String>,
     #[serde(rename = "platformVersion")]
     pub platform_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct RenameDeviceBody {
+    pub device_id: Option<String>,
+    pub name: Option<String>,
+    pub admin_pin: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct DeleteDeviceBody {
+    pub device_id: Option<String>,
+    pub admin_pin: Option<String>,
 }
 
 /// Read the cookie value for `name` from a raw `Cookie` header.
@@ -174,6 +191,158 @@ pub async fn client_hints_handler(
     ))
 }
 
+/// `GET /api/devices`
+pub async fn list_devices_handler(
+    State(state): State<DeviceState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    method: Method,
+) -> Result<Response<Body>, AppError> {
+    if method == Method::OPTIONS {
+        return Ok(preflight());
+    }
+    let addr = peer.ip().to_string();
+    let ua = header_str(&headers, "user-agent").unwrap_or_default();
+    let (device_id, _) = resolve_device_id(&headers, &addr, &ua);
+
+    // Keepalive/touch on request
+    let ctx = facts(&headers, &addr, &ua, hints_from(&headers));
+    DeviceService::record_heartbeat(&state.pool, &device_id, &ctx).await;
+
+    let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
+        &state.pool,
+        &headers,
+        None,
+    )
+    .await;
+
+    let (devices, stats) = DeviceService::get_all_devices(
+        &state.pool,
+        Some(&device_id),
+        is_admin,
+        &state.cache_dir,
+        &state.media_roots,
+    )
+    .await?;
+
+    Ok(json_response(json!({
+        "devices": devices,
+        "stats": stats,
+        "current_device_id": device_id,
+    })))
+}
+
+/// `POST /api/devices/rename`
+pub async fn rename_device_handler(
+    State(state): State<DeviceState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    method: Method,
+    body: Option<Json<RenameDeviceBody>>,
+) -> Result<Response<Body>, AppError> {
+    if method == Method::OPTIONS {
+        return Ok(preflight());
+    }
+    let addr = peer.ip().to_string();
+    let ua = header_str(&headers, "user-agent").unwrap_or_default();
+    let (current_device_id, _) = resolve_device_id(&headers, &addr, &ua);
+
+    let payload = match body {
+        Some(Json(b)) => b,
+        None => {
+            return Ok(json_response_with_status(
+                StatusCode::BAD_REQUEST,
+                json!({ "error": "device_id is required" }),
+            ));
+        }
+    };
+
+    let target_id = payload.device_id.unwrap_or_default().trim().to_string();
+    if target_id.is_empty() {
+        return Ok(json_response_with_status(
+            StatusCode::BAD_REQUEST,
+            json!({ "error": "device_id is required" }),
+        ));
+    }
+
+    let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
+        &state.pool,
+        &headers,
+        payload.admin_pin.as_deref(),
+    )
+    .await;
+
+    if !is_admin && target_id != current_device_id {
+        return Ok(json_response_with_status(
+            StatusCode::FORBIDDEN,
+            json!({ "error": "Unauthorized: You can only rename your current device." }),
+        ));
+    }
+
+    DeviceService::rename_device(&state.pool, &target_id, payload.name.as_deref()).await?;
+
+    Ok(json_response(json!({ "success": true })))
+}
+
+/// `POST /api/devices/delete`
+pub async fn delete_device_handler(
+    State(state): State<DeviceState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    method: Method,
+    body: Option<Json<DeleteDeviceBody>>,
+) -> Result<Response<Body>, AppError> {
+    if method == Method::OPTIONS {
+        return Ok(preflight());
+    }
+    let addr = peer.ip().to_string();
+    let ua = header_str(&headers, "user-agent").unwrap_or_default();
+    let (current_device_id, _) = resolve_device_id(&headers, &addr, &ua);
+
+    let payload = match body {
+        Some(Json(b)) => b,
+        None => {
+            return Ok(json_response_with_status(
+                StatusCode::BAD_REQUEST,
+                json!({ "error": "device_id is required" }),
+            ));
+        }
+    };
+
+    let target_id = payload.device_id.unwrap_or_default().trim().to_string();
+    if target_id.is_empty() {
+        return Ok(json_response_with_status(
+            StatusCode::BAD_REQUEST,
+            json!({ "error": "device_id is required" }),
+        ));
+    }
+
+    let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
+        &state.pool,
+        &headers,
+        payload.admin_pin.as_deref(),
+    )
+    .await;
+
+    if !is_admin && target_id != current_device_id {
+        return Ok(json_response_with_status(
+            StatusCode::FORBIDDEN,
+            json!({ "error": "Unauthorized: You can only remove your current device." }),
+        ));
+    }
+
+    DeviceService::delete_device(&state.pool, &target_id).await?;
+
+    let mut res = json_response(json!({ "success": true }));
+    if cookie_value(&headers, "ms_device_id").as_deref() == Some(&target_id) {
+        if let Ok(val) = HeaderValue::from_str("ms_device_id=; Max-Age=0; Path=/; SameSite=Lax") {
+            res.headers_mut().insert(header::SET_COOKIE, val);
+        }
+    }
+
+    Ok(res)
+}
+
 fn preflight() -> Response<Body> {
     let mut res = Response::new(Body::empty());
     *res.status_mut() = StatusCode::OK;
@@ -185,8 +354,14 @@ fn preflight() -> Response<Body> {
     );
     h.insert(
         "access-control-allow-headers",
-        HeaderValue::from_static("Content-Type, X-Device-Id"),
+        HeaderValue::from_static("Content-Type, X-Device-Id, X-Admin-Pin"),
     );
+    res
+}
+
+fn json_response_with_status(status: StatusCode, value: Value) -> Response<Body> {
+    let mut res = json_response(value);
+    *res.status_mut() = status;
     res
 }
 

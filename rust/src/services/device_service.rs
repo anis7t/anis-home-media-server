@@ -1,7 +1,11 @@
-use serde::Serialize;
+use crate::error::AppError;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// iQOO model-code table, copied verbatim from `device_service.py`. The codes
@@ -705,7 +709,409 @@ impl DeviceService {
         .await
         .is_ok()
     }
+
+    /// Retrieve all recorded devices with network metadata and watch history.
+    pub async fn get_all_devices(
+        pool: &PgPool,
+        current_device_id: Option<&str>,
+        is_admin: bool,
+        cache_dir: &Path,
+        roots: &[PathBuf],
+    ) -> Result<(Vec<DeviceDetail>, DeviceStats), AppError> {
+        let dev_rows = sqlx::query(
+            r#"
+            SELECT
+                device_id,
+                custom_name,
+                device_name,
+                device_type,
+                device_os,
+                browser,
+                user_agent,
+                connection_type,
+                client_ip,
+                public_ip,
+                mac_address,
+                isp,
+                city,
+                country,
+                first_seen,
+                last_seen,
+                device_model
+            FROM devices
+            ORDER BY last_seen DESC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let hist_rows = sqlx::query(
+            r#"
+            SELECT
+                h.device_id,
+                h.filename,
+                h.position::double precision as position,
+                h.duration::double precision as duration,
+                h.completed,
+                h.last_watched,
+                m.title,
+                m.year,
+                m.tmdb_id::BIGINT as tmdb_id,
+                m.poster_path
+            FROM device_watch_history h
+            LEFT JOIN movies m ON h.filename = m.filename
+            ORDER BY h.last_watched DESC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let now = Utc::now();
+        let mut history_map: HashMap<String, Vec<WatchHistoryItem>> = HashMap::new();
+
+        for h in hist_rows {
+            let dev_id: String = h.try_get("device_id").unwrap_or_default();
+            let fname: String = h.try_get("filename").unwrap_or_default();
+            let pos: f64 = h.try_get("position").unwrap_or(0.0);
+            let dur: f64 = h.try_get("duration").unwrap_or(0.0);
+            let completed: bool = h
+                .try_get::<bool, _>("completed")
+                .or_else(|_| h.try_get::<i32, _>("completed").map(|c| c != 0))
+                .unwrap_or(false);
+            let last_watched_dt: Option<DateTime<Utc>> = h.try_get("last_watched").ok();
+            let tmdb_id: Option<i64> = h
+                .try_get::<Option<i64>, _>("tmdb_id")
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    h.try_get::<Option<i32>, _>("tmdb_id")
+                        .ok()
+                        .flatten()
+                        .map(|i| i as i64)
+                });
+            let m_title: Option<String> = h.try_get("title").ok();
+            let m_year: Option<i32> = h.try_get("year").ok();
+
+            let title = m_title
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| {
+                    Path::new(&fname)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&fname)
+                        .to_string()
+                });
+
+            let year_val = match m_year {
+                Some(y) => serde_json::json!(y),
+                None => serde_json::json!(""),
+            };
+
+            let pct = if dur > 0.0 {
+                ((pos / dur * 100.0 * 10.0).round() / 10.0).min(100.0)
+            } else {
+                0.0
+            };
+
+            let last_watched_str = last_watched_dt.map(format_db_timestamp).unwrap_or_default();
+            let last_watched_ago = last_watched_dt
+                .map(|dt| format_time_ago(dt, now))
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let poster_url = if let Some(id) = tmdb_id.filter(|&id| id > 0) {
+                if cache_dir.join("posters").join(format!("{}.jpg", id)).is_file() {
+                    Some(format!("/tmdb-poster/{}", id))
+                } else {
+                    None
+                }
+            } else {
+                let clean = fname.trim_start_matches(|c| c == '/' || c == '\\');
+                let rel = Path::new(clean);
+                let mut found = false;
+                for ext in &[".jpg", ".jpeg", ".png", ".webp"] {
+                    let with_ext = rel.with_extension(&ext[1..]);
+                    for root in roots {
+                        if root.join(&with_ext).is_file() {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if found {
+                        break;
+                    }
+                }
+                if found {
+                    Some(format!("/poster/{}", fname))
+                } else {
+                    None
+                }
+            };
+
+            let item = WatchHistoryItem {
+                filename: fname,
+                title,
+                year: year_val,
+                position: pos,
+                duration: dur,
+                position_str: format_clock_time(pos),
+                duration_str: format_clock_time(dur),
+                percent: pct,
+                completed,
+                last_watched: last_watched_str,
+                last_watched_ago,
+                poster_url,
+            };
+
+            history_map.entry(dev_id).or_default().push(item);
+        }
+
+        let mut devices = Vec::new();
+
+        for d in dev_rows {
+            let dev_id: String = d.try_get("device_id").unwrap_or_default();
+            let custom_name: Option<String> = d.try_get("custom_name").ok().flatten();
+            let device_name: Option<String> = d.try_get("device_name").ok().flatten();
+            let device_model: Option<String> = d.try_get("device_model").ok().flatten();
+            let device_type: Option<String> = d.try_get("device_type").ok().flatten();
+            let device_os: Option<String> = d.try_get("device_os").ok().flatten();
+            let browser: Option<String> = d.try_get("browser").ok().flatten();
+            let user_agent: Option<String> = d.try_get("user_agent").ok().flatten();
+            let connection_type: Option<String> = d.try_get("connection_type").ok().flatten();
+            let client_ip: Option<String> = d.try_get("client_ip").ok().flatten();
+            let public_ip: Option<String> = d.try_get("public_ip").ok().flatten();
+            let mac_address: Option<String> = d.try_get("mac_address").ok().flatten();
+            let isp: Option<String> = d.try_get("isp").ok().flatten();
+            let city: Option<String> = d.try_get("city").ok().flatten();
+            let country: Option<String> = d.try_get("country").ok().flatten();
+
+            let first_seen_dt: Option<DateTime<Utc>> = d.try_get("first_seen").ok();
+            let last_seen_dt: Option<DateTime<Utc>> = d.try_get("last_seen").ok();
+
+            let first_seen_str = first_seen_dt.map(format_db_timestamp).unwrap_or_default();
+            let last_seen_str = last_seen_dt.map(format_db_timestamp).unwrap_or_default();
+            let last_seen_ago = last_seen_dt
+                .map(|dt| format_time_ago(dt, now))
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let is_active = last_seen_dt
+                .map(|dt| (now - dt).num_seconds().max(0) <= 180)
+                .unwrap_or(false);
+
+            let is_current = current_device_id.map(|cid| cid == dev_id).unwrap_or(false);
+
+            let display_name = custom_name
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| device_name.as_deref().filter(|s| !s.trim().is_empty()))
+                .unwrap_or("Unknown Device")
+                .to_string();
+
+            let icon = device_icon(device_type.as_deref()).to_string();
+
+            let watch_history = history_map.remove(&dev_id).unwrap_or_default();
+            let recent_watch = watch_history.first().cloned();
+            let total_watched = watch_history.len();
+
+            devices.push(DeviceDetail {
+                device_id: dev_id,
+                custom_name,
+                device_name,
+                device_model,
+                display_name,
+                device_type,
+                device_icon: icon,
+                device_os,
+                browser,
+                user_agent,
+                connection_type,
+                client_ip,
+                public_ip,
+                mac_address,
+                isp,
+                city,
+                country,
+                first_seen: first_seen_str,
+                last_seen: last_seen_str,
+                last_seen_ago,
+                is_active,
+                is_current,
+                recent_watch,
+                watch_history,
+                total_watched,
+            });
+        }
+
+        if !is_admin {
+            devices.retain(|d| d.is_current);
+        }
+
+        let total_devices = devices.len();
+        let active_now = devices.iter().filter(|d| d.is_active).count();
+        let offline_count = total_devices.saturating_sub(active_now);
+        let cloudflare_count = devices
+            .iter()
+            .filter(|d| {
+                d.connection_type
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("Cloudflare")
+            })
+            .count();
+        let lan_count = devices
+            .iter()
+            .filter(|d| d.connection_type.as_deref().unwrap_or("").contains("LAN"))
+            .count();
+        let localhost_count = devices
+            .iter()
+            .filter(|d| {
+                d.connection_type
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("Localhost")
+            })
+            .count();
+
+        let stats = DeviceStats {
+            total_devices,
+            active_now,
+            offline_count,
+            cloudflare_count,
+            lan_count,
+            localhost_count,
+        };
+
+        Ok((devices, stats))
+    }
+
+    /// Update custom friendly name for a device.
+    pub async fn rename_device(
+        pool: &PgPool,
+        device_id: &str,
+        new_name: Option<&str>,
+    ) -> Result<(), AppError> {
+        let clean = new_name.map(|n| n.trim()).filter(|n| !n.is_empty());
+        sqlx::query("UPDATE devices SET custom_name = $1 WHERE device_id = $2")
+            .bind(clean)
+            .bind(device_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Permanently delete a device and its recorded watch history.
+    pub async fn delete_device(
+        pool: &PgPool,
+        device_id: &str,
+    ) -> Result<(), AppError> {
+        let mut tx = pool.begin().await?;
+        sqlx::query("DELETE FROM device_watch_history WHERE device_id = $1")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM devices WHERE device_id = $1")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchHistoryItem {
+    pub filename: String,
+    pub title: String,
+    pub year: Value,
+    pub position: f64,
+    pub duration: f64,
+    pub position_str: String,
+    pub duration_str: String,
+    pub percent: f64,
+    pub completed: bool,
+    pub last_watched: String,
+    pub last_watched_ago: String,
+    pub poster_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceDetail {
+    pub device_id: String,
+    pub custom_name: Option<String>,
+    pub device_name: Option<String>,
+    pub device_model: Option<String>,
+    pub display_name: String,
+    pub device_type: Option<String>,
+    pub device_icon: String,
+    pub device_os: Option<String>,
+    pub browser: Option<String>,
+    pub user_agent: Option<String>,
+    pub connection_type: Option<String>,
+    pub client_ip: Option<String>,
+    pub public_ip: Option<String>,
+    pub mac_address: Option<String>,
+    pub isp: Option<String>,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub last_seen_ago: String,
+    pub is_active: bool,
+    pub is_current: bool,
+    pub recent_watch: Option<WatchHistoryItem>,
+    pub watch_history: Vec<WatchHistoryItem>,
+    pub total_watched: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceStats {
+    pub total_devices: usize,
+    pub active_now: usize,
+    pub offline_count: usize,
+    pub cloudflare_count: usize,
+    pub lan_count: usize,
+    pub localhost_count: usize,
+}
+
+pub fn format_clock_time(seconds: f64) -> String {
+    let s = seconds.round() as i64;
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let sec = s % 60;
+    if h > 0 {
+        format!("{}:{:02}:{:02}", h, m, sec)
+    } else {
+        format!("{:02}:{:02}", m, sec)
+    }
+}
+
+pub fn format_db_timestamp(dt: DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+pub fn format_time_ago(dt: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let diff = (now - dt).num_seconds().max(0);
+    if diff < 60 {
+        "Just now".to_string()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86400)
+    }
+}
+
+pub fn device_icon(device_type: Option<&str>) -> &'static str {
+    match device_type {
+        Some("Mobile") => "📱",
+        Some("Tablet") => "📟",
+        Some("Smart TV") => "📺",
+        Some("Console") => "🎮",
+        Some("Tool/Bot") => "🤖",
+        _ => "💻",
+    }
+}
+
 
 /// Request facts gathered once, so several calls do not re-derive them.
 pub struct RequestFacts {

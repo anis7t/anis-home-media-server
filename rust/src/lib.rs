@@ -310,12 +310,23 @@ pub fn create_app_full(
         .route("/api/cast/status", get(routes::cast::status))
         .with_state(cast_state);
 
-    // Phase C3a: device registration and keepalive, native. The listing
-    // (`GET /api/devices`) and rename/delete stay proxied until auth is
-    // ported, because their admin gate depends on the Google session that
-    // lives in /auth/*. Static segments take routing priority over the
-    // catch-all proxy below, so both can coexist.
+    // Phase C3a & C3b: device registration, keepalive, and fleet management, 100% native.
     let device_routes = Router::new()
+        .route(
+            "/api/devices",
+            get(routes::devices::list_devices_handler)
+                .options(routes::devices::list_devices_handler),
+        )
+        .route(
+            "/api/devices/rename",
+            axum::routing::post(routes::devices::rename_device_handler)
+                .options(routes::devices::rename_device_handler),
+        )
+        .route(
+            "/api/devices/delete",
+            axum::routing::post(routes::devices::delete_device_handler)
+                .options(routes::devices::delete_device_handler),
+        )
         .route(
             "/api/devices/heartbeat",
             axum::routing::post(routes::devices::heartbeat_handler)
@@ -329,6 +340,8 @@ pub fn create_app_full(
         )
         .with_state(routes::devices::DeviceState {
             pool: Arc::new(pool.clone()),
+            media_roots: roots_arc.clone(),
+            cache_dir: cache_dir_arc.clone(),
         });
 
     // Phase C5: native scan trigger and status.
@@ -358,8 +371,6 @@ pub fn create_app_full(
             .route("/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/auth", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/devices", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/devices/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))

@@ -26,43 +26,19 @@ async fn spawn_mock_flask() -> (SocketAddr, tokio::task::JoinHandle<()>) {
             }),
         )
         .route(
-            "/api/devices",
+            "/api/storage/audit",
             get(|| async {
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, "application/json")],
                     Json(json!({
-                        "devices": [
-                            {"id": "dev-1", "name": "Living Room TV"}
-                        ]
+                        "storage": { "pool": "ok" }
                     })),
                 )
             }),
         )
         .route(
-            "/api/devices/heartbeat",
-            post(|req: Request| async move {
-                let pin = req
-                    .headers()
-                    .get("X-Admin-Pin")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-                let body_bytes = req.into_body().collect().await.unwrap().to_bytes();
-                let parsed: serde_json::Value =
-                    serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
-                (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "application/json")],
-                    Json(json!({
-                        "received_pin": pin,
-                        "echo": parsed
-                    })),
-                )
-            }),
-        )
-        .route(
-            "/api/devices/rename",
+            "/api/storage/settings",
             post(|req: Request| async move {
                 let pin = req
                     .headers()
@@ -158,22 +134,33 @@ async fn test_poster_is_not_proxied_to_flask() {
     handle.abort();
 }
 
-/// Phase C3a: `/api/devices/heartbeat` and `/api/devices/client-hints` are
-/// native. The listing and rename/delete remain proxied until auth is
-/// ported, so those are asserted as still-forwarded.
+/// Phase C3a & C3b: all `/api/devices/*` routes are 100% native.
+/// They must NOT reach the mock upstream.
 #[tokio::test]
-async fn test_device_heartbeat_and_client_hints_are_not_proxied() {
+async fn test_device_routes_are_not_proxied() {
     let (addr, handle) = spawn_mock_flask().await;
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
-    for uri in ["/api/devices/heartbeat", "/api/devices/client-hints"] {
-        let req = axum::http::Request::builder()
-            .method("POST")
-            .uri(uri)
-            .header("content-type", "application/json")
-            .body(Body::from("{}"))
-            .unwrap();
+    for uri in [
+        "/api/devices/heartbeat",
+        "/api/devices/client-hints",
+        "/api/devices",
+    ] {
+        let req = if uri == "/api/devices" {
+            axum::http::Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap()
+        } else {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap()
+        };
         let mut req = req;
         let peer: std::net::SocketAddr = "127.0.0.1:5000".parse().unwrap();
         req.extensions_mut().insert(axum::extract::ConnectInfo(peer));
@@ -228,13 +215,13 @@ async fn test_tmdb_artwork_is_not_proxied_to_flask() {
 }
 
 #[tokio::test]
-async fn test_proxy_forwards_api_devices() {
+async fn test_proxy_forwards_api_storage() {
     let (addr, handle) = spawn_mock_flask().await;
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
     let req = axum::http::Request::builder()
-        .uri("/api/devices")
+        .uri("/api/storage/audit")
         .body(Body::empty())
         .unwrap();
 
@@ -243,7 +230,7 @@ async fn test_proxy_forwards_api_devices() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json_val["devices"][0]["name"], "Living Room TV");
+    assert_eq!(json_val["storage"]["pool"], "ok");
 
     handle.abort();
 }
@@ -254,12 +241,9 @@ async fn test_proxy_forwards_headers_and_body_post() {
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
-    // `/api/devices/rename` is still proxied (Phase C3b), which makes it the
-    // right example now that heartbeat is native - using heartbeat here
-    // silently tested the wrong thing once it moved.
     let req = axum::http::Request::builder()
         .method("POST")
-        .uri("/api/devices/rename")
+        .uri("/api/storage/settings")
         .header("Content-Type", "application/json")
         .header("X-Admin-Pin", "not-a-real-pin")
         .body(Body::from(r#"{"ping":"hello"}"#))
@@ -313,7 +297,7 @@ async fn test_proxy_returns_502_on_unreachable_upstream() {
     let app = setup_test_app(Some("http://127.0.0.1:59999".to_string())).await;
 
     let req = axum::http::Request::builder()
-        .uri("/api/devices")
+        .uri("/api/storage/audit")
         .body(Body::empty())
         .unwrap();
 
@@ -324,3 +308,4 @@ async fn test_proxy_returns_502_on_unreachable_upstream() {
     let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json_val["error"], "Bad Gateway");
 }
+
