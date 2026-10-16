@@ -62,6 +62,28 @@ async fn spawn_mock_flask() -> (SocketAddr, tokio::task::JoinHandle<()>) {
             }),
         )
         .route(
+            "/api/devices/rename",
+            post(|req: Request| async move {
+                let pin = req
+                    .headers()
+                    .get("X-Admin-Pin")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let body_bytes = req.into_body().collect().await.unwrap().to_bytes();
+                let parsed: serde_json::Value =
+                    serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+                (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    Json(json!({
+                        "received_pin": pin,
+                        "echo": parsed
+                    })),
+                )
+            }),
+        )
+        .route(
             "/auth/login",
             get(|| async {
                 (
@@ -136,6 +158,45 @@ async fn test_poster_is_not_proxied_to_flask() {
     handle.abort();
 }
 
+/// Phase C3a: `/api/devices/heartbeat` and `/api/devices/client-hints` are
+/// native. The listing and rename/delete remain proxied until auth is
+/// ported, so those are asserted as still-forwarded.
+#[tokio::test]
+async fn test_device_heartbeat_and_client_hints_are_not_proxied() {
+    let (addr, handle) = spawn_mock_flask().await;
+    let upstream_url = format!("http://{}", addr);
+    let app = setup_test_app(Some(upstream_url)).await;
+
+    for uri in ["/api/devices/heartbeat", "/api/devices/client-hints"] {
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let mut req = req;
+        let peer: std::net::SocketAddr = "127.0.0.1:5000".parse().unwrap();
+        req.extensions_mut().insert(axum::extract::ConnectInfo(peer));
+
+        let res = app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+
+        // The status alone cannot discriminate here: both the mock upstream
+        // and the native handler answer 200. The mock echoes the request,
+        // so its distinctive `echo` key is the reliable signal.
+        assert!(
+            json.get("echo").is_none(),
+            "{} returned the upstream's echo, so it is still proxied",
+            uri
+        );
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    handle.abort();
+}
+
 /// Phase C1b: `/tmdb-poster/*` and `/tmdb-backdrop/*` are served natively, so
 /// they must not reach the upstream. Same reasoning as the poster test: a
 /// mock that answers 200 to everything would let a re-introduced proxy entry
@@ -193,11 +254,14 @@ async fn test_proxy_forwards_headers_and_body_post() {
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
+    // `/api/devices/rename` is still proxied (Phase C3b), which makes it the
+    // right example now that heartbeat is native - using heartbeat here
+    // silently tested the wrong thing once it moved.
     let req = axum::http::Request::builder()
         .method("POST")
-        .uri("/api/devices/heartbeat")
+        .uri("/api/devices/rename")
         .header("Content-Type", "application/json")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "not-a-real-pin")
         .body(Body::from(r#"{"ping":"hello"}"#))
         .unwrap();
 
@@ -206,7 +270,7 @@ async fn test_proxy_forwards_headers_and_body_post() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json_val["received_pin"], "6361");
+    assert_eq!(json_val["received_pin"], "not-a-real-pin");
     assert_eq!(json_val["echo"]["ping"], "hello");
 
     handle.abort();

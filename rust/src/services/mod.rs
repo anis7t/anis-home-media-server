@@ -1,4 +1,5 @@
 pub mod asset_service;
+pub mod device_service;
 pub mod hls_service;
 pub mod job_service;
 pub mod movie_service;

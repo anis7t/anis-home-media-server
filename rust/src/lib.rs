@@ -218,6 +218,27 @@ pub fn create_app_full(
             pool: Some(pool.clone()),
         });
 
+    // Phase C3a: device registration and keepalive, native. The listing
+    // (`GET /api/devices`) and rename/delete stay proxied until auth is
+    // ported, because their admin gate depends on the Google session that
+    // lives in /auth/*. Static segments take routing priority over the
+    // catch-all proxy below, so both can coexist.
+    let device_routes = Router::new()
+        .route(
+            "/api/devices/heartbeat",
+            axum::routing::post(routes::devices::heartbeat_handler)
+                .get(routes::devices::heartbeat_handler)
+                .options(routes::devices::heartbeat_handler),
+        )
+        .route(
+            "/api/devices/client-hints",
+            axum::routing::post(routes::devices::client_hints_handler)
+                .options(routes::devices::client_hints_handler),
+        )
+        .with_state(routes::devices::DeviceState {
+            pool: Arc::new(pool.clone()),
+        });
+
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
         Router::new()
@@ -253,6 +274,7 @@ pub fn create_app_full(
         .merge(job_routes)
         .merge(asset_routes)
         .merge(media_info_routes)
+        .merge(device_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {
