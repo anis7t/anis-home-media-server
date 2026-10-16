@@ -533,11 +533,16 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
         })
         .unwrap_or(false);
 
-    // The platform volume, which is what this host's receiver actually plays and
-    // what `SET_VOLUME` on the receiver namespace changes. The media status
-    // also carries a per-session volume, but on this television that is a value
-    // the app stores rather than the volume being played - reporting it made a
-    // real volume change look like it had done nothing.
+    // The platform volume: `status.volume.level` and `status.volume.muted` in
+    // `RECEIVER_STATUS`, the same values the working Flask path reports from
+    // `cast.status.volume_level`. This is a real field holding a real level.
+    //
+    // An earlier version read `status.volume` as a scalar, missed the nested
+    // `volume.level` on every call, and returned the 100.0 fallback — which
+    // looked exactly like "the protocol does not expose the speaker volume"
+    // while the television's speakers moved. The media status does also carry a
+    // per-session volume, and that one is a value the app stores rather than the
+    // volume being played, so the receiver's copy is the one reported.
     let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
     let parsed = cast_proto::parse_media_status(&media.to_string());
@@ -742,20 +747,59 @@ mod tests {
 
     #[test]
     fn the_platform_volume_is_reported_because_that_is_the_audible_one() {
-        // The media status carries a per-session volume too. On this television
-        // it is a value the app stores, not the volume being played - the
-        // receiver echoes back whatever it is sent there, so a test asserting
-        // on it passed while the speakers never moved.
+        // The receiver (platform) volume wins over the media session's own.
+        // Fixtures use the REAL nested payload shape: `volume.level` and
+        // `volume.muted` under `status.volume`.
         let media = serde_json::json!({
             "status": [{ "playerState": "PLAYING", "volume": { "level": 0.4, "muted": true } }]
         });
         let receiver = serde_json::json!({
             "type": "RECEIVER_STATUS",
-            "status": { "volume": 0.3, "muted": false }
+            "status": {
+                "applications": [{ "appId": "CC1AD845", "sessionId": "s-1", "transportId": "t-1" }],
+                "volume": { "level": 0.3, "muted": false, "controlType": "attenuation" },
+                "isActiveInput": true
+            }
         });
         let payload = status_payload(&media, &receiver);
         assert_eq!(payload["volume"], 30.0, "the reported volume is the audible one");
         assert_eq!(payload["muted"], false);
+    }
+
+    /// The regression that made `status.volume` look permanently 100.
+    ///
+    /// Every live run reported 100.0 while the speakers moved, and that was
+    /// written off as "the protocol does not expose the speaker volume". It
+    /// does: the parser was reading `status.volume` as a scalar, missing the
+    /// nested `volume.level`, and returning the 100.0 fallback every time. The
+    /// unit test passed because its fixture had the same wrong shape.
+    #[test]
+    fn a_real_receiver_status_reports_its_actual_volume() {
+        let media = serde_json::json!({ "status": [{ "playerState": "PLAYING" }] });
+        let receiver = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "volume": { "level": 0.2, "muted": true }, "isActiveInput": true }
+        });
+        let payload = status_payload(&media, &receiver);
+        assert_eq!(payload["volume"], 20.0, "the receiver's real volume, not the 100 fallback");
+        assert_eq!(payload["muted"], true, "the receiver's real mute state");
+    }
+
+    /// Mute on this receiver is observable after all — the field reads `true`
+    /// once it is read from the right path.
+    #[test]
+    fn mute_state_is_reported_from_the_receiver() {
+        let media = serde_json::json!({ "status": [{ "playerState": "PLAYING" }] });
+        let unmuted = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "volume": { "level": 0.5, "muted": false }, "isActiveInput": true }
+        });
+        let muted = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "volume": { "level": 0.5, "muted": true }, "isActiveInput": true }
+        });
+        assert_eq!(status_payload(&media, &unmuted)["muted"], false);
+        assert_eq!(status_payload(&media, &muted)["muted"], true);
     }
 
     /// How long does the television actually take to clear the receiver screen?
@@ -914,7 +958,7 @@ async fn live_teardown_timeline() {
         });
         let receiver = serde_json::json!({
             "type": "RECEIVER_STATUS",
-            "status": { "volume": 0.3, "muted": false, "isActiveInput": true }
+            "status": { "volume": { "level": 0.3, "muted": false, "controlType": "attenuation" }, "isActiveInput": true }
         });
         let payload = status_payload(&media, &receiver);
         assert_eq!(payload["state"], "playing");

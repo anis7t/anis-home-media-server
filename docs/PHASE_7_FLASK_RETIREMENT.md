@@ -194,7 +194,7 @@ Four milestones, three of them verified against the live receiver.
 | `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
 | Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
 | Seek after a dropped session | ✅ **verified live** — recovers by redialling |
-| Volume | ✅ **verified live** by watching/listening; `receiver` namespace only |
+| Volume | ✅ **verified live** by watching/listening; `receiver` namespace only, and the reported level now tracks the request |
 | Mute | ✅ **verified live** — `SET_VOLUME` with a `muted` field, not `SET_VOLUME_MUTED` |
 | Quit-app teardown | ✅ **fixed** — `STOP` + `sessionId`, not the non-existent `STOP_APP` |
 
@@ -270,18 +270,56 @@ Mute is a field on `SET_VOLUME`, not a separate message type. A wrong type is
 acknowledged and ignored, so the failure is indistinguishable from an
 unsupported feature unless you compare the payload against a working client.
 
-**`status.volume` is the application's volume, not the television's speaker
-volume.** It reads 100 no matter what is set, even while the speakers are
-demonstrably moving. It must not be presented as the audible level, and no test
-may assert on it — that reports false failures for a command that works, and
-would equally pass a broken one.
+#### The volume field that always read 100
+
+`status.volume` reported 100 no matter what was asked, while the speakers were
+demonstrably moving. That was recorded here, in `AGENTS.md` and in a comment on
+the parser as a property of the protocol: *"`status.volume` is the
+application's volume, not the television's speaker volume… can't be fixed, it
+isn't exposed by the protocol."*
+
+It was exposed the whole time. The parser read the wrong path:
+
+```rust
+// wrong - "volume" here is an object, and "muted" is not a sibling of it
+volume_level: status.get("volume").and_then(|v| v.as_f64()),
+volume_muted:  status.get("muted").and_then(|v| v.as_bool()),
+```
+
+pychromecast, which the working Flask path reads:
+
+```python
+volume_data = status_data.get("volume", {})
+... volume_data.get("level", 1.0), volume_data.get("muted", False),
+```
+
+so the real payload nests them:
+
+```json
+{"status": {"volume": {"level": 0.25, "muted": false, "controlType": "attenuation"}}}
+```
+
+Both lookups missed, so every call returned the documented fallbacks — **100.0
+and unmuted** — which is exactly what every live run printed. It was never a
+protocol limitation. It was a parser reading a field that does not exist and
+reporting a plausible default instead of an error.
+
+**The unit test passed because its fixture had the same wrong shape** —
+`{"status":{"volume":0.45,"muted":true}}` — written from imagination rather than
+captured. Every accepted-and-ignored bug in this port was shielded that way. A
+fixture invented to match the code it tests is not evidence.
+
+Mute is fixed by the same change: `muted` now reads a real value, and the
+harness asserts that it tracks the request instead of printing a field everyone
+already knew was meaningless.
 
 > This is the fourth time in this port that "the receiver confirms it" turned
-> out to be evidence about the receiver rather than about playback. An ack, an
-> echoed field and a returned success are statements about the protocol, not
-> about whether anyone can hear or see the result. Where a human can watch the
-> outcome, the human is the better oracle — and a test that cannot measure the
-> thing must say so rather than guess.
+> out to be evidence about the receiver rather than about playback — and the
+> first time a conclusion reached that way ("the protocol does not expose this")
+> was simply wrong. Before recording a field as unavailable, check that you are
+> reading the path the working implementation reads. A default that always
+> appears is the signature of a lookup that never matches, not of a value that
+> never changes.
 
 #### Two places the wire disagrees with the documentation
 

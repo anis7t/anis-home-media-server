@@ -418,15 +418,55 @@ impl ReceiverStatus {
     }
 }
 
+/// Parse the **receiver** (platform) volume out of a `RECEIVER_STATUS` payload.
+///
+/// This is the television's own speaker level — the same value the working
+/// Flask path reports, from `cast.status.volume_level`. pychromecast reads it
+/// as:
+///
+/// ```python
+/// volume_data = status_data.get("volume", {})
+/// ... volume_data.get("level", 1.0), volume_data.get("muted", False),
+/// ```
+///
+/// so the fields are **nested** under `status.volume`:
+///
+/// ```json
+/// {"status": {"volume": {"level": 0.25, "muted": false,
+///                        "controlType": "attenuation"}}}
+/// ```
+///
+/// An earlier version read `status.volume` as a scalar and `status.muted` at
+/// the top level. Both lookups therefore missed on a real payload, and the
+/// result was the documented fallbacks — 100 and unmuted — on **every** read,
+/// which is exactly what every live run printed. Because the test fixture
+/// encoded the same wrong shape, the suite stayed green.
+///
+/// The flat spelling is kept as a fallback: it costs nothing and tolerates a
+/// receiver that flattens it. It is no longer the primary path, and the tests
+/// now pin the real nested payload.
 pub fn parse_receiver_status(payload: &str) -> ReceiverStatus {
     let value: serde_json::Value = match serde_json::from_str(payload) {
         Ok(v) => v,
         Err(_) => return ReceiverStatus { volume_level: None, volume_muted: None },
     };
     let status = status_object(&value).unwrap_or(&value);
+
+    let volume = status.get("volume");
+    let read_level = |key: &str| -> Option<f64> {
+        volume
+            .and_then(|v| v.get(key))
+            .or_else(|| status.get(key))
+            .and_then(|v| v.as_f64())
+    };
+
     ReceiverStatus {
-        volume_level: status.get("volume").and_then(|v| v.as_f64()),
-        volume_muted: status.get("muted").and_then(|v| v.as_bool()),
+        volume_level: read_level("level")
+            .or_else(|| volume.and_then(|v| v.as_f64())),
+        volume_muted: volume
+            .and_then(|v| v.get("muted"))
+            .or_else(|| status.get("muted"))
+            .and_then(|v| v.as_bool()),
     }
 }
 
@@ -610,13 +650,62 @@ mod tests {
         assert_eq!(msg.request_id(), Some(42));
     }
 
+    /// The **real** `RECEIVER_STATUS` volume shape: `level` and `muted` are
+    /// nested under `status.volume`.
+    ///
+    /// This fixture is the one that matters. The earlier fixture spelled it
+    /// flat — `"volume":0.45,"muted":true` — which the parser was written to
+    /// match, so the suite passed against a shape the receiver never sends and
+    /// every live read silently fell back to 100 / unmuted.
     #[test]
-    fn receiver_volume_is_read_from_its_own_namespace() {
-        let payload = r#"{"type":"RECEIVER_STATUS","requestId":1,"status":{"volume":0.45,"muted":true}}"#;
+    fn receiver_volume_is_nested_under_status_volume() {
+        let payload = r#"{"type":"RECEIVER_STATUS","requestId":1,"status":{
+            "applications":[{"appId":"CC1AD845","sessionId":"s-1","transportId":"t-1"}],
+            "volume":{"level":0.45,"muted":true,"controlType":"attenuation"},
+            "isActiveInput":true}}"#;
         let s = parse_receiver_status(payload);
+        assert_eq!(s.volume_level, Some(0.45), "level is nested under status.volume");
+        assert_eq!(s.volume_muted, Some(true), "muted is nested under status.volume");
+        assert_eq!(s.percent_volume(), 45.0);
+    }
+
+    /// A real payload whose volume is an **object** must not fall back to the
+    /// 100.0 default. This is the specific miss that made every live run report
+    /// 100 while the speakers were demonstrably moving.
+    #[test]
+    fn an_object_valued_volume_is_not_reported_as_full() {
+        let payload = r#"{"type":"RECEIVER_STATUS","status":{"volume":{"level":0.10,"muted":false}}}"#;
+        let s = parse_receiver_status(payload);
+        assert!(s.volume_level.is_some(), "an object volume must still yield a level");
+        assert_eq!(s.percent_volume(), 10.0);
+    }
+
+    /// Same shape arriving as a list, which this receiver uses elsewhere.
+    #[test]
+    fn nested_volume_survives_the_list_status_shape() {
+        let payload = r#"{"type":"RECEIVER_STATUS","status":[{"volume":{"level":0.30,"muted":true}}]}"#;
+        let s = parse_receiver_status(payload);
+        assert_eq!(s.volume_level, Some(0.30));
+        assert_eq!(s.volume_muted, Some(true));
+    }
+
+    /// The flat spelling is still tolerated, so a receiver that flattens it is
+    /// not reported as full volume.
+    #[test]
+    fn a_flat_volume_spelling_is_still_tolerated() {
+        let s = parse_receiver_status(r#"{"status":{"volume":0.45,"muted":true}}"#);
         assert_eq!(s.volume_level, Some(0.45));
         assert_eq!(s.volume_muted, Some(true));
-        assert_eq!(s.percent_volume(), 45.0);
+    }
+
+    /// A receiver in genuinely standby reports no volume at all, and that must
+    /// still read as full volume and unmuted rather than as a silent television.
+    #[test]
+    fn an_absent_volume_still_defaults_to_full_and_unmuted() {
+        let s = parse_receiver_status(r#"{"status":{"isStandBy":true}}"#);
+        assert_eq!(s.volume_level, None);
+        assert_eq!(s.volume_muted, None);
+        assert_eq!(s.percent_volume(), 100.0);
     }
 
     #[test]

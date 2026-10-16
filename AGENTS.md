@@ -264,10 +264,28 @@ Applies to the native Rust cast service as much as to the Python one.
   speakers and raises its on-screen indicator — verified by watching it. The
   media-namespace alternative with a `mediaSessionId` is accepted and echoed
   back while changing nothing audible.
-- **`status.volume` is the *application's* volume, not the television's
-  speaker volume.** It sits at 100 regardless of what was set. Do not present
-  it as the audible level, and do not write a test that asserts on it — that
-  reports false failures for a command that works and would pass a broken one.
+- **The receiver's volume lives at `status.volume.level` and `status.volume.muted`,
+  nested — not at `status.volume` as a scalar.** Reading it flat misses the field,
+  and the documented fallbacks then report **100 and unmuted on every call**,
+  which is indistinguishable from a receiver that reports no volume at all.
+  pychromecast reads `status_data.get("volume", {})` then `.get("level")` /
+  `.get("muted")`; the working Flask path reports exactly that as
+  `cast.status.volume_level` / `volume_muted`. The media namespace also carries a
+  per-session volume, but that is a value the app stores, so report the
+  receiver's copy. **It is a real, working reading — do not conclude a field is
+  "not exposed by the protocol" before checking you are reading the path the
+  working implementation reads.**
+- **Write fixtures from a captured payload, never from imagination.** Every
+  accepted-and-ignored bug in this port was shielded by a unit test whose
+  fixture had the *same* wrong shape as the code: the parser read `volume` flat
+  and the fixture said `"volume":0.45`, so it passed against a payload the
+  receiver never sends and the live read fell back to 100 forever. A test whose
+  expected value was invented is not evidence. Capture the real message, paste
+  it in, and assert against that — and where a fallback default exists, add a
+  test that the real shape does *not* land on the default.
+- **A field that is never found reports its default, not an error.** That is why
+  every one of these failed silently. Prefer a missing field being visible over
+  it resolving to a plausible value.
 - **Mute is `SET_VOLUME` with a `muted` field — there is no `SET_VOLUME_MUTED`.**
   The wrong type is accepted with `ok: true` and does nothing, which reads as
   "this receiver has no mute". pychromecast (the working Flask path) sends

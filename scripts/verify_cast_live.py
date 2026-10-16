@@ -98,15 +98,17 @@ def volume_ramp(base, device_id):
     whether anyone can hear the result.
     """
     print("--- volume ramp: 100 -> 10 -> 20 -> 50 -> 30 (watch / listen) ---")
-    print("  the receiver's reported volume is printed for the record only - it is the")
-    print("  app's volume, not the television's speaker volume, so it cannot be asserted")
+    print("  the receiver's reported level is its own status.volume.level, and it is")
+    print("  now expected to TRACK what was asked. Watch or listen as well.")
     for target in (100, 10, 20, 50, 30):
         res = try_call(base, "/api/cast/control",
                        {"device_id": device_id, "action": "volume", "value": target}, timeout=60)
         time.sleep(6)
         st = status(base, device_id)
+        got = st.get("volume")
+        tracked = got is not None and abs(float(got) - target) <= 2
         print(f"  ....  asked {target:>3} -> command ok={res.get('ok')}, "
-              f"app-volume field reports {st.get('volume')}")
+              f"receiver reports {got}  {'TRACKS' if tracked else 'DOES NOT TRACK'}")
 
     print("--- mute (listen: the audio should stop for ~8s) ---")
     for want in (True, False):
@@ -190,38 +192,44 @@ def main():
         results.append(report("seek after session drop recovers", bool(seeked.get("ok")),
                               json.dumps(seeked)[:160]))
 
-        # Volume and mute are NOT asserted on the reported value, and that is a
-        # deliberate correction rather than a gap.
+        # Volume is asserted against the receiver's own reported level.
         #
-        # The receiver's `volume.level` is the *application's* volume, not the
-        # television's speaker volume. On this host the platform SET_VOLUME does
-        # move the speakers and raise the on-screen indicator - confirmed by the
-        # user watching it - while the reported field stayed at 100 for every
-        # value asked. So asserting on it reports false failures for a command
-        # that works, and would have reported a pass for one that did not.
+        # It used not to be, on the grounds that the field "was the app's volume,
+        # not the television's speaker volume" and could not be trusted. That was
+        # a misreading of the payload: the parser read `status.volume` as a
+        # scalar, missed the nested `volume.level`, and returned its 100.0
+        # fallback on every call - so the field reported 100 whatever was asked,
+        # and that was recorded as a property of the protocol.
         #
-        # There is no protocol-visible way to measure what a person hears. The
-        # command is therefore sent and the reported value printed for the
-        # record, but neither is treated as evidence.
+        # The reported level is a real reading of the receiver's platform volume,
+        # and it must track what was asked. A human still watches or listens,
+        # because the number proves the receiver recorded the request and says
+        # nothing about what came out of the speakers.
         vol = try_call(base, "/api/cast/control",
                        {"device_id": device_id, "action": "volume", "value": 40})
         time.sleep(3)
         vst = status(base, device_id)
-        print(f"  ....  volume command ok={vol.get('ok')}; receiver's *app* volume field "
-              f"reports {vst.get('volume')} - not the television's speaker volume, "
-              f"so this is printed, not asserted")
-        results.append(report("volume command accepted", bool(vol.get("ok"))))
+        vgot = vst.get("volume")
+        print(f"  ....  volume command ok={vol.get('ok')}; asked 40, receiver reports {vgot}")
+        vtracks = vgot is not None and abs(float(vgot) - 40) <= 2
+        results.append(report("reported volume tracks the request", vtracks))
 
         mute = try_call(base, "/api/cast/control",
                         {"device_id": device_id, "action": "mute", "value": True})
         time.sleep(3)
         mst = status(base, device_id)
         print(f"  ....  mute command ok={mute.get('ok')}; receiver reports "
-              f"muted={mst.get('muted')}")
+              f"muted={mst.get('muted')}  <-- LISTEN")
+        results.append(report("reported mute state tracks the request",
+                              mst.get("muted") is True))
 
         try_call(base, "/api/cast/control",
                  {"device_id": device_id, "action": "mute", "value": False})
-        time.sleep(2)
+        time.sleep(3)
+        umst = status(base, device_id)
+        print(f"  ....  unmuted -> receiver reports muted={umst.get('muted')}")
+        results.append(report("reported mute state clears",
+                              umst.get("muted") is False))
 
         final = status(base, device_id)
         print(f"  receiver last reported: state={final.get('state')} "
