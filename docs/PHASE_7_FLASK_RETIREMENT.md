@@ -192,8 +192,8 @@ Four milestones, three of them verified against the live receiver.
 | TLS transport, `CONNECT`, request/response | ✅ **verified live** |
 | `LAUNCH` + app `transportId` session | ✅ **verified live** |
 | `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
-| Resume at a position | ✅ fixed; the fix itself is **not yet verified live** |
-| Transport controls, quit-app | ⬜ written, unverified end-to-end |
+| Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
+| Transport controls, quit-app | ⬜ redial-and-retry written, **not yet verified live** |
 
 #### Two places the wire disagrees with the documentation
 
@@ -225,6 +225,37 @@ shapes are now accepted.
 > Combined lesson: **a receiver that disagrees with the documentation does so
 > silently.** Neither of these produced an error, a fault, or a missing field
 > — only a wrong value, in a system where every other signal says success.
+
+#### A cached dead connection is worse than a missing heartbeat
+
+Playback worked, then stopped being controllable: `seek`, `volume` and `mute`
+all failed with `os error 10053`, and **`stop` failed too** — so the cast was
+permanently unstoppable until the service was restarted. Verified live: a
+dropped session left the television playing and `stop` could not be delivered.
+
+The connection cache held a dead socket indefinitely. A receiver resets the
+socket on its own, and a cached dead socket fails every later command
+identically. The cast looks fine and is inert.
+
+That reframes the heartbeat question. pychromecast does:
+
+```python
+self.heartbeat_controller.ping()
+...
+if self.heartbeat_controller.is_expired():
+    logger.info("Heartbeat timeout, resetting connection")
+    reset = True
+```
+
+The heartbeat's real job is **detecting a dead connection and reconnecting**,
+not merely keeping one warm. Missing that detection turned a dropped session
+into a permanent outage.
+
+Every action and every status read now runs at most twice: on failure the dead
+connection is dropped, the session is redialled, and the action is retried
+once. Redialling re-runs the whole app session — launch, read the
+`transportId`, `CONNECT` — because that id is per-session, and reusing a stale
+one is exactly what produced the original `CLOSE`.
 
 #### The media namespace must be addressed at a per-session UUID
 

@@ -279,6 +279,13 @@ Applies to the native Rust cast service as much as to the Python one.
   later, so sequence on a poll, not on the ack.
 - **A receiver may `PING` us and expects `PONG`.** Unanswered, it tears the
   virtual connection down, which surfaces as a `CLOSE` mid-request.
+- **Never cache a Cast connection without a liveness path.** A receiver resets
+  the socket on its own, and a cached dead socket fails every later command
+  identically — so a playing cast becomes permanently uncontrollable, and
+  `stop` cannot be delivered at all. Every action must redial and retry once.
+  Redial must re-run the whole app session (launch, read `transportId`,
+  `CONNECT`), because the transport id is per-session; reusing a stale one is
+  what produces the original `CLOSE`.
 - **`stop` must quit the app, not just stop playback**, or the TV is left on an
   idle blank receiver screen that reads as a hang.
 - **A cast scan replaces the device map**, so connections are cached per device
