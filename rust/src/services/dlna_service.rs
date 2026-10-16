@@ -372,11 +372,25 @@ pub async fn discover(timeout: Duration) -> DlnaResult<Vec<DlnaDevice>> {
 
     let mut locations: HashMap<String, String> = HashMap::new();
     if !sockets.is_empty() {
-        let targets = format!("{}\\0{}", message(MEDIA_RENDERER_ST), message(AVTRANSPORT_ST));
         let deadline = tokio::time::Instant::now() + timeout;
+        // Two targets, two passes each, one datagram apiece. These must be
+        // separate M-SEARCH messages: concatenating them into a single
+        // datagram makes every renderer ignore the packet, and discovery then
+        // returns an empty list with no error - which is exactly what happened
+        // on first deployment.
         for sock in &sockets {
-            for _ in 0..2 {
-                let _ = sock.send_to(targets.as_bytes(), (SSDP_ADDR, SSDP_PORT));
+            for service_type in [MEDIA_RENDERER_ST, AVTRANSPORT_ST] {
+                for _ in 0..2 {
+                    // `.await` is load-bearing: on a tokio socket `send_to` returns a future,
+                    // and discarding it sends nothing at all - which is how the
+                    // first deployment discovered zero devices with no error.
+                    if let Err(e) = sock
+                        .send_to(message(service_type).as_bytes(), (SSDP_ADDR, SSDP_PORT))
+                        .await
+                    {
+                        tracing::debug!("SSDP send to {} failed: {}", SSDP_ADDR, e);
+                    }
+                }
             }
         }
         'listen: loop {
@@ -415,6 +429,15 @@ pub async fn discover(timeout: Duration) -> DlnaResult<Vec<DlnaDevice>> {
         if let Some(d) = describe_device(&http, location).await {
             devices.push(d);
         }
+    }
+    if devices.is_empty() {
+        // An empty result is indistinguishable from "no devices on the network"
+        // at the call site, so the reason is logged rather than swallowed.
+        tracing::warn!(
+            "SSDP discovery found no renderers ({} interface(s) searched, {} location(s) returned)",
+            sockets.len(),
+            locations.len()
+        );
     }
     Ok(devices)
 }
