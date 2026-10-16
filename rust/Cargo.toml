@@ -31,6 +31,14 @@ flate2 = "1.1.10"
 quick-xml = "0.37"
 if-addrs = "0.13"
 socket2 = { version = "0.5", features = ["all"] }
+# Phase C4b: Cast receivers speak TLS on 8009 with **self-signed X.509 v1**
+# certificates - measured on the DU7000: subject == issuer, Version 1.
+# rustls-webpki accepts only v3 and rejects them during key extraction, before
+# any verifier can run, so rustls cannot talk to a Cast receiver at all.
+# native-tls uses the Windows Schannel stack, which accepts them, and needs no
+# C toolchain.
+native-tls = "0.2"
+tokio-native-tls = "0.3"
 # Phase C4b: the IPv4 neighbour table, so Cast discovery does not shell out to
 # `arp -a` the way the Python implementation does.
 windows-sys = { version = "0.59", features = [
