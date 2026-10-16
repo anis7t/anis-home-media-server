@@ -370,41 +370,29 @@ pub async fn status(conn: &mut CastConnection) -> (serde_json::Value, serde_json
 pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -> serde_json::Value {
     let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
-    // `status` is an object per the docs but a list on some receivers.
-    let player_state = cast_proto::status_object(media)
+    // `status` is an object per the docs but a list on some receivers, and it is
+    // an EMPTY list while nothing is loaded.
+    let status_obj = cast_proto::status_object(media);
+    let player_state = status_obj
         .and_then(|s| s.get("playerState"))
         .and_then(|v| v.as_str());
 
-    let mut state = player_state
-        .map(|raw| {
-            match raw.to_uppercase().as_str() {
-                "PLAYING" => "playing".to_string(),
-                "PAUSED" => "paused".to_string(),
-                "BUFFERING" => "buffering".to_string(),
-                "IDLE" => "stopped".to_string(),
-                "" => "unknown".to_string(),
-                other => other.to_string(),
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-
-    // A receiver that is starting has no playerState yet, but it does have the
-    // media receiver app running. Reporting "unknown" there leaves the phone
-    // looking broken while the cast is in fact opening.
-    if state == "unknown" {
-        let app_running = cast_proto::status_object(receiver)
-            .map(|s| {
-                s.get("appId").is_some()
-                    || s.get("applications")
-                        .and_then(|v| v.as_array())
-                        .map(|a| !a.is_empty())
-                        .unwrap_or(false)
-            })
-            .unwrap_or(false);
-        if app_running {
-            state = "buffering".to_string();
-        }
-    }
+    // No player state at all means nothing is loaded. The receiver reports
+    // BUFFERING explicitly while it opens a stream, so inferring "buffering"
+    // from "the app is running" is unnecessary - and actively wrong: it left a
+    // finished cast showing "buffering" forever, because an app that is
+    // running with nothing playing is stopped, not starting.
+    let state = match player_state {
+        Some(raw) => match raw.to_uppercase().as_str() {
+            "PLAYING" => "playing".to_string(),
+            "PAUSED" => "paused".to_string(),
+            "BUFFERING" => "buffering".to_string(),
+            "IDLE" => "stopped".to_string(),
+            "" => "stopped".to_string(),
+            other => other.to_string(),
+        },
+        None => "stopped".to_string(),
+    };
 
     let parsed = cast_proto::parse_media_status(&media.to_string());
 
@@ -559,6 +547,26 @@ mod tests {
     }
 
     #[test]
+
+    #[test]
+    fn an_ended_cast_reports_stopped_not_buffering() {
+        // An app that is running with nothing playing is stopped. Inferring
+        // "buffering" from "the app is running" left a finished cast showing
+        // buffering forever - and made the verification harness report a
+        // still-playing television that was in fact idle.
+        let idle = serde_json::json!({ "type": "MEDIA_STATUS", "status": [] });
+        let receiver = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "appId": "CC1AD845", "isActiveInput": true }
+        });
+        let payload = status_payload(&idle, &receiver);
+        assert_eq!(payload["state"], "stopped");
+        assert_eq!(payload["position"], 0.0);
+
+        // A receiver that says BUFFERING explicitly is still honoured.
+        let buffering = serde_json::json!({ "status": [{ "playerState": "BUFFERING" }] });
+        assert_eq!(status_payload(&buffering, &receiver)["state"], "buffering");
+    }
 
     #[test]
     fn direct_containers_do_not_need_transcoding() {
