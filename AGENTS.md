@@ -226,6 +226,50 @@ the Cloudflare tunnel. Treat them as the most destructive surface in the applica
 - **Automatic Dynamic Software Fallback:** `fallbackToSoftwareDecoder()` dynamically sets `hwdec: 'no'` (libavcodec CPU decoding) and flushes decoder buffers with a micro-seek if hardware decoding errors occur or if the first video frame is not rendered within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`).
 - **Broadened Decoder Error Keywords:** The error listener must catch and trigger fallback on keywords: `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface`.
 
+### Cast and DLNA invariants (Rust migration, Phase C4)
+
+Applies to the native Rust cast service as much as to the Python one.
+
+- **An empty HTTP 500 from a DLNA renderer means "I could not fetch that URL."**
+  It is a reachability question, not a cast bug, and the empty body gives no
+  hint. Two separate layers produced it — `MediaServerRust` binding
+  `127.0.0.1`, and a missing Windows Firewall inbound rule for
+  `media-server-api.exe` (Flask has one for `python.exe`). Check the listener
+  address and the firewall rule before debugging the cast logic. The rule is
+  created idempotently by `scripts/install_rust_service.ps1`; it is required for
+  the port swap too, where Rust takes `:8000`.
+- **A service bound to loopback looks healthy from its own machine.** Every
+  probe and health check goes through `127.0.0.1`, so a loopback-only bind is
+  invisible to the whole suite *and* to every other device on the network. Rust
+  defaults `RUST_HOST` to `0.0.0.0`; Flask already binds `0.0.0.0`.
+- **A Cast receiver presents a self-signed X.509 v1 certificate.**
+  `rustls-webpki` accepts only v3 and rejects v1 while extracting the public
+  key, *before* any custom verifier runs, so no verifier configuration works
+  around it. Use the Windows Schannel stack (`native-tls`). Only the trust
+  *chain* is bypassed — the handshake signature is still verified, so a passive
+  attacker cannot impersonate the receiver. Never connect to a host supplied by
+  a request: take it from the discovery cache.
+- **Media-namespace commands go to `urn:x-cast:com.google.cast.media-receiver`,
+  not `receiver-0`.** A `PLAY` addressed to `receiver-0` is silently ignored.
+- **`streamType: BUFFERED`, not `LIVE`.** A receiver told the stream is live
+  treats the artifact as unseekable. And `currentTime` belongs **inside the
+  LOAD message**: a receiver rejects a Seek sent before its media session
+  exists, which is how a resume cast silently starts from the beginning.
+- **Cast status is read from the receiver, never from a cached push.** Receivers
+  emit `MEDIA_STATUS` on transitions only — measured minutes apart while
+  playing. A receiver in standby reports **no volume field**; the default must
+  be 100, because inventing 0 tells the user their television is muted.
+- **`stop` must quit the app, not just stop playback**, or the TV is left on an
+  idle blank receiver screen that reads as a hang.
+- **A cast scan replaces the device map**, so connections are cached per device
+  and survive a scan. mDNS/ARP windows miss a device in roughly one scan in
+  three; a visibly running cast must stay controllable.
+- **Verify receiver CORS on `/media/` and `/hls/` only.** A receiver is a web
+  runtime: it fetches the manifest and every segment cross-origin. Without
+  those headers it downloads the playlist, requests **no segment**, and the
+  session ends with no error this server can see. `/api/*` must stay
+  unreadable from another origin.
+
 ### DLNA rendering (Samsung TVs and other UPnP renderers)
 
 - **Seekability is advertised, not implemented.** A renderer decides whether its own FF/prev buttons

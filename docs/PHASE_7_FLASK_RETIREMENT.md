@@ -181,21 +181,120 @@ Client contract probe 22/22 on both origins; 174/174 Rust tests.
 > it. Two separate layers (bind address, then firewall) produced the same
 > symptom, which is why the second was only found by isolating `origin`.
 
-### Phase C4b — Google Cast: not started
+### Phase C4b — Google Cast native (in progress)
 
-Rust's discovery is DLNA-only. A Cast receiver on the network is therefore
-invisible to `:8001` while Flask still finds it. Reference captured from
-Flask:
+Four milestones, three of them verified against the live receiver.
+
+| Milestone | State |
+|---|---|
+| Protobuf `CastMessage` + framing | ✅ byte-exact, unit-tested |
+| Eureka discovery | ✅ returns the live `ssdp_udn` |
+| TLS transport, `CONNECT`, request/response | ✅ **verified live** |
+| `LOAD`, transport controls, quit-app | ⬜ written, **not yet verified live** |
+
+#### rustls cannot talk to a Cast receiver
+
+The DU7000 presents a **self-signed X.509 v1** certificate:
 
 ```
-[cast] 43" Crystal UHD  host=192.168.1.8  model=Chromecast (UA43DU7000KLXL)
-        id=cast:72d252f1-e63a-4248-5c46-ad2ad74229c8
+subject : CN=72d252f1-e63a-4248-5c46-ad2ad74229c8
+issuer  : CN=72d252f1-e63a-4248-5c46-ad2ad74229c8
+version : 1
 ```
 
-Note it is found **intermittently** — one scan in roughly three misses it,
-which is the long-standing behaviour `CastRegistry.resolve_device` exists to
-paper over. Port 8009 was confirmed open on that host while a scan missed it,
-so this is discovery timing, not the device being absent.
+`rustls-webpki` accepts **only v3**, and rejects a v1 certificate while
+extracting its public key — *before* any custom verifier runs. No verifier
+configuration can work around it; this is structural. C4b therefore uses the
+Windows Schannel stack through `native-tls`, which accepts v1 and needs no C
+toolchain.
+
+Only the trust *chain* is bypassed. Schannel still verifies the handshake
+signature against the certificate's public key, so a passive third party cannot
+simply impersonate the television.
+
+#### `cargo.bat` never set `INCLUDE`
+
+It set `PATH` and `LIB` for MSVC, which is everything a pure-Rust build needs,
+so the omission was invisible for months. The first crate with C sources
+(`ring`) failed with the least informative error available — `cl.exe` ran and
+returned exit 2 — and the real cause was `fatal error C1083: Cannot open
+include file: 'stddef.h'`. Any crate with C code would have hit this, not just
+TLS.
+
+#### Discovery is deliberately not mDNS
+
+Flask's primary path is mDNS/zeroconf. C4b uses the eureka endpoint
+(`http://<host>:8008/setup/eureka_info`) over a candidate set built from three
+sources: DLNA hosts just found, Cast hosts a previous scan saw, and the IPv4
+neighbour table read natively via `GetIpNetTable` rather than shelling out to
+`arp -a`.
+
+This was verified against the live receiver *before* the code was written —
+the eureka endpoint returns `ssdp_udn=72d252f1-…`, byte-identical to the device
+id Flask reports.
+
+**Known coverage reduction:** a Cast device absent from the neighbour table
+*and* not visible to SSDP would be found by Flask and missed here. Recorded
+rather than buried.
+
+#### Two behaviours that are each a previously-diagnosed bug
+
+- **`streamType: BUFFERED`.** pychromecast defaults to `LIVE`; a receiver told
+  the stream is live treats it as unseekable — "the TV ignores seeks".
+- **`currentTime` inside `LOAD`.** A receiver rejects a `Seek` sent in the gap
+  before its media session exists ("Failed to execute seek 180.0"), which is
+  how a resume cast silently started from the beginning.
+
+#### A receiver in standby reports no volume
+
+The live `GET_STATUS` reply is
+`{"status":{"isActiveInput":false,"isStandby":false}}` — no volume field. Volume
+is only reported while an app is active, so the default must be **100, not 0**;
+inventing 0 would tell the user their television is muted.
+
+## Standing lessons from the port
+
+Things that cost real time and are not visible from the code. Each was found
+by doing the thing for real, not by reading it.
+
+1. **An empty HTTP 500 from a DLNA renderer means "I could not fetch that
+   URL."** It is a reachability question wearing a cast bug's clothes, and the
+   empty body gives no hint. Two separate layers produced it — the service
+   binding `127.0.0.1`, then a missing Windows Firewall rule for
+   `media-server-api.exe`. Only re-casting with `origin` pointed at a
+   known-good port separated them.
+
+2. **A service that binds loopback looks perfectly healthy from the machine it
+   runs on.** Every test, probe and health check goes through `127.0.0.1`, so a
+   loopback-only bind is invisible to the entire test suite while being
+   invisible to every other device on the network — and to the Cloudflare
+   tunnel.
+
+3. **A green test named after a parity claim is not evidence of that parity.**
+   `deterministic_id_matches_python_formula` asserted prefix, length and
+   self-determinism. It passed while the formula diverged from Python's. Assert
+   against values captured from the *old engine*, not against shape.
+
+4. **A discarded `Future` compiles.** On a tokio `UdpSocket`, `let _ =
+   sock.send_to(..)` builds a future and drops it, so no datagram is ever sent
+   and discovery returns an empty list with no error. A green suite and a
+   well-formed empty response both look like success.
+
+5. **Measure, then assert.** "eureka works" was believed for two milestones
+   before being measured. When it was measured, the first measurement said
+   *nothing answered* — and that measurement was itself wrong, because
+   `Start-Job` launches separate PowerShell processes whose startup time blew
+   the timeout. Sequential probing found the receiver immediately. A wrong
+   number is worse than no number.
+
+6. **rustls cannot speak to Cast.** X.509 **v1** certificates are rejected by
+   `rustls-webpki` during key extraction, before any verifier runs. Measure
+   the peer's certificate rather than assuming.
+
+7. **`scripts/cargo.bat` omitted `INCLUDE`.** Invisible for every pure-Rust
+   build; the first crate with C sources failed with `cl.exe ... exit 2` and
+   the real message, `C1083: Cannot open include file: 'stddef.h'`, was buried
+   in a warning.
 
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 
@@ -297,11 +396,12 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 **Proxied count has fallen 10 → 7 across C1a, C1b, C2 and C3a; 2 are absent
 entirely.** Rust cannot serve `:8000` yet.
 
-> **Updated after C4a.** DLNA casting is now native too, so `/api/cast/*` no
-> longer appears in this table. What remains proxied: `/auth/*`, `/api/auth/*`,
-> `GET /api/devices` + rename/delete (C3b, admin-gated), `POST /api/scan`, and
-> `/api/storage/*`. See the C4a section for the live-TV verification and the
-> three defects only a real renderer could find.
+> **Updated after C4a and C4b.** Casting is now native for both device kinds —
+> DLNA and Google Cast — so `/api/cast/*` no longer appears in this table.
+> What remains proxied: `/auth/*`, `/api/auth/*`, `GET /api/devices` +
+> rename/delete (C3b, admin-gated), `POST /api/scan`, and `/api/storage/*`.
+> See the C4a and C4b sections for the live-TV verification and the defects
+> only a real renderer or receiver could find.
 
 ### 2.1 A false green that must be closed
 
