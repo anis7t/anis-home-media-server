@@ -141,7 +141,10 @@ pub async fn control(
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(0)
         }) as f64),
-        other => {
+        // seek, volume and subtitle_offset carry a number; subtitle_offset is the
+        // one that may default to 0. play, pause and stop carry none, so a
+        // missing value is normal for them and must not be a validation error.
+        other @ ("seek" | "volume" | "subtitle_offset") => {
             let parsed = number(&raw);
             if parsed.is_none() && other != "subtitle_offset" {
                 return Ok(json_response(
@@ -151,6 +154,7 @@ pub async fn control(
             }
             parsed.or(Some(0.0))
         }
+        _ => number(&raw),
     };
     if action == "volume" && value.map(|v| !(0.0..=100.0).contains(&v)).unwrap_or(true) {
         return Ok(json_response(

@@ -225,6 +225,36 @@ async fn subtitle_offset_is_the_one_numeric_action_that_defaults() {
 }
 
 #[tokio::test]
+async fn transport_actions_carry_no_value_and_must_not_require_one() {
+    // Caught by casting to the live DU7000: pause and stop were answered
+    // "pause needs a numeric value" and could not be issued at all. Only
+    // seek, volume and subtitle_offset take a number.
+    let app = app().await;
+    for action in ["play", "pause", "stop"] {
+        let (status, body) = call(
+            &app,
+            Method::POST,
+            "/api/cast/control",
+            Some(json!({ "device_id": "dlna:x", "action": action })),
+        )
+        .await;
+        assert_ne!(
+            body["error"].as_str().unwrap_or(""),
+            format!("{} needs a numeric value", action),
+            "{} must not demand a value",
+            action
+        );
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{}", action);
+        assert!(
+            body["error"].as_str().unwrap_or("").contains("Unknown device"),
+            "{} should have passed validation and reached the device: {}",
+            action,
+            body
+        );
+    }
+}
+
+#[tokio::test]
 async fn cast_endpoints_are_no_longer_proxied() {
     let app = app().await;
     let calls = [

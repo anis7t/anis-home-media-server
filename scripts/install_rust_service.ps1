@@ -127,6 +127,31 @@ $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\S
 $envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8001`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive,E:\MediaServer`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nRUST_LOG=info"
 & $NssmExe set $serviceName AppEnvironmentExtra $envExtra
 
+# 8b. Firewall: allow inbound on this executable.
+#
+# Flask has an inbound allow rule for python.exe, which is why a cast receiver
+# could always fetch media from :8000. Without an equivalent rule for the Rust
+# binary nothing else on the LAN can reach :8001 at all - and a DLNA renderer
+# answers SetAVTransportURI with an empty HTTP 500 when it cannot fetch the URL
+# it was just given, so the failure looks like a cast bug rather than a
+# firewall one. It also blocks the port swap, where this service takes :8000.
+$RuleName = "MediaServerRust (media-server-api.exe)"
+$ExePath = "$RustDir\target\release\media-server-api.exe"
+if (Test-Path $ExePath) {
+    $existing = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Host "Firewall rule '$RuleName' already present." -ForegroundColor DarkGray
+    } else {
+        New-NetFirewallRule -DisplayName $RuleName `
+            -Direction Inbound -Action Allow -Program $ExePath `
+            -Profile Private,Domain `
+            -Enabled True | Out-Null
+        Write-Host "Created firewall rule: $RuleName" -ForegroundColor Green
+    }
+} else {
+    Write-Host "WARNING: $ExePath not found; no firewall rule created." -ForegroundColor Yellow
+}
+
 # 9. Start the Service
 Write-Host "Starting $serviceName service..." -ForegroundColor Cyan
 Start-Service -Name $serviceName
