@@ -101,11 +101,86 @@ impl ProbeService {
     /// which makes `plan_chunks(0)` empty and the cache judged vacuously
     /// complete. Same behaviour, without the trap.
     pub async fn source_video_duration(path: &Path) -> f64 {
-        match Self::probe(path).await.first_stream("video") {
-            Some(v) => video_stream_end(v),
-            // No video stream at all: fall back to the container.
-            None => Self::probe(path).await.container_duration(),
+        let probe = Self::probe(path).await;
+        let container = probe.container_duration();
+
+        // 1. Stream-level duration, then the Matroska DURATION tag.
+        if let Some(v) = probe.first_stream("video") {
+            let end = video_stream_end(v);
+            if end > 0.0 {
+                return end;
+            }
         }
+
+        // 2. Neither signal exists for every muxer. Fall back to measuring the
+        //    real end of the video by scanning packets, which is what Flask
+        //    does and what makes the difference between the picture's end and
+        //    the container's. A library MKV measured 4.25s of trailing audio
+        //    this way - reporting the container there would overstate the
+        //    denominator and can score a finished cache as incomplete.
+        let scanned = Self::video_end_by_packet_scan(path, container).await;
+        if scanned > 0.0 {
+            return scanned;
+        }
+
+        container
+    }
+
+    /// End of the last video packet, measured by ffprobe.
+    ///
+    /// Jumps to the container midpoint via the index and reads forward
+    /// (`-read_intervals <mid>%+99999`), which is ~0.3s on a multi-GB MKV
+    /// instead of the ~9s a full packet scan costs. Only if that yields
+    /// nothing does it scan the whole file.
+    pub async fn video_end_by_packet_scan(path: &Path, container_duration: f64) -> f64 {
+        if let Some(end) = Self::scan_packets(path, container_duration).await {
+            return end;
+        }
+        Self::scan_packets(path, 0.0).await.unwrap_or(0.0)
+    }
+
+    async fn scan_packets(path: &Path, seek_pct: f64) -> Option<f64> {
+        let probe = ffprobe_binary()?;
+        let mut cmd = tokio::process::Command::new(probe);
+        cmd.arg("-v")
+            .arg("error")
+            .arg("-select_streams")
+            .arg("v:0");
+        if seek_pct > 0.0 {
+            cmd.arg("-read_intervals").arg(format!("{:.3}%+99999", seek_pct));
+        }
+        cmd.arg("-show_entries")
+            .arg("packet=pts_time,duration_time")
+            .arg("-of")
+            .arg("csv=p=0")
+            .arg(path);
+
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            cmd.output(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+
+        let mut last_end: Option<f64> = None;
+        for line in text.lines() {
+            let mut parts = line.trim().split(',');
+            let pts = match parts.next().and_then(|p| p.parse::<f64>().ok()) {
+                Some(p) => p,
+                None => continue,
+            };
+            let dur = parts
+                .next()
+                .and_then(|d| d.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            last_end = Some(pts + dur);
+        }
+        last_end.filter(|v| *v > 0.0)
     }
 }
 
