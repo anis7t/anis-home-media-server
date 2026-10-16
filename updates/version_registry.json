@@ -1,11 +1,11 @@
 {
-  "lastVersionCode": 139,
+  "lastVersionCode": 140,
   "channels": {
     "production": {
-      "version": "1.2.19",
-      "versionCode": 139,
-      "publishedAt": "2026-10-05T04:13:26.574881+00:00",
-      "sha256": "b7cbcb036dd2066e844d0313d574729505e0630fbda7cc4b6dff974b3b885a77"
+      "version": "1.2.20",
+      "versionCode": 140,
+      "publishedAt": "2026-10-16T18:23:24.065590+00:00",
+      "sha256": "7bc4e2716e0f753bf4ca7a142b4a20d69cb7057c3717d10bb42ca052eda168f2"
     },
     "developer": {
       "version": "1.2.18",
