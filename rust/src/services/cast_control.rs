@@ -350,58 +350,41 @@ pub async fn wait_for_app_gone(conn: &mut CastConnection, timeout: Duration) -> 
     }
 }
 
-/// Set the volume of what is playing.
+/// Set the volume.
 ///
-/// Sent on the **media** namespace with the media session id, not on the
-/// receiver namespace. `SET_VOLUME` on `receiver-0` addresses the platform's
-/// master volume, which is not what a media app renders or obeys - the
-/// receiver accepted it, returned success, and the television's volume did not
-/// move. The `mediaSessionId` is what binds the change to the playing session.
+/// Sent on the **receiver** namespace as a platform/master volume, which is
+/// what moves a television's speakers and raises its on-screen volume
+/// indicator. Verified against this host's own receiver: the React/Flask
+/// implementation used this namespace and visibly worked.
+///
+/// An earlier version moved this to the media namespace with a
+/// `mediaSessionId`, reasoning that the session volume was the one the user
+/// hears. That was wrong here. The receiver **echoed** the session value back,
+/// so a test asserting on the reported value passed while the television's
+/// volume never moved - the report described a value the app stored, not the
+/// volume being played. A receiver will confirm a value it has not applied to
+/// its output, so "the receiver says so" is not evidence that anyone can hear
+/// it.
 pub async fn set_volume(conn: &mut CastConnection, percent: f64) -> Result<(), String> {
     let level = (percent / 100.0).clamp(0.0, 1.0);
-    let session = wait_for_session(conn).await;
-    let mut message = json!({
-        "type": "SET_VOLUME",
-        "volume": { "level": level }
-    });
-    match session {
-        Some(id) => {
-            message["mediaSessionId"] = json!(id);
-            media_command(conn, message).await.map(|_| ())
-        }
-        // Nothing is playing, so the platform volume is the only thing to set.
-        None => conn
-            .request(
-                NS_RECEIVER,
-                DEFAULT_RECEIVER_ID,
-                json!({ "type": "SET_VOLUME", "volume": { "level": level } }),
-            )
-            .await
-            .map(|_| ()),
-    }
+    conn.request(
+        NS_RECEIVER,
+        DEFAULT_RECEIVER_ID,
+        json!({ "type": "SET_VOLUME", "volume": { "level": level } }),
+    )
+    .await
+    .map(|_| ())
 }
 
-/// Mute the playing session. Same reasoning as [`set_volume`].
+/// Mute the receiver's output. Same namespace and reasoning as [`set_volume`].
 pub async fn set_muted(conn: &mut CastConnection, muted: bool) -> Result<(), String> {
-    let session = wait_for_session(conn).await;
-    let mut message = json!({
-        "type": "SET_VOLUME_MUTED",
-        "volume": { "muted": muted }
-    });
-    match session {
-        Some(id) => {
-            message["mediaSessionId"] = json!(id);
-            media_command(conn, message).await.map(|_| ())
-        }
-        None => conn
-            .request(
-                NS_RECEIVER,
-                DEFAULT_RECEIVER_ID,
-                json!({ "type": "SET_VOLUME_MUTED", "volume": { "muted": muted } }),
-            )
-            .await
-            .map(|_| ()),
-    }
+    conn.request(
+        NS_RECEIVER,
+        DEFAULT_RECEIVER_ID,
+        json!({ "type": "SET_VOLUME_MUTED", "volume": { "muted": muted } }),
+    )
+    .await
+    .map(|_| ())
 }
 
 /// Select or clear a subtitle track. `track_id` 0 means "no subtitles".
@@ -476,18 +459,12 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
         })
         .unwrap_or(false);
 
-    // The playing session's own volume, which is what the user hears and what the
-// `SET_VOLUME` on the media namespace changes. The receiver also reports a
-// platform volume on its own namespace; that is a different number, and
-// reporting it here made a volume change look like it had done nothing.
-    let session_volume = cast_proto::status_object(media).and_then(|s| s.get("volume"));
-    let volume = match session_volume {
-        Some(v) if v.get("level").is_some() || v.get("muted").is_some() => cast_proto::ReceiverStatus {
-            volume_level: v.get("level").and_then(|x| x.as_f64()),
-            volume_muted: v.get("muted").and_then(|x| x.as_bool()),
-        },
-        _ => cast_proto::parse_receiver_status(&receiver.to_string()),
-    };
+    // The platform volume, which is what this host's receiver actually plays and
+    // what `SET_VOLUME` on the receiver namespace changes. The media status
+    // also carries a per-session volume, but on this television that is a value
+    // the app stores rather than the volume being played - reporting it made a
+    // real volume change look like it had done nothing.
+    let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
     let parsed = cast_proto::parse_media_status(&media.to_string());
 
@@ -690,19 +667,21 @@ mod tests {
     }
 
     #[test]
-    fn the_playing_sessions_volume_wins_over_the_platform_volume() {
-        // The receiver reports both. Reporting the platform one made a volume
-        // change look like it had done nothing, because the two differ.
+    fn the_platform_volume_is_reported_because_that_is_the_audible_one() {
+        // The media status carries a per-session volume too. On this television
+        // it is a value the app stores, not the volume being played - the
+        // receiver echoes back whatever it is sent there, so a test asserting
+        // on it passed while the speakers never moved.
         let media = serde_json::json!({
             "status": [{ "playerState": "PLAYING", "volume": { "level": 0.4, "muted": true } }]
         });
         let receiver = serde_json::json!({
             "type": "RECEIVER_STATUS",
-            "status": { "volume": 1.0, "muted": false }
+            "status": { "volume": 0.3, "muted": false }
         });
         let payload = status_payload(&media, &receiver);
-        assert_eq!(payload["volume"], 40.0, "the session volume is what the user hears");
-        assert_eq!(payload["muted"], true);
+        assert_eq!(payload["volume"], 30.0, "the reported volume is the audible one");
+        assert_eq!(payload["muted"], false);
     }
 
     #[test]
