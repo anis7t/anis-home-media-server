@@ -249,8 +249,13 @@ Applies to the native Rust cast service as much as to the Python one.
   *chain* is bypassed — the handshake signature is still verified, so a passive
   attacker cannot impersonate the receiver. Never connect to a host supplied by
   a request: take it from the discovery cache.
-- **Media-namespace commands go to `urn:x-cast:com.google.cast.media-receiver`,
-  not `receiver-0`.** A `PLAY` addressed to `receiver-0` is silently ignored.
+- **Media-namespace messages go to the launched app's `transportId`, which is a
+  per-session UUID** — *not* `receiver-0`, and *not* the documented constant
+  `urn:x-cast:com.google.cast.media-receiver`. Addressing either is answered
+  with `CLOSE` on the connection namespace. The sequence is: `CONNECT` to
+  `receiver-0`, `LAUNCH` `CC1AD845`, read the app's `transportId` out of
+  `RECEIVER_STATUS`, **`CONNECT` to that transport**, then `LOAD`. Read the id
+  from `status.transportId` or `status.applications[].transportId`.
 - **`streamType: BUFFERED`, not `LIVE`.** A receiver told the stream is live
   treats the artifact as unseekable. And `currentTime` belongs **inside the
   LOAD message**: a receiver rejects a Seek sent before its media session
@@ -259,6 +264,15 @@ Applies to the native Rust cast service as much as to the Python one.
   emit `MEDIA_STATUS` on transitions only — measured minutes apart while
   playing. A receiver in standby reports **no volume field**; the default must
   be 100, because inventing 0 tells the user their television is muted.
+- **A media-namespace message needs a running session.** Launch the default
+  media receiver (`CC1AD845`) and confirm it is running *before* `LOAD`;
+  otherwise the receiver answers with `CLOSE` on the connection namespace. The
+  running app is reported as `status.appId` on some receivers and under
+  `status.applications[]` on others — check both. And `LAUNCH_STATUS:
+  USER_ALLOWED` is not the same as "the app is up": both replies arrive seconds
+  later, so sequence on a poll, not on the ack.
+- **A receiver may `PING` us and expects `PONG`.** Unanswered, it tears the
+  virtual connection down, which surfaces as a `CLOSE` mid-request.
 - **`stop` must quit the app, not just stop playback**, or the TV is left on an
   idle blank receiver screen that reads as a hang.
 - **A cast scan replaces the device map**, so connections are cached per device

@@ -188,9 +188,62 @@ Four milestones, three of them verified against the live receiver.
 | Milestone | State |
 |---|---|
 | Protobuf `CastMessage` + framing | ✅ byte-exact, unit-tested |
-| Eureka discovery | ✅ returns the live `ssdp_udn` |
+| Eureka discovery | ✅ live `ssdp_udn`, id matches Flask exactly |
 | TLS transport, `CONNECT`, request/response | ✅ **verified live** |
-| `LOAD`, transport controls, quit-app | ⬜ written, **not yet verified live** |
+| `LAUNCH` + app `transportId` session | ✅ **verified live** |
+| `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
+| Transport controls, quit-app | ⬜ written, unverified end-to-end |
+
+#### The media namespace must be addressed at a per-session UUID
+
+`LOAD` was answered with a `CLOSE` on the connection namespace and no reply,
+against real hardware. Root cause:
+
+The documented address for the media namespace is the constant
+`urn:x-cast:com.google.cast.media-receiver`, and that is what the port
+originally sent. **It is wrong in practice.** A receiver reports a
+**per-session UUID** as the launched application's `transportId`, and that is
+the only address a media message may be sent to. Addressing the constant is
+equivalent to addressing an application that does not exist, so there is no
+virtual connection to it — and the receiver says so by closing the connection.
+
+Measured on the DU7000:
+
+```
+DIAG media receiver transportId=d6588793-2fd5-4d73-9d3c-a0ed1f584088
+MEDIA_STATUS requestId=77 -> playerState PLAYING, videoInfo 1920x864
+```
+
+There are therefore **two** steps, not one: launch the app, then `CONNECT` to
+its reported `transportId`, then send `LOAD`. Connecting only to `receiver-0`
+is not enough. VLC's implementation is explicit:
+
+```c
+m_appTransportId = json_get_str_view(p_app, "transportId");
+m_communication->msgConnect( m_appTransportId );
+```
+
+> This was found by **looking the protocol up**, after several rounds of
+> hypothesising from a live trace were not enough. The lesson is not "be
+> cleverer at guessing" — it is that a documented constant in an example is
+> evidence about the *documentation*, not about the wire.
+
+The documented constant is retained only as a fallback for a receiver that
+reports no transport id, and is not used in the working path.
+
+#### Two related faults fixed alongside
+
+- **The running app is reported as `status.appId` on some receivers and under
+  `status.applications[]` on others.** Reading only the former reported an
+  already-launched app as absent and waited out the whole timeout for
+  something that had already started.
+- **A receiver may `PING` us and expects `PONG`.** Unanswered, it tears the
+  virtual connection down, which surfaces as a `CLOSE` mid-request.
+
+And `LAUNCH_STATUS: USER_ALLOWED` is not the same as "the app is up": both the
+status ack and the matching `RECEIVER_STATUS` arrive *seconds* after the
+request, so sequencing on the ack puts the next message into a gap the receiver
+has not opened yet.
 
 #### rustls cannot talk to a Cast receiver
 
@@ -295,6 +348,19 @@ by doing the thing for real, not by reading it.
    build; the first crate with C sources failed with `cl.exe ... exit 2` and
    the real message, `C1083: Cannot open include file: 'stddef.h'`, was buried
    in a warning.
+8. **A receiver's field layout is not uniform.** The running Cast app appears
+   as `status.appId` on some receivers and under `status.applications[]` on
+   others; reading only one path reports a working app as absent and then
+   waits out the whole timeout for something that already launched.
+9. **"Accepted" is not "running".** `LAUNCH_STATUS: USER_ALLOWED` and the
+   matching `RECEIVER_STATUS` both arrive seconds after the request. Sequencing
+   on the ack alone puts the next message into a gap the receiver has not yet
+   opened.
+10. **A constant in the documentation is evidence about the documentation.**
+    `urn:x-cast:com.google.cast.media-receiver` is what the docs and most
+    examples show; the wire actually wants the per-session `transportId` the
+    receiver reports. Several rounds of hypothesising from a live trace did not
+    find this. Looking the protocol up did, in one step.
 
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 
