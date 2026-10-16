@@ -279,6 +279,33 @@ pub fn create_app_full(
             pool: Some(pool.clone()),
         });
 
+    // Phase C4a: DLNA casting, native. Google Cast devices are not discovered
+    // yet (Phase C4b), so a scan here returns renderers only.
+    // The port other devices reach this server on. Defaults to 8000, which is
+    // where this service lands once it takes ownership of :8000 from Flask.
+    let config_port: u16 = std::env::var("RUST_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000);
+
+    let cast_state = routes::cast::CastState {
+        registry: services::cast_registry::CastRegistry::new(
+            roots_arc.clone(),
+            cache_dir_arc.clone(),
+            config_port,
+        ),
+    };
+
+    let cast_routes = Router::new()
+        .route(
+            "/api/cast/devices",
+            get(routes::cast::devices),
+        )
+        .route("/api/cast/play", axum::routing::post(routes::cast::play))
+        .route("/api/cast/control", axum::routing::post(routes::cast::control))
+        .route("/api/cast/status", get(routes::cast::status))
+        .with_state(cast_state);
+
     // Phase C3a: device registration and keepalive, native. The listing
     // (`GET /api/devices`) and rename/delete stay proxied until auth is
     // ported, because their admin gate depends on the Google session that
@@ -309,8 +336,6 @@ pub fn create_app_full(
             .route("/api/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/devices", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/devices/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/cast", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/cast/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))
@@ -336,6 +361,7 @@ pub fn create_app_full(
         .merge(asset_routes)
         .merge(media_info_routes)
         .merge(device_routes)
+        .merge(cast_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

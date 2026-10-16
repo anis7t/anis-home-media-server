@@ -25,6 +25,12 @@ hex = "0.4"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
 flate2 = "1.1.10"
+# Phase C4a: DLNA. quick-xml parses UPnP device descriptions and SOAP
+# responses; if-addrs enumerates interfaces for SSDP (the psutil equivalent);
+# socket2 carries the multicast socket options tokio's UdpSocket cannot set.
+quick-xml = "0.37"
+if-addrs = "0.13"
+socket2 = { version = "0.5", features = ["all"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
