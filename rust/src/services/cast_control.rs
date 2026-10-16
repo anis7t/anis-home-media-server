@@ -312,28 +312,96 @@ pub async fn stop_media(conn: &mut CastConnection) -> Result<(), String> {
 ///
 /// Stopping playback alone leaves the default media receiver running as an
 /// idle blank screen on the television, which reads as a hang.
+/// Leave the receiver on its home screen.
+///
+/// Stopping playback alone leaves the default media receiver running as an idle
+/// blank screen with a cast icon on it, which reads as a hang. `STOP_APP` is
+/// what actually dismisses it.
+///
+/// This **awaits the receiver's reply**. It used to be fire-and-forget, and the
+/// caller then closed the socket immediately - so the receiver had no chance to
+/// process the message before the transport went away, and the television was
+/// left sitting on the blank screen while the API cheerfully reported `ok`.
 pub async fn quit_app(conn: &mut CastConnection) -> Result<(), String> {
-    conn.send(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "STOP_APP" }))
+    conn.request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "STOP_APP" }))
         .await
+        .map(|_| ())
 }
 
+/// Is the media receiver app still running?
+pub async fn media_receiver_still_running(conn: &mut CastConnection) -> bool {
+    receiver_app_transport(conn).await.is_some()
+}
+
+/// Wait, briefly, for the media app to actually go away.
+///
+/// Bounded: a receiver that keeps the app alive is a condition to report, not
+/// a reason to hang the request.
+pub async fn wait_for_app_gone(conn: &mut CastConnection, timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if !media_receiver_still_running(conn).await {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+}
+
+/// Set the volume of what is playing.
+///
+/// Sent on the **media** namespace with the media session id, not on the
+/// receiver namespace. `SET_VOLUME` on `receiver-0` addresses the platform's
+/// master volume, which is not what a media app renders or obeys - the
+/// receiver accepted it, returned success, and the television's volume did not
+/// move. The `mediaSessionId` is what binds the change to the playing session.
 pub async fn set_volume(conn: &mut CastConnection, percent: f64) -> Result<(), String> {
     let level = (percent / 100.0).clamp(0.0, 1.0);
-    conn.send(
-        NS_RECEIVER,
-        DEFAULT_RECEIVER_ID,
-        json!({ "type": "SET_VOLUME", "volume": { "level": level } }),
-    )
-    .await
+    let session = wait_for_session(conn).await;
+    let mut message = json!({
+        "type": "SET_VOLUME",
+        "volume": { "level": level }
+    });
+    match session {
+        Some(id) => {
+            message["mediaSessionId"] = json!(id);
+            media_command(conn, message).await.map(|_| ())
+        }
+        // Nothing is playing, so the platform volume is the only thing to set.
+        None => conn
+            .request(
+                NS_RECEIVER,
+                DEFAULT_RECEIVER_ID,
+                json!({ "type": "SET_VOLUME", "volume": { "level": level } }),
+            )
+            .await
+            .map(|_| ()),
+    }
 }
 
+/// Mute the playing session. Same reasoning as [`set_volume`].
 pub async fn set_muted(conn: &mut CastConnection, muted: bool) -> Result<(), String> {
-    conn.send(
-        NS_RECEIVER,
-        DEFAULT_RECEIVER_ID,
-        json!({ "type": "SET_VOLUME_MUTED", "volume": { "muted": muted } }),
-    )
-    .await
+    let session = wait_for_session(conn).await;
+    let mut message = json!({
+        "type": "SET_VOLUME_MUTED",
+        "volume": { "muted": muted }
+    });
+    match session {
+        Some(id) => {
+            message["mediaSessionId"] = json!(id);
+            media_command(conn, message).await.map(|_| ())
+        }
+        None => conn
+            .request(
+                NS_RECEIVER,
+                DEFAULT_RECEIVER_ID,
+                json!({ "type": "SET_VOLUME_MUTED", "volume": { "muted": muted } }),
+            )
+            .await
+            .map(|_| ()),
+    }
 }
 
 /// Select or clear a subtitle track. `track_id` 0 means "no subtitles".
@@ -368,7 +436,6 @@ pub async fn status(conn: &mut CastConnection) -> (serde_json::Value, serde_json
 
 /// Turn the receiver's answers into the shape the players already consume.
 pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -> serde_json::Value {
-    let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
     // `status` is an object per the docs but a list on some receivers, and it is
     // an EMPTY list while nothing is loaded.
@@ -394,6 +461,34 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
         None => "stopped".to_string(),
     };
 
+    // Whether the media receiver app is still up. Media status cannot see this: a
+    // quit app reports an empty status, and one left running also reports an
+    // empty status - the difference is only in the receiver's application list.
+    // Without it, "stopped but the television is showing a blank receiver
+    // screen" is indistinguishable from a clean stop.
+    let receiver_app_running = cast_proto::status_object(receiver)
+        .map(|s| {
+            s.get("appId").is_some()
+                || s.get("applications")
+                    .and_then(|v| v.as_array())
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    // The playing session's own volume, which is what the user hears and what the
+// `SET_VOLUME` on the media namespace changes. The receiver also reports a
+// platform volume on its own namespace; that is a different number, and
+// reporting it here made a volume change look like it had done nothing.
+    let session_volume = cast_proto::status_object(media).and_then(|s| s.get("volume"));
+    let volume = match session_volume {
+        Some(v) if v.get("level").is_some() || v.get("muted").is_some() => cast_proto::ReceiverStatus {
+            volume_level: v.get("level").and_then(|x| x.as_f64()),
+            volume_muted: v.get("muted").and_then(|x| x.as_bool()),
+        },
+        _ => cast_proto::parse_receiver_status(&receiver.to_string()),
+    };
+
     let parsed = cast_proto::parse_media_status(&media.to_string());
 
     json!({
@@ -404,6 +499,7 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
         // inventing 0 would tell the user their television is muted.
         "volume": volume.percent_volume(),
         "muted": volume.volume_muted.unwrap_or(false),
+        "receiver_app_running": receiver_app_running,
     })
 }
 
@@ -566,6 +662,47 @@ mod tests {
         // A receiver that says BUFFERING explicitly is still honoured.
         let buffering = serde_json::json!({ "status": [{ "playerState": "BUFFERING" }] });
         assert_eq!(status_payload(&buffering, &receiver)["state"], "buffering");
+    }
+
+    #[test]
+    fn an_ended_cast_reports_stopped_and_not_running() {
+        // The blank-screen bug: the media app can still be running with nothing
+        // playing. Media status alone cannot see it - only the receiver's
+        // application list can.
+        let idle = serde_json::json!({ "type": "MEDIA_STATUS", "status": [] });
+        let app_still_up = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "appId": "CC1AD845", "applications": [{ "appId": "CC1AD845" }] }
+        });
+        let payload = status_payload(&idle, &app_still_up);
+        assert_eq!(payload["state"], "stopped");
+        assert_eq!(
+            payload["receiver_app_running"], true,
+            "a stopped cast whose app is still up must be visible, or the \
+             television looks idle while showing a blank receiver screen"
+        );
+
+        let app_gone = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "isActiveInput": false, "applications": [] }
+        });
+        assert_eq!(status_payload(&idle, &app_gone)["receiver_app_running"], false);
+    }
+
+    #[test]
+    fn the_playing_sessions_volume_wins_over_the_platform_volume() {
+        // The receiver reports both. Reporting the platform one made a volume
+        // change look like it had done nothing, because the two differ.
+        let media = serde_json::json!({
+            "status": [{ "playerState": "PLAYING", "volume": { "level": 0.4, "muted": true } }]
+        });
+        let receiver = serde_json::json!({
+            "type": "RECEIVER_STATUS",
+            "status": { "volume": 1.0, "muted": false }
+        });
+        let payload = status_payload(&media, &receiver);
+        assert_eq!(payload["volume"], 40.0, "the session volume is what the user hears");
+        assert_eq!(payload["muted"], true);
     }
 
     #[test]

@@ -135,13 +135,31 @@ def main():
         results.append(report("seek after session drop recovers", bool(seeked.get("ok")),
                               json.dumps(seeked)[:160]))
 
-        vol = try_call(base, "/api/cast/control",
-                       {"device_id": device_id, "action": "volume", "value": 40})
-        results.append(report("volume accepted", bool(vol.get("ok")), json.dumps(vol)[:120]))
+        # Volume and mute are asserted on the RECEIVER'S REPORTED VALUE, not on
+        # the call's ok flag. An earlier version reported "volume accepted" and
+        # "mute accepted" while the very next line showed vol=100.0
+        # muted=False: the receiver acknowledged commands it did not apply, and
+        # asserting on the ack hid that. An ack is not an effect.
+        try_call(base, "/api/cast/control",
+                 {"device_id": device_id, "action": "volume", "value": 40})
+        time.sleep(4)
+        vst = status(base, device_id)
+        got_vol = vst.get("volume")
+        results.append(report(
+            "volume took effect", isinstance(got_vol, (int, float)) and abs(got_vol - 40) <= 2,
+            f"asked 40, receiver reports {got_vol}"))
 
-        mute = try_call(base, "/api/cast/control",
-                        {"device_id": device_id, "action": "mute", "value": True})
-        results.append(report("mute accepted", bool(mute.get("ok")), json.dumps(mute)[:120]))
+        try_call(base, "/api/cast/control",
+                 {"device_id": device_id, "action": "mute", "value": True})
+        time.sleep(4)
+        mst = status(base, device_id)
+        results.append(report(
+            "mute took effect", mst.get("muted") is True,
+            f"asked muted=True, receiver reports muted={mst.get('muted')}"))
+
+        try_call(base, "/api/cast/control",
+                 {"device_id": device_id, "action": "mute", "value": False})
+        time.sleep(3)
 
         final = status(base, device_id)
         print(f"  receiver last reported: state={final.get('state')} "
@@ -155,9 +173,20 @@ def main():
         print(f"  stop -> ok={stopped.get('ok')} {json.dumps(stopped)[:120]}")
         time.sleep(5)
         after = status(base, device_id)
-        idle = after.get("state") in ("unknown", "stopped") or not after.get("ok")
+        # Two different things, and only the second one is the blank-screen bug:
+        #   * playback stopped  -> state is stopped/unknown
+        #   * the receiver APP quit -> the television is really free
+        # A quit app reports an empty media status, and so does an app left
+        # running with nothing playing. Only the receiver's application list
+        # tells them apart.
+        app_running = bool(after.get("receiver_app_running"))
+        playback_stopped = after.get("state") in ("unknown", "stopped") or not after.get("ok")
+        idle = playback_stopped and not app_running
         print(f"  receiver after stop: state={after.get('state')} "
-              f"ok={after.get('ok')} -> {'IDLE' if idle else 'STILL PLAYING'}")
+              f"app_running={app_running} -> {'IDLE' if idle else 'RECEIVER STILL UP'}")
+        if playback_stopped and app_running:
+            print("  NOTE: playback stopped but the receiver app is still running -")
+            print("        the television is probably showing a blank screen with a cast icon.")
 
     passed = sum(1 for r in results if r)
     print(f"\n{passed}/{len(results)} checks passed")

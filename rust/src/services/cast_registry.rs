@@ -711,11 +711,27 @@ async fn dispatch_cast_action(
         "mute" => cast_control::set_muted(conn, value.unwrap_or(0.0) != 0.0).await,
         "subtitle" => cast_control::select_subtitle(conn, value.unwrap_or(0.0) as i64).await,
         "stop" => {
-            // Leaving the receiver on a blank media screen reads as a hang,
-            // so the app is quit too.
-            let r = cast_control::stop_media(conn).await;
-            let q = cast_control::quit_app(conn).await;
-            r.and(q)
+            // `stop` must mean "the television is free again", not "playback
+            // paused". Stopping playback alone leaves the receiver app running
+            // as a blank screen with a cast icon, so the app is quit too - and
+            // then we wait for it to actually go, because closing the socket
+            // straight after STOP_APP tore the transport down before the
+            // receiver could act on it.
+            let stopped = cast_control::stop_media(conn).await;
+            if let Err(e) = stopped {
+                // A receiver with nothing loaded refuses STOP; that is fine,
+                // and quitting the app is still the thing that was asked for.
+                tracing::debug!("Cast stop media reported: {}", e);
+            }
+            cast_control::quit_app(conn).await?;
+            if cast_control::wait_for_app_gone(conn, Duration::from_secs(5)).await {
+                Ok(())
+            } else {
+                Err(
+                    "the receiver did not close its media app, so the television may be left on a blank screen"
+                        .to_string(),
+                )
+            }
         }
         other => Err(format!("unsupported action: {}", other)),
     }
