@@ -195,8 +195,13 @@ Four milestones, three of them verified against the live receiver.
 | Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
 | Seek after a dropped session | ✅ **verified live** — recovers by redialling |
 | Volume | ✅ **verified live** by watching/listening; `receiver` namespace only |
-| Mute | ✅ fixed — `SET_VOLUME` with a `muted` field, not `SET_VOLUME_MUTED` |
-| Quit-app teardown | ⚠️ playback stops, but the receiver app stays up ~1 min |
+| Mute | ✅ **verified live** — `SET_VOLUME` with a `muted` field, not `SET_VOLUME_MUTED` |
+| Quit-app teardown | ✅ **verified live** — `STOP_APP` lands once the retry no longer relaunches it |
+
+> **Residual on teardown:** the receiver reports itself idle promptly, but the
+> television can still show the receiver screen for a few seconds afterwards.
+> A human still had to dismiss it on one run. Treat `app_running=false` as
+> "the app is gone from the receiver's list", not as "the screen is clear".
 
 `scripts/verify_cast_live.py` runs the whole sequence against real hardware.
 Its `stop` lives in a `finally` and it exits non-zero if the receiver is still
