@@ -192,7 +192,39 @@ Four milestones, three of them verified against the live receiver.
 | TLS transport, `CONNECT`, request/response | ✅ **verified live** |
 | `LAUNCH` + app `transportId` session | ✅ **verified live** |
 | `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
+| Resume at a position | ✅ fixed; the fix itself is **not yet verified live** |
 | Transport controls, quit-app | ⬜ written, unverified end-to-end |
+
+#### Two places the wire disagrees with the documentation
+
+Both were found by looking the spec up, and **both fail silently** — the
+receiver accepts the message, plays, and reports no error.
+
+**1. `currentTime` is a sibling of `media`, not a member of it.**
+
+```
+| media       | MediaInformation | ...
+| autoplay    | boolean | optional
+| currentTime | double  | optional  Seconds since beginning of content.
+```
+
+Nesting it inside `media` — where it reads more naturally — is ignored
+entirely: the LOAD succeeds, playback starts from zero, and a resume cast
+appears to work while losing the user's position. 210 green tests did not catch
+it; watching the television did.
+
+**2. `MEDIA_STATUS` carries `status` as a list on this receiver.**
+
+Google specifies an object. The DU7000 sends
+`{"type":"MEDIA_STATUS","status":[{"playerState":"PLAYING",...}]}`, and `[]`
+while idle. Parsing it as an object returned nothing at all, so a *perfectly
+playing* cast reported `state=unknown`, `position=0`, with no error — which
+reads exactly like "casting is broken" when it is working perfectly. Both
+shapes are now accepted.
+
+> Combined lesson: **a receiver that disagrees with the documentation does so
+> silently.** Neither of these produced an error, a fault, or a missing field
+> — only a wrong value, in a system where every other signal says success.
 
 #### The media namespace must be addressed at a per-session UUID
 
@@ -361,6 +393,11 @@ by doing the thing for real, not by reading it.
     examples show; the wire actually wants the per-session `transportId` the
     receiver reports. Several rounds of hypothesising from a live trace did not
     find this. Looking the protocol up did, in one step.
+11. **A receiver that disagrees with the docs does so silently.** `currentTime`
+    nested in `media` instead of beside it, and `status` arriving as a list
+    instead of an object, were both accepted with no error and a wrong result.
+    In a system where every other signal reads "success", a wrong value is the
+    only symptom — and no test that asserts on *shape* will ever see it.
 
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 

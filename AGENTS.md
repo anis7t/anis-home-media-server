@@ -257,9 +257,15 @@ Applies to the native Rust cast service as much as to the Python one.
   `RECEIVER_STATUS`, **`CONNECT` to that transport**, then `LOAD`. Read the id
   from `status.transportId` or `status.applications[].transportId`.
 - **`streamType: BUFFERED`, not `LIVE`.** A receiver told the stream is live
-  treats the artifact as unseekable. And `currentTime` belongs **inside the
-  LOAD message**: a receiver rejects a Seek sent before its media session
-  exists, which is how a resume cast silently starts from the beginning.
+  treats the artifact as unseekable.
+- **`currentTime` is a top-level member of `LOAD`, a sibling of `media`** — not
+  nested inside it. Nested, it is ignored completely: the LOAD succeeds, the
+  receiver plays from zero and reports no error, so a resume cast appears to
+  work while losing the user's position.
+- **`MEDIA_STATUS.status` may be a list, not an object.** Google specifies an
+  object; the DU7000 sends `{"status":[{...}]}`, and `[]` while idle. Parsing
+  it as an object returns nothing, so a playing cast reads as `unknown` with
+  position 0 and no error. Accept both.
 - **Cast status is read from the receiver, never from a cached push.** Receivers
   emit `MEDIA_STATUS` on transitions only — measured minutes apart while
   playing. A receiver in standby reports **no volume field**; the default must
