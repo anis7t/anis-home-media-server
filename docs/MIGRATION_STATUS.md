@@ -2,16 +2,15 @@
 
 > ## Current session handoff — 2026-10-16
 >
-> **Read `Handoffs/2026-10-16_00-40_opencode_watchdog-and-recon-complete.md` first.**
-> It carries the paste-ready prompt, the standing topology, and this session's
-> two operational deliverables: the SQLite/PostgreSQL catalog reconciliation
-> (36/36 parity) and the USB-dropout resilience work (C:-resident NSSM and
-> PostgreSQL binaries, `MediaServerPG` service, `MediaServerWatchdog` 5-minute
-> task, live failover drill passed). See [`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
+> **Read `Handoffs/2026-10-16_22-15_antigravity_phase-c5-and-bridge-elimination-complete.md` first.**
+> It carries the latest topology, verified deliverables, and records the complete elimination
+> of the hybrid reverse-proxy bridge. All 6 proxied route groups (`/auth/*`, `/api/auth/*`,
+> `/api/devices/*`, `/api/admin/*`, `/api/storage/*`, `/api/scan`) plus `/api/transcode/start/{*filename}`
+> are 100% native on Rust Axum (`:8001`).
 >
-> Repository state: branch `feat/rust-api-foundation`, `1a36af7`, **not pushed**
-> (pushing is reserved for the user). Rust suite **61/61 passing**; both origins
-> (`:8000`, `:8001`) and `media.anisparvez.in` verified 200.
+> Repository state: branch `feat/rust-transcode-worker`.
+> Android client contract probe: **22/22 endpoints passing**. Rust test suite: **passing**.
+> Live deploy verified by binary timestamp (`2026-10-16 22:03:14`).
 >
 > Next objective: **Phase 6 slice 1** — transcode job model and queue ownership
 > in Rust (persistent job records, single-scheduler claim/lease,
