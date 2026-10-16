@@ -195,7 +195,7 @@ Four milestones, three of them verified against the live receiver.
 | Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
 | Seek after a dropped session | ✅ **verified live** — recovers by redialling |
 | Volume | ✅ **verified live** by watching/listening; `receiver` namespace only |
-| Mute | ❌ **does not work on this receiver** — acknowledged, not applied |
+| Mute | ✅ fixed — `SET_VOLUME` with a `muted` field, not `SET_VOLUME_MUTED` |
 | Quit-app teardown | ⚠️ playback stops, but the receiver app stays up ~1 min |
 
 `scripts/verify_cast_live.py` runs the whole sequence against real hardware.
@@ -219,15 +219,20 @@ perfectly. The consolidation into one `status_object` helper is what ended the
 pattern — the individual fixes did not, because the same shape assumption had
 been written in a second and third place.
 
-#### Two controls that are acknowledged but not applied
+#### Mute: there is no `SET_VOLUME_MUTED`
 
-Both were established by watching the television, not by reading the protocol.
+`SET_VOLUME_MUTED` is accepted with `ok: true` and does nothing — which reads
+as "this receiver has no mute", and is what I concluded before being corrected.
+The real cause is that **the message type does not exist**. pychromecast, which
+backs the working Flask path, sends:
 
-**Mute does nothing.** `SET_VOLUME_MUTED` returns `ok: true` and the audio is
-unchanged — verified by listening. This is not a sender bug and is not fixed by
-retrying; the receiver does not implement independent mute. The `muted` field
-stays `false` regardless. Reported here as unsupported rather than shipped as a
-control that silently does nothing.
+```python
+self.send_message({MESSAGE_TYPE: "SET_VOLUME", "volume": {"muted": muted}})
+```
+
+Mute is a field on `SET_VOLUME`, not a separate message type. A wrong type is
+acknowledged and ignored, so the failure is indistinguishable from an
+unsupported feature unless you compare the payload against a working client.
 
 **`status.volume` is the application's volume, not the television's speaker
 volume.** It reads 100 no matter what is set, even while the speakers are

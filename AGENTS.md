@@ -268,11 +268,10 @@ Applies to the native Rust cast service as much as to the Python one.
   speaker volume.** It sits at 100 regardless of what was set. Do not present
   it as the audible level, and do not write a test that asserts on it — that
   reports false failures for a command that works and would pass a broken one.
-- **Mute does nothing on this receiver.** `SET_VOLUME_MUTED` returns `ok: true`
-  and the audio is unchanged — verified by listening. It is not a bug in the
-  sender and it is not fixed by retrying; the receiver does not implement
-  independent mute. Do not report mute as working, and do not assert on the
-  `muted` field, which stays `false` regardless.
+- **Mute is `SET_VOLUME` with a `muted` field — there is no `SET_VOLUME_MUTED`.**
+  The wrong type is accepted with `ok: true` and does nothing, which reads as
+  "this receiver has no mute". pychromecast (the working Flask path) sends
+  `{"type": "SET_VOLUME", "volume": {"muted": ...}}`.
 - **`currentTime` is a top-level member of `LOAD`, a sibling of `media`** — not
   nested inside it. Nested, it is ignored completely: the LOAD succeeds, the
   receiver plays from zero and reports no error, so a resume cast appears to

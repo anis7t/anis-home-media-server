@@ -376,12 +376,24 @@ pub async fn set_volume(conn: &mut CastConnection, percent: f64) -> Result<(), S
     .map(|_| ())
 }
 
-/// Mute the receiver's output. Same namespace and reasoning as [`set_volume`].
+/// Mute the receiver's output.
+///
+/// The message type is **`SET_VOLUME` with a `muted` field** — there is no
+/// `SET_VOLUME_MUTED`. pychromecast, which is what the working Flask path used:
+///
+/// ```python
+/// self.send_message({MESSAGE_TYPE: "SET_VOLUME", "volume": {"muted": muted}})
+/// ```
+///
+/// Sending `{"type": "SET_VOLUME_MUTED", ...}` is accepted with `ok: true`
+/// and does nothing at all, because the receiver does not recognise the type.
+/// That is not a guess: it is what the message looked like when mute silently
+/// failed on this television while volume worked on the same connection.
 pub async fn set_muted(conn: &mut CastConnection, muted: bool) -> Result<(), String> {
     conn.request(
         NS_RECEIVER,
         DEFAULT_RECEIVER_ID,
-        json!({ "type": "SET_VOLUME_MUTED", "volume": { "muted": muted } }),
+        json!({ "type": "SET_VOLUME", "volume": { "muted": muted } }),
     )
     .await
     .map(|_| ())
