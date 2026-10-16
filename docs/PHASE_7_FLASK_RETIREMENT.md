@@ -51,7 +51,40 @@ touching content. Verified: 404 on both origins, nothing written to
 
 ---
 
-## 2. Measured status per Android client endpoint
+### Phase C2 — `/api/media-info/{f}` native (verified)
+
+| Check | Result |
+|---|---|
+| Status parity, 36 titles | 36/36 identical |
+| Response key sets | 36/36 identical |
+| Field-by-field values, 17 fields × 36 titles | identical except `rating` (see below) |
+| Duration | **identical on all 36** |
+| Latency, full sweep | Flask 9.7 s vs Rust 4.9 s cold (**2.0×**); ~34× once the probe cache is warm |
+
+Three real defects were found by this sweep and fixed, none of which the
+unit tests had caught:
+
+1. **All metadata silently null.** `vote_average` is a PostgreSQL `real`
+   (float4); decoding into `f64` failed the entire row and the swallowed
+   error produced an all-null block — every title reported no title, genres,
+   rating or runtime.
+2. **Duration 57 ms long.** Matroska writes its video-end signal as a
+   timestamp (`DURATION-eng` = `"01:40:06.042000000"`), and on a real MKV
+   both `stream.duration` and `duration_ts` were absent, so that tag was the
+   only source. Parsing it as a float failed silently and fell through to the
+   container duration.
+3. **Duration 4.25 s long on one title.** `source_video_duration` has three
+   tiers and only two were ported. A library MKV has neither a stream
+   duration nor any DURATION tag, so only a *packet scan* answers — jumping
+   to the container midpoint and reading forward to the last video packet.
+   Without it the container duration is reported, overstating the
+   denominator by however much audio outlives the picture.
+
+**Remaining difference is data, not code.** `rating` differs on 9 of 36
+titles: SQLite stores `6.4` where PostgreSQL stores `6.389`. Verified
+directly in both databases. This is pre-existing divergence between the two
+stores, and PostgreSQL holds the more precise value; Flask simply reads the
+other store.
 
 > **Updated 2026-10-16, after Phase C1a + C1b.** All three artwork endpoints
 > are now native and removed from the proxy map, leaving **9 proxied**
