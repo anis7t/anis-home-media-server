@@ -102,6 +102,39 @@ Two defects were caught while building this slice:
    is still proxied. This is the general hazard: a proxy test pins a path,
    and the path moving is silent.
 
+#### A third defect, found only by comparing the two live engines
+
+The unit test for the device id was named
+`deterministic_id_matches_python_formula` and asserted prefix, length and
+self-determinism. **It never compared against Python.** It passed while the
+formula diverged, because the name claimed a parity nobody checked.
+
+Querying both live engines with identical inputs settled it:
+
+| Engine | Matches Python's formula |
+|---|---|
+| Flask `:8000` | **7/7** |
+| Rust `:8001` | **6/7** |
+
+The failing case was a User-Agent containing an obs-text byte. Rust read
+headers with `HeaderValue::to_str()`, which accepts only visible ASCII, so
+`café-tracker/1.0` failed to decode and was treated as **absent** — then
+hashed as the empty string and given a different `device_id`. Werkzeug
+decodes those bytes as latin-1, so Flask hashed the real string.
+
+Consequence: every such client splits into **two device rows**, with no
+error anywhere, because rows are keyed on this value.
+
+Headers are now decoded by mapping each byte to the code point of the same
+value, matching Werkzeug exactly. ASCII behaviour is unchanged. The unit
+test is replaced by **golden values captured from the live Flask engine**,
+and a request-level test covers the latin-1 case — the hash function was
+always correct, so only a request-level test could have caught this.
+
+> **The lesson generalises past this slice:** a green test named after a
+> parity claim is not evidence of that parity. When porting, assert against
+> values captured from the *old engine*, not against shape.
+
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 
 | Check | Result |
