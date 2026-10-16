@@ -141,6 +141,86 @@ impl CastRegistry {
         }
     }
 
+    /// Drop a dead connection and re-establish the media app session.
+    ///
+    /// A Cast connection dies on its own - the receiver resets the socket, or
+    /// the virtual connection times out. A cached dead socket is the worst
+    /// failure mode available: every later `seek`, `volume` and even `stop`
+    /// fails with `os error 10053` and no retry, so the cast is permanently
+    /// uncontrollable until the service restarts. Verified live: after one
+    /// dropped session, `stop` could not be delivered at all.
+    ///
+    /// Re-establishing means re-running the app session too, because the
+    /// `transportId` is per-session - a reconnect against a stale one is
+    /// exactly the mistake that produced the original `CLOSE`.
+    async fn redial(self: &Arc<Self>, device_id: &str) -> Result<(), String> {
+        self.drop_connection(device_id).await;
+        let mut conns = self.connection(device_id).await?;
+        let conn = conns
+            .get_mut(device_id)
+            .ok_or_else(|| "could not open a Cast session".to_string())?;
+        let transport = cast_control::ensure_media_receiver_session(conn).await?;
+        conn.set_app_transport(transport);
+        Ok(())
+    }
+
+    /// Run a Cast action, redialling once if the cached connection is dead.
+    async fn cast_action(
+        self: &Arc<Self>,
+        device_id: &str,
+        action: &str,
+        value: Option<f64>,
+    ) -> Result<(), String> {
+        for attempt in 0..2 {
+            let outcome = {
+                let mut conns = self.connection(device_id).await?;
+                match conns.get_mut(device_id) {
+                    Some(conn) => dispatch_cast_action(conn, action, value).await,
+                    None => Err("no Cast session is open".to_string()),
+                }
+            };
+            match outcome {
+                Ok(()) => return Ok(()),
+                Err(e) if attempt == 0 => {
+                    tracing::debug!(
+                        "Cast {} on {} failed ({:?}); redialling once",
+                        action,
+                        device_id,
+                        e
+                    );
+                    self.redial(device_id).await?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err("unreachable".to_string())
+    }
+
+    /// Read Cast status, redialling once if the cached connection is dead.
+    async fn cast_status(self: &Arc<Self>, device_id: &str) -> Result<serde_json::Value, String> {
+        for attempt in 0..2 {
+            let outcome = {
+                let mut conns = self.connection(device_id).await?;
+                match conns.get_mut(device_id) {
+                    Some(conn) => {
+                        let (media, receiver) = cast_control::status(conn).await;
+                        Ok(cast_control::status_payload(&media, &receiver))
+                    }
+                    None => Err("no Cast session is open".to_string()),
+                }
+            };
+            match outcome {
+                Ok(v) => return Ok(v),
+                Err(e) if attempt == 0 => {
+                    tracing::debug!("Cast status on {} failed ({:?}); redialling once", device_id, e);
+                    self.redial(device_id).await?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err("unreachable".to_string())
+    }
+
     /// Discovered devices. `?refresh=1` forces a scan; otherwise a cached list
     /// is returned and `scanning` tells the client to poll again.
     pub async fn devices(self: &Arc<Self>, force: bool) -> serde_json::Value {
@@ -494,35 +574,7 @@ impl CastRegistry {
 
         let kind = device["kind"].as_str().unwrap_or("dlna").to_string();
         let outcome = if kind == "cast" {
-            match self.connection(device_id).await {
-                Err(e) => Err(e),
-                Ok(mut conns) => {
-                    let conn = conns
-                        .get_mut(device_id)
-                        .ok_or_else(|| "no Cast session is open".to_string());
-                    match conn {
-                        Err(e) => Err(e),
-                        Ok(conn) => match action {
-                            "play" => cast_control::play(conn).await,
-                            "pause" => cast_control::pause(conn).await,
-                            "seek" => cast_control::seek(conn, value.unwrap_or(0.0)).await,
-                            "volume" => cast_control::set_volume(conn, value.unwrap_or(0.0)).await,
-                            "mute" => cast_control::set_muted(conn, value.unwrap_or(0.0) != 0.0).await,
-                            "subtitle" => {
-                                cast_control::select_subtitle(conn, value.unwrap_or(0.0) as i64).await
-                            }
-                            "stop" => {
-                                // Leaving the receiver on a blank media screen
-                                // reads as a hang, so the app is quit too.
-                                let r = cast_control::stop_media(conn).await;
-                                let q = cast_control::quit_app(conn).await;
-                                r.and(q)
-                            }
-                            other => Err(format!("unsupported action: {}", other)),
-                        },
-                    }
-                }
-            }
+            self.cast_action(device_id, action, value).await
         } else {
             let dlna_device: Option<DlnaDevice> = serde_json::from_value(device.clone()).ok();
             match dlna_device {
@@ -566,15 +618,10 @@ impl CastRegistry {
             // Read from the receiver. A cached read freezes the cast bar and
             // can make a position from minutes ago look like a command that
             // never landed: receivers push MEDIA_STATUS on transitions only.
-            match self.connection(device_id).await {
+            // Redials once if the connection has since died.
+            match self.cast_status(device_id).await {
+                Ok(v) => v,
                 Err(e) => return err(&e),
-                Ok(mut conns) => match conns.get_mut(device_id) {
-                    Some(conn) => {
-                        let (media, receiver) = cast_control::status(conn).await;
-                        cast_control::status_payload(&media, &receiver)
-                    }
-                    None => return err("no Cast session is open"),
-                },
             }
         } else {
             match serde_json::from_value::<DlnaDevice>(device.clone()) {
@@ -647,6 +694,30 @@ impl CastRegistry {
         );
         let playlist = dir.join("playlist.m3u8");
         playlist.is_file().then_some(playlist)
+    }
+}
+
+/// One Cast transport verb.
+async fn dispatch_cast_action(
+    conn: &mut CastConnection,
+    action: &str,
+    value: Option<f64>,
+) -> Result<(), String> {
+    match action {
+        "play" => cast_control::play(conn).await,
+        "pause" => cast_control::pause(conn).await,
+        "seek" => cast_control::seek(conn, value.unwrap_or(0.0)).await,
+        "volume" => cast_control::set_volume(conn, value.unwrap_or(0.0)).await,
+        "mute" => cast_control::set_muted(conn, value.unwrap_or(0.0) != 0.0).await,
+        "subtitle" => cast_control::select_subtitle(conn, value.unwrap_or(0.0) as i64).await,
+        "stop" => {
+            // Leaving the receiver on a blank media screen reads as a hang,
+            // so the app is quit too.
+            let r = cast_control::stop_media(conn).await;
+            let q = cast_control::quit_app(conn).await;
+            r.and(q)
+        }
+        other => Err(format!("unsupported action: {}", other)),
     }
 }
 
