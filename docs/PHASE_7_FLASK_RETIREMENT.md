@@ -135,6 +135,68 @@ always correct, so only a request-level test could have caught this.
 > parity claim is not evidence of that parity. When porting, assert against
 > values captured from the *old engine*, not against shape.
 
+### Phase C4a — DLNA native, verified against the live DU7000
+
+Discovery is byte-identical to Flask (`id`, `control_url`, `model`,
+`location`). Full transport sequence confirmed **from the renderer's own
+reported state**, never from our UI, with the TV fetching from Rust's own
+port — no `origin` override:
+
+| Command | TV reported |
+|---|---|
+| `play` | `buffering` → `playing`, `pos=1.081` |
+| `pause` | `state=paused` |
+| `seek 1800` | `pos=1806.269` |
+| `play` (resume) | `state=playing`, `pos=1838.128` |
+| `volume 45` | `volume=45.0` |
+| `mute true` / `false` | `muted=True` / `False` |
+| `stop` | `state=stopped` |
+
+Client contract probe 22/22 on both origins; 174/174 Rust tests.
+
+#### Three defects that only a live TV could find
+
+1. **`/api/cast/pause` and `/stop` were unusable.** They returned
+   `"pause needs a numeric value"`. Only `seek`, `volume` and
+   `subtitle_offset` carry a number; for transport actions a missing value is
+   normal. The contract tests never issued those two without a value — the
+   live test did, on its first try.
+
+2. **`MediaServerRust` bound `127.0.0.1`.** Flask binds `0.0.0.0`. A cast
+   receiver must fetch media from this host, and the Cloudflare tunnel must
+   reach it once it takes `:8000`. It hid because every test and probe goes
+   through `127.0.0.1`, so the service looked healthy from this machine while
+   being invisible to every other device on the network.
+
+3. **No Windows Firewall inbound rule for `media-server-api.exe`.** Flask has
+   one for `python.exe`. Without it the TV cannot reach `:8001` even though
+   the host can, and a DLNA renderer answers `SetAVTransportURI` with an
+   **empty HTTP 500** when it cannot fetch the URL it was just given — so it
+   presents as a cast bug rather than a firewall one. Proven by re-casting
+   with `origin` pointed at `:8000`, which played immediately. The rule is
+   created idempotently by the installer, and is required for the port swap.
+
+> **An empty 500 from a renderer means "I could not fetch that URL".** That is
+> a reachability question, not a cast bug, and the empty body gives no hint of
+> it. Two separate layers (bind address, then firewall) produced the same
+> symptom, which is why the second was only found by isolating `origin`.
+
+### Phase C4b — Google Cast: not started
+
+Rust's discovery is DLNA-only. A Cast receiver on the network is therefore
+invisible to `:8001` while Flask still finds it. Reference captured from
+Flask:
+
+```
+[cast] 43" Crystal UHD  host=192.168.1.8  model=Chromecast (UA43DU7000KLXL)
+        id=cast:72d252f1-e63a-4248-5c46-ad2ad74229c8
+```
+
+Note it is found **intermittently** — one scan in roughly three misses it,
+which is the long-standing behaviour `CastRegistry.resolve_device` exists to
+paper over. Port 8009 was confirmed open on that host while a scan missed it,
+so this is discovery timing, not the device being absent.
+
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 
 | Check | Result |
@@ -234,6 +296,12 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 
 **Proxied count has fallen 10 → 7 across C1a, C1b, C2 and C3a; 2 are absent
 entirely.** Rust cannot serve `:8000` yet.
+
+> **Updated after C4a.** DLNA casting is now native too, so `/api/cast/*` no
+> longer appears in this table. What remains proxied: `/auth/*`, `/api/auth/*`,
+> `GET /api/devices` + rename/delete (C3b, admin-gated), `POST /api/scan`, and
+> `/api/storage/*`. See the C4a section for the live-TV verification and the
+> three defects only a real renderer could find.
 
 ### 2.1 A false green that must be closed
 
