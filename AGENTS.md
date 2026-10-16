@@ -257,7 +257,22 @@ Applies to the native Rust cast service as much as to the Python one.
   `RECEIVER_STATUS`, **`CONNECT` to that transport**, then `LOAD`. Read the id
   from `status.transportId` or `status.applications[].transportId`.
 - **`streamType: BUFFERED`, not `LIVE`.** A receiver told the stream is live
-  treats the artifact as unseekable.
+  treats the artifact as unseekable, so both our seeks and a phone scrub do
+  nothing.
+- **Volume goes on the `receiver` namespace, and it is the only volume control
+  that works here.** `SET_VOLUME` on `receiver-0` moves this television's
+  speakers and raises its on-screen indicator — verified by watching it. The
+  media-namespace alternative with a `mediaSessionId` is accepted and echoed
+  back while changing nothing audible.
+- **`status.volume` is the *application's* volume, not the television's
+  speaker volume.** It sits at 100 regardless of what was set. Do not present
+  it as the audible level, and do not write a test that asserts on it — that
+  reports false failures for a command that works and would pass a broken one.
+- **Mute does nothing on this receiver.** `SET_VOLUME_MUTED` returns `ok: true`
+  and the audio is unchanged — verified by listening. It is not a bug in the
+  sender and it is not fixed by retrying; the receiver does not implement
+  independent mute. Do not report mute as working, and do not assert on the
+  `muted` field, which stays `false` regardless.
 - **`currentTime` is a top-level member of `LOAD`, a sibling of `media`** — not
   nested inside it. Nested, it is ignored completely: the LOAD succeeds, the
   receiver plays from zero and reports no error, so a resume cast appears to

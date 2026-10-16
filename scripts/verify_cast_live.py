@@ -108,14 +108,14 @@ def volume_ramp(base, device_id):
         print(f"  ....  asked {target:>3} -> command ok={res.get('ok')}, "
               f"app-volume field reports {st.get('volume')}")
 
-    print("--- mute ---")
+    print("--- mute (KNOWN UNSUPPORTED on this receiver - informational only) ---")
     for want in (True, False):
         res = try_call(base, "/api/cast/control",
                        {"device_id": device_id, "action": "mute", "value": want}, timeout=60)
         time.sleep(5)
         st = status(base, device_id)
         print(f"  ....  asked muted={want} -> command ok={res.get('ok')}, "
-              f"receiver reports muted={st.get('muted')}")
+              f"receiver reports muted={st.get('muted')} (NO audible effect; not asserted)")
 
     # Leave the television where a viewer would expect it.
     try_call(base, "/api/cast/control",
@@ -217,8 +217,10 @@ def main():
         time.sleep(3)
         mst = status(base, device_id)
         print(f"  ....  mute command ok={mute.get('ok')}; receiver reports "
-              f"muted={mst.get('muted')} (same limitation)")
-        results.append(report("mute command accepted", bool(mute.get("ok"))))
+              f"muted={mst.get('muted')}")
+        print("        NOTE: mute has NO audible effect on this receiver - verified by the")
+        print("        user listening. It is printed, not asserted, because a returned")
+        print("        ok is not evidence that anything happened.")
 
         try_call(base, "/api/cast/control",
                  {"device_id": device_id, "action": "mute", "value": False})

@@ -193,8 +193,10 @@ Four milestones, three of them verified against the live receiver.
 | `LAUNCH` + app `transportId` session | ✅ **verified live** |
 | `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
 | Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
-| Transport controls after a dropped session | ✅ **verified live** (seek/volume/mute all recovered) |
-| Quit-app teardown | ✅ **verified live**; receiver confirmed idle |
+| Seek after a dropped session | ✅ **verified live** — recovers by redialling |
+| Volume | ✅ **verified live** by watching/listening; `receiver` namespace only |
+| Mute | ❌ **does not work on this receiver** — acknowledged, not applied |
+| Quit-app teardown | ⚠️ playback stops, but the receiver app stays up ~1 min |
 
 `scripts/verify_cast_live.py` runs the whole sequence against real hardware.
 Its `stop` lives in a `finally` and it exits non-zero if the receiver is still
@@ -216,6 +218,29 @@ Two of the three read as *"casting is broken"* when casting was working
 perfectly. The consolidation into one `status_object` helper is what ended the
 pattern — the individual fixes did not, because the same shape assumption had
 been written in a second and third place.
+
+#### Two controls that are acknowledged but not applied
+
+Both were established by watching the television, not by reading the protocol.
+
+**Mute does nothing.** `SET_VOLUME_MUTED` returns `ok: true` and the audio is
+unchanged — verified by listening. This is not a sender bug and is not fixed by
+retrying; the receiver does not implement independent mute. The `muted` field
+stays `false` regardless. Reported here as unsupported rather than shipped as a
+control that silently does nothing.
+
+**`status.volume` is the application's volume, not the television's speaker
+volume.** It reads 100 no matter what is set, even while the speakers are
+demonstrably moving. It must not be presented as the audible level, and no test
+may assert on it — that reports false failures for a command that works, and
+would equally pass a broken one.
+
+> This is the fourth time in this port that "the receiver confirms it" turned
+> out to be evidence about the receiver rather than about playback. An ack, an
+> echoed field and a returned success are statements about the protocol, not
+> about whether anyone can hear or see the result. Where a human can watch the
+> outcome, the human is the better oracle — and a test that cannot measure the
+> thing must say so rather than guess.
 
 #### Two places the wire disagrees with the documentation
 
