@@ -22,7 +22,7 @@ use crate::services::cast_transport::CastConnection;
 use serde::Serialize;
 use serde_json::json;
 
-pub const MEDIA_RECEIVER_ID: &str = "urn:x-cast:com.google.cast.media-receiver";
+pub const MEDIA_RECEIVER_ID: &str = cast_proto::MEDIA_RECEIVER_TRANSPORT_FALLBACK;
 
 /// Containers a Cast receiver can play straight from the file.
 pub const CAST_DIRECT_EXTENSIONS: [&str; 7] = [".mp4", ".m4v", ".webm", ".mov", ".mp3", ".m4a", ".aac"];
@@ -78,6 +78,132 @@ pub async fn connect_and_handshake(host: &str) -> Result<CastConnection, String>
     Ok(conn)
 }
 
+/// Ensure the default media receiver is actually running, and wait for it.
+///
+/// The media namespace has no session to address until the app exists, and a
+/// LOAD sent while the app is still launching is declined - the receiver
+/// answers with a `CLOSE` on the connection namespace instead. Measured: the
+/// `LAUNCH_STATUS` ack and the `RECEIVER_STATUS` reply both arrive seconds
+/// after the request, so "the launch was accepted" is not "the app is up".
+/// Launch the default media receiver if needed and return its `transportId`.
+///
+/// The transport id is **not** optional bookkeeping. Each running application
+/// gets its own virtual connection, and a media-namespace message sent without
+/// one is refused: the receiver answers `LOAD` with a `CLOSE` on the
+/// connection namespace. Connecting only to `receiver-0` is not enough - every
+/// working client (VLC, pychromecast, go2tv) issues a second `CONNECT`
+/// addressed to the launched application's `transportId` before it sends
+/// `LOAD`.
+pub async fn ensure_media_receiver_session(conn: &mut CastConnection) -> Result<String, String> {
+    if let Some(transport) = receiver_app_transport(conn).await {
+        return connect_app(conn, &transport).await.map(|_| transport);
+    }
+
+    let _ = conn
+        .request(
+            NS_RECEIVER,
+            DEFAULT_RECEIVER_ID,
+            json!({ "type": "LAUNCH", "appId": cast_proto::MEDIA_RECEIVER_APP_ID }),
+        )
+        .await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(transport) = receiver_app_transport(conn).await {
+            return connect_app(conn, &transport).await.map(|_| transport);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("the Cast receiver did not start its media app".to_string());
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Open a virtual connection to a launched application.
+async fn connect_app(conn: &mut CastConnection, transport_id: &str) -> Result<(), String> {
+    conn.send_raw(
+        crate::services::cast_proto::NS_CONNECTION,
+        transport_id,
+        json!({ "type": "CONNECT", "origin": {} }),
+    )
+    .await
+}
+
+/// The `transportId` of the running default media receiver, if it is up.
+///
+/// Reported as `status.applications[].transportId` on this receiver and as
+/// `status.transportId` on others; the running app id appears as
+/// `status.appId` on some and under `applications[]` on others. Both layouts
+/// are checked, because reading only one reports a working app as absent.
+async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
+    let reply = conn
+        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .await
+        .ok()?;
+    let status = reply.get("status")?;
+
+    let running = status.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
+        || status
+            .get("applications")
+            .and_then(|v| v.as_array())
+            .map(|apps| {
+                apps.iter()
+                    .any(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+            })
+            .unwrap_or(false);
+    if !running {
+        return None;
+    }
+
+    status
+        .get("transportId")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            status
+                .get("applications")
+                .and_then(|v| v.as_array())
+                .and_then(|apps| {
+                    apps.iter()
+                        .find(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+                })
+                .and_then(|a| a.get("transportId"))
+                .and_then(|v| v.as_str())
+        })
+        .map(|s| s.to_string())
+        .or(Some(MEDIA_RECEIVER_ID.to_string()))
+}
+
+/// Is `app_id` running?
+///
+/// The DU7000 reports the launched app under `status.applications[]`, while
+/// other receivers report it as `status.appId`. Reading only one path reports
+/// a perfectly working app as absent - which is how the first version of this
+/// waited fifteen seconds for an app that had already launched.
+async fn receiver_has_app(conn: &mut CastConnection, app_id: &str) -> bool {
+    let reply = match conn
+        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    let status = match reply.get("status") {
+        Some(s) => s,
+        None => return false,
+    };
+    if status.get("appId").and_then(|v| v.as_str()) == Some(app_id) {
+        return true;
+    }
+    status
+        .get("applications")
+        .and_then(|v| v.as_array())
+        .map(|apps| {
+            apps.iter()
+                .any(|a| a.get("appId").and_then(|v| v.as_str()) == Some(app_id))
+        })
+        .unwrap_or(false)
+}
+
 /// Hand a URL to the receiver.
 ///
 /// Detached rather than awaited: a load takes seconds while the receiver opens
@@ -93,6 +219,9 @@ pub async fn load(
     subtitles: &[SubtitleTrack],
     active_subtitle_id: Option<i64>,
 ) -> Result<(), String> {
+    let transport_id = ensure_media_receiver_session(conn).await?;
+    conn.set_app_transport(transport_id.clone());
+
     let mut media = json!({
         "contentId": url,
         // Not LIVE: a live stream is unseekable to the receiver.
@@ -113,7 +242,7 @@ pub async fn load(
 
     conn.request(
         NS_MEDIA,
-        MEDIA_RECEIVER_ID,
+        &transport_id,
         json!({ "type": "LOAD", "media": media, "autoplay": true }),
     )
     .await
@@ -130,7 +259,9 @@ async fn media_command(
     conn: &mut CastConnection,
     message: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    conn.request(NS_MEDIA, MEDIA_RECEIVER_ID, message).await
+    // Addressed at the app's real transport id, which is a per-session UUID.
+    let transport = conn.app_transport().to_string();
+    conn.request(NS_MEDIA, &transport, message).await
 }
 
 /// Wait, bounded, for a media session to exist.
@@ -314,6 +445,82 @@ use std::time::Duration;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What does a receiver actually answer to a LOAD?
+    ///
+    /// Gated the same way as the handshake test. This exists because
+    /// correlating a reply by `requestId` is correct but unforgiving: a
+    /// receiver that answers with a different id, or on a different namespace,
+    /// then looks exactly like one that never answered. Draining every frame
+    /// shows the real behaviour instead of guessing at it.
+    #[tokio::test]
+    async fn live_load_diagnostic() {
+        if std::env::var("MEDIA_SERVER_CAST_LIVE_TESTS").is_err() {
+            eprintln!("SKIPPED live_load_diagnostic");
+            return;
+        }
+        let host = match std::env::var("MEDIA_SERVER_CAST_LIVE_HOST") {
+            Ok(h) if !h.is_empty() => h,
+            _ => {
+                eprintln!("SKIPPED live_load_diagnostic (MEDIA_SERVER_CAST_LIVE_HOST not set)");
+                return;
+            }
+        };
+        let url = std::env::var("MEDIA_SERVER_CAST_LIVE_URL").unwrap_or_default();
+        if url.is_empty() {
+            eprintln!("SKIPPED live_load_diagnostic (MEDIA_SERVER_CAST_LIVE_URL not set)");
+            return;
+        }
+
+        let mut conn = connect_and_handshake(&host).await.expect("handshake");
+        let after_connect = conn.drain(Duration::from_millis(800)).await;
+        eprintln!("DIAG after CONNECT: {}", describe(&after_connect));
+
+        let transport = ensure_media_receiver_session(&mut conn)
+            .await
+            .expect("media receiver session");
+        eprintln!("DIAG media receiver transportId={}", transport);
+
+        conn.send_raw(
+            crate::services::cast_proto::NS_MEDIA,
+            &transport,
+            json!({
+                "type": "LOAD",
+                "requestId": 77,
+                "autoplay": true,
+                "media": {
+                    "contentId": url,
+                    "streamType": "BUFFERED",
+                    "contentType": "video/mp4",
+                    "metadata": { "metadataType": 0, "title": "diag" }
+                }
+            }),
+        )
+        .await
+        .expect("send LOAD");
+
+        for msg in conn.drain(Duration::from_secs(8)).await {
+            eprintln!(
+                "DIAG frame ns={} type={:?} requestId={:?} payload={}",
+                msg.namespace,
+                msg.message_type(),
+                msg.request_id(),
+                msg.text_payload().unwrap_or("<binary>")
+            );
+        }
+        conn.close().await;
+    }
+
+    fn describe(frames: &[crate::services::cast_proto::CastMessage]) -> String {
+        if frames.is_empty() {
+            return "<none>".into();
+        }
+        frames
+            .iter()
+            .map(|m| format!("{}/{:?}", m.namespace, m.message_type()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 
     #[test]
     fn direct_containers_do_not_need_transcoding() {

@@ -57,10 +57,37 @@ pub struct CastConnection {
     buffer: Vec<u8>,
     next_request_id: i64,
     last_activity: std::time::Instant,
+    /// The launched media app's `transportId`.
+    ///
+    /// This is a **per-session UUID**, not the constant
+    /// `urn:x-cast:com.google.cast.media-receiver` that the documentation and
+    /// most examples show. Addressing media messages at the constant instead
+    /// is what a receiver answers with `CLOSE` on the connection namespace:
+    /// there is no virtual connection to that id, because the app's real
+    /// transport is the UUID the receiver itself reported.
+    app_transport: Option<String>,
 }
 
-/// One session id per process, so two casts to the same receiver do not
-/// collide. Cast accepts any `sender-` string.
+impl CastConnection {
+    /// Record the launched app's transport id.
+    pub fn set_app_transport(&mut self, transport_id: String) {
+        self.app_transport = Some(transport_id);
+    }
+
+    /// Where media-namespace messages must be addressed.
+    pub fn app_transport(&self) -> &str {
+        self.app_transport
+            .as_deref()
+            .unwrap_or(crate::services::cast_proto::MEDIA_RECEIVER_TRANSPORT_FALLBACK)
+    }
+}
+
+/// One session id per connection, so two casts to the same receiver do not
+/// collide.
+///
+/// Shaped as `sender-<uuid>` because that is what every real Cast client sends
+/// and a receiver may reasonably key on the form. The value is derived from
+/// the clock plus a counter rather than a uuid crate.
 fn make_source_id() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -69,7 +96,16 @@ fn make_source_id() -> String {
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("sender-{:016x}{:x}", nanos, n)
+    let hi = nanos;
+    let lo = n.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (nanos.rotate_left(17));
+    format!(
+        "sender-{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        (hi >> 32) as u32,
+        (hi >> 16) as u16,
+        hi as u16,
+        ((lo >> 48) as u16) | 0x4000,
+        lo & 0x0000_FFFF_FFFF_FFFF
+    )
 }
 
 impl CastConnection {
@@ -93,6 +129,7 @@ impl CastConnection {
             buffer: Vec::with_capacity(4096),
             next_request_id: 1,
             last_activity: std::time::Instant::now(),
+            app_transport: None,
         })
     }
 
@@ -130,12 +167,35 @@ impl CastConnection {
         }
     }
 
+    /// Every frame the receiver pushes within `window`, without matching.
+    ///
+    /// A receiver answers a LOAD on the media namespace and separately pushes
+    /// `RECEIVER_STATUS` / `MEDIA_STATUS` on its own initiative. Correlating by
+    /// `requestId` is correct for a request, but a receiver that answers
+    /// differently from expectation then looks identical to one that never
+    /// answered — so this exists to see what actually arrived.
+    pub async fn drain(&mut self, window: Duration) -> Vec<CastMessage> {
+        let deadline = tokio::time::Instant::now() + window;
+        let mut out = Vec::new();
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match timeout(remaining, self.read_frame()).await {
+                Ok(Ok(msg)) => out.push(msg),
+                Ok(Err(_)) | Err(_) => break,
+            }
+        }
+        out
+    }
+
     /// Write a message with no heartbeat and no reply handling.
     ///
     /// Kept separate from [`Self::send`] so the heartbeat path cannot recurse
     /// into itself - `send` calls `ensure_alive`, which must therefore not call
     /// `send`.
-    async fn send_raw(
+    pub(crate) async fn send_raw(
         &mut self,
         namespace: &str,
         destination: &str,
@@ -198,6 +258,17 @@ impl CastConnection {
                     return Err(format!("no response to request {} in {:?}", request_id, IO_TIMEOUT));
                 }
             };
+
+            // A receiver may PING us, and expects a PONG. Answering is not
+            // optional: a receiver that pings into silence tears the virtual
+            // connection down, and the symptom is a CLOSE arriving mid-request
+            // with no further replies.
+            if msg.namespace == NS_HEARTBEAT && msg.message_type().as_deref() == Some("PING") {
+                self.send_raw(NS_HEARTBEAT, &msg.source_id, serde_json::json!({ "type": "PONG" }))
+                    .await?;
+                continue;
+            }
+
             if msg.request_id() == Some(request_id) {
                 return Ok(serde_json::from_str(msg.text_payload().unwrap_or("{}"))
                     .unwrap_or(serde_json::Value::Null));
@@ -250,6 +321,9 @@ mod tests {
         let b = make_source_id();
         assert_ne!(a, b, "two casts must not share a sender id");
         assert!(a.starts_with("sender-"), "{}", a);
+        // UUID-shaped, because that is what every real Cast client sends.
+        assert_eq!(a.len(), "sender-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".len(), "{}", a);
+        assert_eq!(a.chars().filter(|c| *c == '-').count(), 5, "{}", a);
     }
 
     #[test]

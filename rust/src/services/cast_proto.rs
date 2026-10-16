@@ -24,6 +24,15 @@ pub const DEFAULT_SENDER_ID: &str = "sender-0";
 /// "nothing is loaded" from "still starting".
 pub const MEDIA_RECEIVER_APP_ID: &str = "CC1AD845";
 
+/// The transport id the documentation shows for the media namespace.
+///
+/// A fallback only. A receiver reports a **per-session UUID** as the launched
+/// app's `transportId`, and that is the only address a media message may be
+/// sent to - addressing this constant instead is answered with `CLOSE` on the
+/// connection namespace. Measured on the DU7000, whose real transport id was
+/// `d6588793-2fd5-4d73-9d3c-a0ed1f584088`.
+pub const MEDIA_RECEIVER_TRANSPORT_FALLBACK: &str = "urn:x-cast:com.google.cast.media-receiver";
+
 /// `BUFFERED`, not `LIVE`.
 ///
 /// pychromecast defaults to `LIVE`, and a receiver told the stream is live
