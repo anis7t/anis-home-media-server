@@ -304,10 +304,20 @@ impl CastConnection {
         Ok(())
     }
 
+    /// Close the virtual connection.
+    ///
+    /// This used to send `{"type": "CLOSE"}` on the connection namespace to
+    /// `receiver-0` first. That is not what the working Flask path does:
+    /// pychromecast sends `CLOSE` only from `disconnect_channel`, addressed to
+    /// the **app's transport id** and carrying an `origin` object, and
+    /// `cast.quit_app()` -> `cast.disconnect()` never sends one to `receiver-0`
+    /// at all. It was added here on the assumption that a message would close the
+    /// app; the correct quit (`STOP` + `sessionId`) is what actually does that,
+    /// and the invented `CLOSE` was a second, wrong answer to the same question.
+    ///
+    /// So this now matches the working implementation: quit the app, then drop
+    /// the socket.
     pub async fn close(&mut self) {
-        let _ = self
-            .send(NS_CONNECTION, DEFAULT_RECEIVER_ID, serde_json::json!({ "type": "CLOSE" }))
-            .await;
         let _ = self.stream.shutdown().await;
     }
 }

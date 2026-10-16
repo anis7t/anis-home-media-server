@@ -196,17 +196,48 @@ Four milestones, three of them verified against the live receiver.
 | Seek after a dropped session | ✅ **verified live** — recovers by redialling |
 | Volume | ✅ **verified live** by watching/listening; `receiver` namespace only |
 | Mute | ✅ **verified live** — `SET_VOLUME` with a `muted` field, not `SET_VOLUME_MUTED` |
-| Quit-app teardown | ✅ **verified live** — `STOP_APP` lands once the retry no longer relaunches it |
-
-> **Residual on teardown:** the receiver reports itself idle promptly, but the
-> television can still show the receiver screen for a few seconds afterwards.
-> A human still had to dismiss it on one run. Treat `app_running=false` as
-> "the app is gone from the receiver's list", not as "the screen is clear".
+| Quit-app teardown | ✅ **fixed** — `STOP` + `sessionId`, not the non-existent `STOP_APP` |
 
 `scripts/verify_cast_live.py` runs the whole sequence against real hardware.
 Its `stop` lives in a `finally` and it exits non-zero if the receiver is still
 playing, because a verification harness that can leave a film playing on
 someone's television is not a verification harness.
+
+#### Quit-app is `STOP` + `sessionId`, and `STOP_APP` never existed
+
+The teardown was sending `{"type": "STOP_APP"}` on the `receiver` namespace.
+`STOP_APP` is not a real message type. The receiver accepts it, answers, and
+leaves the app running — the television sits on the blank receiver screen while
+`stop` returns `ok: true`.
+
+pychromecast, which backs the working Flask path, sends:
+
+```python
+def stop_app(self, *, callback_function=None) -> None:
+    return self.send_message({MESSAGE_TYPE: "STOP"}, inc_session_id=True, ...)
+# socket_client.send_message:  if inc_session_id: data["sessionId"] = self.session_id
+```
+
+So the message is **`STOP`**, and it carries **`sessionId`** — read from
+`applications[].sessionId` in `RECEIVER_STATUS`, the same entry that carries
+`transportId` (`receiver.py:296`).
+
+I initially attributed this to a screen-redraw lag and documented it as a
+harmless residual. That was wrong: there was no lag to tolerate, and the message
+had never worked. The earlier run that reported the app gone was the receiver's
+own idle timeout firing during the wait, not the quit landing.
+
+Two habits were worth the detour:
+
+- **The wrong message type is reported as success.** Every invented type in this
+  port — the media `transportId`, `SET_VOLUME_MUTED`, `STOP_APP` — was
+  acknowledged. An ack proves the receiver understood the *envelope*.
+- **Reading the working client beats hypothesising.** All three of these were
+  found in about a minute in `venv/Lib/site-packages/pychromecast`, which was on
+  disk the entire time, after two rounds of live experiments had failed to
+  explain them. When a control fails on an otherwise healthy connection, diff
+  its payload against the implementation that works before concluding the device
+  lacks the feature.
 
 #### The list-shaped `status` caused three separate bugs
 

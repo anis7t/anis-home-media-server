@@ -315,7 +315,19 @@ Applies to the native Rust cast service as much as to the Python one.
   `CONNECT`), because the transport id is per-session; reusing a stale one is
   what produces the original `CLOSE`.
 - **`stop` must quit the app, not just stop playback**, or the TV is left on an
-  idle blank receiver screen that reads as a hang.
+  idle blank receiver screen that reads as a hang. The quit message is
+  **`{"type": "STOP", "sessionId": ...}`** on the `receiver` namespace —
+  `STOP_APP` does not exist. See the standalone invariant below.
+- **Quitting the receiver app is `STOP` + `sessionId`; there is no `STOP_APP`.**
+  pychromecast, backing the working Flask path, sends `{"type": "STOP"}` with
+  `inc_session_id=True`, which becomes `data["sessionId"] = status.session_id`.
+  `sessionId` is read from `applications[].sessionId` in `RECEIVER_STATUS` — the
+  same entry that carries `transportId`. `{"type": "STOP_APP"}` is accepted,
+  answered, and leaves the app running on its blank screen while every layer
+  reports success. This is the third instance of the accepted-and-ignored
+  message type (`transportId`, `SET_VOLUME_MUTED`, `STOP_APP`); **diff a failing
+  payload against a working client before concluding the device lacks the
+  feature.**
 - **A cast scan replaces the device map**, so connections are cached per device
   and survive a scan. mDNS/ARP windows miss a device in roughly one scan in
   three; a visibly running cast must stay controllable.

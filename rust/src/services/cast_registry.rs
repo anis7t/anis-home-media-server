@@ -735,7 +735,7 @@ async fn dispatch_cast_action(
             // paused". Stopping playback alone leaves the receiver app running
             // as a blank screen with a cast icon, so the app is quit too - and
             // then we wait for it to actually go, because closing the socket
-            // straight after STOP_APP tore the transport down before the
+            // straight after STOP tore the transport down before the
             // receiver could act on it.
             let stopped = cast_control::stop_media(conn).await;
             if let Err(e) = stopped {

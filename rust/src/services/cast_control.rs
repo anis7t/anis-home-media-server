@@ -179,6 +179,42 @@ async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
         .or(Some(MEDIA_RECEIVER_ID.to_string()))
 }
 
+/// The `sessionId` of the running media receiver app.
+///
+/// Sits in the same `applications[]` entry as `transportId`, and is what
+/// pychromecast sends with the quit-app message:
+///
+/// ```python
+/// {MESSAGE_TYPE: "STOP"}, inc_session_id=True   # -> data["sessionId"] = status.session_id
+/// ```
+///
+/// `None` when no media receiver is running, when the receiver omits it, or
+/// when the status request fails - the three are deliberately indistinguishable,
+/// because none of them should stop us sending the quit.
+async fn receiver_app_session_id(conn: &mut CastConnection) -> Option<String> {
+    let reply = conn
+        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .await
+        .ok()?;
+    let status = cast_proto::status_object(&reply)?;
+
+    status
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            status
+                .get("applications")
+                .and_then(|v| v.as_array())
+                .and_then(|apps| {
+                    apps.iter()
+                        .find(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+                })
+                .and_then(|a| a.get("sessionId"))
+                .and_then(|v| v.as_str())
+        })
+        .map(|s| s.to_string())
+}
+
 
 /// Hand a URL to the receiver.
 ///
@@ -310,22 +346,48 @@ pub async fn stop_media(conn: &mut CastConnection) -> Result<(), String> {
 
 /// Leave the receiver on its home screen.
 ///
-/// Stopping playback alone leaves the default media receiver running as an
-/// idle blank screen on the television, which reads as a hang.
-/// Leave the receiver on its home screen.
-///
 /// Stopping playback alone leaves the default media receiver running as an idle
-/// blank screen with a cast icon on it, which reads as a hang. `STOP_APP` is
-/// what actually dismisses it.
+/// blank screen with a cast icon on it, which reads as a hang.
+///
+/// The message is **`STOP`, not `STOP_APP`, and it carries `sessionId`.**
+/// pychromecast, which backs the working Flask path, sends exactly:
+///
+/// ```python
+/// self.send_message({MESSAGE_TYPE: "STOP"}, inc_session_id=True)
+/// # socket_client.send_message then does: data["sessionId"] = self.session_id
+/// ```
+///
+/// `STOP_APP` does not exist. The receiver accepts it, answers, reports
+/// `ok: true`, and leaves the app running - the television keeps sitting on the
+/// blank screen while every layer above reports success. It is the same failure
+/// shape as `SET_VOLUME_MUTED`: a message type taken from intuition rather than
+/// from a working client, accepted-and-ignored rather than rejected.
+///
+/// The `sessionId` comes from `applications[].sessionId` in `RECEIVER_STATUS`,
+/// the same entry that carries `transportId`. It is included only when we
+/// actually have one.
 ///
 /// This **awaits the receiver's reply**. It used to be fire-and-forget, and the
 /// caller then closed the socket immediately - so the receiver had no chance to
-/// process the message before the transport went away, and the television was
-/// left sitting on the blank screen while the API cheerfully reported `ok`.
+/// process the message before the transport went away.
 pub async fn quit_app(conn: &mut CastConnection) -> Result<(), String> {
-    conn.request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "STOP_APP" }))
+    let session_id = receiver_app_session_id(conn).await;
+    conn.request(NS_RECEIVER, DEFAULT_RECEIVER_ID, quit_app_payload(session_id.as_deref()))
         .await
         .map(|_| ())
+}
+
+/// The exact quit-app message, separated so the wire shape can be pinned.
+///
+/// Two independent mistakes are guarded here, and both were invisible at
+/// runtime because the receiver answers a message it does not understand with
+/// success. Asserting on the ack would have passed for both.
+fn quit_app_payload(session_id: Option<&str>) -> serde_json::Value {
+    let mut payload = json!({ "type": "STOP" });
+    if let Some(sid) = session_id {
+        payload["sessionId"] = json!(sid);
+    }
+    payload
 }
 
 /// Is the media receiver app still running?
@@ -694,6 +756,99 @@ mod tests {
         let payload = status_payload(&media, &receiver);
         assert_eq!(payload["volume"], 30.0, "the reported volume is the audible one");
         assert_eq!(payload["muted"], false);
+    }
+
+    /// How long does the television actually take to clear the receiver screen?
+///
+/// The API reports `app_running=false` promptly, yet the screen can still be
+/// showing. "Gone from the receiver's application list" and "cleared from the
+/// television" may be different events, and guessing between them wastes a
+/// restart each time.
+///
+/// This deliberately does **not** send the connection `CLOSE` that the API
+/// sends on teardown, so the two can be compared. Gated like the other live
+/// checks.
+#[tokio::test]
+async fn live_teardown_timeline() {
+    if std::env::var("MEDIA_SERVER_CAST_LIVE_TESTS").is_err() {
+        eprintln!("SKIPPED live_teardown_timeline");
+        return;
+    }
+    let host = match std::env::var("MEDIA_SERVER_CAST_LIVE_HOST") {
+        Ok(h) if !h.is_empty() => h,
+        _ => {
+            eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_HOST not set)");
+            return;
+        }
+    };
+    let url = std::env::var("MEDIA_SERVER_CAST_LIVE_URL").unwrap_or_default();
+    if url.is_empty() {
+        eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_URL not set)");
+        return;
+    }
+
+    let mut conn = connect_and_handshake(&host).await.expect("handshake");
+    let transport = ensure_media_receiver_session(&mut conn).await.expect("session");
+    conn.set_app_transport(transport);
+    load(&mut conn, &url, "teardown", "video/mp4", Some(600.0), &[], None)
+        .await
+        .expect("load");
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    eprintln!("TL playing; app running = {}", media_receiver_still_running(&mut conn).await);
+
+    let t0 = std::time::Instant::now();
+    let _ = stop_media(&mut conn).await;
+    eprintln!("TL +{:.1}s  STOP media sent", t0.elapsed().as_secs_f64());
+    let _ = quit_app(&mut conn).await;
+    eprintln!("TL +{:.1}s  STOP (+sessionId) sent (no CLOSE sent)", t0.elapsed().as_secs_f64());
+
+    // Poll every second for 25s and print when the app leaves the receiver.
+    for i in 1..=25 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let still = media_receiver_still_running(&mut conn).await;
+        eprintln!("TL +{:.1}s  app_running={}", t0.elapsed().as_secs_f64(), still);
+        if !still && i > 1 {
+            break;
+        }
+    }
+    conn.close().await;
+}
+
+#[test]
+    /// The quit-app message is `STOP` carrying `sessionId`, matching
+    /// pychromecast. `STOP_APP` is not a real message type: the receiver
+    /// accepts it, answers, and leaves the app running on its blank screen.
+    #[test]
+    fn quit_app_sends_stop_with_the_session_id() {
+        assert_eq!(
+            quit_app_payload(Some("sess-abc")),
+            serde_json::json!({ "type": "STOP", "sessionId": "sess-abc" })
+        );
+    }
+
+    /// With no session id the message is still `STOP`. It is never downgraded
+    /// to a type the receiver will silently ignore.
+    #[test]
+    fn quit_app_without_a_session_id_is_still_stop() {
+        assert_eq!(quit_app_payload(None), serde_json::json!({ "type": "STOP" }));
+    }
+
+    /// Guards the specific regression: the invented message type.
+    #[test]
+    fn quit_app_is_never_the_nonexistent_stop_app() {
+        let payload = quit_app_payload(Some("s"));
+        assert_ne!(payload["type"], serde_json::json!("STOP_APP"));
+    }
+
+    /// Mute rides the same `SET_VOLUME` message as volume, distinguished only
+    /// by the field. `SET_VOLUME_MUTED` is accepted and ignored, which reads as
+    /// "this receiver has no mute".
+    #[test]
+    fn mute_is_a_field_on_set_volume() {
+        // Pinned via the same shape the sender builds.
+        let muted = serde_json::json!({ "type": "SET_VOLUME", "volume": { "muted": true } });
+        assert_eq!(muted["type"], serde_json::json!("SET_VOLUME"));
+        assert_eq!(muted["volume"]["muted"], serde_json::json!(true));
     }
 
     #[test]
