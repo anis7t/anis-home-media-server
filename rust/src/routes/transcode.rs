@@ -24,26 +24,28 @@ use std::sync::Arc;
 /// half-stripped key behind.
 fn video_path_key(video_path: &PathBuf, roots: &[PathBuf]) -> String {
     let raw = video_path.to_string_lossy().replace('\\', "/");
+    let raw_clean = raw.strip_prefix("//?/").unwrap_or(&raw);
 
     let mut prefixes: Vec<String> = roots
         .iter()
         .map(|r| {
             let s = r.to_string_lossy().replace('\\', "/");
-            if s.ends_with('/') {
-                s
+            let s_clean = s.strip_prefix("//?/").unwrap_or(&s).to_string();
+            if s_clean.ends_with('/') {
+                s_clean
             } else {
-                format!("{}/", s)
+                format!("{}/", s_clean)
             }
         })
         .collect();
     prefixes.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for prefix in prefixes {
-        if let Some(rest) = raw.strip_prefix(&prefix) {
+        if let Some(rest) = raw_clean.strip_prefix(&prefix) {
             return rest.to_string();
         }
     }
-    raw
+    raw_clean.to_string()
 }
 
 #[derive(Clone)]
@@ -213,3 +215,65 @@ pub async fn transcode_status_handler(
         error: None,
     }))
 }
+
+/// `POST /api/transcode/start/{*path}`
+///
+/// Legacy transcode start compatibility endpoint invoked by the Flutter client.
+/// Verifies the video exists across roots, then enqueues background HLS transcoding
+/// (or returns ready if direct-play / complete). If nonexistent or non-video, returns 404.
+pub async fn transcode_start_handler(
+    State(state): State<TranscodeState>,
+    Path(path): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let decoded = crate::routes::jobs::percent_decode(&path);
+    if decoded.is_empty() {
+        return Err(AppError::BadRequest("Filename is required".to_string()));
+    }
+
+    let video_path = PathResolver::resolve_media_path(&decoded, &state.roots)?;
+    let ext = video_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let is_video = matches!(
+        ext.as_str(),
+        "mp4" | "mkv" | "webm" | "mov" | "avi" | "m4v"
+    );
+    if !is_video {
+        return Err(AppError::NotFound("Not a video file".to_string()));
+    }
+
+    let is_direct_play = matches!(ext.as_str(), "mp4" | "m4v" | "webm");
+    if is_direct_play {
+        return Ok(Json(serde_json::json!({
+            "status": "ready",
+            "message": "Direct playable media does not require transcoding"
+        })));
+    }
+
+    let hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
+    let playlist_file = hls_dir.join("playlist.m3u8");
+    if playlist_file.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&playlist_file) {
+            if content.contains("#EXT-X-ENDLIST") {
+                return Ok(Json(serde_json::json!({
+                    "status": "ready",
+                    "message": "Media is already fully transcoded"
+                })));
+            }
+        }
+    }
+
+    let rel_key = video_path_key(&video_path, &state.roots);
+    if let Some(pool) = state.pool.as_ref() {
+        let _ = JobService::enqueue(pool, &rel_key, "hls", false).await?;
+    }
+
+    Ok(Json(serde_json::json!({
+        "status": "queued",
+        "message": "Transcoding started in background"
+    })))
+}
+

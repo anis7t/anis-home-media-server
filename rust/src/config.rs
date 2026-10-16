@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub cache_dir: PathBuf,
     pub static_dir: PathBuf,
     pub flask_origin: String,
+    pub base_dir: PathBuf,
 }
 
 impl AppConfig {
@@ -82,6 +83,12 @@ impl AppConfig {
             .or_else(|_| env::var("MEDIA_SERVER_FLASK_ORIGIN"))
             .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
 
+        let base_dir = env::var("MEDIA_SERVER_BASE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
+            });
+
         Self {
             database_url,
             host,
@@ -91,6 +98,7 @@ impl AppConfig {
             cache_dir,
             static_dir,
             flask_origin,
+            base_dir,
         }
     }
 }

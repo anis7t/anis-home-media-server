@@ -215,6 +215,10 @@ pub fn create_app_full(
             "/api/transcode-status/{*filename}",
             get(routes::transcode::transcode_status_handler),
         )
+        .route(
+            "/api/transcode/start/{*path}",
+            axum::routing::post(routes::transcode::transcode_start_handler),
+        )
         .with_state(transcode_state);
 
     // Phase 6A: durable transcode job queue. Admission, listing and cancel
@@ -327,6 +331,26 @@ pub fn create_app_full(
             pool: Arc::new(pool.clone()),
         });
 
+    // Phase C5: native scan trigger and status.
+    let base_dir = std::env::var("MEDIA_SERVER_BASE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
+        });
+
+    let scan_state = routes::scan::ScanState {
+        pool: Arc::new(pool.clone()),
+        base_dir: Arc::new(base_dir),
+    };
+
+    let scan_routes = Router::new()
+        .route(
+            "/api/scan",
+            get(routes::scan::get_scan_handler)
+                .post(routes::scan::post_scan_handler),
+        )
+        .with_state(scan_state);
+
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
         Router::new()
@@ -340,7 +364,6 @@ pub fn create_app_full(
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/storage/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/scan", axum::routing::any(routes::proxy::proxy_handler))
             .with_state(proxy_state)
     } else {
         Router::new()
@@ -362,6 +385,7 @@ pub fn create_app_full(
         .merge(media_info_routes)
         .merge(device_routes)
         .merge(cast_routes)
+        .merge(scan_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

@@ -42,7 +42,7 @@ pub async fn jobs_dispatch_handler(
 
 /// Job filenames legitimately contain spaces, brackets and Unicode, so a
 /// wildcard path arrives percent-encoded.
-fn percent_decode(input: &str) -> String {
+pub fn percent_decode(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;

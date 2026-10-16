@@ -18,3 +18,4 @@ pub mod range_service;
 pub mod subtitle_service;
 pub mod system_service;
 pub mod tmdb_artwork;
+pub mod scan_service;

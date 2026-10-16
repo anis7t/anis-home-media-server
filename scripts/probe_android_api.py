@@ -68,9 +68,9 @@ CALLS = [
     # on 2001 only because that title was already complete, which is luck,
     # not design. A missing file exercises the route contract without
     # touching content.
-    ("POST", "/api/scan", (200, 400, 401, 403, 404), "manual scan trigger"),
+    ("POST", "/api/scan", (200, 401, 403), "manual scan trigger"),
     ("POST", f"/api/transcode/start/{quote(SYNTHETIC_FILENAME, safe='')}",
-     (200, 400, 401, 403, 404), "manual transcode start (synthetic name: no side effect)"),
+     (404,), "manual transcode start (synthetic name: 404 per contract)"),
     ("POST", "/api/cast/play", (200, 400, 401, 403, 404), "cast play"),
     ("POST", "/api/cast/control", (200, 400, 401, 403, 404), "cast control"),
     # 404 = route present, nothing published for that channel.

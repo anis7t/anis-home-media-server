@@ -14,3 +14,4 @@ pub mod system;
 pub mod spa;
 pub mod transcode;
 pub mod proxy;
+pub mod scan;
