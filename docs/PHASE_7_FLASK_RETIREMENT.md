@@ -632,7 +632,7 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 | `GET /api/movies` | 200 | 200 | native |
 | `GET /api/movie/{f}` | 200 | 200 | native |
 | `GET /api/system-status` | 200 | 200 | native |
-| `GET /api/devices` | 200 | 200 | **proxied** (C3b) |
+| `GET /api/devices` | 200 | 200 | **native** (C3b / C5 Slice 2) |
 | `POST /api/devices/heartbeat` | 200 | 200 | **native** (C3a) |
 | `POST /api/devices/client-hints` | 200 | 200 | **native** (C3a) |
 | `GET /api/transcode-status/{f}` | 200 | 200 | native |
@@ -652,12 +652,12 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 | `GET /subtitles/{f}` | 404 | 404 | native |
 | `GET /poster/...` | 404 | 404 | **native** (C1a) |
 
-**Proxied count on Android client surface has fallen to 1 (`GET /api/devices`).**
+**Proxied count on Android client surface has fallen to ZERO (0). Every single client endpoint is now natively served by Rust Axum.**
 
-> **Updated after Phase C5 Slice 1 (2026-10-16):**
-> `/api/scan` and `/api/transcode/start/{*path}` are now 100% native Rust Axum routes.
-> Reverse-proxy bridge groups in `rust/src/lib.rs` reduced from 6 to 5:
-> Remaining proxied groups: `/auth/*`, `/api/auth/*`, `/api/devices/*` (C3b), `/api/admin/*`, `/api/storage/*`.
+> **Updated after Phase C5 Slice 3 (2026-10-16):**
+> `/api/storage/*` (`/api/storage/audit`, `/api/storage/purge-orphans`, `/api/storage/settings`, `/api/storage/archive/{*filename}`) is now 100% native Rust Axum.
+> Reverse-proxy bridge groups in `rust/src/lib.rs` reduced from 4 to 3:
+> Remaining proxied groups: `/auth/*`, `/api/auth/*`, `/api/admin/*`.
 > See the C4a and C4b sections for the live-TV verification and the defects
 > only a real renderer or receiver could find.
 

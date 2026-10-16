@@ -109,7 +109,7 @@ pub fn create_app_full(
 ) -> Router {
     let system_routes = Router::new()
         .route("/api/system-status", get(routes::system::system_status_handler))
-        .with_state(system_service);
+        .with_state(system_service.clone());
 
     let movie_routes = Router::new()
         .route("/api/movies", get(routes::movies::list_movies_handler))
@@ -364,6 +364,34 @@ pub fn create_app_full(
         )
         .with_state(scan_state);
 
+    // Phase C5 Slice 3: storage audit, purge-orphans, settings, and archive, 100% native.
+    let storage_state = routes::storage::StorageState {
+        pool: Arc::new(pool.clone()),
+        media_roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc.clone(),
+        system_service: system_service.clone(),
+    };
+
+    let storage_routes = Router::new()
+        .route(
+            "/api/storage/audit",
+            get(routes::storage::storage_audit_handler),
+        )
+        .route(
+            "/api/storage/purge-orphans",
+            axum::routing::post(routes::storage::storage_purge_orphans_handler),
+        )
+        .route(
+            "/api/storage/settings",
+            get(routes::storage::storage_get_settings_handler)
+                .post(routes::storage::storage_post_settings_handler),
+        )
+        .route(
+            "/api/storage/archive/{*filename}",
+            axum::routing::post(routes::storage::storage_archive_media_handler),
+        )
+        .with_state(storage_state);
+
     let proxy_routes = if let Some(origin) = flask_origin {
         let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
         Router::new()
@@ -373,8 +401,6 @@ pub fn create_app_full(
             .route("/api/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
             .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/storage", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/storage/{*path}", axum::routing::any(routes::proxy::proxy_handler))
             .with_state(proxy_state)
     } else {
         Router::new()
@@ -397,6 +423,7 @@ pub fn create_app_full(
         .merge(device_routes)
         .merge(cast_routes)
         .merge(scan_routes)
+        .merge(storage_routes)
         .merge(proxy_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

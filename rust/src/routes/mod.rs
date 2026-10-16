@@ -15,3 +15,4 @@ pub mod spa;
 pub mod transcode;
 pub mod proxy;
 pub mod scan;
+pub mod storage;

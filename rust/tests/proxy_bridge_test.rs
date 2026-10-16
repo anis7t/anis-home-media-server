@@ -26,19 +26,19 @@ async fn spawn_mock_flask() -> (SocketAddr, tokio::task::JoinHandle<()>) {
             }),
         )
         .route(
-            "/api/storage/audit",
+            "/api/admin/status",
             get(|| async {
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, "application/json")],
                     Json(json!({
-                        "storage": { "pool": "ok" }
+                        "admin": { "status": "ok" }
                     })),
                 )
             }),
         )
         .route(
-            "/api/storage/settings",
+            "/api/admin/verify",
             post(|req: Request| async move {
                 let pin = req
                     .headers()
@@ -214,14 +214,44 @@ async fn test_tmdb_artwork_is_not_proxied_to_flask() {
     handle.abort();
 }
 
+/// Phase C5 Slice 3: `/api/storage/*` routes are 100% native.
+/// They must NOT reach the mock upstream.
 #[tokio::test]
-async fn test_proxy_forwards_api_storage() {
+async fn test_storage_routes_are_not_proxied() {
+    let (addr, handle) = spawn_mock_flask().await;
+    let upstream_url = format!("http://{}", addr);
+    let app = setup_test_app(Some(upstream_url)).await;
+
+    // GET /api/storage/settings returns native settings, never the mock
+    let req = axum::http::Request::builder()
+        .method("GET")
+        .uri("/api/storage/settings")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    let status = res.status();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        json.get("allowed_policies").is_some(),
+        "Must return native storage settings, not mock"
+    );
+    assert!(json.get("echo").is_none(), "Must not reach proxy upstream");
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn test_proxy_forwards_api_admin() {
     let (addr, handle) = spawn_mock_flask().await;
     let upstream_url = format!("http://{}", addr);
     let app = setup_test_app(Some(upstream_url)).await;
 
     let req = axum::http::Request::builder()
-        .uri("/api/storage/audit")
+        .uri("/api/admin/status")
         .body(Body::empty())
         .unwrap();
 
@@ -230,7 +260,7 @@ async fn test_proxy_forwards_api_storage() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json_val["storage"]["pool"], "ok");
+    assert_eq!(json_val["admin"]["status"], "ok");
 
     handle.abort();
 }
@@ -243,7 +273,7 @@ async fn test_proxy_forwards_headers_and_body_post() {
 
     let req = axum::http::Request::builder()
         .method("POST")
-        .uri("/api/storage/settings")
+        .uri("/api/admin/verify")
         .header("Content-Type", "application/json")
         .header("X-Admin-Pin", "not-a-real-pin")
         .body(Body::from(r#"{"ping":"hello"}"#))
@@ -297,7 +327,7 @@ async fn test_proxy_returns_502_on_unreachable_upstream() {
     let app = setup_test_app(Some("http://127.0.0.1:59999".to_string())).await;
 
     let req = axum::http::Request::builder()
-        .uri("/api/storage/audit")
+        .uri("/api/admin/status")
         .body(Body::empty())
         .unwrap();
 

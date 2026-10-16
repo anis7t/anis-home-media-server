@@ -20,4 +20,5 @@ pub mod system_service;
 pub mod tmdb_artwork;
 pub mod auth_service;
 pub mod scan_service;
+pub mod storage_service;
 
