@@ -89,7 +89,15 @@ $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($existingService) {
     Write-Host "Stopping existing $serviceName service..." -ForegroundColor Yellow
     Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
+    # NSSM holds media-server-api.exe past the return of Stop-Service; a fixed
+    # 2s sleep is not reliably enough and a build attempted while it is still
+    # open fails with "Access is denied", silently keeping the old binary.
+    for ($i = 0; $i -lt 30; $i++) {
+        if (-not (Get-Process -Name "media-server-api" -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 2
+    }
+    Get-Process -Name "media-server-api" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "Creating new $serviceName service..." -ForegroundColor Yellow
     & $NssmExe install $serviceName $exePath

@@ -7,6 +7,31 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+# NSSM does not release media-server-api.exe the instant Stop-Service returns,
+# and a 1-second sleep was not enough: cargo then failed with
+# "Access is denied (os error 5)" and the script silently kept the PREVIOUS
+# binary while still reporting success and probing a healthy service. That
+# made a redeploy appear to work while the new code was never running - which
+# is how a committed fix went unverified for several cycles.
+# Poll until the process is actually gone before building.
+function Wait-BinaryReleased([string]$ProcessName, [int]$TimeoutSec = 60) {
+    for ($i = 0; $i -lt [int]($TimeoutSec / 2); $i++) {
+        if (-not (Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)) {
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+    Get-Process -Name $ProcessName -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 10; $i++) {
+        Start-Sleep -Seconds 1
+        if (-not (Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 Write-Host "====================================================" -ForegroundColor Cyan
 Write-Host "         Restarting Media Server Rust API           " -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
@@ -44,14 +69,24 @@ if ($svc) {
 
     Write-Host "[2/5] Stopping '$serviceName' service..." -ForegroundColor Yellow
     Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
+
+    # Wait for the binary to be released before building, and fail loudly if
+    # it never is - a stale binary that looks like a successful deploy is the
+    # worst possible outcome here.
+    $released = Wait-BinaryReleased -ProcessName "media-server-api"
+    if (-not $released) {
+        Write-Host "  media-server-api.exe is still locked after 60s." -ForegroundColor Red
+    } else {
+        Write-Host "  Binary released by NSSM." -ForegroundColor DarkGray
+    }
 
     # Optional Rebuild while service is stopped
     if (-not $NoRebuild) {
         Write-Host "[3/5] Compiling latest Rust release binary..." -ForegroundColor Yellow
         & "$BaseDir\scripts\cargo.bat" build --release --manifest-path "$RustDir\Cargo.toml"
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "Build failed! Keeping existing binary..." -ForegroundColor Red
+            Write-Host "BUILD FAILED - the service is about to start the PREVIOUS binary." -ForegroundColor Red
+            Write-Host "This restart did NOT deploy the current source. Re-run once the build error is fixed." -ForegroundColor Red
         }
     } else {
         Write-Host "[3/5] Skipping rebuild (--NoRebuild specified)." -ForegroundColor DarkGray
