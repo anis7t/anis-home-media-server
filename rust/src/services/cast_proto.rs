@@ -423,7 +423,7 @@ pub fn parse_receiver_status(payload: &str) -> ReceiverStatus {
         Ok(v) => v,
         Err(_) => return ReceiverStatus { volume_level: None, volume_muted: None },
     };
-    let status = value.get("status").unwrap_or(&value);
+    let status = status_object(&value).unwrap_or(&value);
     ReceiverStatus {
         volume_level: status.get("volume").and_then(|v| v.as_f64()),
         volume_muted: status.get("muted").and_then(|v| v.as_bool()),
@@ -438,14 +438,17 @@ pub struct MediaStatus {
     pub duration: f64,
 }
 
-/// The `status` member of a MEDIA_STATUS reply.
+/// The `status` member of a receiver reply, as an object.
 ///
-/// Google's documentation specifies an object, but a real Samsung DU7000
-/// sends a **list**: `{"type":"MEDIA_STATUS","status":[{"playerState":...}]}` -
-/// and an empty list while idle. Reading it as an object yields nothing at
-/// all, so a perfectly playing cast reports `unknown` with a zero position and
-/// no error anywhere. Both shapes are accepted; a list takes its first entry.
-pub fn media_status_object(value: &serde_json::Value) -> Option<&serde_json::Value> {
+/// Google documents an object. A real Samsung DU7000 sends a **list** for
+/// `MEDIA_STATUS` — `{"status":[{"playerState":...}]}`, and `[]` while idle.
+/// Reading that as an object yields nothing at all, so a perfectly playing cast
+/// reports `unknown` with a zero position, and `seek` fails with "no media
+/// session yet" on a cast that is demonstrably playing.
+///
+/// Every reader of `status` goes through here rather than indexing it directly.
+/// The bug was fixed twice because the assumption was made in two places.
+pub fn status_object(value: &serde_json::Value) -> Option<&serde_json::Value> {
     match value.get("status") {
         Some(serde_json::Value::Array(items)) => items.first(),
         Some(serde_json::Value::Object(_)) => value.get("status"),
@@ -455,7 +458,7 @@ pub fn media_status_object(value: &serde_json::Value) -> Option<&serde_json::Val
 
 pub fn parse_media_status(payload: &str) -> Option<MediaStatus> {
     let value: serde_json::Value = serde_json::from_str(payload).ok()?;
-    let status = media_status_object(&value)?;
+    let status = status_object(&value)?;
 
     // Idle means nothing is loaded, which is not the same as stopped.
     let player_state = status
@@ -629,7 +632,7 @@ mod tests {
 
         // An empty list is what a receiver sends while idle.
         let idle = r#"{"type":"MEDIA_STATUS","status":[],"requestId":0}"#;
-        assert!(media_status_object(&serde_json::from_str::<serde_json::Value>(idle).unwrap()).is_none());
+        assert!(status_object(&serde_json::from_str::<serde_json::Value>(idle).unwrap()).is_none());
         assert!(parse_media_status(idle).is_none());
     }
 

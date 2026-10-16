@@ -65,9 +65,15 @@ impl SubtitleTrack {
 }
 
 /// The receiver's current session id, needed by SEEK and STOP.
+/// The receiver's current session id, needed by SEEK and STOP.
+///
+/// Goes through [`cast_proto::status_object`] like every other reader of
+/// `MEDIA_STATUS`. It originally read `status` as an object, so on a receiver
+/// that sends a list it found nothing - and `seek` failed with "no media
+/// session yet" on a cast that was demonstrably playing, because the session
+/// existed and was simply invisible to the parser.
 pub fn media_session_id(reply: &serde_json::Value) -> Option<i64> {
-    reply
-        .get("status")
+    cast_proto::status_object(reply)
         .and_then(|s| s.get("mediaSessionId"))
         .and_then(|v| v.as_i64())
 }
@@ -140,7 +146,7 @@ async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
         .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
         .await
         .ok()?;
-    let status = reply.get("status")?;
+    let status = cast_proto::status_object(&reply)?;
 
     let running = status.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
         || status
@@ -365,7 +371,7 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
     let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
     // `status` is an object per the docs but a list on some receivers.
-    let player_state = cast_proto::media_status_object(media)
+    let player_state = cast_proto::status_object(media)
         .and_then(|s| s.get("playerState"))
         .and_then(|v| v.as_str());
 
@@ -386,8 +392,7 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
     // media receiver app running. Reporting "unknown" there leaves the phone
     // looking broken while the cast is in fact opening.
     if state == "unknown" {
-        let app_running = receiver
-            .get("status")
+        let app_running = cast_proto::status_object(receiver)
             .map(|s| {
                 s.get("appId").is_some()
                     || s.get("applications")
@@ -530,6 +535,30 @@ mod tests {
             "a nested currentTime is the shape the receiver ignores"
         );
     }
+
+    #[test]
+    fn receiver_volume_survives_either_status_shape() {
+        use crate::services::cast_proto::parse_receiver_status;
+        let object = r#"{"type":"RECEIVER_STATUS","status":{"volume":0.25,"muted":true}}"#;
+        let listed = r#"{"type":"RECEIVER_STATUS","status":[{"volume":0.25,"muted":true}]}"#;
+        assert_eq!(parse_receiver_status(object).volume_level, Some(0.25));
+        assert_eq!(parse_receiver_status(listed).volume_level, Some(0.25));
+        assert_eq!(parse_receiver_status(listed).volume_muted, Some(true));
+    }
+
+    #[test]
+    fn a_session_id_is_found_in_either_status_shape() {
+        // The second shape is the bug this whole refactor exists to prevent:
+        // `media_session_id` read `status` as an object, so on this receiver it
+        // found nothing and `seek` refused a cast that was plainly playing.
+        let object = serde_json::json!({ "status": { "mediaSessionId": 3, "playerState": "PLAYING" } });
+        let listed = serde_json::json!({ "status": [{ "mediaSessionId": 3, "playerState": "PLAYING" }] });
+        assert_eq!(media_session_id(&object), Some(3));
+        assert_eq!(media_session_id(&listed), Some(3));
+        assert_eq!(media_session_id(&serde_json::json!({ "status": [] })), None);
+    }
+
+    #[test]
 
     #[test]
     fn direct_containers_do_not_need_transcoding() {
