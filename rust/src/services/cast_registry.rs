@@ -165,13 +165,22 @@ impl CastRegistry {
     }
 
     /// Run a Cast action, redialling once if the cached connection is dead.
+    ///
+    /// `stop` is deliberately **not** retried. Redialling runs the app-session
+    /// setup, which *launches* the media receiver — so retrying a stop that
+    /// appeared to fail re-opened the very app the user was trying to close.
+    /// If the connection is already dead we are, by definition, no longer
+    /// driving the receiver, so dropping the socket is the correct outcome.
     async fn cast_action(
         self: &Arc<Self>,
         device_id: &str,
         action: &str,
         value: Option<f64>,
     ) -> Result<(), String> {
-        for attempt in 0..2 {
+        let retryable = action != "stop";
+        let attempts = if retryable { 2 } else { 1 };
+
+        for attempt in 0..attempts {
             let outcome = {
                 let mut conns = self.connection(device_id).await?;
                 match conns.get_mut(device_id) {
@@ -181,7 +190,7 @@ impl CastRegistry {
             };
             match outcome {
                 Ok(()) => return Ok(()),
-                Err(e) if attempt == 0 => {
+                Err(e) if attempt + 1 < attempts => {
                     tracing::debug!(
                         "Cast {} on {} failed ({:?}); redialling once",
                         action,
@@ -189,6 +198,17 @@ impl CastRegistry {
                         e
                     );
                     self.redial(device_id).await?;
+                }
+                Err(_) if action == "stop" => {
+                    // A dead socket means we are not casting. Do not redial:
+                    // that would launch the app again.
+                    tracing::debug!(
+                        "Cast stop on {} could not be confirmed; dropping the connection \
+                         rather than relaunching the receiver app",
+                        device_id
+                    );
+                    self.drop_connection(device_id).await;
+                    return Ok(());
                 }
                 Err(e) => return Err(e),
             }
