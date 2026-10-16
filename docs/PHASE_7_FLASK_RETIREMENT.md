@@ -51,6 +51,57 @@ touching content. Verified: 404 on both origins, nothing written to
 
 ---
 
+### Phase C3a — device registration and keepalive, native
+
+| Endpoint | Rust status |
+|---|---|
+| `POST/GET /api/devices/heartbeat` | **native** |
+| `POST /api/devices/client-hints` | **native** |
+| `GET /api/devices` | proxied (C3b) |
+| `POST /api/devices/rename`, `/api/devices/delete` | proxied (C3b) |
+
+C3b is deferred, not forgotten: those three are gated by
+`is_admin_authorized()`, which resolves through the Google session in
+`/auth/*` — the last slice. Porting them before auth would mean porting the
+admin gate first, which is a larger change than it looks.
+
+**The device id is the load-bearing detail.** It is cookie → `X-Device-Id` →
+`sha256("<ip>|<ua>")` first 16 hex chars prefixed `dev_`, and every
+`devices` row is keyed on it. Any divergence — a different separator, a
+different hash slice — silently fragments the fleet view into duplicate
+devices, one per client per change, with no error anywhere. It is pinned by
+a test against the Python formula rather than trusted.
+
+**`ConnectInfo` is required, not cosmetic.** Flask classifies the connection
+from `remote_addr`. Without the peer address every client is `127.0.0.1` and
+`connection_type` reads "Localhost" for every real device. The router is now
+served with `into_make_service_with_connect_info::<SocketAddr>()`.
+
+In axum 0.8 `Option<ConnectInfo<_>>` **does not compile** — `Option<T>` now
+requires `OptionalFromRequestParts`, which `ConnectInfo` does not implement.
+It is taken directly and placed before the final extractor.
+
+**`/proc/net/arp` is Linux-only.** `resolve_mac_address` reproduces the
+Windows behaviour Flask already has ("LAN (ARP Pending)") rather than
+implementing an ARP read that would change what the dashboard displays.
+
+**GeoIP keeps Flask's 1.5 s budget** and stays best-effort: a lookup failure
+degrades to the default label and never turns a keepalive into a failed
+request.
+
+Two defects were caught while building this slice:
+
+1. **UA model extraction was greedy across `;` segments.** Python's regex
+   `;\s*([^;]+?)\s+Build/` stops at the first `;` and yields `SM-A536E`; a
+   naive "text between the first `; ` and the marker" yielded
+   `Android 13; SM-A536E`, which matched no make rule and collapsed every
+   Android device to "Generic Client".
+2. **A pre-existing proxy test used `/api/devices/heartbeat` as its example
+   of a proxied POST.** Once that endpoint went native the test kept passing
+   while testing the wrong thing. It now uses `/api/devices/rename`, which
+   is still proxied. This is the general hazard: a proxy test pins a path,
+   and the path moving is silent.
+
 ### Phase C2 — `/api/media-info/{f}` native (verified)
 
 | Check | Result |
@@ -86,17 +137,21 @@ directly in both databases. This is pre-existing divergence between the two
 stores, and PostgreSQL holds the more precise value; Flask simply reads the
 other store.
 
-> **Updated 2026-10-16, after Phase C1a + C1b.** All three artwork endpoints
-> are now native and removed from the proxy map, leaving **9 proxied**
-> (was 10) and **2 absent**:
+> **Updated 2026-10-16, after Phase C1a + C1b + C2 + C3a.** All three
+> artwork endpoints, `/api/media-info/{f}` and both device keepalive
+> endpoints are now native and removed from the proxy map, leaving
+> **7 proxied** (was 10) and **2 absent**:
 >
 > | Endpoint | Rust status now |
 > |---|---|
 > | `GET /poster/{*filename}` | **native** (C1a) |
 > | `GET /tmdb-poster/{id}` | **native** (C1b) |
 > | `GET /tmdb-backdrop/{id}` | **native** (C1b) |
-> | `GET/POST /api/devices*` | proxied |
-> | `GET /api/media-info/{f}` | proxied |
+> | `GET /api/media-info/{f}` | **native** (C2) |
+> | `POST /api/devices/heartbeat` | **native** (C3a) |
+> | `POST /api/devices/client-hints` | **native** (C3a) |
+> | `GET /api/devices` | proxied (C3b, needs auth) |
+> | `POST /api/devices/rename`, `/api/devices/delete` | proxied (C3b, needs auth) |
 > | `GET/POST /api/cast/*` | proxied |
 > | `POST /api/scan` | proxied |
 > | `POST /api/transcode/start/{f}` | **absent** |
@@ -125,8 +180,8 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 | `GET /api/movie/{f}` | 200 | 200 | native |
 | `GET /api/system-status` | 200 | 200 | native |
 | `GET /api/devices` | 200 | 200 | **proxied** |
-| `POST /api/devices/heartbeat` | 200 | 200 | **proxied** |
-| `POST /api/devices/client-hints` | 200 | 200 | **proxied** |
+| `POST /api/devices/heartbeat` | 200 | 200 | **native** (C3a) |
+| `POST /api/devices/client-hints` | 200 | 200 | **native** (C3a) |
 | `GET /api/transcode-status/{f}` | 200 | 200 | native |
 | `GET /api/progress` | 200 | 200 | native |
 | `GET /api/media-info/{f}` | 200 | 200 | **proxied** |
@@ -144,8 +199,8 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 | `GET /subtitles/{f}` | 404 | 404 | native |
 | `GET /poster/...` | 404 | 404 | **proxied** |
 
-**10 of 22 are proxied, 2 are absent entirely.** Rust cannot serve `:8000`
-yet.
+**Proxied count has fallen 10 → 7 across C1a, C1b, C2 and C3a; 2 are absent
+entirely.** Rust cannot serve `:8000` yet.
 
 ### 2.1 A false green that must be closed
 
