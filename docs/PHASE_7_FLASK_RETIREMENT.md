@@ -620,7 +620,6 @@ other store.
 > cover transient network errors, not rate limits.
 >
 > **Pre-existing limitation, inherited rather than introduced:** artwork cache
-> files are keyed only on `tmdb_id`, so if TMDb re-encodes an image the cache
 > never refreshes it. Observed live: two posters differed from their
 > previously-cached copies at the same 500×750 dimensions, and a Python fetch
 > of the identical URL returned exactly the bytes Rust wrote — i.e. upstream
@@ -633,33 +632,32 @@ Probe run 2026-10-16, both origins, 22 endpoints.
 | `GET /api/movies` | 200 | 200 | native |
 | `GET /api/movie/{f}` | 200 | 200 | native |
 | `GET /api/system-status` | 200 | 200 | native |
-| `GET /api/devices` | 200 | 200 | **proxied** |
+| `GET /api/devices` | 200 | 200 | **proxied** (C3b) |
 | `POST /api/devices/heartbeat` | 200 | 200 | **native** (C3a) |
 | `POST /api/devices/client-hints` | 200 | 200 | **native** (C3a) |
 | `GET /api/transcode-status/{f}` | 200 | 200 | native |
 | `GET /api/progress` | 200 | 200 | native |
-| `GET /api/media-info/{f}` | 200 | 200 | **proxied** |
-| `GET /api/cast/devices` | 200 | 200 | **proxied** |
-| `GET /api/cast/status` | 400 (idle) | 400 (idle) | **proxied** |
-| `POST /api/cast/play` | 400 | 400 | **proxied** |
-| `POST /api/cast/control` | 400 | 400 | **proxied** |
-| `POST /api/scan` | 403 | 403 | **proxied** |
-| `POST /api/transcode/start/{f}` | 200 | **404** | **absent** |
+| `GET /api/media-info/{f}` | 200 | 200 | **native** (C1b) |
+| `GET /api/cast/devices` | 200 | 200 | **native** (C4a/b) |
+| `GET /api/cast/status` | 400 (idle) | 400 (idle) | **native** (C4a/b) |
+| `POST /api/cast/play` | 400 | 400 | **native** (C4a/b) |
+| `POST /api/cast/control` | 400 | 400 | **native** (C4a/b) |
+| `POST /api/scan` | 403 | 403 | **native** (C5 Slice 1) |
+| `POST /api/transcode/start/{f}` | 200 | 200 | **native** (C5 Slice 1) |
 | `GET /api/app/update` | 404 | 404 | **absent (not proxied either)** |
 | `GET /api/app/download` | 404 | 404 | **absent (not proxied either)** |
-| `GET /tmdb-poster/{id}` | 200 | 200 | **proxied** |
+| `GET /tmdb-poster/{id}` | 200 | 200 | **native** (C1a) |
 | `GET /media/{f}` | 200 | 200 | native |
 | `GET /hls/{f}/playlist.m3u8` | 200 | 200 | native |
 | `GET /subtitles/{f}` | 404 | 404 | native |
-| `GET /poster/...` | 404 | 404 | **proxied** |
+| `GET /poster/...` | 404 | 404 | **native** (C1a) |
 
-**Proxied count has fallen 10 → 7 across C1a, C1b, C2 and C3a; 2 are absent
-entirely.** Rust cannot serve `:8000` yet.
+**Proxied count on Android client surface has fallen to 1 (`GET /api/devices`).**
 
-> **Updated after C4a and C4b.** Casting is now native for both device kinds —
-> DLNA and Google Cast — so `/api/cast/*` no longer appears in this table.
-> What remains proxied: `/auth/*`, `/api/auth/*`, `GET /api/devices` +
-> rename/delete (C3b, admin-gated), `POST /api/scan`, and `/api/storage/*`.
+> **Updated after Phase C5 Slice 1 (2026-10-16):**
+> `/api/scan` and `/api/transcode/start/{*path}` are now 100% native Rust Axum routes.
+> Reverse-proxy bridge groups in `rust/src/lib.rs` reduced from 6 to 5:
+> Remaining proxied groups: `/auth/*`, `/api/auth/*`, `/api/devices/*` (C3b), `/api/admin/*`, `/api/storage/*`.
 > See the C4a and C4b sections for the live-TV verification and the defects
 > only a real renderer or receiver could find.
 
