@@ -20,9 +20,19 @@ impl AppConfig {
         let database_url = env::var("MEDIA_SERVER_DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string());
 
+        // 0.0.0.0, not 127.0.0.1.
+        //
+        // A loopback bind makes this service invisible to the LAN, which
+        // breaks two things that are both load-bearing: a cast receiver has
+        // to fetch media from this host (it answers `SetAVTransportURI` with an
+        // empty HTTP 500 when it cannot), and the Cloudflare tunnel cannot
+        // reach it once this service takes ownership of :8000.
+        //
+        // This default was wrong and the symptom was invisible from the
+        // development host, because every test goes through 127.0.0.1.
         let host = env::var("RUST_HOST")
             .or_else(|_| env::var("HOST"))
-            .unwrap_or_else(|_| "127.0.0.1".to_string());
+            .unwrap_or_else(|_| "0.0.0.0".to_string());
 
         let port = env::var("RUST_PORT")
             .or_else(|_| env::var("PORT"))

@@ -128,6 +128,7 @@ if ($svc) {
 
     Write-Host "[4/5] Launching standalone $exePath..." -ForegroundColor Cyan
     $env:MEDIA_SERVER_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/media_server"
+    $env:RUST_HOST = "0.0.0.0"
     $env:RUST_PORT = "8001"
     $env:MEDIA_SERVER_MEDIA_ROOT = "D:\Flicks"
     $env:MEDIA_SERVER_CACHE_DIR = "E:\MediaServer\cache"
