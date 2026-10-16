@@ -1,4 +1,5 @@
 pub mod asset_service;
+pub mod cast_control;
 pub mod cast_discovery;
 pub mod cast_origin;
 pub mod cast_proto;

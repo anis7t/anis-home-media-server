@@ -12,15 +12,17 @@
 //! roughly one scan in three, and a cast that is visibly running must stay
 //! controllable.
 
+use crate::services::cast_control::{self, SubtitleTrack};
 use crate::services::cast_discovery;
 use crate::services::cast_origin::{build_media_url, resolve_origin};
+use crate::services::cast_transport::CastConnection;
 use crate::services::dlna_service::{self, DlnaDevice};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 /// What the client asked to play, remembered so `status` can describe it and
 /// so a subtitle-offset change can re-issue the same load.
@@ -31,12 +33,15 @@ pub struct ActiveCast {
     pub url: String,
     pub title: String,
     pub subtitle_offset: f64,
-    pub subtitles: Vec<SubtitleTrack>,
+    /// Summaries only: the `src` of a Cast subtitle track is an absolute LAN
+    /// URL, which is an internal detail the original also keeps out of
+    /// `status`.
+    pub subtitles: Vec<SubtitleSummary>,
     pub active_subtitle_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SubtitleTrack {
+pub struct SubtitleSummary {
     pub track_id: i64,
     pub label: String,
     pub lang: String,
@@ -51,7 +56,11 @@ impl ActiveCast {
             "origin": self.origin,
             "title": self.title,
             "subtitle_offset": self.subtitle_offset,
-            "subtitles": self.subtitles,
+            "subtitles": self
+                .subtitles
+                .iter()
+                .map(|s| serde_json::to_value(s).unwrap_or(serde_json::Value::Null))
+                .collect::<Vec<_>>(),
             "active_subtitle_id": self.active_subtitle_id,
         })
     }
@@ -71,6 +80,13 @@ pub struct CastRegistry {
     roots: Arc<Vec<std::path::PathBuf>>,
     cache_dir: Arc<std::path::PathBuf>,
     server_port: u16,
+    /// Live Cast sessions, kept open between commands.
+    ///
+    /// Keyed by device id, and deliberately **not** dropped by a scan: mDNS
+    /// windows miss a device in roughly one scan in three, and a visibly
+    /// running cast must stay controllable. This is the same reason
+    /// `resolve_device` falls back to active state.
+    connections: Mutex<HashMap<String, CastConnection>>,
 }
 
 impl CastRegistry {
@@ -84,7 +100,45 @@ impl CastRegistry {
             roots,
             cache_dir,
             server_port,
+            connections: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// The stored host for a device id, from the discovery cache only.
+    ///
+    /// Never taken from the request: a client-supplied host would be an SSRF
+    /// pivot into an arbitrary TCP connection.
+    async fn device_host(&self, device_id: &str) -> Option<String> {
+        let inner = self.inner.read().await;
+        let host = inner.devices.get(device_id)?["host"].as_str()?.to_string();
+        if host.is_empty() {
+            None
+        } else {
+            Some(host)
+        }
+    }
+
+    /// A live connection for this device, dialling if necessary.
+    async fn connection(
+        self: &Arc<Self>,
+        device_id: &str,
+    ) -> Result<tokio::sync::MutexGuard<'_, HashMap<String, CastConnection>>, String> {
+        let mut map = self.connections.lock().await;
+        if !map.contains_key(device_id) {
+            let host = self
+                .device_host(device_id)
+                .await
+                .ok_or_else(|| "Unknown device - rescan and try again.".to_string())?;
+            let conn = cast_control::connect_and_handshake(&host).await?;
+            map.insert(device_id.to_string(), conn);
+        }
+        Ok(map)
+    }
+
+    async fn drop_connection(&self, device_id: &str) {
+        if let Some(mut conn) = self.connections.lock().await.remove(device_id) {
+            conn.close().await;
+        }
     }
 
     /// Discovered devices. `?refresh=1` forces a scan; otherwise a cached list
@@ -265,14 +319,70 @@ impl CastRegistry {
 
         let dlna_device: Option<DlnaDevice> = serde_json::from_value(device.clone()).ok();
 
+        // A Cast receiver plays only direct containers. Anything else needs an
+        // HLS cache built first, and the receiver fetches it cross-origin -
+        // which is why receiver CORS is scoped to /media/ and /hls/ exactly.
+        let use_hls = kind == "cast" && cast_control::needs_hls(&path);
+        if use_hls && self.hls_playlist(&path).is_none() {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| format!(".{}", e))
+                .unwrap_or_else(|| "this file".to_string());
+            return err(&format!(
+                "Chromecast cannot play {} directly. Open it once in the player to build an \
+                 HLS version, then cast.",
+                ext
+            ));
+        }
+        let content_type = if use_hls { "application/x-mpegURL".into() } else { content_type };
+        let title = if use_hls { format!("{} (transcoded)", title) } else { title };
+
+        // Subtitle tracks must be fully-qualified: a receiver fetches them
+        // itself and cannot resolve a relative path.
+        let mut subtitle_tracks: Vec<SubtitleTrack> = Vec::new();
+        let offset = subtitle_offset.unwrap_or(0.0);
+        for (idx, track) in crate::services::subtitle_service::SubtitleService::list_tracks(
+            &path,
+            &self.rel_path(&path),
+            &self.roots,
+        )
+        .into_iter()
+        .enumerate()
+        {
+            let src = if track.src.starts_with("http://") || track.src.starts_with("https://") {
+                track.src
+            } else {
+                format!("{}{}", base_origin, track.src)
+            };
+            let src = if offset != 0.0 {
+                let sep = if src.contains('?') { "&" } else { "?" };
+                format!("{}{}offset={:.3}", src, sep, offset)
+            } else {
+                src
+            };
+            subtitle_tracks.push(SubtitleTrack {
+                track_id: idx as i64 + 1,
+                label: if !track.label.is_empty() { track.label.clone() } else { track.name.clone() },
+                lang: track.lang.clone(),
+                src,
+            });
+        }
+        let selected = active_subtitle_id
+            .filter(|id| *id > 0)
+            .or_else(|| subtitle_tracks.first().map(|t| t.track_id));
+
         let active = ActiveCast {
             filename: filename.to_string(),
             origin: origin.map(|s| s.to_string()),
-            url: build_media_url(&self.rel_path(&path), origin_url.as_deref(), false),
+            url: build_media_url(&self.rel_path(&path), origin_url.as_deref(), use_hls),
             title: title.clone(),
-            subtitle_offset: subtitle_offset.unwrap_or(0.0),
-            subtitles: Vec::new(),
-            active_subtitle_id: active_subtitle_id.unwrap_or(0),
+            subtitle_offset: offset,
+            subtitles: subtitle_tracks
+                .iter()
+                .map(|t| SubtitleSummary { track_id: t.track_id, label: t.label.clone(), lang: t.lang.clone() })
+                .collect(),
+            active_subtitle_id: selected.unwrap_or(0),
         };
 
         {
@@ -286,9 +396,9 @@ impl CastRegistry {
         let url_for_load = active.url.clone();
         let kind_for_load = kind.clone();
         tokio::spawn(async move {
-            let http = dlna_service::http_client(Duration::from_secs(8));
-            let result = match dlna_device {
-                Some(d) => {
+            let result = match (kind_for_load.as_str(), dlna_device) {
+                ("dlna", Some(d)) => {
+                    let http = dlna_service::http_client(Duration::from_secs(8));
                     let (size, duration) = dlna_service::size_and_duration(&path).await;
                     dlna_service::load(
                         &http,
@@ -302,7 +412,27 @@ impl CastRegistry {
                     )
                     .await
                 }
-                None => Err(format!("device kind {} not supported yet", kind_for_load)),
+                ("cast", _) => {
+                    match registry.connection(&device_id_owned).await {
+                        Err(e) => Err(e),
+                        Ok(mut conns) => match conns.get_mut(&device_id_owned) {
+                            Some(conn) => {
+                                cast_control::load(
+                                    conn,
+                                    &url_for_load,
+                                    &title_for_load,
+                                    &content_type,
+                                    position,
+                                    &subtitle_tracks,
+                                    selected,
+                                )
+                                .await
+                            }
+                            None => Err("could not open a Cast session".to_string()),
+                        },
+                    }
+                }
+                (other, _) => Err(format!("device kind {} not supported yet", other)),
             };
             let mut inner = registry.inner.write().await;
             match result {
@@ -362,20 +492,55 @@ impl CastRegistry {
                 .await;
         }
 
-        let dlna_device: Option<DlnaDevice> = serde_json::from_value(device.clone()).ok();
-        let outcome = match dlna_device {
-            Some(d) => {
-                let http = dlna_service::http_client(Duration::from_secs(8));
-                dlna_service::command(&http, &d, action, value).await
+        let kind = device["kind"].as_str().unwrap_or("dlna").to_string();
+        let outcome = if kind == "cast" {
+            match self.connection(device_id).await {
+                Err(e) => Err(e),
+                Ok(mut conns) => {
+                    let conn = conns
+                        .get_mut(device_id)
+                        .ok_or_else(|| "no Cast session is open".to_string());
+                    match conn {
+                        Err(e) => Err(e),
+                        Ok(conn) => match action {
+                            "play" => cast_control::play(conn).await,
+                            "pause" => cast_control::pause(conn).await,
+                            "seek" => cast_control::seek(conn, value.unwrap_or(0.0)).await,
+                            "volume" => cast_control::set_volume(conn, value.unwrap_or(0.0)).await,
+                            "mute" => cast_control::set_muted(conn, value.unwrap_or(0.0) != 0.0).await,
+                            "subtitle" => {
+                                cast_control::select_subtitle(conn, value.unwrap_or(0.0) as i64).await
+                            }
+                            "stop" => {
+                                // Leaving the receiver on a blank media screen
+                                // reads as a hang, so the app is quit too.
+                                let r = cast_control::stop_media(conn).await;
+                                let q = cast_control::quit_app(conn).await;
+                                r.and(q)
+                            }
+                            other => Err(format!("unsupported action: {}", other)),
+                        },
+                    }
+                }
             }
-            None => Err(format!(
-                "device kind {} not supported yet",
-                device["kind"].as_str().unwrap_or("?")
-            )),
+        } else {
+            let dlna_device: Option<DlnaDevice> = serde_json::from_value(device.clone()).ok();
+            match dlna_device {
+                Some(d) => {
+                    let http = dlna_service::http_client(Duration::from_secs(8));
+                    dlna_service::command(&http, &d, action, value).await
+                }
+                None => Err(format!("device kind {} not supported yet", kind)),
+            }
         };
 
         if let Err(e) = outcome {
             return err(&e);
+        }
+
+        // A stopped Cast has no session worth keeping.
+        if action == "stop" {
+            self.drop_connection(device_id).await;
         }
 
         let mut inner = self.inner.write().await;
@@ -396,17 +561,31 @@ impl CastRegistry {
             None => return err("Unknown device - rescan and try again."),
         };
 
-        let payload = match serde_json::from_value::<DlnaDevice>(device.clone()) {
-            Ok(d) => {
-                let http = dlna_service::http_client(Duration::from_secs(8));
-                // Best-effort per field: a renderer that answers transport
-                // info but not position info still reports its state.
-                let s = dlna_service::status(&http, &d).await;
-                serde_json::to_value(s).unwrap_or(serde_json::Value::Null)
+        let kind = device["kind"].as_str().unwrap_or("dlna").to_string();
+        let payload = if kind == "cast" {
+            // Read from the receiver. A cached read freezes the cast bar and
+            // can make a position from minutes ago look like a command that
+            // never landed: receivers push MEDIA_STATUS on transitions only.
+            match self.connection(device_id).await {
+                Err(e) => return err(&e),
+                Ok(mut conns) => match conns.get_mut(device_id) {
+                    Some(conn) => {
+                        let (media, receiver) = cast_control::status(conn).await;
+                        cast_control::status_payload(&media, &receiver)
+                    }
+                    None => return err("no Cast session is open"),
+                },
             }
-            Err(_) => {
-                let kind = device["kind"].as_str().unwrap_or("?").to_string();
-                return err(&format!("device kind {} not supported yet", kind));
+        } else {
+            match serde_json::from_value::<DlnaDevice>(device.clone()) {
+                Ok(d) => {
+                    let http = dlna_service::http_client(Duration::from_secs(8));
+                    // Best-effort per field: a renderer that answers transport
+                    // info but not position info still reports its state.
+                    let s = dlna_service::status(&http, &d).await;
+                    serde_json::to_value(s).unwrap_or(serde_json::Value::Null)
+                }
+                Err(_) => return err(&format!("device kind {} not supported yet", kind)),
             }
         };
 
