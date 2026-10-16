@@ -36,8 +36,21 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(|(_, v)| v.trim().to_string())
 }
 
+/// Header value decoded the way Werkzeug decodes it: **latin-1**.
+///
+/// `HeaderValue::to_str()` only accepts visible ASCII, so a User-Agent
+/// containing an obs-text byte (e.g. `café-tracker/1.0`) would fail to
+/// decode and be treated as *absent*. Werkzeug decodes those bytes as
+/// latin-1, so Flask hashes the real string and Rust hashed an empty one -
+/// minting a different `device_id` and splitting that client into two rows.
+///
+/// Measured, not assumed: Flask matched the formula on 7/7 cases and Rust
+/// on 6/7, failing exactly the latin-1 case. Every byte maps to the code
+/// point of the same value, so ASCII behaviour is unchanged.
 fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
+    headers
+        .get(name)
+        .map(|v| v.as_bytes().iter().map(|&b| b as char).collect::<String>())
 }
 
 fn hints_from(headers: &HeaderMap) -> ClientHints {

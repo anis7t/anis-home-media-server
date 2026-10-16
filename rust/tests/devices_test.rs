@@ -255,6 +255,48 @@ async fn test_heartbeat_accepts_get_like_flask() {
     cleanup(&pool).await;
 }
 
+/// The defect the golden-value unit test cannot see.
+///
+/// The hash function was always right; header *decoding* was not.
+/// `HeaderValue::to_str()` rejects obs-text bytes, so a latin-1 User-Agent
+/// decoded as absent and hashed as the empty string. Flask matched 7/7,
+/// Rust 6/7, failing exactly this case - which would have given that client
+/// a second device row with no error anywhere.
+#[tokio::test]
+async fn test_non_ascii_user_agent_keeps_its_identity() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    // Sent as raw latin-1 bytes: `café-tracker/1.0`.
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/devices/heartbeat")
+        .body(Body::empty())
+        .unwrap();
+    let peer: SocketAddr = "192.168.1.50:51000".parse().unwrap();
+    req.extensions_mut().insert(ConnectInfo(peer));
+    req.headers_mut()
+        .append(header::USER_AGENT, header::HeaderValue::from_bytes(b"caf\xe9-tracker/1.0").unwrap());
+
+    let (status, body) = call(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["device_id"], "dev_76dedd3b1b7ac988",
+        "a latin-1 User-Agent must hash as itself, not as absent"
+    );
+
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT user_agent FROM devices WHERE device_id = $1")
+            .bind(body["device_id"].as_str().unwrap())
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.as_deref(), Some("caf\u{e9}-tracker/1.0"));
+
+    cleanup(&pool).await;
+}
+
 #[tokio::test]
 async fn test_suite_leaves_no_test_devices() {
     let _serial = SERIAL.lock().await;

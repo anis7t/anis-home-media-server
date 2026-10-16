@@ -847,21 +847,48 @@ type ModelMap = HashMap<&'static str, &'static str>;
 mod tests {
     use super::*;
 
+    /// Golden values, not shape.
+    ///
+    /// The previous version of this test asserted only prefix, length and
+    /// self-determinism, so it passed while the formula diverged from
+    /// Python's - the name claimed a parity it never checked. These
+    /// expectations were captured from the **live Flask engine** (7/7
+    /// matches) rather than computed here, so a change in Rust's formula
+    /// has something real to fail against.
     #[test]
-    fn deterministic_id_matches_python_formula() {
-        // sha256("<ip>|<ua>") first 16 hex chars, prefixed dev_.
-        let (id, is_new) = DeviceService::get_or_create_device_id(
-            None, None, "192.168.1.5", "Mozilla/5.0 (X11)",
-        );
-        assert!(is_new);
-        assert!(id.starts_with("dev_"));
-        assert_eq!(id.len(), 20, "dev_ plus 16 hex characters");
-        // Deterministic: same inputs, same id.
-        let (again, _) = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
-        assert_eq!(id, again);
-        // Different UA, different id.
-        let (other, _) = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "curl/8.0");
-        assert_ne!(id, other);
+    fn deterministic_id_matches_python_golden_values() {
+        let ip = "127.0.0.1";
+        let cases = [
+            ("", "dev_b07a760ab58004d3"),
+            ("curl/8.4.0", "dev_89347728f7dbc8c0"),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36",
+                "dev_5aa1b96cb7cc327a",
+            ),
+            (
+                "Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A) AppleWebKit/537.36 Mobile Safari/537.36",
+                "dev_de0546457a544552",
+            ),
+            // Latin-1: the byte 0xE9 is what caught the to_str() defect.
+            ("caf\u{e9}-tracker/1.0", "dev_a56184dae5b75123"),
+        ];
+        for (ua, want) in cases {
+            let (got, is_new) = DeviceService::get_or_create_device_id(None, None, ip, ua);
+            assert!(is_new);
+            assert_eq!(got, want, "ua={:?}", ua);
+            assert_eq!(got.len(), 20, "dev_ plus 16 hex characters");
+        }
+    }
+
+    #[test]
+    fn different_agents_and_addresses_hash_differently() {
+        let base = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
+        let again = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
+        let other_ua = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "curl/8.0");
+        let other_ip = DeviceService::get_or_create_device_id(None, None, "192.168.1.6", "Mozilla/5.0 (X11)");
+        assert_eq!(base.0, again.0, "deterministic");
+        assert_ne!(base.0, other_ua.0, "UA participates in the hash");
+        assert_ne!(base.0, other_ip.0, "client IP participates in the hash");
     }
 
     #[test]
