@@ -438,9 +438,24 @@ pub struct MediaStatus {
     pub duration: f64,
 }
 
+/// The `status` member of a MEDIA_STATUS reply.
+///
+/// Google's documentation specifies an object, but a real Samsung DU7000
+/// sends a **list**: `{"type":"MEDIA_STATUS","status":[{"playerState":...}]}` -
+/// and an empty list while idle. Reading it as an object yields nothing at
+/// all, so a perfectly playing cast reports `unknown` with a zero position and
+/// no error anywhere. Both shapes are accepted; a list takes its first entry.
+pub fn media_status_object(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    match value.get("status") {
+        Some(serde_json::Value::Array(items)) => items.first(),
+        Some(serde_json::Value::Object(_)) => value.get("status"),
+        _ => None,
+    }
+}
+
 pub fn parse_media_status(payload: &str) -> Option<MediaStatus> {
     let value: serde_json::Value = serde_json::from_str(payload).ok()?;
-    let status = value.get("status")?;
+    let status = media_status_object(&value)?;
 
     // Idle means nothing is loaded, which is not the same as stopped.
     let player_state = status
@@ -599,6 +614,23 @@ mod tests {
         assert_eq!(s.volume_level, Some(0.45));
         assert_eq!(s.volume_muted, Some(true));
         assert_eq!(s.percent_volume(), 45.0);
+    }
+
+    #[test]
+    fn a_list_shaped_status_is_accepted_as_well_as_an_object() {
+        // Google's docs specify an object; the DU7000 sends a list. Reading it
+        // as an object yielded nothing, so a working cast reported `unknown`
+        // with a zero position and no error at all.
+        let listed = r#"{"type":"MEDIA_STATUS","status":[{"mediaSessionId":1,"playerState":"PLAYING","currentTime":7.5,"media":{"status":{"duration":100.0}}}],"requestId":0}"#;
+        let parsed = parse_media_status(listed).expect("list-shaped status");
+        assert_eq!(parsed.state, "playing");
+        assert_eq!(parsed.position, 7.5);
+        assert_eq!(parsed.duration, 100.0);
+
+        // An empty list is what a receiver sends while idle.
+        let idle = r#"{"type":"MEDIA_STATUS","status":[],"requestId":0}"#;
+        assert!(media_status_object(&serde_json::from_str::<serde_json::Value>(idle).unwrap()).is_none());
+        assert!(parse_media_status(idle).is_none());
     }
 
     #[test]

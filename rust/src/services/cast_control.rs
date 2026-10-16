@@ -230,23 +230,28 @@ pub async fn load(
         "metadata": { "metadataType": 0, "title": title },
     });
 
-    if let Some(pos) = position.filter(|p| *p > 0.0) {
-        // In the LOAD message, not as a Seek afterwards.
-        media["currentTime"] = json!(pos);
-    }
     if !subtitles.is_empty() {
         media["tracks"] = json!(subtitles.iter().map(|s| s.to_media_track()).collect::<Vec<_>>());
         media["textTrackStyle"] = serde_json::to_value(TextTrackStyle::default())
             .map_err(|e| e.to_string())?;
     }
 
-    conn.request(
-        NS_MEDIA,
-        &transport_id,
-        json!({ "type": "LOAD", "media": media, "autoplay": true }),
-    )
-    .await
-    .map(|_| ())?;
+    // `currentTime` is a **top-level** member of LOAD, a sibling of `media`:
+    //
+    //   | media       | MediaInformation | ...
+    //   | autoplay    | boolean | optional
+    //   | currentTime | double  | optional  Seconds since beginning of content.
+    //
+    // Nesting it inside `media` - where it looks more natural - is silently
+    // ignored, and the cast starts from the beginning. That is the whole of
+    // "resume playback always starts over", and it survives a green test suite
+    // because nothing errors: the receiver accepts the LOAD and plays.
+    let mut load = json!({ "type": "LOAD", "media": media, "autoplay": true });
+    if let Some(pos) = position.filter(|p| *p > 0.0) {
+        load["currentTime"] = json!(pos);
+    }
+
+    conn.request(NS_MEDIA, &transport_id, load).await.map(|_| ())?;
 
     if let Some(track_id) = active_subtitle_id.filter(|t| *t > 0) {
         // The receiver may still be opening the session; this is best-effort.
@@ -389,10 +394,12 @@ pub async fn status(conn: &mut CastConnection) -> (serde_json::Value, serde_json
 pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -> serde_json::Value {
     let volume = cast_proto::parse_receiver_status(&receiver.to_string());
 
-    let mut state = media
-        .get("status")
+    // `status` is an object per the docs but a list on some receivers.
+    let player_state = cast_proto::media_status_object(media)
         .and_then(|s| s.get("playerState"))
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
+
+    let mut state = player_state
         .map(|raw| {
             match raw.to_uppercase().as_str() {
                 "PLAYING" => "playing".to_string(),
@@ -408,16 +415,23 @@ pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -
     // A receiver that is starting has no playerState yet, but it does have the
     // media receiver app running. Reporting "unknown" there leaves the phone
     // looking broken while the cast is in fact opening.
-    if state == "unknown" || state.is_empty() {
-        if receiver.get("status").and_then(|s| s.get("isActiveInput")).is_some() {
+    if state == "unknown" {
+        let app_running = receiver
+            .get("status")
+            .map(|s| {
+                s.get("appId").is_some()
+                    || s.get("applications")
+                        .and_then(|v| v.as_array())
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if app_running {
             state = "buffering".to_string();
         }
     }
 
-    let parsed = media
-        .get("status")
-        .map(|s| cast_proto::parse_media_status(&media.to_string()))
-        .flatten();
+    let parsed = cast_proto::parse_media_status(&media.to_string());
 
     json!({
         "state": state,
@@ -520,6 +534,31 @@ mod tests {
             .map(|m| format!("{}/{:?}", m.namespace, m.message_type()))
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    #[test]
+    fn a_resume_position_is_a_sibling_of_media_not_a_member() {
+        // Per the LOAD message spec, `currentTime` sits beside `media`.
+        // Nested inside it, the receiver accepts the LOAD, plays happily from
+        // zero and reports no error - so this is the exact shape that makes
+        // "resume playback" silently restart.
+        let load = json!({
+            "type": "LOAD",
+            "autoplay": true,
+            "currentTime": 600.0,
+            "media": { "contentId": "http://h/m.mp4" }
+        });
+        assert_eq!(load["currentTime"], 600.0);
+        assert!(load["media"].get("currentTime").is_none());
+
+        let nested = json!({
+            "type": "LOAD",
+            "media": { "contentId": "http://h/m.mp4", "currentTime": 600.0 }
+        });
+        assert!(
+            nested.get("currentTime").is_none(),
+            "a nested currentTime is the shape the receiver ignores"
+        );
     }
 
     #[test]
