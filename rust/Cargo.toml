@@ -31,6 +31,12 @@ flate2 = "1.1.10"
 quick-xml = "0.37"
 if-addrs = "0.13"
 socket2 = { version = "0.5", features = ["all"] }
+# Phase C4b: the IPv4 neighbour table, so Cast discovery does not shell out to
+# `arp -a` the way the Python implementation does.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+] }
 
 [dev-dependencies]
 http-body-util = "0.1"

@@ -1,5 +1,7 @@
 pub mod asset_service;
+pub mod cast_discovery;
 pub mod cast_origin;
+pub mod cast_proto;
 pub mod cast_registry;
 pub mod device_service;
 pub mod dlna_service;

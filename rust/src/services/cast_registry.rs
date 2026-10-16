@@ -12,6 +12,7 @@
 //! roughly one scan in three, and a cast that is visibly running must stay
 //! controllable.
 
+use crate::services::cast_discovery;
 use crate::services::cast_origin::{build_media_url, resolve_origin};
 use crate::services::dlna_service::{self, DlnaDevice};
 use serde::Serialize;
@@ -147,8 +148,57 @@ impl CastRegistry {
             }
         }
 
+        // Cast discovery runs off hosts we already know: the DLNA renderers just
+        // found, any Cast device a previous scan saw, and the neighbour table.
+        // A TV that is both DLNA and Cast - the common case - therefore reaches
+        // Cast discovery even if its neighbour entry has gone cold.
+        let (dlna_pairs, cached_hosts) = {
+            let inner = self.inner.read().await;
+            let pairs: Vec<(String, String)> = inner
+                .devices
+                .values()
+                .filter(|d| d["kind"].as_str() == Some("dlna"))
+                .map(|d| {
+                    (
+                        d["host"].as_str().unwrap_or("").to_string(),
+                        d["model"].as_str().unwrap_or("").to_string(),
+                    )
+                })
+                .collect();
+            let hosts: Vec<String> = inner
+                .devices
+                .values()
+                .filter(|d| d["kind"].as_str() == Some("cast"))
+                .map(|d| d["host"].as_str().unwrap_or("").to_string())
+                .collect();
+            (pairs, hosts)
+        };
+        let dlna_hosts: Vec<String> = dlna_pairs.iter().map(|(h, _)| h.clone()).collect();
+        let candidates = cast_discovery::candidate_hosts(
+            &dlna_hosts,
+            &cached_hosts,
+            &cast_discovery::neighbour_table(),
+        );
+
+        match cast_discovery::discover(candidates).await {
+            Ok(mut devices) => {
+                for d in &mut devices {
+                    cast_discovery::enrich_model_from_dlna(d, &dlna_pairs);
+                }
+                for d in devices {
+                    found.insert(d.id.clone(), serde_json::to_value(&d).unwrap_or(serde_json::Value::Null));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Cast discovery failed: {}", e);
+                errors.insert("cast".into(), e);
+            }
+        }
+
         let mut inner = self.inner.write().await;
-        // Replace, not merge: a device that stopped answering is gone.
+        // Replace, not merge: a device that stopped answering is gone. Cast
+        // connections are the exception `resolve_device` papers over, because
+        // mDNS windows miss a device in roughly one scan in three.
         inner.devices = found;
         inner.errors = errors;
         inner.scanned_at = Some(SystemTime::now());
