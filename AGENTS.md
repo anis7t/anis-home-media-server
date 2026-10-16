@@ -277,6 +277,20 @@ Applies to the native Rust cast service as much as to the Python one.
   `status.applications[]` on others — check both. And `LAUNCH_STATUS:
   USER_ALLOWED` is not the same as "the app is up": both replies arrive seconds
   later, so sequence on a poll, not on the ack.
+- **An absent or empty media `status` means stopped, not buffering.** An app
+  that is running with nothing loaded is idle. Do not infer "buffering" from
+  "the app is running" — the receiver reports `BUFFERING` explicitly, and the
+  inference leaves a finished cast showing `buffering` forever.
+- **Every reader of receiver `status` goes through `cast_proto::status_object`.**
+  `MEDIA_STATUS.status` is a **list** on some receivers (`[]` while idle) and an
+  object on others. Indexing it directly produced three separate bugs — a zero
+  position on a playing cast, a refused `seek`, and a phantom "still playing"
+  after teardown — and two of them read as "casting is broken" when casting
+  worked. Keep the shape assumption in one function.
+- **Live verification must tear down in a `finally`.** `scripts/verify_cast_live.py`
+  starts playback on the real television; its `stop` cannot be skipped by an
+  early return or a timeout, and it exits non-zero if the receiver is still
+  playing. Never interleave code work between starting a cast and stopping it.
 - **A receiver may `PING` us and expects `PONG`.** Unanswered, it tears the
   virtual connection down, which surfaces as a `CLOSE` mid-request.
 - **Never cache a Cast connection without a liveness path.** A receiver resets

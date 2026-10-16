@@ -193,7 +193,29 @@ Four milestones, three of them verified against the live receiver.
 | `LAUNCH` + app `transportId` session | ✅ **verified live** |
 | `LOAD` → playback | ✅ **verified live** (`PLAYING`, 1920×864) |
 | Resume at a position | ✅ **verified live** (`pos=600.0` from the receiver) |
-| Transport controls, quit-app | ⬜ redial-and-retry written, **not yet verified live** |
+| Transport controls after a dropped session | ✅ **verified live** (seek/volume/mute all recovered) |
+| Quit-app teardown | ✅ **verified live**; receiver confirmed idle |
+
+`scripts/verify_cast_live.py` runs the whole sequence against real hardware.
+Its `stop` lives in a `finally` and it exits non-zero if the receiver is still
+playing, because a verification harness that can leave a film playing on
+someone's television is not a verification harness.
+
+#### The list-shaped `status` caused three separate bugs
+
+`MEDIA_STATUS.status` is a **list** on this receiver and an object elsewhere.
+Reading it directly produced three unrelated symptoms:
+
+| Symptom | Reality |
+|---|---|
+| Position reported as `0` on a playing cast | Working, at 600 s |
+| `seek` refused with "no media session yet" | Session existed and was playing |
+| "STILL PLAYING" after a successful `stop` | Receiver idle (Flask agreed) |
+
+Two of the three read as *"casting is broken"* when casting was working
+perfectly. The consolidation into one `status_object` helper is what ended the
+pattern — the individual fixes did not, because the same shape assumption had
+been written in a second and third place.
 
 #### Two places the wire disagrees with the documentation
 
