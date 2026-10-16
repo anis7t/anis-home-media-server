@@ -105,7 +105,7 @@ pub fn create_app_full(
     media_roots: Vec<PathBuf>,
     cache_dir: PathBuf,
     static_dir: Option<PathBuf>,
-    flask_origin: Option<String>,
+    _flask_origin: Option<String>,
 ) -> Router {
     let system_routes = Router::new()
         .route("/api/system-status", get(routes::system::system_status_handler))
@@ -392,19 +392,60 @@ pub fn create_app_full(
         )
         .with_state(storage_state);
 
-    let proxy_routes = if let Some(origin) = flask_origin {
-        let proxy_state = Arc::new(routes::proxy::ProxyState::new(origin));
-        Router::new()
-            .route("/auth", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/auth", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/auth/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/admin", axum::routing::any(routes::proxy::proxy_handler))
-            .route("/api/admin/{*path}", axum::routing::any(routes::proxy::proxy_handler))
-            .with_state(proxy_state)
-    } else {
-        Router::new()
+    // Phase C5 Slice 4: Admin status, PIN verification and rotation, 100% native.
+    let admin_state = routes::admin::AdminState {
+        pool: Arc::new(pool.clone()),
     };
+
+    let admin_routes = Router::new()
+        .route("/api/admin/status", get(routes::admin::admin_status_handler))
+        .route(
+            "/api/admin/verify",
+            axum::routing::post(routes::admin::admin_verify_handler),
+        )
+        .route(
+            "/api/admin/pin",
+            axum::routing::post(routes::admin::admin_pin_handler),
+        )
+        .with_state(admin_state);
+
+    // Phase C5 Slice 4: Authentication, Google OAuth, Tokens, Allowlist, 100% native.
+    let auth_state = routes::auth::AuthState {
+        pool: Arc::new(pool.clone()),
+    };
+
+    let auth_routes = Router::new()
+        .route("/api/auth/me", get(routes::auth::auth_me_handler))
+        .route(
+            "/api/auth/allowlist",
+            get(routes::auth::get_allowlist_handler)
+                .post(routes::auth::post_allowlist_handler),
+        )
+        .route(
+            "/api/auth/tokens",
+            get(routes::auth::get_tokens_handler)
+                .post(routes::auth::post_tokens_handler),
+        )
+        .route(
+            "/api/auth/tokens/{id}",
+            axum::routing::delete(routes::auth::delete_token_handler),
+        )
+        .route("/auth/google", get(routes::auth::google_start_handler))
+        .route(
+            "/auth/google/callback",
+            get(routes::auth::google_callback_handler),
+        )
+        .route(
+            "/auth/logout",
+            get(routes::auth::logout_handler)
+                .post(routes::auth::logout_handler),
+        )
+        .route(
+            "/auth/pair",
+            get(routes::auth::pair_page_handler)
+                .post(routes::auth::pair_submit_handler),
+        )
+        .with_state(auth_state);
 
     let app = Router::new()
         .route("/health", get(routes::health::health_handler))
@@ -424,7 +465,8 @@ pub fn create_app_full(
         .merge(cast_routes)
         .merge(scan_routes)
         .merge(storage_routes)
-        .merge(proxy_routes);
+        .merge(admin_routes)
+        .merge(auth_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {
         let rel_dist = PathBuf::from("web/dist");

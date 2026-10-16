@@ -13,6 +13,7 @@ pub mod subtitles;
 pub mod system;
 pub mod spa;
 pub mod transcode;
-pub mod proxy;
 pub mod scan;
 pub mod storage;
+pub mod admin;
+pub mod auth;

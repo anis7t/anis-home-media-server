@@ -50,6 +50,7 @@ impl StorageTestContext {
         fs::create_dir_all(cache_dir.join("hls")).unwrap();
         fs::create_dir_all(cache_dir.join("previews")).unwrap();
         fs::create_dir_all(&archive_dir).unwrap();
+        std::env::set_var("MEDIA_SERVER_ARCHIVE_DIR", &archive_dir);
 
         // Ensure admin PIN is configured
         sqlx::query(
@@ -278,8 +279,9 @@ async fn test_storage_archive_endpoint() {
     let ctx = StorageTestContext::setup().await;
 
     // Create a video file
-    let video_path = ctx.media_dir.join("ArchiveMe.mkv");
-    fs::write(&video_path, b"archive me video content").unwrap();
+    let raw_video_path = ctx.media_dir.join("ArchiveMe.mkv");
+    fs::write(&raw_video_path, b"archive me video content").unwrap();
+    let video_path = raw_video_path.canonicalize().unwrap();
 
     // 1. Without PIN returns 403
     let req = Request::builder()
@@ -340,9 +342,10 @@ async fn test_storage_archive_endpoint() {
         .unwrap();
 
     let res = ctx.app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(status, StatusCode::OK, "Body was: {:?}", body);
 
     assert_eq!(body["success"], true);
     assert_eq!(body["result"]["status"], "archived");

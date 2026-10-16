@@ -9,6 +9,11 @@ use std::time::Duration;
 /// rewrites an existing object. Kept as a function so a later runner can
 /// replace the call site without touching callers.
 pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(7429184)")
+        .execute(&mut *tx)
+        .await?;
+
     // Phase 6A: durable transcode job records and single-scheduler ownership.
     // `unique (filename, mode)` is what makes enqueue idempotent, and
     // `lease_owner`/`lease_expires_at` are what make ownership exclusive.
@@ -37,7 +42,7 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     // The claim path filters on (status, lease_expires_at, created_at);
@@ -49,10 +54,121 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             ON transcode_jobs (status, lease_expires_at, created_at)
         "#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    tracing::info!("Rust schema ensured (transcode_jobs)");
+    // Auth & Identity Schema (Phase C5 Slice 4)
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            google_sub TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL,
+            name TEXT,
+            picture_url TEXT,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_login_at TIMESTAMPTZ
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            label TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMPTZ,
+            expires_at TIMESTAMPTZ,
+            revoked_at TIMESTAMPTZ
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS oauth_attempts (
+            state TEXT PRIMARY KEY,
+            nonce TEXT,
+            verifier TEXT,
+            redirect_uri TEXT,
+            next_path TEXT,
+            started_at BIGINT,
+            used SMALLINT DEFAULT 0
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            email TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMPTZ NOT NULL
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    tracing::info!("Rust schema ensured (transcode_jobs, users, auth_tokens, sessions)");
     Ok(())
 }
 
