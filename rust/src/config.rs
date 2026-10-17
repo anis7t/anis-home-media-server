@@ -39,7 +39,7 @@ impl AppConfig {
             .or_else(|_| env::var("PORT"))
             .ok()
             .and_then(|p| p.parse::<u16>().ok())
-            .unwrap_or(8001);
+            .unwrap_or(8000);
 
         let media_root = env::var("MEDIA_SERVER_MEDIA_ROOT")
             .map(PathBuf::from)

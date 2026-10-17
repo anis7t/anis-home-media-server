@@ -1,10 +1,15 @@
+import argparse
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
 import urllib.error
 
-BASE = "http://127.0.0.1:8001"
+parser = argparse.ArgumentParser(description="Probe Phase 8 Contracts")
+parser.add_argument("--base", default=os.environ.get("BASE", "http://127.0.0.1:8000"), help="Base URL of server")
+args, _ = parser.parse_known_args()
+BASE = args.base.rstrip("/")
 
 print(f"--- Probing Phase 8 Contracts against {BASE} ---")
 

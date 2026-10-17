@@ -13,28 +13,28 @@ if ($svc) {
     Write-Host "  MediaServerRust service is not installed (running standalone)." -ForegroundColor DarkGray
 }
 
-# 2. Port 8001 Listener Check
-Write-Host "[2/4] Port 8001 Listener Check:" -ForegroundColor Yellow
-$conn = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -First 1
+# 2. Port 8000 Listener Check
+Write-Host "[2/4] Port 8000 Listener Check:" -ForegroundColor Yellow
+$conn = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn) {
     $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
-    Write-Host "  Port 8001 is listening by process: $($proc.ProcessName) (PID: $($proc.Id), Memory: $([math]::Round($proc.WorkingSet64/1MB, 1)) MB)" -ForegroundColor Green
+    Write-Host "  Port 8000 is listening by process: $($proc.ProcessName) (PID: $($proc.Id), Memory: $([math]::Round($proc.WorkingSet64/1MB, 1)) MB)" -ForegroundColor Green
 } else {
-    Write-Host "  Port 8001 is NOT listening." -ForegroundColor Red
+    Write-Host "  Port 8000 is NOT listening." -ForegroundColor Red
 }
 
 # 3. HTTP Probes
 Write-Host "`n[3/4] HTTP Connectivity Tests:" -ForegroundColor Yellow
 try {
-    $resSpa = Invoke-WebRequest -Uri "http://127.0.0.1:8001/" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local SPA (http://127.0.0.1:8001/): $($resSpa.StatusCode) OK" -ForegroundColor Green
+    $resSpa = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 4
+    Write-Host "  Local SPA (http://127.0.0.1:8000/): $($resSpa.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local SPA Error: $_" -ForegroundColor Red
 }
 
 try {
-    $resApi = Invoke-WebRequest -Uri "http://127.0.0.1:8001/api/movies" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local API (http://127.0.0.1:8001/api/movies): $($resApi.StatusCode) OK" -ForegroundColor Green
+    $resApi = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/movies" -UseBasicParsing -TimeoutSec 4
+    Write-Host "  Local API (http://127.0.0.1:8000/api/movies): $($resApi.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local API Error: $_" -ForegroundColor Red
 }

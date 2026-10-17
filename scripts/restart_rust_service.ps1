@@ -102,13 +102,13 @@ if ($svc) {
 } else {
     Write-Host "[2/5] '$serviceName' Windows Service is not installed. Running in standalone mode." -ForegroundColor Yellow
 
-    # Terminate any existing process on port 8001
-    $connections = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue
+    # Terminate any existing process on port 8000
+    $connections = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
     if ($connections) {
         $pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique
         foreach ($p in $pids) {
             if ($p -gt 4) {
-                Write-Host "  Stopping existing process on port 8001 (PID: $p)..." -ForegroundColor Yellow
+                Write-Host "  Stopping existing process on port 8000 (PID: $p)..." -ForegroundColor Yellow
                 Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
             }
         }
@@ -129,7 +129,7 @@ if ($svc) {
     Write-Host "[4/5] Launching standalone $exePath..." -ForegroundColor Cyan
     $env:MEDIA_SERVER_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/media_server"
     $env:RUST_HOST = "0.0.0.0"
-    $env:RUST_PORT = "8001"
+    $env:RUST_PORT = "8000"
     $env:MEDIA_SERVER_MEDIA_ROOT = "D:\Flicks"
     $env:MEDIA_SERVER_CACHE_DIR = "E:\MediaServer\cache"
     $env:MEDIA_SERVER_STATIC_DIR = "E:\MediaServer\web\dist"
@@ -142,18 +142,18 @@ if ($svc) {
 }
 
 # 5. Probes & Health Check
-Write-Host "[5/5] Testing HTTP Endpoints on Port 8001..." -ForegroundColor Yellow
+Write-Host "[5/5] Testing HTTP Endpoints on Port 8000..." -ForegroundColor Yellow
 
 try {
-    $spaRes = Invoke-WebRequest -Uri "http://127.0.0.1:8001/" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local SPA (http://127.0.0.1:8001/): $($spaRes.StatusCode) OK" -ForegroundColor Green
+    $spaRes = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 4
+    Write-Host "  Local SPA (http://127.0.0.1:8000/): $($spaRes.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local SPA Error: $_" -ForegroundColor Red
 }
 
 try {
-    $apiRes = Invoke-WebRequest -Uri "http://127.0.0.1:8001/api/movies" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local API (http://127.0.0.1:8001/api/movies): $($apiRes.StatusCode) OK" -ForegroundColor Green
+    $apiRes = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/movies" -UseBasicParsing -TimeoutSec 4
+    Write-Host "  Local API (http://127.0.0.1:8000/api/movies): $($apiRes.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local API Error: $_" -ForegroundColor Red
 }
