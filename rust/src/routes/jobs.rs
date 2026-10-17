@@ -66,14 +66,12 @@ async fn enqueue_job_inner(
     filename: &str,
     body: Option<Json<EnqueueJobRequest>>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let req = body.map(|Json(b)| b).unwrap_or(EnqueueJobRequest {
-        mode: None,
-        force: None,
-    });
+    let req = body.map(|Json(b)| b).unwrap_or_default();
     let mode = req.mode.clone().unwrap_or_else(|| "hls".to_string());
     let force = req.force.unwrap_or(false);
+    let priority = req.priority.unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
 
-    let job = JobService::enqueue(&state.pool, filename, &mode, force).await?;
+    let job = JobService::enqueue_with_priority(&state.pool, filename, &mode, force, priority).await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -115,14 +113,12 @@ pub async fn enqueue_job_handler(
     Path(filename): Path<String>,
     body: Option<Json<EnqueueJobRequest>>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let req = body.map(|Json(b)| b).unwrap_or(EnqueueJobRequest {
-        mode: None,
-        force: None,
-    });
+    let req = body.map(|Json(b)| b).unwrap_or_default();
     let mode = req.mode.clone().unwrap_or_else(|| "hls".to_string());
     let force = req.force.unwrap_or(false);
+    let priority = req.priority.unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
 
-    let job = JobService::enqueue(&state.pool, &filename, &mode, force).await?;
+    let job = JobService::enqueue_with_priority(&state.pool, &filename, &mode, force, priority).await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -163,4 +159,74 @@ pub async fn list_jobs_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let jobs: Vec<TranscodeJob> = JobService::list(&state.pool, 100).await?;
     Ok(Json(serde_json::json!({ "jobs": jobs })))
+}
+
+/// `GET /api/transcodes` - active background transcodes formatted for web/mobile UI.
+pub async fn active_transcodes_handler(
+    State(state): State<JobState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let jobs = JobService::list(&state.pool, 50).await?;
+    let mut list = Vec::new();
+    for j in jobs {
+        if j.status == "running" || j.status == "queued" {
+            let name_parts = j.filename.rsplit_once('/').map(|(_, n)| n).unwrap_or(&j.filename);
+            let title = name_parts.rsplit_once('.').map(|(n, _)| n).unwrap_or(name_parts).replace('.', " ");
+            let pct = j.progress.unwrap_or(0.0);
+            let speed_str = j.speed.map(|s| format!("{:.1}x", s));
+            let eta_str = j.eta.map(|e| {
+                let m = (e / 60.0).floor() as u64;
+                let s = (e % 60.0).floor() as u64;
+                if m >= 60 {
+                    format!("{}h {}m", m / 60, m % 60)
+                } else {
+                    format!("{}m {}s", m, s)
+                }
+            }).unwrap_or_else(|| "calculating...".to_string());
+
+            let runtime: Option<i32> = sqlx::query_scalar::<_, i32>(
+                "SELECT runtime FROM movies WHERE filename = $1",
+            )
+            .bind(&j.filename)
+            .fetch_optional(&*state.pool)
+            .await
+            .unwrap_or(None);
+
+            let (encoded_str, duration_str) = if let Some(rt_min) = runtime.filter(|&r| r > 0) {
+                let dur_sec = (rt_min * 60) as f64;
+                let enc_sec = (dur_sec * (pct / 100.0)).clamp(0.0, dur_sec);
+                (
+                    Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
+                    Some(format!("{}:{:02}", (dur_sec / 60.0).floor() as u64, (dur_sec % 60.0).floor() as u64)),
+                )
+            } else if let (Some(eta_val), Some(spd_val)) = (j.eta, j.speed) {
+                if spd_val > 0.05 && pct > 0.0 {
+                    let remaining_sec = eta_val;
+                    let total_est_sec = remaining_sec / (1.0 - (pct / 100.0)).max(0.01);
+                    let enc_sec = (total_est_sec * (pct / 100.0)).max(0.0);
+                    (
+                        Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
+                        Some(format!("{}:{:02}", (total_est_sec / 60.0).floor() as u64, (total_est_sec % 60.0).floor() as u64)),
+                    )
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+
+            list.push(serde_json::json!({
+                "filename": j.filename,
+                "title": title,
+                "mode": "HLS Transcode",
+                "status": j.status,
+                "percent": pct,
+                "speed": speed_str,
+                "eta_str": eta_str,
+                "encoded_str": encoded_str,
+                "duration_str": duration_str,
+                "poster_url": format!("/poster/{}", j.filename),
+            }));
+        }
+    }
+    Ok(Json(serde_json::json!({ "transcodes": list })))
 }

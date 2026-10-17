@@ -25,6 +25,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize database pool
     let pool = db::create_pool(&config.database_url).await?;
 
+    // Phase 6A: Recover stale/interrupted jobs from previous runs (Option A)
+    if let Err(e) = media_server_api::services::job_service::JobService::recover_stale_jobs(&pool).await {
+        tracing::warn!("Failed to recover stale jobs on startup: {}", e);
+    }
+
+    // Phase 6A: Proactive library auto-transcoder daemon (5-minute interval)
+    let sweeper_roots = std::sync::Arc::new(config.media_roots.clone());
+    let sweeper_cache = std::sync::Arc::new(config.cache_dir.clone());
+    media_server_api::services::transcode_sweeper::TranscodeSweeperService::start_daemon(
+        pool.clone(),
+        sweeper_roots.clone(),
+        sweeper_cache.clone(),
+        std::time::Duration::from_secs(300),
+    );
+
+    // Phase 6B: Native Multi-GPU Transcode Worker daemon
+    let shutdown_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_id = format!("rust-worker-{}", std::process::id());
+    media_server_api::services::transcode_worker::TranscodeWorker::start_worker(
+        pool.clone(),
+        sweeper_roots,
+        sweeper_cache,
+        worker_id,
+        shutdown_flag.clone(),
+    );
+
     // Initialize services
     let system_service = SystemService::new();
 

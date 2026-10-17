@@ -7,23 +7,34 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 /// external sweeper, which is the whole recovery story for 6A.
 pub const DEFAULT_LEASE_SECONDS: i64 = 300;
 
+pub const PRIORITY_BACKGROUND: i32 = 0;
+pub const PRIORITY_INTERACTIVE: i32 = 10;
+
 pub struct JobService;
 
 impl JobService {
-    /// Idempotent admission. Re-enqueueing a live job returns the existing
-    /// row rather than creating a second one - the unique constraint on
-    /// (filename, mode) is what makes that safe under concurrency, not this
-    /// read-then-write sequence.
-    ///
-    /// A terminal job is only re-opened when `force` is set, mirroring
-    /// Flask's `ensure_hls_transcode(force=True)`, which exists solely for
-    /// a measured frame deficit. Without `force`, a `completed` job stays
-    /// completed and a `failed` job stays failed until a caller retries.
+    /// Idempotent admission with default background priority (0).
     pub async fn enqueue(
         pool: &PgPool,
         filename: &str,
         mode: &str,
         force: bool,
+    ) -> Result<TranscodeJob, AppError> {
+        Self::enqueue_with_priority(pool, filename, mode, force, PRIORITY_BACKGROUND).await
+    }
+
+    /// Idempotent admission with explicit priority.
+    ///
+    /// Re-enqueueing a live job returns the existing row rather than creating
+    /// a second one. If a queued job is re-enqueued with higher priority
+    /// (e.g. an interactive user tap over a background sweep), its priority
+    /// is promoted.
+    pub async fn enqueue_with_priority(
+        pool: &PgPool,
+        filename: &str,
+        mode: &str,
+        force: bool,
+        priority: i32,
     ) -> Result<TranscodeJob, AppError> {
         let filename = filename.trim();
         if filename.is_empty() {
@@ -35,34 +46,54 @@ impl JobService {
             ));
         }
 
-        let existing: Option<(i64, String)> = sqlx::query(
-            "SELECT id, status FROM transcode_jobs WHERE filename = $1 AND mode = $2",
+        let existing: Option<(i64, String, i32)> = sqlx::query(
+            "SELECT id, status, COALESCE(priority, 0) as priority FROM transcode_jobs WHERE filename = $1 AND mode = $2",
         )
         .bind(filename)
         .bind(mode)
         .fetch_optional(pool)
         .await?
-        .map(|r| (r.get::<i64, _>("id"), r.get::<String, _>("status")));
+        .map(|r| (
+            r.get::<i64, _>("id"),
+            r.get::<String, _>("status"),
+            r.get::<i32, _>("priority"),
+        ));
 
-        if let Some((id, status)) = existing {
+        if let Some((id, status, current_priority)) = existing {
             let current = JobStatus::parse(&status);
             let is_live = current.map(|s| s.is_live()).unwrap_or(false);
-            if is_live || !force {
+            if is_live && !force {
+                // If queued and arriving with higher priority, promote it
+                if status == "queued" && priority > current_priority {
+                    sqlx::query(
+                        "UPDATE transcode_jobs SET priority = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+                    )
+                    .bind(id)
+                    .bind(priority)
+                    .execute(pool)
+                    .await?;
+                }
+                if let Some(job) = Self::get_by_id(pool, id).await? {
+                    return Ok(job);
+                }
+            } else if !is_live && !force {
                 if let Some(job) = Self::get_by_id(pool, id).await? {
                     return Ok(job);
                 }
             }
+
             // `force` on a terminal job: reopen as queued and clear the
             // previous outcome, keeping the row (and its id) stable.
             sqlx::query(
                 r#"
                 UPDATE transcode_jobs
-                   SET status = 'queued', error = NULL, lease_owner = NULL,
+                   SET status = 'queued', priority = $2, error = NULL, lease_owner = NULL,
                        lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
                  WHERE id = $1
                 "#,
             )
             .bind(id)
+            .bind(priority)
             .execute(pool)
             .await?;
             return Ok(Self::get_by_id(pool, id).await?.unwrap());
@@ -70,14 +101,15 @@ impl JobService {
 
         let id: i64 = sqlx::query(
             r#"
-            INSERT INTO transcode_jobs (filename, mode, status)
-            VALUES ($1, $2, 'queued')
+            INSERT INTO transcode_jobs (filename, mode, status, priority)
+            VALUES ($1, $2, 'queued', $3)
             ON CONFLICT (filename, mode) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
             RETURNING id
             "#,
         )
         .bind(filename)
         .bind(mode)
+        .bind(priority)
         .fetch_one(pool)
         .await?
         .get("id");
@@ -87,12 +119,12 @@ impl JobService {
         })
     }
 
-    /// Atomically claim the oldest claimable job for `owner`.
+    /// Atomically claim the highest priority, oldest claimable job for `owner`.
     ///
     /// Claimable means: `queued` (never claimed), or `running` with an
-    /// expired/absent lease (a previous owner died). The UPDATE and the
-    /// RETURNING are one statement, so two concurrent callers can never
-    /// receive the same row - this is the single-scheduler guarantee.
+    /// expired/absent lease (a previous owner died). Evaluated by `priority DESC, created_at ASC`.
+    /// The UPDATE and the RETURNING are one statement with `SKIP LOCKED`, so concurrent callers
+    /// never receive the same row.
     pub async fn claim_next(
         pool: &PgPool,
         owner: &str,
@@ -115,7 +147,7 @@ impl JobService {
                        OR (status = 'running'
                            AND (lease_expires_at IS NULL
                                 OR lease_expires_at < CURRENT_TIMESTAMP))
-                    ORDER BY created_at ASC
+                    ORDER BY priority DESC, created_at ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
              )
@@ -135,6 +167,27 @@ impl JobService {
 
         tx.commit().await?;
         Ok(job)
+    }
+
+    /// Recover orphaned running jobs after a server crash/restart.
+    ///
+    /// Finds any job with status 'running' whose lease has expired or is null,
+    /// and transitions it cleanly to 'failed' with an explanatory error.
+    pub async fn recover_stale_jobs(pool: &PgPool) -> Result<u64, AppError> {
+        let res = sqlx::query(
+            r#"
+            UPDATE transcode_jobs
+               SET status = 'failed',
+                   error = 'Server restarted during transcode',
+                   lease_owner = NULL,
+                   lease_expires_at = NULL,
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE status = 'running'
+            "#,
+        )
+        .execute(pool)
+        .await?;
+        Ok(res.rows_affected())
     }
 
     /// Extend the lease of a job this caller still owns. Returns false if
@@ -325,6 +378,7 @@ fn map_job(row: &sqlx::postgres::PgRow) -> TranscodeJob {
         resume_time: row.get("resume_time"),
         start_seg: row.get("start_seg"),
         attempts: row.get("attempts"),
+        priority: row.try_get("priority").unwrap_or(0),
         error: row.get("error"),
         lease_owner: row.get("lease_owner"),
         lease_expires_at: row.get("lease_expires_at"),

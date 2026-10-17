@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// The roots are compared longest-first so a root nested inside another
 /// (`E:/MediaServer` inside a configured `E:/`) cannot win and leave a
 /// half-stripped key behind.
-fn video_path_key(video_path: &PathBuf, roots: &[PathBuf]) -> String {
+pub fn video_path_key(video_path: &std::path::Path, roots: &[PathBuf]) -> String {
     let raw = video_path.to_string_lossy().replace('\\', "/");
     let raw_clean = raw.strip_prefix("//?/").unwrap_or(&raw);
 
@@ -144,11 +144,14 @@ pub async fn transcode_status_handler(
                     return Ok(Json(TranscodeStatusResponse {
                         status,
                         progress: job.progress,
+                        percent: job.progress,
                         speed: job.speed,
                         fps: job.fps,
                         eta: job.eta,
+                        remaining: job.eta,
                         is_complete: false,
                         error: job.error,
+                        ..Default::default()
                     }));
                 }
             }
@@ -170,21 +173,17 @@ pub async fn transcode_status_handler(
                 return Ok(Json(TranscodeStatusResponse {
                     status: "complete".to_string(),
                     progress: Some(100.0),
-                    speed: None,
-                    fps: None,
+                    percent: Some(100.0),
                     eta: Some(0.0),
+                    remaining: Some(0.0),
                     is_complete: true,
-                    error: None,
+                    ..Default::default()
                 }));
             } else if content.contains("segment_") {
                 return Ok(Json(TranscodeStatusResponse {
                     status: "transcoding".to_string(),
-                    progress: None,
-                    speed: None,
-                    fps: None,
-                    eta: None,
                     is_complete: false,
-                    error: None,
+                    ..Default::default()
                 }));
             }
         }
@@ -196,23 +195,19 @@ pub async fn transcode_status_handler(
         return Ok(Json(TranscodeStatusResponse {
             status: "complete".to_string(),
             progress: Some(100.0),
-            speed: None,
-            fps: None,
+            percent: Some(100.0),
             eta: Some(0.0),
+            remaining: Some(0.0),
             is_complete: true,
-            error: None,
+            ..Default::default()
         }));
     }
 
     // 3. Otherwise idle
     Ok(Json(TranscodeStatusResponse {
         status: "idle".to_string(),
-        progress: None,
-        speed: None,
-        fps: None,
-        eta: None,
         is_complete: false,
-        error: None,
+        ..Default::default()
     }))
 }
 
@@ -268,7 +263,14 @@ pub async fn transcode_start_handler(
 
     let rel_key = video_path_key(&video_path, &state.roots);
     if let Some(pool) = state.pool.as_ref() {
-        let _ = JobService::enqueue(pool, &rel_key, "hls", false).await?;
+        let _ = JobService::enqueue_with_priority(
+            pool,
+            &rel_key,
+            "hls",
+            false,
+            crate::services::job_service::PRIORITY_INTERACTIVE,
+        )
+        .await?;
     }
 
     Ok(Json(serde_json::json!({

@@ -4,11 +4,11 @@
 
 These two rules govern **all** work in this repository. Added 2026-10-16.
 
-### 0.1 Plan first, then ask for approval
+### 0.1 Ask before drafting a plan, then plan first and ask for approval
 
-Before implementing anything non-trivial, **present an implementation plan and
-explicitly request approval.** Do not begin the work on the strength of having
-described it.
+**Always ask the user before drafting an implementation plan.** Do not draft or write an implementation plan document until the user has explicitly requested or approved doing so.
+
+Once approved to draft a plan, before implementing anything non-trivial, **present an implementation plan and explicitly request approval.** Do not begin the work on the strength of having described it.
 
 A plan must state, at minimum:
 

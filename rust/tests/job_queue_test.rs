@@ -375,9 +375,108 @@ async fn test_enqueue_request_defaults_to_hls_mode() {
     let req = EnqueueJobRequest {
         mode: None,
         force: None,
+        priority: None,
     };
     assert_eq!(req.mode.clone().unwrap_or_else(|| "hls".to_string()), "hls");
     assert_eq!(req.force.unwrap_or(false), false);
+    assert_eq!(req.priority.unwrap_or(0), 0);
+}
+
+#[tokio::test]
+async fn test_priority_ordering_preempts_background_jobs() {
+    use media_server_api::services::job_service::{PRIORITY_BACKGROUND, PRIORITY_INTERACTIVE};
+    let _lock = acquire_global_lock().await;
+    let pool = pool().await;
+    purge(&pool).await;
+
+    let bg_file = unique_filename("bg_prio");
+    let ui_file = unique_filename("ui_prio");
+
+    // 1. Enqueue background job first
+    JobService::enqueue_with_priority(&pool, &bg_file, "hls", false, PRIORITY_BACKGROUND)
+        .await
+        .unwrap();
+
+    // 2. Enqueue interactive user job second
+    JobService::enqueue_with_priority(&pool, &ui_file, "hls", false, PRIORITY_INTERACTIVE)
+        .await
+        .unwrap();
+
+    // 3. Worker claims: interactive job must win despite being queued later
+    let first_claimed = JobService::claim_next(&pool, "worker-prio", 300)
+        .await
+        .unwrap()
+        .expect("must claim interactive job first");
+    assert_eq!(first_claimed.filename, ui_file);
+    assert_eq!(first_claimed.priority, PRIORITY_INTERACTIVE);
+
+    // 4. Next claim gets the background job
+    let second_claimed = JobService::claim_next(&pool, "worker-prio", 300)
+        .await
+        .unwrap()
+        .expect("must claim background job second");
+    assert_eq!(second_claimed.filename, bg_file);
+    assert_eq!(second_claimed.priority, PRIORITY_BACKGROUND);
+
+    purge(&pool).await;
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn test_recover_stale_jobs_marks_running_jobs_failed() {
+    let _lock = acquire_global_lock().await;
+    let pool = pool().await;
+    purge(&pool).await;
+
+    let filename = unique_filename("orphan_crash");
+    let job = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+
+    // Claim so it enters 'running' state with an active lease
+    let claimed = JobService::claim_next(&pool, "worker-crashed", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(claimed.id, job.id);
+    assert_eq!(claimed.status, "running");
+
+    // Server abruptly restarted -> invoke recovery routine
+    let recovered_count = JobService::recover_stale_jobs(&pool).await.unwrap();
+    assert_eq!(recovered_count, 1);
+
+    // Inspect job row: must be failed with server restart error and lease cleared
+    let recovered = JobService::get_by_id(&pool, job.id)
+        .await
+        .unwrap()
+        .expect("job must exist");
+    assert_eq!(recovered.status, "failed");
+    assert!(
+        recovered
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("Server restarted during transcode"),
+        "error must cite server restart"
+    );
+    assert!(recovered.lease_owner.is_none());
+    assert!(recovered.lease_expires_at.is_none());
+
+    purge(&pool).await;
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn test_transcode_sweeper_file_needs_transcode() {
+    use media_server_api::services::transcode_sweeper::TranscodeSweeperService;
+    use std::path::Path;
+
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("video.mkv")));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("video.avi")));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("movie.FLV")));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("clip.ts")));
+
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("stream.mp4")));
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("movie.m4v")));
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("clip.webm")));
 }
 
 #[tokio::test]

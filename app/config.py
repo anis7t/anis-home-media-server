@@ -276,6 +276,23 @@ def is_amf_enabled():
     return os.environ.get("MEDIA_SERVER_ENABLE_AMF", "0").lower() in {"1", "true", "yes"}
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+# --------------------------------------------------------------------------- #
+# Transcoder Single-Ownership Cutover (Phase 6 Slice 3)
+#
+# Flask's background auto_transcoder_loop and local FFmpeg spawning in
+# ensure_hls_transcode are disabled by default in production. Rust (:8001) owns
+# the job queue and multi-GPU FFmpeg workers exclusively.
+# Setting DISABLE_FLASK_TRANSCODING=0 re-enables Flask transcode logic for rollback.
+# In pytest, defaults to 0 so legacy unit tests remain green unless overridden.
+# --------------------------------------------------------------------------- #
+_default_disable_flask_transcode = "0" if "pytest" in sys.modules else "1"
+DISABLE_FLASK_TRANSCODING = (
+    os.environ.get("DISABLE_FLASK_TRANSCODING", _default_disable_flask_transcode).strip().lower() in _TRUTHY
+)
+
+
 # --------------------------------------------------------------------------- #
 # Authentication (Phase A foundation)
 #

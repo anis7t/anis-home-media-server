@@ -84,8 +84,14 @@ def trigger_missing_transcodes():
 
 def auto_transcoder_loop():
     """Continuously transcode any non-web movie missing a completed HLS stream."""
+    if getattr(config, 'DISABLE_FLASK_TRANSCODING', False):
+        logger.info("Flask auto_transcoder_loop inactive: transcoding ownership transferred to Rust worker")
+        return
     time.sleep(5)
     while not config.SHUTDOWN_EVENT.is_set():
+        if getattr(config, 'DISABLE_FLASK_TRANSCODING', False):
+            logger.info("Flask auto_transcoder_loop stopped: transcoding ownership transferred to Rust worker")
+            break
         try:
             for p in video_paths():
                 if config.SHUTDOWN_EVENT.is_set():
@@ -126,8 +132,10 @@ def auto_transcoder_loop():
 
 
 def start_auto_transcoder_worker():
-    """Start auto-transcoder worker thread (disabled in test environments)."""
-    if 'pytest' in sys.modules or os.environ.get('MEDIA_SERVER_DISABLE_PRECACHE', '0') == '1':
+    """Start auto-transcoder worker thread (disabled in test environments or when Rust owns transcoding)."""
+    if 'pytest' in sys.modules or os.environ.get('MEDIA_SERVER_DISABLE_PRECACHE', '0') == '1' or getattr(config, 'DISABLE_FLASK_TRANSCODING', False):
+        if getattr(config, 'DISABLE_FLASK_TRANSCODING', False):
+            logger.info("Flask auto-transcoder worker skipped (transcoding owned by Rust Axum service)")
         return
     threading.Thread(target=auto_transcoder_loop, name='media-transcoder-worker', daemon=True).start()
 

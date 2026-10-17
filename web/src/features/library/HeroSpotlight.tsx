@@ -5,6 +5,7 @@ import { Icon } from '../../components/icons';
 
 interface HeroSpotlightProps {
   readonly movie: MovieSummary;
+  readonly hasTopBanner?: boolean;
 }
 
 function formatRuntime(minutes: number | null | undefined): string | null {
@@ -14,7 +15,7 @@ function formatRuntime(minutes: number | null | undefined): string | null {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export function HeroSpotlight({ movie }: HeroSpotlightProps) {
+export function HeroSpotlight({ movie, hasTopBanner = false }: HeroSpotlightProps) {
   const watchHref = `/watch/${movie.filename.split('/').map(encodeURIComponent).join('/')}`;
   const detailsHref = `/movie/${movie.filename.split('/').map(encodeURIComponent).join('/')}`;
 
@@ -30,7 +31,11 @@ export function HeroSpotlight({ movie }: HeroSpotlightProps) {
     <section
       aria-label="Featured spotlight"
       data-testid="hero-spotlight"
-      className="relative -mx-4 -mt-6 sm:-mx-6 sm:-mt-8 mb-8 overflow-hidden rounded-b-3xl border-b border-white/10 bg-obsidian-900 shadow-2xl"
+      className={`relative -mx-4 sm:-mx-6 mb-8 overflow-hidden bg-obsidian-900 shadow-2xl ${
+        hasTopBanner
+          ? 'mt-4 sm:mt-6 rounded-3xl border border-white/10'
+          : '-mt-6 sm:-mt-8 rounded-b-3xl border-b border-white/10'
+      }`}
     >
       {/* Cinematic Full-Bleed Artwork */}
       <div className="relative min-h-[360px] sm:min-h-[440px] md:min-h-[500px] w-full overflow-hidden">

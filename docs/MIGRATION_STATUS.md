@@ -1,20 +1,17 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-16
+> ## Current session handoff — 2026-10-17
 >
-> **Read `Handoffs/2026-10-16_22-15_antigravity_phase-c5-and-bridge-elimination-complete.md` first.**
-> It carries the latest topology, verified deliverables, and records the complete elimination
-> of the hybrid reverse-proxy bridge. All 6 proxied route groups (`/auth/*`, `/api/auth/*`,
-> `/api/devices/*`, `/api/admin/*`, `/api/storage/*`, `/api/scan`) plus `/api/transcode/start/{*filename}`
-> are 100% native on Rust Axum (`:8001`).
+> **Read `Handoffs/2026-10-17_00-30_antigravity_phase-6-complete-and-hardware-verified.md` first.**
+> It carries the latest topology, verified deliverables, and records the complete delivery and
+> hardware verification of **Phase 6: Multi-GPU Transcoding Worker & Single-Scheduler Cutover**.
+> Live transcode completed in 15.0s on host hardware (RX 560X + Vega 8) with zero missing frames.
 >
 > Repository state: branch `feat/rust-transcode-worker`.
-> Android client contract probe: **22/22 endpoints passing**. Rust test suite: **passing**.
-> Live deploy verified by binary timestamp (`2026-10-16 22:03:14`).
+> Android client contract probe: **22/22 endpoints passing**. Rust test suite: **254/254 passing**.
 >
-> Next objective: **Phase 6 slice 1** — transcode job model and queue ownership
-> in Rust (persistent job records, single-scheduler claim/lease,
-> `/api/transcode-status` reading Rust-owned state), before any FFmpeg spawn.
+> Next objective: **Phase 7** — Production port cutover (`:8000`), Flask/Waitress service
+> retirement, and final modernization sign-off.
 >
 > ### Previous handoff — 2026-10-14
 >

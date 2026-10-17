@@ -1623,6 +1623,23 @@ def ensure_hls_transcode(filename, force: bool = False):
         # against a cache directory that can never exist, once per request, forever.
         logger.warning('HLS transcode skipped: media file no longer exists: %s', filename)
         return None
+
+    if getattr(config, 'DISABLE_FLASK_TRANSCODING', False):
+        logger.info('Flask ensure_hls_transcode: transcoding delegated to Rust worker queue for %s', filename)
+        try:
+            import urllib.request
+            rel = get_rel_path(path)
+            req = urllib.request.Request(
+                f"http://127.0.0.1:8001/api/transcode/jobs/{rel}",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            urllib.request.urlopen(req, timeout=1.0)
+        except Exception as e:
+            logger.debug('Could not reach Rust transcode endpoint for %s: %s', filename, e)
+        return None
+
     directory = hls_cache_dir(path)
     playlist = directory / 'playlist.m3u8'
     lock = config.TRANSCODE_LOCKS.setdefault('hls:' + filename, threading.Lock())

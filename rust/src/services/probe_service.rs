@@ -11,6 +11,10 @@ pub struct ProbeStream {
     pub width: Option<i64>,
     pub height: Option<i64>,
     #[serde(default)]
+    pub pix_fmt: Option<String>,
+    #[serde(default)]
+    pub r_frame_rate: Option<String>,
+    #[serde(default)]
     pub duration: Option<String>,
     #[serde(rename = "duration_ts", default)]
     pub duration_ts: Option<i64>,

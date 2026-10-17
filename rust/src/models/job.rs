@@ -65,6 +65,7 @@ pub struct TranscodeJob {
     pub resume_time: Option<f64>,
     pub start_seg: Option<i32>,
     pub attempts: i32,
+    pub priority: i32,
     pub error: Option<String>,
     pub lease_owner: Option<String>,
     pub lease_expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -72,7 +73,7 @@ pub struct TranscodeJob {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct EnqueueJobRequest {
     #[serde(default)]
     pub mode: Option<String>,
@@ -80,4 +81,7 @@ pub struct EnqueueJobRequest {
     /// the completeness gate and exists ONLY for a measured frame deficit.
     #[serde(default)]
     pub force: Option<bool>,
+    /// Priority level: 0 for background, 10 for interactive user requests.
+    #[serde(default)]
+    pub priority: Option<i32>,
 }

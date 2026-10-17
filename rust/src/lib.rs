@@ -230,6 +230,7 @@ pub fn create_app_full(
     // two patterns conflict and the router panics at startup - which is what
     // broke every other suite until it was found.
     let job_routes = Router::new()
+        .route("/api/transcodes", get(routes::jobs::active_transcodes_handler))
         .route("/api/transcode/jobs", get(routes::jobs::list_jobs_handler))
         .route(
             "/api/transcode/jobs/{*path}",

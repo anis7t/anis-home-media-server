@@ -34,6 +34,7 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             error             TEXT,
             lease_owner       TEXT,
             lease_expires_at  TIMESTAMPTZ,
+            priority          INTEGER     NOT NULL DEFAULT 0,
             created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT transcode_jobs_filename_mode_key UNIQUE (filename, mode),
@@ -45,13 +46,26 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
-    // The claim path filters on (status, lease_expires_at, created_at);
+    // Add priority column if table was previously created without it
+    sqlx::query(
+        r#"
+        ALTER TABLE transcode_jobs ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // The claim path filters on (status, priority DESC, lease_expires_at, created_at);
     // without this the queue scan degrades to a sequential scan once the
     // table accumulates terminal rows.
+    sqlx::query("DROP INDEX IF EXISTS transcode_jobs_claim_idx")
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
         r#"
         CREATE INDEX IF NOT EXISTS transcode_jobs_claim_idx
-            ON transcode_jobs (status, lease_expires_at, created_at)
+            ON transcode_jobs (status, priority DESC, lease_expires_at, created_at)
         "#,
     )
     .execute(&mut *tx)
