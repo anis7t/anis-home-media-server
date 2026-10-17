@@ -72,31 +72,41 @@ impl GPUWorkerConfig {
                 } else {
                     "null".to_string()
                 };
+                let quality = std::env::var("MEDIA_SERVER_AMF_QUALITY")
+                    .unwrap_or_else(|_| "speed".into());
+                let qp_i = std::env::var("MEDIA_SERVER_AMF_QP_I")
+                    .unwrap_or_else(|_| "22".into());
+                let qp_p = std::env::var("MEDIA_SERVER_AMF_QP_P")
+                    .unwrap_or_else(|_| "24".into());
                 vec![
                     "-vf".into(),
                     vf,
                     "-c:v".into(),
                     "h264_amf".into(),
                     "-quality".into(),
-                    "speed".into(),
+                    quality,
                     "-rc".into(),
                     "cqp".into(),
                     "-qp_i".into(),
-                    "22".into(),
+                    qp_i,
                     "-qp_p".into(),
-                    "24".into(),
+                    qp_p,
                 ]
             }
-            GpuBackend::Vaapi => vec![
-                "-vf".into(),
-                format!("format=nv12,hwupload,scale_vaapi=w=-2:h={}", height),
-                "-c:v".into(),
-                "h264_vaapi".into(),
-                "-qp".into(),
-                "24".into(),
-                "-pix_fmt".into(),
-                "nv12".into(),
-            ],
+            GpuBackend::Vaapi => {
+                let qp = std::env::var("MEDIA_SERVER_VAAPI_QP")
+                    .unwrap_or_else(|_| "24".into());
+                vec![
+                    "-vf".into(),
+                    format!("format=nv12,hwupload,scale_vaapi=w=-2:h={}", height),
+                    "-c:v".into(),
+                    "h264_vaapi".into(),
+                    "-qp".into(),
+                    qp,
+                    "-pix_fmt".into(),
+                    "nv12".into(),
+                ]
+            }
             GpuBackend::Cpu => {
                 let preset = std::env::var("MEDIA_SERVER_TRANSCODE_PRESET")
                     .unwrap_or_else(|_| "superfast".into());
@@ -286,10 +296,21 @@ impl GpuService {
             .unwrap_or(true)
     }
 
-    /// True for 10-bit pixel formats, which h264_amf cannot accept directly.
+    /// True for 10-bit or higher bit-depth pixel formats (e.g. p010, yuv420p10, yuv422p10, yuv420p12),
+    /// which h264_amf cannot accept directly on AMD GPU drivers (< 23.30).
     pub fn is_ten_bit(pix_fmt: Option<&str>) -> bool {
         let p = pix_fmt.unwrap_or("").to_lowercase();
+        if p.is_empty() || p == "nv12" || p == "nv21" {
+            return false;
+        }
         p.contains("10")
+            || p.contains("p016")
+            || p.contains("12le")
+            || p.contains("12be")
+            || p.contains("14le")
+            || p.contains("14be")
+            || p.contains("16le")
+            || p.contains("16be")
     }
 
     /// Return `(use_vpp_amf, worker_count)` for one source's video stream and optional target height.
