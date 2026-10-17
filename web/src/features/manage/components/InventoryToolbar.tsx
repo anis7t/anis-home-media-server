@@ -1,6 +1,6 @@
 import { Icon } from '../../../components/icons';
 
-export type FilterCategory = 'all' | 'hls' | 'direct' | 'watched' | 'unwatched';
+export type FilterCategory = 'all' | 'needs_transcode' | 'hls' | 'direct' | 'watched' | 'unwatched';
 export type SortField = 'title' | 'year' | 'recent';
 
 interface InventoryToolbarProps {
@@ -24,6 +24,7 @@ export function InventoryToolbar({
 }: InventoryToolbarProps) {
   const filterChips: Array<{ id: FilterCategory; label: string }> = [
     { id: 'all', label: `All (${totalCount})` },
+    { id: 'needs_transcode', label: '⚡ Needs Pre-Transcode' },
     { id: 'hls', label: 'Adaptive / MKV' },
     { id: 'direct', label: 'Direct Play' },
     { id: 'watched', label: 'In Progress' },

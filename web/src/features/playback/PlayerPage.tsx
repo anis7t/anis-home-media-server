@@ -20,6 +20,7 @@ import { PosterImage } from '../../components/PosterImage';
 import { useSubtitles } from './useSubtitles';
 import { SubtitleSettingsModal } from './SubtitleSettingsModal';
 import { QualitySelectorModal } from './QualitySelectorModal';
+import { probeClientMediaCapabilities, type CapabilityVerdict } from '../../lib/capabilities/mediaCapabilities';
 import { NerdStatsHud } from './NerdStatsHud';
 import { ShortcutsModal } from './ShortcutsModal';
 import { PlayerPreloader } from './PlayerPreloader';
@@ -99,6 +100,7 @@ export function PlayerPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [info, setInfo] = useState<MediaInfoResponse | undefined>();
+  const [clientCapability, setClientCapability] = useState<CapabilityVerdict | undefined>();
   const [movieDetails, setMovieDetails] = useState<MovieSummary | undefined>();
   const [error, setError] = useState<Error | undefined>();
   const [loading, setLoading] = useState(true);
@@ -268,9 +270,24 @@ export function PlayerPage() {
     setInfo(undefined);
 
     getMediaInfo(decoded, { signal: controller.signal })
-      .then((result) => {
+      .then(async (result) => {
         if (!active) return;
         setInfo(result);
+
+        // Probe browser capabilities to detect container demuxing & codec decoding support
+        try {
+          const verdict = await probeClientMediaCapabilities(
+            result.container,
+            result.video_codec,
+            result.audio_codec,
+          );
+          if (active) {
+            setClientCapability(verdict);
+          }
+        } catch {
+          // Graceful fallback to server direct_play evaluation if client probe fails
+        }
+
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -319,7 +336,15 @@ export function PlayerPage() {
     };
   }, []);
 
-  const directPlay = info?.direct_play ?? false;
+  const directPlay = Boolean(
+    info?.direct_play && (clientCapability ? clientCapability.canDirectPlay : true),
+  );
+  const directPlayReason =
+    clientCapability?.reason ||
+    (info && !info.direct_play
+      ? `${info.container.toUpperCase()} with ${info.video_codec?.toUpperCase() || 'codec'} requires adaptive streaming on web`
+      : undefined);
+
   const mode: PlaybackMode | undefined = info ? playbackModeFor(directPlay) : undefined;
   const effectiveMode: PlaybackMode =
     selectedQuality === 'source' && directPlay
@@ -686,6 +711,15 @@ export function PlayerPage() {
 
   const handleSelectQuality = useCallback(
     async (quality: string, option?: QualityOption) => {
+      if (option?.is_direct && !directPlay) {
+        showHud(directPlayReason || 'Direct stream unsupported on this browser');
+        return;
+      }
+      if (option && !option.is_direct && !option.is_ready) {
+        showHud(`${option.label} requires pre-transcode on server`);
+        return;
+      }
+
       const video = videoRef.current;
       const seekTime = video ? video.currentTime : position;
       const shouldPlay = video ? !video.paused : playing;
@@ -694,17 +728,8 @@ export function PlayerPage() {
       setSelectedQuality(quality);
       setIsQualityModalOpen(false);
 
-      if (option && !option.is_direct && !option.is_ready) {
-        showHud(`Starting transcode for ${option.label}...`);
-        try {
-          await startTranscode(decoded, { quality: option.quality });
-        } catch (err) {
-          showHud(err instanceof Error ? err.message : 'Failed to start transcode');
-        }
-      } else {
-        const label = option ? option.label : quality === 'auto' ? 'Auto (Adaptive)' : quality;
-        showHud(`Quality: ${label}`);
-      }
+      const label = option ? option.label : quality === 'auto' ? 'Auto (Adaptive)' : quality;
+      showHud(`Quality: ${label}`);
 
       if (video) {
         let restored = false;
@@ -724,7 +749,7 @@ export function PlayerPage() {
         video.addEventListener('canplay', restore, { once: true });
       }
     },
-    [decoded, position, playing, showHud],
+    [directPlay, directPlayReason, position, playing, showHud],
   );
 
   /**
@@ -1294,8 +1319,20 @@ export function PlayerPage() {
         <TranscodeGate
           filename={decoded}
           transcode={transcode}
+          diagnosticReason={directPlayReason}
           onRefresh={() => {
             void getTranscodeStatus(decoded).then((res) => setTranscode(res)).catch(() => {});
+          }}
+          onQueuePreTranscode={async () => {
+            showHud('Queueing baseline pre-transcode...');
+            try {
+              const res = await startTranscode(decoded);
+              showHud(res.message || 'Pre-transcode queued on server');
+              const status = await getTranscodeStatus(decoded);
+              setTranscode(status);
+            } catch (err) {
+              showHud(err instanceof Error ? err.message : 'Failed to queue pre-transcode');
+            }
           }}
         />
       ) : activeCastDevice ? (
@@ -1785,6 +1822,7 @@ export function PlayerPage() {
           selectedQuality={selectedQuality}
           onSelectQuality={handleSelectQuality}
           supportsDirectPlay={directPlay}
+          directPlayReason={directPlayReason}
         />
 
         {/* Subtitle Settings Modal */}

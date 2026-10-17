@@ -8,6 +8,7 @@ export interface QualitySelectorModalProps {
   selectedQuality: string;
   onSelectQuality: (quality: string, option?: QualityOption) => void;
   supportsDirectPlay?: boolean;
+  directPlayReason?: string;
 }
 
 export function QualitySelectorModal({
@@ -17,6 +18,7 @@ export function QualitySelectorModal({
   selectedQuality,
   onSelectQuality,
   supportsDirectPlay = true,
+  directPlayReason,
 }: QualitySelectorModalProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -87,7 +89,7 @@ export function QualitySelectorModal({
               </span>
             </div>
             <span className="text-xs text-slate-400 mt-0.5">
-              Dynamically scales based on network bandwidth
+              Dynamically streams pre-transcoded adaptive quality
             </span>
           </div>
           {selectedQuality === 'auto' && (
@@ -114,6 +116,10 @@ export function QualitySelectorModal({
             selectedQuality === opt.quality ||
             (opt.is_direct && selectedQuality === 'source');
 
+          const isDirectUnsupported = opt.is_direct && !supportsDirectPlay;
+          const isTierUnavailable = !opt.is_direct && !opt.is_ready;
+          const isDisabled = isDirectUnsupported || isTierUnavailable;
+
           const mbps =
             opt.bitrate > 0 ? `${(opt.bitrate / 1_000_000).toFixed(1)} Mbps` : '';
 
@@ -122,39 +128,59 @@ export function QualitySelectorModal({
               key={opt.quality}
               type="button"
               data-testid={`quality-opt-${opt.quality}`}
+              disabled={isDisabled}
               onClick={() => {
+                if (isDisabled) return;
                 onSelectQuality(opt.quality, opt);
                 onClose();
               }}
               className={`flex items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-all duration-150 ${
-                isSelected
-                  ? 'border-brand-500/80 bg-brand-500/20 text-white shadow-sm'
-                  : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/25 hover:bg-white/10'
+                isDisabled
+                  ? 'cursor-not-allowed opacity-55 border-white/5 bg-white/[0.02] text-slate-400'
+                  : isSelected
+                    ? 'border-brand-500/80 bg-brand-500/20 text-white shadow-sm'
+                    : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/25 hover:bg-white/10'
               }`}
             >
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold tracking-wide">{opt.label}</span>
+                  <span className="text-sm font-semibold tracking-wide flex items-center gap-1.5">
+                    {isDisabled && (
+                      <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" className="text-slate-400">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    {opt.label}
+                  </span>
                   {opt.is_direct ? (
-                    <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
-                      {supportsDirectPlay ? 'Zero-Transcode' : 'Direct File'}
-                    </span>
+                    supportsDirectPlay ? (
+                      <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
+                        Direct Stream
+                      </span>
+                    ) : (
+                      <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-medium text-rose-300">
+                        Unsupported on this browser
+                      </span>
+                    )
                   ) : opt.is_ready ? (
                     <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                      Cached
+                      Stream Ready
                     </span>
                   ) : (
                     <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                      Transcode On-Demand
+                      Requires Pre-Transcode
                     </span>
                   )}
                 </div>
                 <span className="text-xs text-slate-400 mt-0.5">
-                  {opt.width && opt.height ? `${opt.width}×${opt.height}` : ''}
-                  {mbps ? ` · ${mbps}` : ''}
+                  {isDirectUnsupported
+                    ? directPlayReason || 'Browser cannot decode MKV or Dolby Digital Plus (E-AC-3)'
+                    : isTierUnavailable
+                      ? 'Quality not pre-transcoded on server'
+                      : `${opt.width && opt.height ? `${opt.width}×${opt.height}` : ''}${mbps ? ` · ${mbps}` : ''}`}
                 </span>
               </div>
-              {isSelected && (
+              {isSelected && !isDisabled && (
                 <svg
                   className="text-brand-400 flex-shrink-0"
                   viewBox="0 0 20 20"

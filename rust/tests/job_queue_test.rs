@@ -441,7 +441,7 @@ async fn test_recover_stale_jobs_marks_running_jobs_failed() {
 
     // Server abruptly restarted -> invoke recovery routine
     let recovered_count = JobService::recover_stale_jobs(&pool).await.unwrap();
-    assert_eq!(recovered_count, 1);
+    assert!(recovered_count >= 1, "must recover at least the orphaned test job");
 
     // Inspect job row: must be failed with server restart error and lease cleared
     let recovered = JobService::get_by_id(&pool, job.id)

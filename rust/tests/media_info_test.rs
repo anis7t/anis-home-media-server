@@ -85,7 +85,7 @@ async fn test_media_info_returns_every_documented_field() {
 
     assert_eq!(status, StatusCode::OK);
     for field in [
-        "container", "duration", "video_codec", "width", "height", "direct_play",
+        "container", "duration", "video_codec", "audio_codec", "width", "height", "direct_play",
         "needs_transcode", "is_transcode_ready", "ffprobe_available",
         "transcoding_available", "quality_ladder", "title", "year", "overview", "genres", "rating",
         "runtime", "reason",

@@ -112,20 +112,39 @@ impl TranscodeWorker {
         let (_job_type, target_height, quality_label) = ChunkTranscodeService::parse_job_mode(&job.mode);
         let source_height = probe.first_stream("video").and_then(|s| s.height).unwrap_or(0) as u32;
 
-        // Strict no-upscaling: clamp target_height if it exceeds source_height (when source height is known)
-        let effective_target_height = match target_height {
-            Some(th) if source_height > 0 && th > source_height => {
-                warn!(
-                    "Job #{}: requested quality {} (height {}) exceeds source height {}; clamping to source height",
-                    job.id, quality_label, th, source_height
-                );
-                Some(source_height)
-            }
-            other => other,
+        // Option 1C: If default baseline pre-transcode (mode "hls"), match native source resolution (up to 4K / 2160p)
+        let (effective_target_height, effective_quality_label) = if job.mode.trim() == "hls" || target_height.is_none() {
+            let (target_h, label) = if source_height >= 1800 {
+                (2160, "2160p")
+            } else if source_height >= 1200 {
+                (1440, "1440p")
+            } else if source_height >= 900 {
+                (1080, "1080p")
+            } else if source_height >= 600 {
+                (720, "720p")
+            } else if source_height >= 400 {
+                (480, "480p")
+            } else {
+                (360, "360p")
+            };
+            (Some(target_h), label.to_string())
+        } else {
+            // Strict no-upscaling: clamp target_height if it exceeds source_height (when source height is known)
+            let th = match target_height {
+                Some(th) if source_height > 0 && th > source_height => {
+                    warn!(
+                        "Job #{}: requested quality {} (height {}) exceeds source height {}; clamping to source height",
+                        job.id, quality_label, th, source_height
+                    );
+                    Some(source_height)
+                }
+                other => other,
+            };
+            (th, quality_label)
         };
 
         let base_hls_dir = HlsService::find_hls_dir(&video_path, roots, cache_dir);
-        let hls_dir = ChunkTranscodeService::get_quality_hls_dir(&base_hls_dir, &quality_label);
+        let hls_dir = ChunkTranscodeService::get_quality_hls_dir(&base_hls_dir, &effective_quality_label);
         tokio::fs::create_dir_all(&hls_dir).await.map_err(|e| {
             AppError::Internal(format!("Failed to create HLS cache directory: {}", e))
         })?;
@@ -142,7 +161,7 @@ impl TranscodeWorker {
             "Job #{}: duration={:.1}s, quality={}, height={:?}, vpp_amf={}, workers={} ({})",
             job.id,
             total_duration,
-            quality_label,
+            effective_quality_label,
             effective_target_height,
             use_vpp_amf,
             workers.len(),

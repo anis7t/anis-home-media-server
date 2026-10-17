@@ -16,6 +16,7 @@ import {
   type StorageAuditData,
   type StorageSettings,
 } from '../../lib/api/manage';
+import { startTranscode } from '../../lib/api/client';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { AdminPinModal } from './components/AdminPinModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
@@ -151,6 +152,8 @@ export function ManagePage() {
           activeHlsMap.has((m.filename.split(/[\/\\]/).pop() ?? '').toLowerCase());
 
         switch (activeFilter) {
+          case 'needs_transcode':
+            return isMkv && !hasHls;
           case 'hls':
             return isMkv || hasHls;
           case 'direct':
@@ -257,6 +260,21 @@ export function ManagePage() {
       setError(err instanceof Error ? err.message : 'Failed to trigger scan');
     } finally {
       setScanning(false);
+    }
+  };
+
+  const handlePreTranscodeMovie = async (movie: MovieItem) => {
+    setBusy(true);
+    setFeedback(null);
+    setError(null);
+    try {
+      const res = await startTranscode(movie.filename);
+      setFeedback(`Pre-transcode queued for "${movie.title}". Active status: ${res.status}`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to queue pre-transcode');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -487,6 +505,7 @@ export function ManagePage() {
             setDeleteTarget(m);
             setModalPinInput(adminPin);
           }}
+          onPreTranscodeMovie={(m) => void handlePreTranscodeMovie(m)}
         />
       </section>
 

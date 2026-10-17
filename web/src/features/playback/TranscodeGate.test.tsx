@@ -48,12 +48,20 @@ describe('TranscodeGate component', () => {
     expect(fill).toHaveStyle({ width: '75.4%' });
   });
 
-  it('calls onRefresh when check status button is clicked', () => {
+  it('calls onRefresh when check status button is clicked during active transcode', () => {
     const handleRefresh = vi.fn();
     render(
       <TranscodeGate
         filename="Test.mkv"
-        transcode={null}
+        transcode={{
+          status: 'building',
+          percent: 30,
+          speed: 2.0,
+          remaining: 90,
+          duration: 3600,
+          encoded: 1080,
+          bytes: 10000000,
+        }}
         onRefresh={handleRefresh}
       />
     );
@@ -61,5 +69,34 @@ describe('TranscodeGate component', () => {
     const btn = screen.getByRole('button', { name: /check status/i });
     fireEvent.click(btn);
     expect(handleRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders Pre-Transcode Required with queue button when transcode is idle', () => {
+    const handleQueue = vi.fn();
+    render(
+      <TranscodeGate
+        filename="Test.mkv"
+        transcode={{
+          status: 'idle',
+          percent: 0,
+          duration: 3600,
+          encoded: 0,
+          speed: 0,
+        }}
+        diagnosticReason="Matroska (.mkv) container cannot be decoded natively by this web browser"
+        onQueuePreTranscode={handleQueue}
+      />
+    );
+
+    expect(screen.getByText('Pre-Transcode Required')).toBeInTheDocument();
+    expect(screen.getByText(/Pre-transcode required for 'Test'/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Matroska (.mkv) container cannot be decoded natively by this web browser'),
+    ).toBeInTheDocument();
+
+    const queueBtn = screen.getByTestId('queue-pre-transcode-btn');
+    expect(queueBtn).toBeInTheDocument();
+    fireEvent.click(queueBtn);
+    expect(handleQueue).toHaveBeenCalledTimes(1);
   });
 });

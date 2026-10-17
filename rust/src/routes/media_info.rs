@@ -97,10 +97,11 @@ fn build_quality_ladder(
     roots: &[PathBuf],
     cache_dir: &FsPath,
     filename: &str,
+    direct_play: bool,
 ) -> Vec<QualityOption> {
     let mut ladder = Vec::new();
 
-    // 1. Prepend Direct Play (Source)
+    // 1. Prepend Direct Play (Source) - only ready if client/container supports direct play
     ladder.push(QualityOption {
         label: "Direct Play (Source)".to_string(),
         quality: "source".to_string(),
@@ -108,7 +109,7 @@ fn build_quality_ladder(
         width: source_w,
         bitrate: source_bitrate,
         is_direct: true,
-        is_ready: true,
+        is_ready: direct_play,
         hls_url: None,
     });
 
@@ -129,9 +130,10 @@ fn build_quality_ladder(
 
         let q_dir = HlsService::find_hls_quality_dir(video_path, roots, cache_dir, Some(label));
         let q_pl = q_dir.join("playlist.m3u8");
+        // Strict 100% completion requirement: only ready when #EXT-X-ENDLIST is present
         let is_ready = if q_pl.is_file() {
             if let Ok(c) = std::fs::read_to_string(&q_pl) {
-                c.contains("segment_") || c.contains("#EXT-X-ENDLIST")
+                c.contains("#EXT-X-ENDLIST")
             } else {
                 false
             }
@@ -165,46 +167,14 @@ fn is_video(path: &FsPath) -> bool {
 
 /// Minimum coverage ratio for an in-progress playlist to read as ready.
 ///
-/// Read from the environment so Flask and Rust can be tuned together; Flask
-/// uses `getattr(config, 'MIN_COVERAGE_RATIO', 0.98)`.
-fn min_coverage_ratio() -> f64 {
-    std::env::var("MIN_COVERAGE_RATIO")
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(0.98)
-}
-
-/// Is a cache complete? **A predicate. It must never write.**
-///
-/// `#EXT-X-ENDLIST` is authoritative when present. Otherwise the accumulated
-/// `#EXTINF` labels are divided by the *video stream's* end, never the
-/// container duration - a WEB-DL container running minutes past the last frame
-/// scored a fully rendered cache as incomplete forever.
-///
-/// This ratio is label arithmetic, and labels are the measure this project has
-/// measured to be untrustworthy: a cache read 100% by duration while missing
-/// 277.2s of frames across 101 chunks. Frame accounting supersedes it in a
-/// later phase; until then this reproduces Flask exactly and writes nothing.
-/// A previous revision appended ENDLIST here, which would seal exactly the
-/// frame-deficient caches the frame accounting exists to catch.
-fn is_hls_ready(playlist: &FsPath, source_duration: f64) -> bool {
+/// Is an HLS cache complete and ready for playback?
+/// Strictly requires `#EXT-X-ENDLIST` to prevent playback of partial in-progress or incomplete transcodes.
+fn is_hls_ready(playlist: &FsPath) -> bool {
     let text = match std::fs::read_to_string(playlist) {
         Ok(t) => t,
         Err(_) => return false,
     };
-    if text.contains("#EXT-X-ENDLIST") {
-        return true;
-    }
-    if source_duration <= 0.0 {
-        return false;
-    }
-    let cumulative: f64 = text
-        .lines()
-        .filter_map(|l| l.strip_prefix("#EXTINF:"))
-        .filter_map(|l| l.split(',').next())
-        .filter_map(|v| v.trim().parse::<f64>().ok())
-        .sum();
-    cumulative / source_duration >= min_coverage_ratio()
+    text.contains("#EXT-X-ENDLIST")
 }
 
 /// `GET /api/media-info/{*filename}` - technical details and capability report.
@@ -288,8 +258,7 @@ async fn build_media_info(
         if HlsService::is_hls_complete(&hls_dir) {
             true
         } else {
-            let source_duration = cached_source_video_duration(&path).await;
-            is_hls_ready(&hls_dir.join("playlist.m3u8"), source_duration)
+            is_hls_ready(&hls_dir.join("playlist.m3u8"))
         }
     } else {
         true
@@ -321,12 +290,14 @@ async fn build_media_info(
         &state.roots,
         &state.cache_dir,
         filename,
+        direct_play,
     );
 
     Ok(json!({
         "container": container,
         "duration": duration,
         "video_codec": v_codec.unwrap_or_default(),
+        "audio_codec": a_codec.unwrap_or_default(),
         "width": video.and_then(|v| v.width),
         "height": video.and_then(|v| v.height),
         "direct_play": direct_play,

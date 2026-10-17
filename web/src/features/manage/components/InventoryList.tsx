@@ -14,6 +14,7 @@ interface InventoryListProps {
   readonly onResetFilters: () => void;
   readonly onArchiveMovie: (movie: MovieItem) => void;
   readonly onDeleteClick: (movie: MovieItem) => void;
+  readonly onPreTranscodeMovie?: (movie: MovieItem) => void;
 }
 
 export function InventoryList({
@@ -27,6 +28,7 @@ export function InventoryList({
   onResetFilters,
   onArchiveMovie,
   onDeleteClick,
+  onPreTranscodeMovie,
 }: InventoryListProps) {
   if (loading) {
     return (
@@ -122,8 +124,9 @@ export function InventoryList({
                         Checking cache…
                       </span>
                     ) : (
-                      <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
-                        ⚙ On-Demand Transcode
+                      <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 flex items-center gap-1">
+                        <Icon name="bolt" size={10} />
+                        Pre-Transcode Required
                       </span>
                     )
                   ) : (
@@ -175,6 +178,20 @@ export function InventoryList({
                 <Icon name="info" size={12} />
                 <span>Details</span>
               </NavLink>
+
+              {/* Pre-Transcode Button (for titles needing transcode without HLS cache) */}
+              {isMkv && !hasHlsCache && onPreTranscodeMovie ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onPreTranscodeMovie(m)}
+                  className="rounded-full border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-30"
+                  title="Queue baseline offline pre-transcode for smooth browser playback"
+                >
+                  <Icon name="bolt" size={12} />
+                  <span>Pre-Transcode</span>
+                </button>
+              ) : null}
 
               {/* Archive Source Button (for MKV with HLS cache) */}
               {isMkv && hasHlsCache ? (

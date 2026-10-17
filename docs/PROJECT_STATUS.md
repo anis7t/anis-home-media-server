@@ -23,6 +23,7 @@ Active branch: `feat/rust-react-postgres-migration`
 | 2R | React SPA Direct Integration | ✅ COMPLETE — Direct React SPA hosting on Rust with client-side routing fallback and transparent static asset delivery |
 | 6 | Multi-GPU Worker Cutover & Active Transcodes UI | ✅ COMPLETE — Autonomous dual-GPU chunked transcoding in Rust with AMD AMF VPP filters and live telemetry |
 | 8 | fMP4 Adaptive Streaming & Quality Ladder | ✅ COMPLETE — Fragmented MP4 (`.m4s`) HLS pipeline with `#EXT-X-MAP`, dynamic quality ladder (4K–360p), client-aware direct play, and cross-platform quality selectors |
+| 9 | Client Capability Probing & Pre-Transcoding Architecture | ✅ COMPLETE — W3C Media Capabilities API probe, strict 100% transcode gating, Option 1C native resolution baseline, Option 2A layman warnings, automated sweeper, `/manage` operator tooling |
 | 7 | Unified Production Cutover & Modernization Completion | 🔄 IN PROGRESS — Slices 7A (Daemons), 7B (Port 8000 Cutover), 7C (Hardening Battery), and 7D (Operational Tooling) complete; Slice 7E (Flask Retirement) next |
 
 ---

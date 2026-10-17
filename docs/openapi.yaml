@@ -1739,6 +1739,8 @@ components:
           type: number
         video_codec:
           type: string
+        audio_codec:
+          type: string
         width:
           type: [integer, "null"]
         height:

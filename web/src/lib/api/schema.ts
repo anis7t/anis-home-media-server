@@ -1286,6 +1286,7 @@ export interface components {
             container: string;
             duration: number;
             video_codec?: string;
+            audio_codec?: string;
             width?: number | null;
             height?: number | null;
             /** @description Authoritative flag dictating direct byte-range vs HLS master playlist playback. */

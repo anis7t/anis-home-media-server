@@ -296,4 +296,71 @@ describe('MovieDetailsPage', () => {
       expect.stringContaining('youtube-nocookie.com/embed/kR2r-A9H3Kg'),
     );
   });
+
+  it('renders Pre-Transcode Required card and triggers transcode on click when media requires transcoding', async () => {
+    const user = userEvent.setup();
+    let transcodeStarted = false;
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/transcode/start/')) {
+        expect(init?.method).toBe('POST');
+        transcodeStarted = true;
+        return jsonResponse({ status: 'queued', message: 'Pre-transcode queued' });
+      }
+      return jsonResponse(
+        detailsPayload({
+          needs_transcode: true,
+          is_transcode_ready: false,
+        }),
+      );
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('Pre-Transcode Required')).toBeInTheDocument();
+    expect(
+      screen.getByText(/web browsers cannot directly play this container or audio codec without stalling/i),
+    ).toBeInTheDocument();
+
+    const transcodeBtn = screen.getByRole('button', { name: /pre-transcode now/i });
+    expect(transcodeBtn).toBeInTheDocument();
+
+    await user.click(transcodeBtn);
+    expect(transcodeStarted).toBe(true);
+    expect(await screen.findByText(/pre-transcode queued/i)).toBeInTheDocument();
+  });
+
+  it('renders Stream Ready indicator when transcode is complete', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        detailsPayload({
+          needs_transcode: true,
+          is_transcode_ready: true,
+        }),
+      ),
+    );
+
+    renderPage();
+
+    expect(await screen.findByText(/stream ready \(fmp4 adaptive hls cached\)/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pre-Transcode Required')).not.toBeInTheDocument();
+  });
+
+  it('renders Direct Stream Compatible indicator when container natively plays', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        detailsPayload({
+          needs_transcode: false,
+          is_transcode_ready: false,
+        }),
+      ),
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/direct stream compatible \(zero-copy native playback\)/i),
+    ).toBeInTheDocument();
+  });
 });

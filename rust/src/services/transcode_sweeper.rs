@@ -65,18 +65,9 @@ impl TranscodeSweeperService {
                 continue;
             }
 
-            // Is HLS transcode already 100% complete?
+            // Is HLS transcode already 100% complete across root or quality tiers?
             let hls_dir = HlsService::find_hls_dir(&video_path, roots, cache_dir);
-            let playlist = hls_dir.join("playlist.m3u8");
-            let is_complete = if playlist.is_file() {
-                std::fs::read_to_string(&playlist)
-                    .map(|c| c.contains("#EXT-X-ENDLIST"))
-                    .unwrap_or(false)
-            } else {
-                false
-            };
-
-            if is_complete {
+            if HlsService::is_hls_complete(&hls_dir) {
                 stats.skipped += 1;
                 continue;
             }

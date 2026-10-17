@@ -334,4 +334,69 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     // And the storage pool section should show the auditing loading indicator
     expect(screen.getByText(/auditing storage pool & cache integrity/i)).toBeInTheDocument();
   });
+
+  it('filters by Needs Pre-Transcode chip and allows triggering pre-transcode', async () => {
+    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
+
+    const moviesWithUntranscoded = [
+      ...sampleMovies,
+      {
+        filename: 'Ghost.mkv',
+        title: 'Ghost in the Shell',
+        year: 1995,
+        duration: 5000,
+        position: 0,
+        percent: 0,
+        poster: 'tmdb:9323',
+        hls_cached: false,
+        needs_transcode: true,
+      },
+    ];
+
+    let transcodeTriggered = false;
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return jsonResponse({ authenticated: true, email: 'admin@example.com', name: 'Admin', role: 'admin' });
+      }
+      if (url === '/api/movies') {
+        return jsonResponse({ movies: moviesWithUntranscoded });
+      }
+      if (url === '/api/storage/settings') {
+        return jsonResponse(sampleSettings);
+      }
+      if (url === '/api/storage/audit') {
+        return jsonResponse(sampleAudit);
+      }
+      if (url.includes('/api/transcode/start/Ghost.mkv')) {
+        expect(init?.method).toBe('POST');
+        transcodeTriggered = true;
+        return jsonResponse({ status: 'queued', message: 'Pre-transcode queued' });
+      }
+      return jsonResponse({});
+    });
+
+    renderManage();
+    const user = userEvent.setup();
+
+    await screen.findByText('Ghost in the Shell');
+    expect(screen.getByText('Pre-Transcode Required')).toBeInTheDocument();
+
+    // Filter by Needs Pre-Transcode
+    const filterBtn = screen.getByRole('button', { name: /needs pre-transcode/i });
+    await user.click(filterBtn);
+
+    expect(screen.getByText('Ghost in the Shell')).toBeInTheDocument();
+    expect(screen.queryByText('The Matrix')).not.toBeInTheDocument();
+    expect(screen.queryByText('Inception')).not.toBeInTheDocument();
+
+    // Click Pre-Transcode button
+    const preTranscodeBtn = screen.getByRole('button', { name: /^Pre-Transcode$/i });
+    await user.click(preTranscodeBtn);
+
+    expect(transcodeTriggered).toBe(true);
+    expect(await screen.findByText(/pre-transcode queued for "ghost in the shell"/i)).toBeInTheDocument();
+  });
 });

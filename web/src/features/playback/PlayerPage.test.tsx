@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -80,7 +80,7 @@ describe('PlayerPage playback mode', () => {
       const url = String(input);
       if (url.startsWith('/api/media-info/')) {
         return jsonResponse({
-          container: 'matroska',
+          container: 'mp4',
           duration: 900,
           direct_play: true,
           needs_transcode: false,
@@ -541,7 +541,7 @@ describe('PlayerPage extended controls & telemetry', () => {
     renderPlayer();
 
     expect(await screen.findByRole('region', { name: /transcode progress gate/i })).toBeInTheDocument();
-    expect(screen.getByText(/Dual AMD GPU Transcoder Active/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Dual AMD GPU Transcoder Active/i)).toBeInTheDocument();
     expect(await screen.findByText(/Transcoding 55%/i)).toBeInTheDocument();
 
     const shell = document.getElementById('shell');
@@ -718,7 +718,7 @@ describe('PlayerPage quality ladder & switching', () => {
     expect(video.currentTime).toBe(250);
   });
 
-  it('triggers on-demand transcode when selecting a non-ready quality tier', async () => {
+  it('disables non-ready quality tier and disallows on-demand transcode', async () => {
     setupLadderPlayer();
     await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
 
@@ -726,24 +726,16 @@ describe('PlayerPage quality ladder & switching', () => {
     fireEvent.click(qualityBtn);
 
     const opt720p = await screen.findByTestId('quality-opt-720p');
+    expect(opt720p).toBeDisabled();
+    expect(within(opt720p).getByText('Requires Pre-Transcode')).toBeInTheDocument();
+
     fireEvent.click(opt720p);
 
-    // Should POST to start transcode for 720p
-    await waitFor(() => {
-      const calls = fetchMock.mock.calls.filter(
-        (call) =>
-          String(call[0]).includes('/api/transcode/start/') &&
-          String(call[0]).includes('quality=720p'),
-      );
-      expect(calls.length).toBeGreaterThanOrEqual(1);
-    });
-
-    // Stream switches to 720p playlist
-    await waitFor(() => {
-      expect(mockLoadSource).toHaveBeenCalledWith(
-        expect.stringContaining('/720p/playlist.m3u8'),
-      );
-    });
+    // Assert no on-demand transcode call was dispatched
+    const transcodeCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes('/api/transcode/start/'),
+    );
+    expect(transcodeCalls.length).toBe(0);
   });
 
   it('toggles Quality modal via keyboard shortcut q and dismisses with Escape', async () => {

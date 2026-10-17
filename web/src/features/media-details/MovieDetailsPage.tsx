@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { getMovieDetails } from '../../lib/api/client';
+import { getMovieDetails, startTranscode } from '../../lib/api/client';
 import { posterUrl, backdropUrl } from '../../lib/api/poster';
 import { useDeviceId } from '../../lib/useDeviceId';
 import { StateMessage } from '../../components/StateMessage';
@@ -92,6 +92,25 @@ export function MovieDetailsPage() {
   const [trailerOpen, setTrailerOpen] = useState(false);
   // Overview overflow toggle; see the synopsis paragraph for why it is bounded.
   const [expanded, setExpanded] = useState(false);
+  const [transcodeLoading, setTranscodeLoading] = useState(false);
+  const [transcodeFeedback, setTranscodeFeedback] = useState<string | null>(null);
+  const [transcodeError, setTranscodeError] = useState<string | null>(null);
+
+  const handleQueuePreTranscode = async () => {
+    if (!data?.movie?.filename) return;
+    setTranscodeLoading(true);
+    setTranscodeFeedback(null);
+    setTranscodeError(null);
+    try {
+      const res = await startTranscode(data.movie.filename);
+      setTranscodeFeedback(res.message || 'Pre-transcode queued successfully! Processing in background.');
+      await reload();
+    } catch (err) {
+      setTranscodeError(err instanceof Error ? err.message : 'Failed to queue pre-transcoding');
+    } finally {
+      setTranscodeLoading(false);
+    }
+  };
 
   const openTrailer = () => {
     setTrailerOpen(true);
@@ -250,14 +269,51 @@ export function MovieDetailsPage() {
               />
 
               {data.needs_transcode && !data.is_transcode_ready ? (
-                <p
-                  className="mt-3 flex items-center gap-2 rounded-lg border border-brand-400/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300"
+                <div
+                  className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 space-y-2.5 backdrop-blur-sm"
                   role="status"
                 >
-                  <Icon name="bolt" size={14} />
-                  First play builds a stream for this title &mdash; it will begin
-                  automatically.
-                </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 font-semibold text-amber-300 text-sm">
+                      <Icon name="bolt" size={16} />
+                      <span>Pre-Transcode Required</span>
+                    </div>
+                    <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-mono font-medium text-amber-300">
+                      MKV / Non-Native
+                    </span>
+                  </div>
+                  <p className="text-white/70 leading-relaxed text-xs">
+                    Web browsers cannot directly play this container or audio codec without stalling.
+                    An offline baseline HLS pre-transcode is required before playback can begin.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={transcodeLoading}
+                      onClick={handleQueuePreTranscode}
+                      className="card-ring inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-obsidian-950 px-4 py-2 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Icon name="bolt" size={13} className={transcodeLoading ? 'animate-spin' : ''} />
+                      <span>{transcodeLoading ? 'Queueing Pre-Transcode…' : '⚡ Pre-Transcode Now'}</span>
+                    </button>
+                    {transcodeFeedback ? (
+                      <span className="text-emerald-400 text-xs font-medium">✓ {transcodeFeedback}</span>
+                    ) : null}
+                    {transcodeError ? (
+                      <span className="text-rose-400 text-xs font-medium">⚠️ {transcodeError}</span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : data.needs_transcode && data.is_transcode_ready ? (
+                <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400" role="status">
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
+                  <span className="font-medium">Stream Ready (fMP4 Adaptive HLS Cached)</span>
+                </div>
+              ) : !data.needs_transcode ? (
+                <div className="mt-3 flex items-center gap-2 text-xs text-blue-400" role="status">
+                  <span className="flex h-2 w-2 rounded-full bg-blue-400" />
+                  <span className="font-medium">Direct Stream Compatible (Zero-Copy Native Playback)</span>
+                </div>
               ) : null}
 
               {/*

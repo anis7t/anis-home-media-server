@@ -58,6 +58,7 @@ describe('QualitySelectorModal', () => {
         qualityLadder={MOCK_LADDER}
         selectedQuality="auto"
         onSelectQuality={vi.fn()}
+        supportsDirectPlay={true}
       />,
     );
 
@@ -68,13 +69,60 @@ describe('QualitySelectorModal', () => {
     expect(screen.getByText('720p')).toBeInTheDocument();
     expect(screen.getByText('480p')).toBeInTheDocument();
 
-    // Check badges
+    // Check Phase 9 badges
     expect(screen.getByText('Recommended')).toBeInTheDocument();
-    expect(screen.getByText('Cached')).toBeInTheDocument();
-    expect(screen.getByText('Transcode On-Demand')).toBeInTheDocument();
+    expect(screen.getByText('Direct Stream')).toBeInTheDocument();
+    expect(screen.getByText('Stream Ready')).toBeInTheDocument();
+    expect(screen.getByText('Requires Pre-Transcode')).toBeInTheDocument();
   });
 
-  it('calls onSelectQuality and onClose when an option is clicked', () => {
+  it('disables Direct Play with clear warning badge when unsupported on browser', () => {
+    const onSelect = vi.fn();
+    render(
+      <QualitySelectorModal
+        isOpen={true}
+        onClose={vi.fn()}
+        qualityLadder={MOCK_LADDER}
+        selectedQuality="auto"
+        onSelectQuality={onSelect}
+        supportsDirectPlay={false}
+        directPlayReason="Matroska (.mkv) container cannot be decoded natively by this web browser"
+      />,
+    );
+
+    const directBtn = screen.getByTestId('quality-opt-source');
+    expect(directBtn).toBeDisabled();
+    expect(screen.getByText('Unsupported on this browser')).toBeInTheDocument();
+    expect(
+      screen.getByText('Matroska (.mkv) container cannot be decoded natively by this web browser'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(directBtn);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('disables unready transcode quality options with Requires Pre-Transcode badge', () => {
+    const onSelect = vi.fn();
+    render(
+      <QualitySelectorModal
+        isOpen={true}
+        onClose={vi.fn()}
+        qualityLadder={MOCK_LADDER}
+        selectedQuality="auto"
+        onSelectQuality={onSelect}
+      />,
+    );
+
+    const unreadyBtn = screen.getByTestId('quality-opt-480p');
+    expect(unreadyBtn).toBeDisabled();
+    expect(screen.getByText('Requires Pre-Transcode')).toBeInTheDocument();
+    expect(screen.getByText('Quality not pre-transcoded on server')).toBeInTheDocument();
+
+    fireEvent.click(unreadyBtn);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('calls onSelectQuality and onClose when a ready option is clicked', () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
 
