@@ -29,7 +29,7 @@ fn test_select_amf_strategy_requirements() {
         pix_fmt: Some("yuv420p".into()),
         ..Default::default()
     };
-    let (needs_vpp, count) = GpuService::select_amf_strategy(Some(&stream_1080p));
+    let (needs_vpp, count) = GpuService::select_amf_strategy(Some(&stream_1080p), None);
     assert!(!needs_vpp, "1080p 8-bit does not require vpp_amf");
     assert_eq!(count, 2, "8-bit standard defaults to 2 workers");
 
@@ -42,7 +42,7 @@ fn test_select_amf_strategy_requirements() {
         pix_fmt: Some("yuv420p10le".into()),
         ..Default::default()
     };
-    let (needs_vpp_10bit, count_10bit) = GpuService::select_amf_strategy(Some(&stream_10bit));
+    let (needs_vpp_10bit, count_10bit) = GpuService::select_amf_strategy(Some(&stream_10bit), None);
     assert!(needs_vpp_10bit, "10-bit input requires vpp_amf");
     assert_eq!(count_10bit, 3, "10-bit defaults to 3 workers");
 
@@ -55,13 +55,18 @@ fn test_select_amf_strategy_requirements() {
         pix_fmt: Some("yuv420p".into()),
         ..Default::default()
     };
-    let (needs_vpp_4k, count_4k) = GpuService::select_amf_strategy(Some(&stream_4k));
+    let (needs_vpp_4k, count_4k) = GpuService::select_amf_strategy(Some(&stream_4k), None);
     assert!(needs_vpp_4k, "4K input requires vpp_amf downscale");
     assert_eq!(count_4k, 3, "4K defaults to 3 workers");
 
     // 4. Missing/unknown stream -> fails safe to vpp_amf = true
-    let (needs_vpp_unknown, _) = GpuService::select_amf_strategy(None);
+    let (needs_vpp_unknown, _) = GpuService::select_amf_strategy(None, None);
     assert!(needs_vpp_unknown, "unknown stream must fail safe to vpp_amf");
+
+    // 5. 1080p source scaled to 720p target -> vpp_amf IS required for scaling
+    let (needs_vpp_720, count_720) = GpuService::select_amf_strategy(Some(&stream_1080p), Some(720));
+    assert!(needs_vpp_720, "1080p source scaled to 720p requires vpp_amf");
+    assert_eq!(count_720, 3, "downscaling requires 3 workers");
 }
 
 #[test]
@@ -109,11 +114,21 @@ fn test_ffmpeg_arguments_generation() {
     assert!(init_args.contains(&"d3d11va=dx11:1".to_string()));
     assert!(init_args.contains(&"amf=amf@dx11".to_string()));
 
-    let video_args_vpp = amf_worker.get_ffmpeg_video_args(true);
-    assert!(video_args_vpp.iter().any(|a| a.contains("vpp_amf")));
+    // 1080p default scaling
+    let video_args_vpp = amf_worker.get_ffmpeg_video_args(true, None);
+    assert!(video_args_vpp.iter().any(|a| a.contains("vpp_amf=h='min(1080,ih)':w=-2:format=nv12")));
     assert!(video_args_vpp.contains(&"h264_amf".to_string()));
 
-    let video_args_no_vpp = amf_worker.get_ffmpeg_video_args(false);
+    // 720p dynamic scaling
+    let video_args_720 = amf_worker.get_ffmpeg_video_args(true, Some(720));
+    assert!(video_args_720.iter().any(|a| a.contains("vpp_amf=h='min(720,ih)':w=-2:format=nv12")));
+
+    // 1440p (2K) scaling
+    let video_args_2k = amf_worker.get_ffmpeg_video_args(true, Some(1440));
+    assert!(video_args_2k.iter().any(|a| a.contains("vpp_amf=h='min(1440,ih)':w=-2:format=nv12")));
+
+    // No VPP
+    let video_args_no_vpp = amf_worker.get_ffmpeg_video_args(false, None);
     assert!(video_args_no_vpp.contains(&"null".to_string()));
     assert!(video_args_no_vpp.contains(&"h264_amf".to_string()));
 }

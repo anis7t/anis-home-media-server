@@ -128,3 +128,207 @@ fn test_update_master_playlist_discontinuities_and_healing() {
 
     let _ = fs::remove_dir_all(&hls_dir);
 }
+
+#[test]
+fn test_parse_job_mode_and_qualities() {
+    // Defaults
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls"),
+        ("hls".into(), Some(1080), "1080p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode(""),
+        ("hls".into(), Some(1080), "1080p".into())
+    );
+
+    // Explicit quality tiers
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:1080p"),
+        ("hls".into(), Some(1080), "1080p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:720p"),
+        ("hls".into(), Some(720), "720p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:480p"),
+        ("hls".into(), Some(480), "480p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:360p"),
+        ("hls".into(), Some(360), "360p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:1440p"),
+        ("hls".into(), Some(1440), "1440p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:2k"),
+        ("hls".into(), Some(1440), "1440p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:2160p"),
+        ("hls".into(), Some(2160), "2160p".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("hls:4k"),
+        ("hls".into(), Some(2160), "2160p".into())
+    );
+
+    // Direct and compat modes
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("direct"),
+        ("direct".into(), None, "source".into())
+    );
+    assert_eq!(
+        ChunkTranscodeService::parse_job_mode("compat"),
+        ("compat".into(), Some(1080), "1080p".into())
+    );
+
+    // Quality validator and normalizer
+    assert!(ChunkTranscodeService::is_quality_string("1080p"));
+    assert!(ChunkTranscodeService::is_quality_string("720p"));
+    assert!(ChunkTranscodeService::is_quality_string("4k"));
+    assert!(ChunkTranscodeService::is_quality_string("2K"));
+    assert!(!ChunkTranscodeService::is_quality_string("invalid_quality"));
+    assert!(!ChunkTranscodeService::is_quality_string("movie.mkv"));
+}
+
+#[test]
+fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
+    let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let hls_dir = std::env::temp_dir().join(format!("rust_fmp4_test_{}_{}", std::process::id(), count));
+    let _ = fs::remove_dir_all(&hls_dir);
+    fs::create_dir_all(&hls_dir).unwrap();
+    let playlist_path = hls_dir.join("playlist.m3u8");
+
+    // Create dummy fMP4 segment files and init files on disk
+    // Chunk 0: init_chunk_0.mp4, segment_000000.m4s, segment_000001.m4s
+    // Chunk 1: init_chunk_1.mp4, segment_000032.m4s, segment_000033.m4s
+    fs::write(hls_dir.join("init_chunk_0.mp4"), b"ftypisom0").unwrap();
+    fs::write(hls_dir.join("segment_000000.m4s"), b"moof0").unwrap();
+    fs::write(hls_dir.join("segment_000001.m4s"), b"moof1").unwrap();
+
+    fs::write(hls_dir.join("init_chunk_1.mp4"), b"ftypisom1").unwrap();
+    fs::write(hls_dir.join("segment_000032.m4s"), b"moof32").unwrap();
+    fs::write(hls_dir.join("segment_000033.m4s"), b"moof33").unwrap();
+
+    // Create chunk playlists with custom durations
+    let chunk0_pl = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXTINF:4.000000,\nsegment_000001.m4s\n";
+    fs::write(hls_dir.join("chunk_0.m3u8"), chunk0_pl).unwrap();
+
+    let chunk1_pl = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MAP:URI=\"init_chunk_1.mp4\"\n#EXTINF:4.000000,\nsegment_000032.m4s\n#EXTINF:4.000000,\nsegment_000033.m4s\n";
+    fs::write(hls_dir.join("chunk_1.m3u8"), chunk1_pl).unwrap();
+
+    // Verify chunk_output_ok for fMP4
+    let chunk0 = media_server_api::services::chunk_transcode::TranscodeChunk {
+        chunk_id: 0,
+        start_time: 0.0,
+        duration: 8.0,
+        start_seg: 0,
+        expected_segs: 2,
+    };
+    assert!(ChunkTranscodeService::chunk_output_ok(&hls_dir, &chunk0));
+
+    // Update master playlist
+    let encoded_sec = ChunkTranscodeService::update_master_playlist(
+        &hls_dir,
+        &playlist_path,
+        120.0,
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(encoded_sec, 16.0);
+    let content = fs::read_to_string(&playlist_path).unwrap();
+
+    // Must be version 7 for fMP4
+    assert!(content.contains("#EXT-X-VERSION:7"));
+    assert!(content.contains("#EXT-X-MAP:URI=\"init_chunk_0.mp4\""));
+    assert!(content.contains("#EXT-X-MAP:URI=\"init_chunk_1.mp4\""));
+    assert!(content.contains("#EXT-X-DISCONTINUITY"));
+    assert!(content.contains("#EXT-X-ENDLIST"));
+
+    // Verify ordering: init_chunk_0.mp4 before segment 0, and discontinuity + init_chunk_1.mp4 before segment 32
+    let map0_pos = content.find("init_chunk_0.mp4").expect("must have init_chunk_0");
+    let seg0_pos = content.find("segment_000000.m4s").expect("must have segment 0");
+    assert!(map0_pos < seg0_pos);
+
+    let disc_pos = content.find("#EXT-X-DISCONTINUITY").expect("must have discontinuity");
+    let map1_pos = content.find("init_chunk_1.mp4").expect("must have init_chunk_1");
+    let seg32_pos = content.find("segment_000032.m4s").expect("must have segment 32");
+    assert!(disc_pos < map1_pos);
+    assert!(map1_pos < seg32_pos);
+
+    let _ = fs::remove_dir_all(&hls_dir);
+}
+
+#[test]
+fn test_fmp4_real_ffmpeg_chunk_generation_and_probe() {
+    let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let hls_dir = std::env::temp_dir().join(format!("rust_ffmpeg_fmp4_test_{}_{}", std::process::id(), count));
+    let _ = fs::remove_dir_all(&hls_dir);
+    fs::create_dir_all(&hls_dir).unwrap();
+
+    // Render a real 2.0s fMP4 test chunk with FFmpeg
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.current_dir(&hls_dir);
+    cmd.args([
+        "-hide_banner",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=purple:s=640x360:d=2",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=44100:cl=stereo",
+        "-t",
+        "2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-c:a",
+        "aac",
+        "-f",
+        "hls",
+        "-hls_time",
+        "2",
+        "-hls_segment_type",
+        "fmp4",
+        "-hls_fmp4_init_filename",
+        "init_chunk_0.mp4",
+        "-hls_segment_filename",
+        "segment_%06d.m4s",
+        "chunk_0.m3u8",
+    ]);
+
+    let output = cmd.output().expect("ffmpeg must execute");
+    assert!(output.status.success(), "ffmpeg command failed: {:?}", String::from_utf8_lossy(&output.stderr));
+
+    // Verify files on disk
+    let init_path = hls_dir.join("init_chunk_0.mp4");
+    let seg_path = hls_dir.join("segment_000000.m4s");
+    let chunk_pl_path = hls_dir.join("chunk_0.m3u8");
+
+    assert!(init_path.is_file(), "init_chunk_0.mp4 must exist");
+    assert!(seg_path.is_file(), "segment_000000.m4s must exist");
+    assert!(chunk_pl_path.is_file(), "chunk_0.m3u8 must exist");
+
+    assert!(fs::metadata(&init_path).unwrap().len() > 0);
+    assert!(fs::metadata(&seg_path).unwrap().len() > 0);
+
+    // Verify chunk_output_ok returns true
+    let chunk = media_server_api::services::chunk_transcode::TranscodeChunk {
+        chunk_id: 0,
+        start_time: 0.0,
+        duration: 2.0,
+        start_seg: 0,
+        expected_segs: 1,
+    };
+    assert!(ChunkTranscodeService::chunk_output_ok(&hls_dir, &chunk));
+
+    let _ = fs::remove_dir_all(&hls_dir);
+}

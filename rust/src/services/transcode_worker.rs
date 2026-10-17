@@ -100,13 +100,6 @@ impl TranscodeWorker {
         let video_path = PathResolver::resolve_media_path(&job.filename, roots)
             .map_err(|e| AppError::NotFound(format!("Media file not found: {}", e)))?;
 
-        let hls_dir = HlsService::find_hls_dir(&video_path, roots, cache_dir);
-        tokio::fs::create_dir_all(&hls_dir).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create HLS cache directory: {}", e))
-        })?;
-
-        let playlist_path = hls_dir.join("playlist.m3u8");
-
         // 1. Probe source properties
         let probe = ProbeService::probe(&video_path).await;
         let total_duration = ProbeService::source_video_duration(&video_path).await;
@@ -115,16 +108,42 @@ impl TranscodeWorker {
             return Err(AppError::Internal("Source video duration is zero or unreadable".into()));
         }
 
+        // Determine quality tier and target height from job mode
+        let (_job_type, target_height, quality_label) = ChunkTranscodeService::parse_job_mode(&job.mode);
+        let source_height = probe.first_stream("video").and_then(|s| s.height).unwrap_or(0) as u32;
+
+        // Strict no-upscaling: clamp target_height if it exceeds source_height (when source height is known)
+        let effective_target_height = match target_height {
+            Some(th) if source_height > 0 && th > source_height => {
+                warn!(
+                    "Job #{}: requested quality {} (height {}) exceeds source height {}; clamping to source height",
+                    job.id, quality_label, th, source_height
+                );
+                Some(source_height)
+            }
+            other => other,
+        };
+
+        let base_hls_dir = HlsService::find_hls_dir(&video_path, roots, cache_dir);
+        let hls_dir = ChunkTranscodeService::get_quality_hls_dir(&base_hls_dir, &quality_label);
+        tokio::fs::create_dir_all(&hls_dir).await.map_err(|e| {
+            AppError::Internal(format!("Failed to create HLS cache directory: {}", e))
+        })?;
+
+        let playlist_path = hls_dir.join("playlist.m3u8");
+
         // 2. Select AMF strategy and expand workers
         let (use_vpp_amf, worker_count) =
-            GpuService::select_amf_strategy(probe.first_stream("video"));
+            GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
         let workers = GpuService::expand_workers(&base_gpus, worker_count);
 
         info!(
-            "Job #{}: duration={:.1}s, vpp_amf={}, workers={} ({})",
+            "Job #{}: duration={:.1}s, quality={}, height={:?}, vpp_amf={}, workers={} ({})",
             job.id,
             total_duration,
+            quality_label,
+            effective_target_height,
             use_vpp_amf,
             workers.len(),
             workers
@@ -302,6 +321,7 @@ impl TranscodeWorker {
                             &c_item,
                             &worker_cfg,
                             use_vpp_amf,
+                            effective_target_height,
                             pids,
                         )
                         .await
@@ -379,11 +399,14 @@ impl TranscodeWorker {
         chunk: &TranscodeChunk,
         worker: &GPUWorkerConfig,
         use_vpp_amf: bool,
+        target_height: Option<u32>,
         active_pids: Arc<Mutex<HashSet<u32>>>,
     ) -> Result<(), AppError> {
-        let chunk_pl = hls_dir.join(format!("chunk_{}.m3u8", chunk.chunk_id));
+        let chunk_pl_name = format!("chunk_{}.m3u8", chunk.chunk_id);
+        let init_name = format!("init_chunk_{}.mp4", chunk.chunk_id);
 
         let mut cmd = tokio::process::Command::new("ffmpeg");
+        cmd.current_dir(hls_dir);
         cmd.arg("-hide_banner").arg("-y");
 
         // HW Init
@@ -399,8 +422,8 @@ impl TranscodeWorker {
             .arg("-i")
             .arg(video_path);
 
-        // Video encoding args
-        for arg in worker.get_ffmpeg_video_args(use_vpp_amf) {
+        // Video encoding args with dynamic scaling
+        for arg in worker.get_ffmpeg_video_args(use_vpp_amf, target_height) {
             cmd.arg(arg);
         }
 
@@ -412,7 +435,7 @@ impl TranscodeWorker {
             .arg("-ac")
             .arg("2");
 
-        // HLS output container args
+        // HLS output container args: Fragmented MP4 (fMP4)
         cmd.arg("-output_ts_offset")
             .arg(format!("{:.3}", chunk.start_time))
             .arg("-muxdelay")
@@ -427,12 +450,16 @@ impl TranscodeWorker {
             .arg("0")
             .arg("-hls_flags")
             .arg("independent_segments")
+            .arg("-hls_segment_type")
+            .arg("fmp4")
+            .arg("-hls_fmp4_init_filename")
+            .arg(&init_name)
             .arg("-start_number")
             .arg(chunk.start_seg.to_string())
             .arg("-hls_segment_filename")
-            .arg(hls_dir.join("segment_%06d.ts"))
+            .arg("segment_%06d.m4s")
             .arg("-nostats")
-            .arg(&chunk_pl);
+            .arg(&chunk_pl_name);
 
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());

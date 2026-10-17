@@ -62,18 +62,19 @@ impl GPUWorkerConfig {
     /// `use_vpp_amf=false` drops the vpp_amf scaling stage and lets the D3D11VA decoder
     /// feed the encoder directly. That is only valid when the source needs neither a resize
     /// nor a depth change: h264_amf cannot accept 10-bit on drivers older than 23.30,
-    /// and a source taller than the 1080p profile would be emitted at full height.
-    pub fn get_ffmpeg_video_args(&self, use_vpp_amf: bool) -> Vec<String> {
+    /// and a source taller than the target profile would be emitted at full height.
+    pub fn get_ffmpeg_video_args(&self, use_vpp_amf: bool, target_height: Option<u32>) -> Vec<String> {
+        let height = target_height.unwrap_or(HLS_MAX_HEIGHT as u32);
         match self.backend {
             GpuBackend::Amf => {
                 let vf = if use_vpp_amf {
-                    "vpp_amf=h='min(1080,ih)':w=-2:format=nv12"
+                    format!("vpp_amf=h='min({},ih)':w=-2:format=nv12", height)
                 } else {
-                    "null"
+                    "null".to_string()
                 };
                 vec![
                     "-vf".into(),
-                    vf.into(),
+                    vf,
                     "-c:v".into(),
                     "h264_amf".into(),
                     "-quality".into(),
@@ -88,7 +89,7 @@ impl GPUWorkerConfig {
             }
             GpuBackend::Vaapi => vec![
                 "-vf".into(),
-                "format=nv12,hwupload,scale_vaapi=w=1920:h=-2".into(),
+                format!("format=nv12,hwupload,scale_vaapi=w=-2:h={}", height),
                 "-c:v".into(),
                 "h264_vaapi".into(),
                 "-qp".into(),
@@ -103,7 +104,7 @@ impl GPUWorkerConfig {
                     .unwrap_or_else(|_| "23".into());
                 vec![
                     "-vf".into(),
-                    "scale=-2:1080,format=yuv420p".into(),
+                    format!("scale=-2:'min(ih,{})',format=yuv420p", height),
                     "-c:v".into(),
                     "libx264".into(),
                     "-preset".into(),
@@ -291,18 +292,22 @@ impl GpuService {
         p.contains("10")
     }
 
-    /// Return `(use_vpp_amf, worker_count)` for one source's video stream.
+    /// Return `(use_vpp_amf, worker_count)` for one source's video stream and optional target height.
     ///
     /// `use_vpp_amf` is required - never merely beneficial - whenever the source
-    /// is 10-bit or taller than the 1080p profile.
-    pub fn select_amf_strategy(video_stream: Option<&ProbeStream>) -> (bool, usize) {
+    /// is 10-bit or taller than the target profile.
+    pub fn select_amf_strategy(
+        video_stream: Option<&ProbeStream>,
+        target_height: Option<u32>,
+    ) -> (bool, usize) {
         let height = video_stream.and_then(|s| s.height).unwrap_or(0);
         let ten_bit = Self::is_ten_bit(video_stream.and_then(|s| s.pix_fmt.as_deref()));
+        let target_h = target_height.unwrap_or(HLS_MAX_HEIGHT as u32) as i64;
 
         let unknown = height <= 0;
-        let needs_vpp = unknown || ten_bit || height > HLS_MAX_HEIGHT;
+        let needs_vpp = unknown || ten_bit || height > target_h;
 
-        let count: usize = if needs_vpp {
+        let count: usize = if needs_vpp || target_h >= 1440 {
             std::env::var("MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10")
                 .ok()
                 .and_then(|s| s.parse().ok())

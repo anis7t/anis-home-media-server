@@ -44,8 +44,18 @@ pub async fn hls_handler(
         return Err(AppError::NotFound("Invalid HLS path".to_string()));
     }
 
-    let video_path = PathResolver::resolve_media_path(filename, &state.roots)?;
-    let hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
+    // Check if filename contains a quality subpath e.g. "movie.mkv/1080p"
+    let (raw_filename, quality) = match filename.rsplit_once('/') {
+        Some((parent, possible_quality))
+            if crate::services::chunk_transcode::ChunkTranscodeService::is_quality_string(possible_quality) =>
+        {
+            (parent, Some(possible_quality))
+        }
+        _ => (filename, None),
+    };
+
+    let video_path = PathResolver::resolve_media_path(raw_filename, &state.roots)?;
+    let hls_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, quality);
 
     if target == "playlist.m3u8" {
         let playlist_file = hls_dir.join("playlist.m3u8");
@@ -72,7 +82,7 @@ pub async fn hls_handler(
         }
 
         // Playlist does not exist yet or has no segments: return 503 retry response
-        let empty_body = "#EXTM3U\n#EXT-X-VERSION:3\n";
+        let empty_body = "#EXTM3U\n#EXT-X-VERSION:7\n";
         let mut res = Response::new(Body::from(empty_body));
         *res.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
         let h = res.headers_mut();
@@ -96,6 +106,8 @@ pub async fn hls_handler(
         let mut res = RangeService::stream_file(segment_file, headers, method).await?;
         let seg_mimetype = if target.ends_with(".ts") {
             "video/mp2t"
+        } else if target.ends_with(".m4s") {
+            "video/iso.segment"
         } else {
             "video/mp4"
         };

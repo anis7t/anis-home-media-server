@@ -80,11 +80,14 @@ fn test_honest_target_duration_adjustment() {
 #[test]
 fn test_is_valid_segment_name() {
     assert!(HlsService::is_valid_segment_name("init.mp4"));
+    assert!(HlsService::is_valid_segment_name("init_chunk_0.mp4"));
+    assert!(HlsService::is_valid_segment_name("init_chunk_12.mp4"));
     assert!(HlsService::is_valid_segment_name("segment_000000.ts"));
     assert!(HlsService::is_valid_segment_name("segment_000015.m4s"));
     assert!(HlsService::is_valid_segment_name("segment_999999.ts"));
 
     assert!(!HlsService::is_valid_segment_name("../segment_000000.ts"));
+    assert!(!HlsService::is_valid_segment_name("init_chunk_abc.mp4"));
     assert!(!HlsService::is_valid_segment_name("segment_1.ts"));
     assert!(!HlsService::is_valid_segment_name("segment_00000.ts"));
     assert!(!HlsService::is_valid_segment_name("segment_0000000.ts"));
@@ -242,7 +245,64 @@ async fn test_hls_segment_delivery_m4s_and_init() {
 
     let res_m4s = harness.app.clone().oneshot(req_m4s).await.unwrap();
     assert_eq!(res_m4s.status(), StatusCode::OK);
-    assert_eq!(res_m4s.headers().get(header::CONTENT_TYPE).unwrap(), "video/mp4");
+    assert_eq!(res_m4s.headers().get(header::CONTENT_TYPE).unwrap(), "video/iso.segment");
+}
+
+#[tokio::test]
+async fn test_hls_quality_tier_subpath_delivery() {
+    let harness = setup_hls_test().await;
+
+    let video_path = harness.media_dir.join("Matrix.mkv");
+    fs::write(&video_path, b"matrix video content").unwrap();
+
+    let base_hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let quality_720_dir = base_hls_dir.join("720p");
+    fs::create_dir_all(&quality_720_dir).unwrap();
+
+    // Write 720p fMP4 playlist and segments
+    let pl_720 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
+    fs::write(quality_720_dir.join("playlist.m3u8"), pl_720).unwrap();
+    fs::write(quality_720_dir.join("init_chunk_0.mp4"), b"init_720_bytes").unwrap();
+    fs::write(quality_720_dir.join("segment_000000.m4s"), b"m4s_720_bytes").unwrap();
+
+    // 1. GET /hls/Matrix.mkv/720p/playlist.m3u8
+    let req_pl = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Matrix.mkv/720p/playlist.m3u8")
+        .body(Body::empty())
+        .unwrap();
+
+    let res_pl = harness.app.clone().oneshot(req_pl).await.unwrap();
+    assert_eq!(res_pl.status(), StatusCode::OK);
+    assert_eq!(res_pl.headers().get(header::CONTENT_TYPE).unwrap(), "application/vnd.apple.mpegurl");
+
+    let pl_bytes = res_pl.into_body().collect().await.unwrap().to_bytes();
+    let pl_str = String::from_utf8_lossy(&pl_bytes);
+    assert!(pl_str.contains("#EXT-X-VERSION:7"));
+    assert!(pl_str.contains("#EXT-X-MAP:URI=\"init_chunk_0.mp4\""));
+    assert!(pl_str.contains("segment_000000.m4s"));
+
+    // 2. GET /hls/Matrix.mkv/720p/init_chunk_0.mp4
+    let req_init = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Matrix.mkv/720p/init_chunk_0.mp4")
+        .body(Body::empty())
+        .unwrap();
+
+    let res_init = harness.app.clone().oneshot(req_init).await.unwrap();
+    assert_eq!(res_init.status(), StatusCode::OK);
+    assert_eq!(res_init.headers().get(header::CONTENT_TYPE).unwrap(), "video/mp4");
+
+    // 3. GET /hls/Matrix.mkv/720p/segment_000000.m4s
+    let req_seg = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Matrix.mkv/720p/segment_000000.m4s")
+        .body(Body::empty())
+        .unwrap();
+
+    let res_seg = harness.app.clone().oneshot(req_seg).await.unwrap();
+    assert_eq!(res_seg.status(), StatusCode::OK);
+    assert_eq!(res_seg.headers().get(header::CONTENT_TYPE).unwrap(), "video/iso.segment");
 }
 
 #[tokio::test]

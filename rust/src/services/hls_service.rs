@@ -205,10 +205,54 @@ impl HlsService {
         existing_dirs.remove(0)
     }
 
-    /// Check if segment filename matches allowed HLS pattern: init.mp4 or segment_\d{6}\.(ts|m4s)
+    /// Resolve the authoritative HLS cache directory for a given video path and optional quality tier.
+    pub fn find_hls_quality_dir(
+        path: &Path,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+        quality: Option<&str>,
+    ) -> PathBuf {
+        let base_dir = Self::find_hls_dir(path, roots, cache_dir);
+        match quality {
+            Some(q) if !q.is_empty() && q != "default" => {
+                let q_lower = q.to_ascii_lowercase();
+                let norm = match q_lower.as_str() {
+                    "4k" | "2160p" | "2160" => "2160p",
+                    "2k" | "1440p" | "1440" => "1440p",
+                    "1080p" | "1080" | "fhd" => "1080p",
+                    "720p" | "720" | "hd" => "720p",
+                    "480p" | "480" | "sd" => "480p",
+                    "360p" | "360" => "360p",
+                    _ => q_lower.as_str(),
+                };
+                let q_dir = base_dir.join(norm);
+                if norm == "1080p" && !q_dir.join("playlist.m3u8").is_file() && base_dir.join("playlist.m3u8").is_file() {
+                    base_dir
+                } else {
+                    q_dir
+                }
+            }
+            _ => {
+                if !base_dir.join("playlist.m3u8").is_file() && base_dir.join("1080p").join("playlist.m3u8").is_file() {
+                    base_dir.join("1080p")
+                } else {
+                    base_dir
+                }
+            }
+        }
+    }
+
+    /// Check if segment filename matches allowed HLS pattern: init.mp4, init_chunk_\d+.mp4 or segment_\d{6}\.(ts|m4s)
     pub fn is_valid_segment_name(segment: &str) -> bool {
         if segment == "init.mp4" {
             return true;
+        }
+        if let Some(rest) = segment.strip_prefix("init_chunk_") {
+            if let Some(num) = rest.strip_suffix(".mp4") {
+                if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
+                    return true;
+                }
+            }
         }
         if let Some(rest) = segment.strip_prefix("segment_") {
             if let Some((num, ext)) = rest.split_once('.') {
