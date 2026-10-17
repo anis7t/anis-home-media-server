@@ -17,6 +17,8 @@ if (-not $isAdmin) {
 
 $BaseDir = "E:\MediaServer"
 $RustDir = "$BaseDir\rust"
+$LogFile = "$BaseDir\logs\cutover.log"
+Start-Transcript -Path $LogFile -Force -ErrorAction SilentlyContinue
 
 # 1. Stop legacy MediaServer (Waitress WSGI)
 Write-Host "`n[1/6] Stopping legacy 'MediaServer' (Waitress WSGI) Windows Service..." -ForegroundColor Yellow
