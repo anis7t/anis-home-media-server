@@ -266,7 +266,7 @@ async fn test_pairing_device_lifecycle() {
         user_id,
         "Bedroom TV",
         Some(30),
-        "http://localhost:8001",
+        "http://localhost:8000",
     )
     .await
     .unwrap();

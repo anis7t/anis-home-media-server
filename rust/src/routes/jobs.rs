@@ -217,7 +217,7 @@ pub async fn active_transcodes_handler(
             list.push(serde_json::json!({
                 "filename": j.filename,
                 "title": title,
-                "mode": "HLS Transcode",
+                "mode": "Adaptive Transcode (fMP4)",
                 "status": j.status,
                 "percent": pct,
                 "speed": speed_str,
