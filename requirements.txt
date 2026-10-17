@@ -1,18 +1,7 @@
-# Core web application
-Flask>=3.0,<4
+# Operational tooling, client contract probes & standalone library scanner
 requests>=2.31,<3
 python-dotenv>=1.0,<2
 
-# Production WSGI servers
-# Waitress is the cross-platform production server used on Windows.
-waitress>=3.0,<4
-# Gunicorn is used for Linux/Unix deployments; it is not a Windows production server.
-gunicorn>=23.0; platform_system != "Windows"
-
-# Windows GPU & System Telemetry (Optional, graceful fallback if missing)
-pywin32>=306; platform_system == "Windows"
-WMI>=1.5.1; platform_system == "Windows"
-
-# PostgreSQL database backend (Phase 2 migration)
+# PostgreSQL database driver
 psycopg[binary]>=3.2.0,<4
 psycopg-pool>=3.2.0,<4
