@@ -28,18 +28,32 @@ Active branch: `feat/rust-react-postgres-migration`
 
 ---
 
-## Immediate Active Issues & Work Queue (Reported 2026-10-18)
+## Immediate Active Issues & Work Queue (Reported 2026-10-18) — ✅ ALL RESOLVED
 
-1. **"Get the app" button does not work**:
-   - In `web/src/app/AppShell.tsx`, `<a href="/download">` points to `/download`, which is not registered as an endpoint or SPA route. Needs dedicated distribution page or direct download route linking to `/api/app/download?channel=production` with proper APK file serving.
-2. **Google Sign-in returns 503 Service Unavailable**:
-   - `{"error":"Sign-in is not configured on this server.","status":503}`.
-   - `rust/src/services/auth_service.rs` requires `GOOGLE_CLIENT_ID` / `MEDIA_SERVER_GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. If not configured in `.env` / environment, sign-in fails closed with 503. Need configuration guidance or local bypass for admin PIN fallback.
-3. **Browser playback control's subtitle delay (+ / -) causes subtitle flicker**:
-   - In `web/src/features/playback/useSubtitles.ts`, pressing `z` or `x` updates `prefs.offset` in state, which triggers a full re-render, rewrites the global `<style id="ms-sub-styles">` tag, and touches all VTTCue lines via `elevateCues()` without adjusting cue timestamps (`startTime` / `endTime`), causing the browser text track renderer to flash/flicker. Need direct cue `startTime`/`endTime` adjustment or non-DOM style debouncing.
-4. **Utilize Chrome native 4K HEVC / H.265 support**:
-   - Chrome natively supports hardware-accelerated HEVC (H.265) up to 4K when running on platforms with underlying OS/GPU decoding support (Windows 10/11 with HEVC extensions, macOS, etc.) inside MP4/fMP4 containers (`video/mp4; codecs="hvc1..."` or `video/mp4; codecs="hev1..."`).
-   - Rather than assuming HEVC is disabled everywhere, query `navigator.mediaCapabilities.decodingInfo()` for `video/mp4; codecs="hvc1.1.6.L150.90"` / `smooth: true` so that 4K HEVC streams are unlocked and used directly without unnecessary down-converting.
+All 4 reported issues were grouped into Slices A–D, implemented, thoroughly verified, and committed (Note: there was no Slice E; all issues are resolved):
+
+1. **"Get the app" button does not work (`/download`)** — ✅ **RESOLVED (Slice A)**:
+   - Built native Rust endpoints `GET /api/app/download` (RFC 7233 byte-range streaming) and `GET /api/app/version`.
+   - Created obsidian-glass `<DownloadPage>` at `/download`, `/app`, `/android` with SHA-256 integrity verification.
+   - Committed in `6ba1e3a`; Walkthrough in [`docs/SLICE_A_WALKTHROUGH.md`](SLICE_A_WALKTHROUGH.md).
+2. **Google Sign-in returns 503 Service Unavailable** — ✅ **RESOLVED (Slice B)**:
+   - Added `oauth_configured` probe flag to `/api/auth/me`; redirect unconfigured requests cleanly to `/account?error=oauth_unconfigured`.
+   - Implemented `POST /api/auth/login-pin` with constant-time comparison against `settings.admin_pin` and 30-day session token cookie.
+   - Built portaled `<AdminPinSignInModal>` with setup guidance.
+   - Committed in `e4a423b`; Walkthrough in [`docs/SLICE_B_WALKTHROUGH.md`](SLICE_B_WALKTHROUGH.md).
+3. **Browser playback control's subtitle delay (+ / -) causes subtitle flicker** — ✅ **RESOLVED (Slice C)**:
+   - Idempotent `applySubStyles` prevents redundant `<style>` DOM writes in `document.head`.
+   - Decoupled `useSubtitles` into 3 separate effects (visual CSS, cue layout, timing offset).
+   - Non-destructive `applyCueTiming` shifts `c.startTime` and `c.endTime` dynamically with 0ms cue layout thrashing.
+   - Committed in `8af2022`; Walkthrough in [`docs/SLICE_C_WALKTHROUGH.md`](SLICE_C_WALKTHROUGH.md).
+4. **Utilize Chrome native 4K HEVC / H.265 support** — ✅ **RESOLVED (Slice D)**:
+   - Made `normalizeVideoCodecMime` dimension-aware, targeting `hvc1.1.6.L150.90` (Level 5.0 Main 10) for 4K HEVC.
+   - Query W3C `navigator.mediaCapabilities.decodingInfo()` with real resolution and dual-tag (`hvc1` / `hev1`) fallback.
+   - Passed video dimensions from `PlayerPage.tsx`. Unlocks Direct Play for 4K HEVC MP4 streams on supported platforms.
+   - Committed in `62d4984`; Walkthrough in [`docs/SLICE_D_WALKTHROUGH.md`](SLICE_D_WALKTHROUGH.md).
+
+### Active Roadmap Backlog
+- **Phase 7 Slice 7E**: Legacy Flask Retirement & Final Modernization Sign-Off (Decommission `app/`, prune `requirements.txt`, retire `wsgi.py`). See [`docs/SESSION_HANDOFF_PHASE_7_BACKLOGS.md`](SESSION_HANDOFF_PHASE_7_BACKLOGS.md).
 
 ---
 

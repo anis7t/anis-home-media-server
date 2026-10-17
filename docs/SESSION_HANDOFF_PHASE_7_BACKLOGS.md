@@ -42,9 +42,61 @@
    - Configured VS Code SQLTools PostgreSQL connection to `localhost:5432` (`MediaServerPG`) in `.vscode/settings.json`.
    - Walkthrough: [`docs/SQLTOOLS_POSTGRESQL_CONNECTION_WALKTHROUGH.md`](SQLTOOLS_POSTGRESQL_CONNECTION_WALKTHROUGH.md) (commit `d7c814d`).
 
+> [!NOTE]
+> **Clarification on "Slice E" vs "Slice 7E":**
+> There was **no Slice E** in the active issues queue. The active issues plan (`docs/ACTIVE_ISSUES_IMPLEMENTATION_PLAN.md`) addressed exactly 4 issues through Slices A, B, C, and D. All 4 are complete.
+> The remaining modernization backlog is **Slice 7E** ("Legacy Flask Retirement & Final Sign-Off") under Phase 7.
+
 ---
 
-## 3. Scope for Upcoming Session: Phase 7 Backlogs (Slice 7E)
+## 3. Paste-Ready Resume Prompt for New Session
+
+Copy and paste the block below into a new session to resume work on the Phase 7 backlog:
+
+```text
+Resume work on Anis' Home Media Server at E:\MediaServer.
+
+STATE
+- Branch: feat/phase-9-pre-transcode-capabilities (latest commit: c505e14). Pushing is reserved for the user.
+- Production Stack:
+  - Rust Axum on port 8000 (MediaServerRust NSSM service).
+  - PostgreSQL 18.4 on port 5432 (MediaServerPG).
+  - React SPA served directly from web/dist/ on port 8000.
+  - Cloudflare Tunnel routing media.anisparvez.in -> 127.0.0.1:8000.
+- Test Battery Status:
+  - 119/119 Rust tests pass across 15 test suites.
+  - 212/212 Web Vitest tests pass across 30 test files.
+  - 22/22 Android client contracts pass (scripts/probe_android_api.py).
+  - TypeScript tsc -b: 0 errors.
+  - Vite build: clean (792ms).
+
+COMPLETED IN PREVIOUS SESSIONS:
+1. Phase 9 (Client Media Capabilities, Offline Pre-Transcode Architecture & 100% Gating) - commit 22feeaf.
+2. Active Issues Slices A–D:
+   - Slice A: /download App Distribution & native Axum APK streaming (6ba1e3a, 6cdc0ff).
+   - Slice B: Google Sign-in 503 fix & local Admin PIN fallback modal (e4a423b).
+   - Slice C: Subtitle delay flicker elimination via decoupled layout & idempotent CSS (8af2022).
+   - Slice D: Native 4K HEVC Direct Play unlock via dimension-aware W3C probe (62d4984).
+   - DX: VS Code SQLTools PostgreSQL profile configured (d7c814d).
+
+NEXT OBJECTIVE — PHASE 7 BACKLOG (SLICE 7E: LEGACY FLASK RETIREMENT):
+Execute Phase 7 Slice 7E per docs/SESSION_HANDOFF_PHASE_7_BACKLOGS.md:
+1. Audit residual Python scripts & imports to ensure no active operational tooling relies on legacy Flask modules (app/routes/*, app/services/*).
+2. Decommission deprecated legacy app/ directory (Flask controllers, Jinja templates, Waitress WSGI wrappers) and wsgi.py per AGENTS.md §0.2.
+3. Prune requirements.txt (remove Flask, Waitress, Flask-CORS; retain only libraries needed by standalone operational scripts e.g. psycopg2-binary, requests).
+4. Run full 15-suite Rust & 30-suite Vitest battery; verify documentation reflects 100% Rust + React + PostgreSQL architecture; complete final modernization sign-off.
+
+READ FIRST, IN THIS ORDER:
+- AGENTS.md §0.1 & §0.2 (Standing rules: Ask before planning, present plan, approve before coding; Flask is deprecated).
+- GEMINI.md (Process safety, task management, cross-drive rules).
+- docs/SESSION_HANDOFF_PHASE_7_BACKLOGS.md (detailed Slice 7E execution plan).
+- Handoffs/2026-10-18_02-40_antigravity_slices-a-d-complete-and-slice-7e-plan.md.
+- docs/PROJECT_STATUS.md (authoritative project and roadmap status).
+```
+
+---
+
+## 4. Scope for Upcoming Session: Phase 7 Backlogs (Slice 7E)
 
 Per [`docs/MIGRATION_STATUS.md`](MIGRATION_STATUS.md) and [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md) §5 (Phase 7), Slices 7A through 7D are complete. The remaining backlog is **Phase 7 Slice 7E: Legacy Flask Retirement & Final Modernization Sign-Off**:
 
@@ -65,7 +117,7 @@ Per [`docs/MIGRATION_STATUS.md`](MIGRATION_STATUS.md) and [`docs/FLASK_RUST_REAC
 
 ---
 
-## 4. Key Architectural Invariants to Uphold
+## 5. Key Architectural Invariants to Uphold
 - **Rule 1 (Planning Protocol)**: Before executing any code changes for Slice 7E, create a formal `/plan` artifact, request feedback, and await user approval (`AGENTS.md` §0.1, `GEMINI.md` §0).
 - **Rule 2 (No Flask Resurrections)**: Flask is deprecated. No new Python endpoints may be introduced. All services run on Rust (`rust/`) and React (`web/`).
 - **Rule 3 (Drive Tiering)**: Runtime workspace at `E:/MediaServer`, SQLite deprecated, media storage strictly at `D:/Flicks`.

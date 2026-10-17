@@ -1,16 +1,20 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-18
+> ## Current session handoff — 2026-10-18 (02:40 IST)
 >
-> **Phase 7 (Production Port Cutover, Autonomous Operation & Operational Tooling) Slices 7A–7D are COMPLETE & VERIFIED.**
-> - **Slice 7A (Autonomous Rust Daemons)**: Background scan scheduler (`scan_service`), storage cache maintenance daemon (`storage_service`), and transcode job sweeper (`transcode_sweeper`) running natively in Tokio runtime.
-> - **Slice 7B (Port Cutover to `:8000`)**: Rust Axum and React Web SPA unified on `0.0.0.0:8000`. Legacy port `8001` released and retired. Legacy Waitress/Flask service (`MediaServer`) stopped and set to Manual. Cloudflare named tunnel (`media.anisparvez.in`) updated to forward directly to `http://127.0.0.1:8000`.
-> - **Slice 7C (Multi-Tier Verification & Hardening Battery)**: Rust test suite (**258 passed, 0 failed**), React Web tests (**183/183 passed**), React TypeScript check (**0 errors**), Android API contract probe (**22/22 endpoints OK**), Phase 8 fMP4 streaming probe (**100% OK**).
-> - **Slice 7D (Operational Tooling & Script Harmonization)**: Harmonized `scripts/restart_service.bat` into unified elevated restarter (restarts `MediaServerRust` and executes status diagnostic); updated `scripts/service_status.ps1` to authoritative health monitor; decoupled `scripts/service_watchdog.ps1` from legacy Flask; added automated compressed PostgreSQL backup tooling `scripts/backup_postgres.bat` and `backup_postgres.ps1` with 7-backup retention pruning.
-> - **Active Transcode**: Real hardware transcode job #794 (*Ghost in the Cell* 1440p, 107 chunks) actively running across AMD Radeon RX 560X and Vega 8 GPUs.
+> **Phase 9 & Active Issues Slices A–D are 100% COMPLETE & VERIFIED.**
+> - **Phase 9 (Capabilities Probe & Pre-Transcode Architecture)**: W3C Media Capabilities API probe, strict 100% transcode gating (`#EXT-X-ENDLIST` required, isolated `<video>`), Option 1C native resolution baseline, Option 2A layman warnings, autonomous transcode sweeper, and `/manage` operator tooling (`22feeaf`).
+> - **Slice A (APK Distribution `/download`)**: Native Rust endpoints `GET /api/app/download` (RFC 7233 byte-range streaming) and `GET /api/app/version`; obsidian-glass `<DownloadPage>` at `/download`, `/app`, `/android` with SHA-256 integrity verification (`6ba1e3a`, `6cdc0ff`).
+> - **Slice B (Google Sign-In 503 & Admin PIN Fallback)**: `oauth_configured` probe flag on `/api/auth/me`; smooth redirection to `/account?error=oauth_unconfigured`; constant-time `POST /api/auth/login-pin` with 30-day session token cookie; portaled `<AdminPinSignInModal>` (`e4a423b`).
+> - **Slice C (Subtitle Delay Flicker Elimination)**: Idempotent `applySubStyles` guards stylesheet DOM injection; decoupled effects into CSS, cue layout, and timing offset; smooth `applyCueTiming` with zero layout thrash (`8af2022`).
+> - **Slice D (Native 4K HEVC Direct Play Unlock)**: Dimension-aware `normalizeVideoCodecMime` targeting `hvc1.1.6.L150.90` (Level 5.0 Main 10); W3C `decodingInfo` query with real dimensions and `hvc1`/`hev1` fallback (`62d4984`).
+> - **Developer Experience**: Configured VS Code SQLTools PostgreSQL connection (`d7c814d`).
+> - **Verification Status**: Rust test battery (**119/119 passed** across all 15 test suites), React Vitest battery (**212/212 passed**), TypeScript (**0 errors**), Android API probe (**22/22 OK**).
+> - **Clarification on Slices**: Active issues contained only Slices A–D (no Slice E; all resolved).
 >
-> Repository state: branch `feat/phase-7d-operational-tooling` ready to commit.
-> Next Slice: **Phase 7 Slice 7E** — Legacy Flask retirement (`app/` cleanup) and final modernization sign-off.
+> Repository state: branch `feat/phase-9-pre-transcode-capabilities` clean.
+> Next Slice: **Phase 7 Slice 7E** — Legacy Flask retirement (`app/` cleanup, `requirements.txt` prune, `wsgi.py` removal) and final modernization sign-off.
+> Refer to master handoff: [`Handoffs/2026-10-18_02-40_antigravity_slices-a-d-complete-and-slice-7e-plan.md`](../Handoffs/2026-10-18_02-40_antigravity_slices-a-d-complete-and-slice-7e-plan.md) and [`docs/SESSION_HANDOFF_PHASE_7_BACKLOGS.md`](SESSION_HANDOFF_PHASE_7_BACKLOGS.md).
 >
 > ### Previous handoff — 2026-10-17
 >
