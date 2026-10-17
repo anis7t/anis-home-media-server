@@ -12,7 +12,9 @@ use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
 pub const ALLOWED_RETENTION_POLICIES: &[&str] = &["archive", "keep", "purge_cache"];
@@ -655,5 +657,62 @@ impl StorageService {
                 }
             }
         }
+    }
+
+    /// Start periodic background cache maintenance daemon.
+    ///
+    /// Periodically executes `purge_orphaned_caches(&pool, &media_roots, &cache_dir, &system_service, false)`
+    /// on the configured `interval`.
+    pub fn start_daemon(
+        pool: PgPool,
+        media_roots: Arc<Vec<PathBuf>>,
+        cache_dir: Arc<PathBuf>,
+        interval: Duration,
+        initial_delay: Duration,
+        shutdown_flag: Arc<AtomicBool>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            info!(
+                "StorageService cache maintenance daemon started (interval: {:?}, initial delay: {:?})",
+                interval, initial_delay
+            );
+            if !initial_delay.is_zero() {
+                tokio::time::sleep(initial_delay).await;
+            }
+
+            let mut timer = tokio::time::interval(interval);
+            timer.tick().await;
+
+            let system_service = SystemService::new();
+
+            while !shutdown_flag.load(Ordering::Relaxed) {
+                timer.tick().await;
+                if shutdown_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                info!("Running periodic orphaned cache maintenance audit...");
+                let result = Self::purge_orphaned_caches(
+                    &pool,
+                    &media_roots,
+                    &cache_dir,
+                    &system_service,
+                    false,
+                )
+                .await;
+
+                if result.refused {
+                    warn!("Periodic cache maintenance refused: {:?}", result.reason);
+                } else if result.purged_count > 0 {
+                    info!(
+                        "Periodic cache maintenance purged {} orphaned directories ({} bytes freed)",
+                        result.purged_count, result.freed_bytes
+                    );
+                } else {
+                    info!("Periodic cache maintenance complete: cache clean, 0 orphans found");
+                }
+            }
+            info!("StorageService cache maintenance daemon stopped cleanly");
+        })
     }
 }

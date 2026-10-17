@@ -2,6 +2,8 @@ use axum::http::HeaderMap;
 use sqlx::PgPool;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tracing::{error, info};
 
 static SCANNER_BUSY: AtomicBool = AtomicBool::new(false);
@@ -80,6 +82,45 @@ impl ScanService {
         });
 
         true
+    }
+
+    /// Start periodic background library scanner daemon.
+    ///
+    /// Periodically executes `trigger_scan(&base_dir)` on the configured `interval`.
+    /// Skips tick if a scan is already active or if `shutdown_flag` is set.
+    pub fn start_daemon(
+        base_dir: Arc<PathBuf>,
+        interval: Duration,
+        initial_delay: Duration,
+        shutdown_flag: Arc<AtomicBool>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            info!(
+                "ScanService background daemon started (interval: {:?}, initial delay: {:?})",
+                interval, initial_delay
+            );
+            if !initial_delay.is_zero() {
+                tokio::time::sleep(initial_delay).await;
+            }
+
+            let mut timer = tokio::time::interval(interval);
+            timer.tick().await;
+
+            while !shutdown_flag.load(Ordering::Relaxed) {
+                timer.tick().await;
+                if shutdown_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if !Self::is_busy() {
+                    info!("Periodic background library scan triggered");
+                    Self::trigger_scan(&base_dir);
+                } else {
+                    info!("Periodic background library scan skipped: scanner already active");
+                }
+            }
+            info!("ScanService background daemon stopped cleanly");
+        })
     }
 
     /// Resolve the path to Python inside virtual environment, with system fallbacks.

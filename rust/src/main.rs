@@ -45,9 +45,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let worker_id = format!("rust-worker-{}", std::process::id());
     media_server_api::services::transcode_worker::TranscodeWorker::start_worker(
         pool.clone(),
+        sweeper_roots.clone(),
+        sweeper_cache.clone(),
+        worker_id,
+        shutdown_flag.clone(),
+    );
+
+    // Phase 7A: Autonomous Library Scanner daemon (1-hour interval, 30s initial delay)
+    let base_dir = std::sync::Arc::new(config.base_dir.clone());
+    media_server_api::services::scan_service::ScanService::start_daemon(
+        base_dir,
+        std::time::Duration::from_secs(3600),
+        std::time::Duration::from_secs(30),
+        shutdown_flag.clone(),
+    );
+
+    // Phase 7A: Autonomous Cache Maintenance daemon (2-hour interval, 120s initial delay)
+    media_server_api::services::storage_service::StorageService::start_daemon(
+        pool.clone(),
         sweeper_roots,
         sweeper_cache,
-        worker_id,
+        std::time::Duration::from_secs(7200),
+        std::time::Duration::from_secs(120),
         shutdown_flag.clone(),
     );
 
@@ -72,19 +91,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // client from localhost, exactly as Flask's remote_addr does. Without it
     // every client would look like 127.0.0.1 and the dashboard's
     // connection_type would be wrong for every real device.
+    let shutdown_for_signal = shutdown_flag.clone();
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(shutdown_signal(shutdown_for_signal))
     .await?;
 
     Ok(())
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(shutdown_flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to install Ctrl+C signal handler");
     tracing::info!("Shutting down Rust API gracefully...");
+    shutdown_flag.store(true, std::sync::atomic::Ordering::Relaxed);
 }
