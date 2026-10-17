@@ -20,25 +20,39 @@ export interface CapabilityVerdict {
 /**
  * Standardize codec strings to standard MIME parameter formats for browser probing.
  */
-function normalizeVideoCodecMime(container: string, videoCodec?: string): string {
+export function normalizeVideoCodecMime(
+  container: string,
+  videoCodec?: string,
+  width?: number | null,
+  height?: number | null,
+): string {
   const c = container.toLowerCase();
   const v = (videoCodec || '').toLowerCase();
+  const is4K = (width != null && width >= 3840) || (height != null && height >= 2160);
 
   const baseMime = c === 'mkv' ? 'video/x-matroska' : c === 'webm' ? 'video/webm' : 'video/mp4';
 
   if (v.includes('hevc') || v.includes('h265') || v.includes('h.265')) {
-    // Main 10 / Main profile HEVC
-    return `${baseMime}; codecs="hvc1.1.6.L93.B0"`;
+    // Level 5.0 for 4K UHD (Main 10 Profile), Level 4.0 for 1080p
+    return is4K
+      ? `${baseMime}; codecs="hvc1.1.6.L150.90"`
+      : `${baseMime}; codecs="hvc1.1.6.L120.90"`;
   }
   if (v.includes('h264') || v.includes('avc') || v.includes('h.264')) {
-    // High Profile H.264
-    return `${baseMime}; codecs="avc1.640028"`;
+    // High Profile H.264: Level 5.1 for 4K, Level 4.0 for 1080p
+    return is4K
+      ? `${baseMime}; codecs="avc1.640033"`
+      : `${baseMime}; codecs="avc1.640028"`;
   }
   if (v.includes('vp9')) {
-    return 'video/webm; codecs="vp09.00.10.08"';
+    return is4K
+      ? 'video/webm; codecs="vp09.00.50.10"'
+      : 'video/webm; codecs="vp09.00.10.08"';
   }
   if (v.includes('av1')) {
-    return `${baseMime}; codecs="av01.0.08M.08"`;
+    return is4K
+      ? `${baseMime}; codecs="av01.0.12M.10"`
+      : `${baseMime}; codecs="av01.0.08M.08"`;
   }
 
   return baseMime;
@@ -70,23 +84,42 @@ function normalizeAudioCodecMime(container: string, audioCodec?: string): string
 }
 
 /**
- * In-memory cache of evaluated capability verdicts keyed by container + codecs.
+ * In-memory cache of evaluated capability verdicts keyed by container + codecs + resolution.
  */
 const verdictCache = new Map<string, CapabilityVerdict>();
 
+export function clearVerdictCache(): void {
+  verdictCache.clear();
+}
+
+export interface MediaProbeOptions {
+  width?: number | null;
+  height?: number | null;
+  bitrate?: number | null;
+  framerate?: number | null;
+}
+
 /**
- * Probe the browser's exact capability to direct-play a specific container, video codec, and audio codec.
+ * Probe the browser's exact capability to direct-play a specific container, video codec, audio codec, and resolution.
  */
 export async function probeClientMediaCapabilities(
   container: string,
   videoCodec?: string,
   audioCodec?: string,
+  options?: MediaProbeOptions,
 ): Promise<CapabilityVerdict> {
   const normContainer = (container || '').toLowerCase().replace(/^\./, '');
   const normVideo = (videoCodec || '').toLowerCase();
   const normAudio = (audioCodec || '').toLowerCase();
 
-  const cacheKey = `${normContainer}:${normVideo}:${normAudio}`;
+  const is4K = (options?.width != null && options.width >= 3840) ||
+               (options?.height != null && options.height >= 2160);
+  const probeWidth = options?.width ?? (is4K ? 3840 : 1920);
+  const probeHeight = options?.height ?? (is4K ? 2160 : 1080);
+  const probeBitrate = options?.bitrate ?? (is4K ? 25_000_000 : 5_000_000);
+  const probeFramerate = options?.framerate ?? 30;
+
+  const cacheKey = `${normContainer}:${normVideo}:${normAudio}:${probeWidth}x${probeHeight}`;
   if (verdictCache.has(cacheKey)) {
     return verdictCache.get(cacheKey)!;
   }
@@ -134,17 +167,17 @@ export async function probeClientMediaCapabilities(
     typeof navigator.mediaCapabilities.decodingInfo === 'function'
   ) {
     try {
-      const videoContentType = normalizeVideoCodecMime(normContainer, normVideo);
+      const videoContentType = normalizeVideoCodecMime(normContainer, normVideo, probeWidth, probeHeight);
       const audioContentType = normalizeAudioCodecMime(normContainer, normAudio);
 
-      const result = await navigator.mediaCapabilities.decodingInfo({
+      let result = await navigator.mediaCapabilities.decodingInfo({
         type: 'file',
         video: {
           contentType: videoContentType,
-          width: 1920,
-          height: 1080,
-          bitrate: 5_000_000,
-          framerate: 30,
+          width: probeWidth,
+          height: probeHeight,
+          bitrate: probeBitrate,
+          framerate: probeFramerate,
         },
         audio: {
           contentType: audioContentType,
@@ -153,6 +186,32 @@ export async function probeClientMediaCapabilities(
           channels: '6',
         },
       });
+
+      // If hvc1 parameter tag was rejected, probe alternate hev1 tag
+      if (!result.supported && videoContentType.includes('hvc1')) {
+        const altContentType = videoContentType.replace('hvc1', 'hev1');
+        try {
+          const altResult = await navigator.mediaCapabilities.decodingInfo({
+            type: 'file',
+            video: {
+              contentType: altContentType,
+              width: probeWidth,
+              height: probeHeight,
+              bitrate: probeBitrate,
+              framerate: probeFramerate,
+            },
+            audio: {
+              contentType: audioContentType,
+              bitrate: 384_000,
+              samplerate: 48000,
+              channels: '6',
+            },
+          });
+          if (altResult.supported) {
+            result = altResult;
+          }
+        } catch {}
+      }
 
       if (!result.supported) {
         const verdict: CapabilityVerdict = {

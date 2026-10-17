@@ -280,6 +280,10 @@ export function PlayerPage() {
             result.container,
             result.video_codec,
             result.audio_codec,
+            {
+              width: result.width,
+              height: result.height,
+            },
           );
           if (active) {
             setClientCapability(verdict);
