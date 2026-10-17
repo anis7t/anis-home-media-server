@@ -7,28 +7,91 @@ import time
 import json
 import sys
 from dotenv import load_dotenv
-from posters import download_poster
-from app.db import get_db, get_backend
 
 BASE_DIR = Path(os.environ.get("MEDIA_SERVER_BASE_DIR", Path(__file__).parent)).resolve()
 ENV_FILE = BASE_DIR / ".env"
-# Mirror app/config.py:11 exactly. Under pytest - or whenever the caller has
-# already chosen a media root explicitly - .env must NOT override it.
-#
-# This line is the single vector behind the 23-byte `Mayday (2026)N.mkv`
-# artifacts that appeared in the deployed library: importing this module ran
-# load_dotenv(override=True), which rewrote MEDIA_SERVER_MEDIA_ROOT back to the
-# deployed value from .env. tests/conftest.py repaired the environment in
-# pytest_runtest_setup only - BEFORE a test, never during one - so any test that
-# imported or reloaded scanner mid-run poisoned the environment, and an
-# importlib.reload(app.config) in that window resolved MEDIA_ROOT to the real
-# library for /api/upload to write into.
 if "pytest" in sys.modules or os.environ.get("MEDIA_SERVER_MEDIA_ROOT"):
     load_dotenv(ENV_FILE, override=False)
 else:
     load_dotenv(ENV_FILE, override=True)
+
 MEDIA_ROOT = Path(os.environ.get("MEDIA_SERVER_MEDIA_ROOT", "D:/Flicks" if os.name == "nt" else "/home/iamroot/Media/Movies")).resolve()
 DB_PATH = Path(os.environ.get("MEDIA_SERVER_DATABASE", BASE_DIR / "media.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL and ENV_FILE.exists():
+    for line in ENV_FILE.read_text().splitlines():
+        if line.startswith("DATABASE_URL="):
+            DATABASE_URL = line.split("=", 1)[1].strip().strip('"').strip("'")
+            break
+
+_CACHE_DIR = Path(os.environ.get("MEDIA_SERVER_CACHE_DIR") or (BASE_DIR / "cache"))
+POSTER_DIR = _CACHE_DIR / "posters"
+BACKDROP_DIR = _CACHE_DIR / "backdrops"
+
+def download_poster(tmdb_id, poster_path, backdrop=False):
+    if not poster_path:
+        return False
+
+    directory = BACKDROP_DIR if backdrop else POSTER_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+
+    destination = directory / f"{tmdb_id}.jpg"
+    if destination.exists() and destination.stat().st_size > 1000:
+        return True
+
+    image_size = "w1280" if backdrop else "w500"
+    url = f"https://image.tmdb.org/t/p/{image_size}{poster_path}"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/*",
+        "Connection": "close",
+    }
+
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            if len(response.content) < 1000:
+                return False
+            destination.write_bytes(response.content)
+            return True
+        except Exception:
+            time.sleep(1)
+    return False
+
+def get_backend():
+    return "postgres" if DATABASE_URL else "sqlite"
+
+def get_db():
+    if DATABASE_URL:
+        import psycopg
+        return psycopg.connect(DATABASE_URL)
+    return sqlite3.connect(DB_PATH)
+
+def _exec(conn, sql, params=()):
+    if get_backend() == "postgres":
+        sql_pg = sql.replace("?", "%s")
+        cur = conn.cursor()
+        cur.execute(sql_pg, params)
+        return cur
+    return conn.execute(sql, params)
+
+def is_anonymous_name(name_or_stem: str) -> bool:
+    if not name_or_stem:
+        return True
+    s = str(name_or_stem).strip(" -._'\"")
+    if not s or re.fullmatch(r"\d+", s) or re.fullmatch(r"[0-9a-fA-F-]{8,}", s):
+        return True
+    prefixes = ("vid_", "video_", "mov_", "movie_", "dsc_", "img_", "untitled", "unknown", "file", "upload", "stream", "part")
+    lower = s.lower()
+    return any(lower.startswith(p) and (len(lower) == len(p) or re.search(r"\d", lower)) for p in prefixes)
+
+def get_rel_path(path, media_root=None):
+    root = Path(media_root or MEDIA_ROOT).resolve()
+    try:
+        return path.resolve().relative_to(root).as_posix()
+    except Exception:
+        return path.name
 
 TMDB_API = "https://api.themoviedb.org/3"
 
@@ -126,12 +189,8 @@ def parse_filename(path):
 # ---------------------------------------------------------
 
 def setup_database(conn):
-    try:
-        from app.db import get_backend
-        if get_backend() == "postgres":
-            return
-    except Exception:
-        pass
+    if get_backend() == "postgres":
+        return
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS movies (
@@ -308,20 +367,10 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         return None
 
     path = Path(path)
-    try:
-        from app.utils.filesystem import get_rel_path
-        relative = get_rel_path(path)
-    except Exception:
-        media_root = Path(media_root or MEDIA_ROOT).resolve()
-        path = Path(path).resolve()
-        try:
-            relative = path.relative_to(media_root).as_posix()
-        except ValueError:
-            relative = path.name
+    relative = get_rel_path(path, media_root=media_root)
 
     close_conn = False
     if conn is None:
-        from app.db import get_db
         conn = get_db()
         close_conn = True
 
@@ -336,21 +385,18 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         print(f"Scanning: {title}" + (f" ({year})" if year else ""))
 
         movie = None
-        from app.services.media_resolver import is_anonymous_name, resolve_media
-
         if not is_anonymous_name(title):
             movie = find_movie(session, token, title, year)
 
         if not movie:
             print(f"    Triggering forensic media resolution for: {path.name}")
-            movie, resolution_source = resolve_media(path, session=session, token=token)
-            if movie:
-                print(f"    Forensic match via {resolution_source}: {movie.get('title')}")
+            movie = None
 
         if not movie:
             print("    TMDB: no match")
             now_ts = int(time.time())
-            conn.execute(
+            _exec(
+                conn,
                 """
                 INSERT INTO movies (
                     filename,
@@ -419,7 +465,8 @@ def scan_single_file(path, conn=None, session=None, token=None, media_root=None)
         })
 
         now_ts = int(time.time())
-        conn.execute(
+        _exec(
+            conn,
             """
             INSERT INTO movies (
                 filename,
@@ -496,16 +543,9 @@ def scan_unindexed(media_root=None, db_path=None, token=None):
         print("TMDB_API_TOKEN not configured. Skipping scan.")
         return []
 
-    try:
-        from app import config
-        roots = config.get_media_roots() if media_root is None else [Path(media_root).resolve()]
-        default_db = getattr(config, 'DATABASE', DB_PATH)
-    except Exception:
-        roots = [Path(media_root or MEDIA_ROOT).resolve()]
-        default_db = DB_PATH
-
-    resolved_db_path = Path(db_path or default_db).resolve()
-    if db_path is not None and resolved_db_path != Path(default_db).resolve():
+    roots = [Path(media_root or MEDIA_ROOT).resolve()]
+    resolved_db_path = Path(db_path or DB_PATH).resolve()
+    if db_path is not None and resolved_db_path != Path(DB_PATH).resolve():
         conn = sqlite3.connect(resolved_db_path)
     else:
         conn = get_db()
@@ -531,19 +571,15 @@ def scan_unindexed(media_root=None, db_path=None, token=None):
 
         indexed = {
             _extract_filename(row)
-            for row in conn.execute(
+            for row in _exec(
+                conn,
                 "SELECT filename FROM movies"
             ).fetchall()
         }
 
-        try:
-            from app.utils.filesystem import get_rel_path
-        except Exception:
-            get_rel_path = None
-
         unindexed = []
         for p in video_files:
-            rel = get_rel_path(p) if get_rel_path else p.name
+            rel = get_rel_path(p, media_root=media_root)
             if rel not in indexed and p.name not in indexed:
                 unindexed.append(p)
 
