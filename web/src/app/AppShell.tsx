@@ -167,14 +167,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
 
             {/* Get the App - Links to APK Distribution */}
-            <a
-              href="/download"
-              className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 sm:px-4 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95"
+            <NavLink
+              to="/download"
+              className={({ isActive }) =>
+                `hidden md:flex items-center gap-2 rounded-full border border-white/10 px-3 sm:px-4 py-2 text-sm font-medium transition active:scale-95 ${
+                  isActive
+                    ? 'bg-white/10 font-semibold text-white shadow-sm border-white/20'
+                    : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white hover:border-white/20'
+                }`
+              }
               title="Download Android & Fire TV Client"
             >
               <Icon name="download" className="text-emerald-400" />
               <span className="hidden lg:inline">Get the app</span>
-            </a>
+            </NavLink>
 
             {/* Manage Files & Storage */}
             <NavLink
@@ -377,10 +383,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Icon name="book" className="text-purple-400" />
                 <span>How to use</span>
               </NavLink>
-              <a href="/download" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+              <NavLink to="/download" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
                 <Icon name="download" className="text-emerald-400" />
                 <span>Get the app</span>
-              </a>
+              </NavLink>
               <NavLink to="/manage" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
                 <Icon name="folder" className="text-amber-400" />
                 <span>File Manager</span>

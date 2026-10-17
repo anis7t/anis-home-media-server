@@ -351,10 +351,11 @@ pub fn create_app_full(
         .unwrap_or_else(|_| {
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
         });
+    let base_dir_arc = Arc::new(base_dir);
 
     let scan_state = routes::scan::ScanState {
         pool: Arc::new(pool.clone()),
-        base_dir: Arc::new(base_dir),
+        base_dir: base_dir_arc.clone(),
     };
 
     let scan_routes = Router::new()
@@ -448,6 +449,19 @@ pub fn create_app_full(
         )
         .with_state(auth_state);
 
+    let app_dist_state = routes::app_dist::AppDistState {
+        base_dir: base_dir_arc.clone(),
+    };
+
+    let app_dist_routes = Router::new()
+        .route("/api/app/update", get(routes::app_dist::app_update_handler))
+        .route(
+            "/api/app/download",
+            get(routes::app_dist::app_download_handler)
+                .head(routes::app_dist::app_download_handler),
+        )
+        .with_state(app_dist_state);
+
     let app = Router::new()
         .route("/health", get(routes::health::health_handler))
         .route("/api/health", get(routes::health::health_handler))
@@ -467,7 +481,8 @@ pub fn create_app_full(
         .merge(scan_routes)
         .merge(storage_routes)
         .merge(admin_routes)
-        .merge(auth_routes);
+        .merge(auth_routes)
+        .merge(app_dist_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {
         let rel_dist = PathBuf::from("web/dist");

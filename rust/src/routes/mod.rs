@@ -16,4 +16,5 @@ pub mod transcode;
 pub mod scan;
 pub mod storage;
 pub mod admin;
+pub mod app_dist;
 pub mod auth;

@@ -125,13 +125,13 @@ export function ManualPage() {
           >
             ← Back to Library
           </NavLink>
-          <a
-            href="/download"
+          <NavLink
+            to="/download"
             className="card-ring rounded-full brand-gradient px-4.5 py-2 text-xs font-bold text-white shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 hover:scale-[1.02] active:scale-[0.98] transition flex items-center gap-1.5"
           >
             <Icon name="download" size={13} />
             <span>Download Android / TV App</span>
-          </a>
+          </NavLink>
         </div>
       </section>
 
