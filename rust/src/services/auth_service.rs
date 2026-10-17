@@ -559,7 +559,90 @@ impl AuthService {
         Ok(true)
     }
 
+    // --- Local PIN Login ---
+
+    pub async fn login_with_pin(
+        pool: &PgPool,
+        candidate_pin: &str,
+    ) -> Result<(String, i64, String), AppError> {
+        let clean_pin = candidate_pin.trim();
+        if clean_pin.is_empty() {
+            return Err(AppError::Unauthorized("PIN is required".to_string()));
+        }
+
+        let stored_pin: Option<String> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
+
+        let stored = stored_pin.unwrap_or_default().trim().to_string();
+        if stored.is_empty() {
+            return Err(AppError::Unauthorized(
+                "No Admin PIN configured on this server.".to_string(),
+            ));
+        }
+
+        let is_valid = clean_pin.len() == stored.len()
+            && clean_pin
+                .bytes()
+                .zip(stored.bytes())
+                .fold(0, |acc, (a, b)| acc | (a ^ b))
+                == 0;
+
+        if !is_valid {
+            return Err(AppError::Unauthorized("Invalid Admin PIN".to_string()));
+        }
+
+        // Upsert local admin user row
+        let user_row = sqlx::query(
+            r#"
+            INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)
+            VALUES ('admin_pin', 'admin@local', 'Administrator', 'admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (google_sub) DO UPDATE
+                SET role = 'admin',
+                    last_login_at = CURRENT_TIMESTAMP
+            RETURNING id, email, role
+            "#,
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to upsert admin user: {}", e)))?;
+
+        let user_id: i64 = user_row.get("id");
+        let email: String = user_row.get("email");
+        let role: String = user_row.get("role");
+
+        let session_token = format!("sess_{}", Self::generate_random_token());
+        let expires_at = Utc::now() + Duration::days(30);
+
+        sqlx::query(
+            r#"
+            INSERT INTO sessions (id, user_id, email, role, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&session_token)
+        .bind(user_id)
+        .bind(&email)
+        .bind(&role)
+        .bind(expires_at)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to store session: {}", e)))?;
+
+        info!("AUTH: Local Admin PIN sign-in successful user_id={}", user_id);
+        Ok((session_token, user_id, email))
+    }
+
     // --- Google OAuth ---
+
+    pub fn is_oauth_configured() -> bool {
+        let client_id = std::env::var("GOOGLE_CLIENT_ID")
+            .or_else(|_| std::env::var("MEDIA_SERVER_GOOGLE_CLIENT_ID"))
+            .unwrap_or_default();
+        !client_id.trim().is_empty()
+    }
 
     pub async fn oauth_start(
         pool: &PgPool,

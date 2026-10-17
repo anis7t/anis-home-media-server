@@ -26,12 +26,19 @@ function statusOf(token: TokenRecord): { label: string; className: string } {
 }
 
 export function AccountPage() {
-  const { authenticated, email, name, role, signIn, signOut } = useAuth();
+  const { authenticated, email, name, role, signIn, signOut, oauthConfigured, openPinSignIn } = useAuth();
   const [tokens, setTokens] = useState<TokenRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [minted, setMinted] = useState<MintedToken | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'oauth_unconfigured') {
+      openPinSignIn();
+    }
+  }, [openPinSignIn]);
 
   const load = useCallback(async () => {
     try {
@@ -135,13 +142,22 @@ export function AccountPage() {
               Sign out
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={signIn}
-              className="card-ring brand-gradient brand-glow-sm self-start sm:self-auto rounded-full px-5 py-2 text-xs font-semibold text-white shadow-md transition hover:scale-105 active:scale-95"
-            >
-              Sign in with Google →
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={openPinSignIn}
+                className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95"
+              >
+                Sign in with Admin PIN
+              </button>
+              <button
+                type="button"
+                onClick={signIn}
+                className="card-ring brand-gradient brand-glow-sm rounded-full px-5 py-2 text-xs font-semibold text-white shadow-md transition hover:scale-105 active:scale-95"
+              >
+                Sign in with Google →
+              </button>
+            </div>
           )}
         </div>
       </section>
@@ -290,15 +306,26 @@ export function AccountPage() {
         ) : (
           <>
             <p className="text-xs text-white/50">
-              You are currently browsing as an anonymous guest. Signing in connects your Google account to sync your watch progress across devices and pair Android TV apps.
+              {oauthConfigured
+                ? 'You are currently browsing as an anonymous guest. Signing in connects your Google account or Admin PIN to sync your watch progress across devices and pair Android TV apps.'
+                : 'Google Sign-In is not configured on this server. You can sign in directly using your Administrator PIN to manage settings and pair external TV devices.'}
             </p>
-            <button
-              type="button"
-              onClick={signIn}
-              className="card-ring brand-gradient brand-glow-sm rounded-full px-5 py-2.5 text-sm font-semibold text-white hover:scale-105 active:scale-95 transition"
-            >
-              Sign in with Google
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={openPinSignIn}
+                className="card-ring rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 active:scale-95 transition"
+              >
+                Sign in with Admin PIN
+              </button>
+              <button
+                type="button"
+                onClick={signIn}
+                className="card-ring brand-gradient brand-glow-sm rounded-full px-5 py-2.5 text-sm font-semibold text-white hover:scale-105 active:scale-95 transition"
+              >
+                Sign in with Google
+              </button>
+            </div>
           </>
         )}
       </section>

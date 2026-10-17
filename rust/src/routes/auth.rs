@@ -80,6 +80,7 @@ pub async fn auth_me_handler(
     State(state): State<AuthState>,
     headers: HeaderMap,
 ) -> Result<Json<AccountResponse>, AppError> {
+    let oauth_configured = Some(AuthService::is_oauth_configured());
     if let Some(identity) = AuthService::resolve_session_or_token(&state.pool, &headers).await {
         Ok(Json(AccountResponse {
             authenticated: true,
@@ -88,6 +89,7 @@ pub async fn auth_me_handler(
             picture: identity.picture,
             role: Some(identity.role),
             is_admin: Some(identity.is_admin),
+            oauth_configured,
         }))
     } else {
         Ok(Json(AccountResponse {
@@ -97,6 +99,7 @@ pub async fn auth_me_handler(
             picture: None,
             role: None,
             is_admin: None,
+            oauth_configured,
         }))
     }
 }
@@ -325,12 +328,51 @@ pub async fn delete_token_handler(
     Ok(Json(serde_json::json!({ "revoked": token_id })))
 }
 
+/// `POST /api/auth/login-pin`
+pub async fn login_pin_handler(
+    State(state): State<AuthState>,
+    body: Option<Json<crate::models::auth::LoginPinPayload>>,
+) -> Result<Response, AppError> {
+    let pin = body
+        .and_then(|Json(b)| b.pin)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    let (session_token, user_id, email) = AuthService::login_with_pin(&state.pool, &pin).await?;
+
+    let cookie_val = format!(
+        "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
+        session_token
+    );
+
+    let body = serde_json::json!({
+        "success": true,
+        "user": {
+            "id": user_id,
+            "email": email,
+            "role": "admin",
+            "is_admin": true,
+        }
+    });
+
+    let mut res = (StatusCode::OK, Json(body)).into_response();
+    if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {
+        res.headers_mut().insert(header::SET_COOKIE, hdr_val);
+    }
+
+    Ok(res)
+}
+
 /// `GET /auth/google`
 pub async fn google_start_handler(
     State(state): State<AuthState>,
     Query(query): Query<OAuthStartQuery>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    if !AuthService::is_oauth_configured() {
+        return Ok(Redirect::temporary("/account?error=oauth_unconfigured").into_response());
+    }
     let redirect_uri = get_redirect_uri(&headers);
     let auth_url = AuthService::oauth_start(&state.pool, &redirect_uri, query.next.as_deref()).await?;
     Ok(Redirect::temporary(&auth_url).into_response())

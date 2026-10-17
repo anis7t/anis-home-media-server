@@ -447,6 +447,10 @@ pub fn create_app_full(
             get(routes::auth::pair_page_handler)
                 .post(routes::auth::pair_submit_handler),
         )
+        .route(
+            "/api/auth/login-pin",
+            axum::routing::post(routes::auth::login_pin_handler),
+        )
         .with_state(auth_state);
 
     let app_dist_state = routes::app_dist::AppDistState {

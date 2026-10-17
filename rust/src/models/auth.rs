@@ -13,6 +13,13 @@ pub struct AccountResponse {
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_admin: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth_configured: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoginPinPayload {
+    pub pin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

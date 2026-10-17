@@ -289,4 +289,32 @@ describe('AccountPage', () => {
     renderAccount();
     expect(await screen.findByText(/request failed: 403/i)).toBeInTheDocument();
   });
+
+  it('provides Admin PIN fallback and opens modal when OAuth is unconfigured', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') {
+        return jsonResponse({
+          authenticated: false,
+          email: null,
+          role: null,
+          oauth_configured: false,
+        });
+      }
+      return jsonResponse({ tokens: [] });
+    });
+
+    renderAccount();
+    expect(
+      await screen.findByText(/Google Sign-In is not configured on this server/i)
+    ).toBeInTheDocument();
+
+    const pinButtons = screen.getAllByRole('button', { name: /sign in with admin pin/i });
+    expect(pinButtons.length).toBeGreaterThan(0);
+
+    // Clicking Admin PIN button opens the modal dialog
+    await user.click(pinButtons[0]);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Admin PIN Sign-In/i })).toBeInTheDocument();
+  });
 });

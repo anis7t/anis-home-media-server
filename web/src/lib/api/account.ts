@@ -7,6 +7,7 @@ export interface AccountResponse {
   readonly name?: string;
   readonly picture?: string;
   readonly role?: string;
+  readonly oauth_configured?: boolean;
 }
 
 export interface TokenRecord {
@@ -30,6 +31,13 @@ export interface MintedToken {
 
 export function fetchMe(): Promise<AccountResponse> {
   return accountRequest<AccountResponse>('/api/auth/me');
+}
+
+export function loginWithPin(pin: string): Promise<{ success: boolean; user?: any }> {
+  return accountRequest<{ success: boolean; user?: any }>('/api/auth/login-pin', {
+    method: 'POST',
+    body: JSON.stringify({ pin }),
+  });
 }
 
 export function listTokens(): Promise<{ tokens: TokenRecord[] }> {
