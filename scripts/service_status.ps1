@@ -6,7 +6,7 @@ Write-Host "====================================================" -ForegroundCol
 
 # 1. Services Status
 Write-Host "`n[1/5] Windows Services Status:" -ForegroundColor Yellow
-$services = Get-Service -Name "MediaServerRust", "MediaServerPG", "Cloudflared", "MediaServer" -ErrorAction SilentlyContinue
+$services = Get-Service -Name "MediaServerRust", "MediaServerPG", "Cloudflared" -ErrorAction SilentlyContinue
 if ($services) {
     $services | Format-Table -AutoSize Name, DisplayName, Status, StartType
 } else {
