@@ -6,9 +6,9 @@
 | **Agent** | Antigravity |
 | **Model** | Gemini 3.8 Flash (High) |
 | **Workspace** | `E:\MediaServer` |
-| **Branch** | `feat/phase-9-pre-transcode-capabilities` (`22feeaf`) |
-| **Code state** | **Phase 9 Complete & Verified.** Client media capability probing (`navigator.mediaCapabilities.decodingInfo()`), strict 100% transcode gating (manifest `#EXT-X-ENDLIST` required, `<video>` element hard-isolated when not ready), Option 1C native resolution baseline (up to 4K / 2160p), Option 2A layman warnings (`🔒 Unsupported on this browser` badge + diagnostic reason), automated pre-transcode sweeper, and `/manage` & details operator pre-transcode tooling. |
-| **Verified** | Rust test suite (**111/111 passed** across all 13 test suites), React Vitest (**194/194 passed** across all 27 test files), React TypeScript check (**0 errors**), React production build (**clean build in 1.08s**), Android API contract probe (**22/22 OK**), Phase 8 fMP4 streaming probe (**100% OK**). |
+| **Branch** | `feat/phase-9-pre-transcode-capabilities` (`6ba1e3a`) |
+| **Code state** | **Phase 9 Complete & Verified.** Client media capability probing (`navigator.mediaCapabilities.decodingInfo()`), strict 100% transcode gating (manifest `#EXT-X-ENDLIST` required, `<video>` element hard-isolated when not ready), Option 1C native resolution baseline (up to 4K / 2160p), Option 2A layman warnings (`🔒 Unsupported on this browser` badge + diagnostic reason), automated pre-transcode sweeper, `/manage` & details operator pre-transcode tooling, and dedicated APK Download Page (`/download`) with native Axum distribution endpoints. |
+| **Verified** | Rust test suite (**116/116 passed** across all 14 test suites including `app_dist_test`), React Vitest (**194/194 passed**), React TypeScript check (**0 errors**), React production build (**clean build in 1.09s**), Android API contract probe (**22/22 OK**), Phase 8 fMP4 streaming probe (**100% OK**). |
 | **Pushed** | **No** — pushing is reserved for the user |
 
 > This header deliberately names the **code** commits rather than a single `HEAD`: a handoff
@@ -27,7 +27,7 @@ Copy everything inside the block below to resume after session compaction:
 Resume work on Anis' Home Media Server at E:\MediaServer.
 
 STATE
-- Branch: feat/phase-9-pre-transcode-capabilities (commit: 22feeaf). Pushing is reserved for the user.
+- Branch: feat/phase-9-pre-transcode-capabilities (latest commit: 6ba1e3a). Pushing is reserved for the user.
 - Code & Production State:
   - Phase 9 (Client Media Capabilities, Offline Pre-Transcode Architecture & 100% Playback Gating) is COMPLETE & COMMITTED:
     - Slice 9A: Client capability probe in web/src/lib/capabilities/mediaCapabilities.ts; Option 2A disabled Direct Play button with lock icon and diagnostic subtitle in QualitySelectorModal.tsx.
