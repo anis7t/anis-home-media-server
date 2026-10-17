@@ -5,6 +5,8 @@
     "esbenp.prettier-vscode",
     "cweijan.vscode-postgresql-client2",
     "uniquevision.vscode-plpgsql-lsp",
-    "bradlc.vscode-tailwindcss"
+    "bradlc.vscode-tailwindcss",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg"
   ]
 }

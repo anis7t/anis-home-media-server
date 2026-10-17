@@ -84,5 +84,31 @@
   },
   "[sql]": {
     "editor.formatOnSave": true
-  }
+  },
+
+  "// SQLTools Database Connections": "Configured for local PostgreSQL instance (media_server and media_integration_test)",
+  "sqltools.connections": [
+    {
+      "name": "Media Server (PostgreSQL)",
+      "driver": "PostgreSQL",
+      "server": "127.0.0.1",
+      "port": 5432,
+      "database": "media_server",
+      "username": "postgres",
+      "password": "postgres",
+      "connectionTimeout": 15,
+      "previewLimit": 50
+    },
+    {
+      "name": "Media Server Integration Test (PostgreSQL)",
+      "driver": "PostgreSQL",
+      "server": "127.0.0.1",
+      "port": 5432,
+      "database": "media_integration_test",
+      "username": "postgres",
+      "password": "postgres",
+      "connectionTimeout": 15,
+      "previewLimit": 50
+    }
+  ]
 }
