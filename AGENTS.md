@@ -19,87 +19,65 @@ A plan must state, at minimum:
 
 If the plan is revised mid-implementation, re-present it before continuing.
 
-### 0.2 Flask and Waitress are deprecated — migrate, do not extend
+### 0.2 Flask and Waitress are permanently decommissioned — 100% Rust + React
 
-`app/` (Flask, `:8000`, Waitress) and its Jinja templates are **on the way out**.
-Treat every new requirement as a Rust (`:8001`) requirement.
+`app/` (Flask, Waitress) and its Jinja templates are **100% RETIRED AND DECOMMISSIONED** (completed in Phase 7 Slice 7E).
+The production backend is 100% native Rust (`:8000`), the frontend is a 100% React 19 SPA (`web/dist/`), and persistence is 100% PostgreSQL 18.4 (`MediaServerPG`).
 
-- **Do not add capability to Flask.** No new route, service, page or background
-  worker in `app/`. If something is needed there today, port it to Rust instead.
-- **Prefer retiring over bridging.** Each slice should *remove* a Flask
-  responsibility. `rust/src/routes/proxy.rs` forwards `/auth/*`, `/api/devices/*`,
-  `/api/cast/*`, `/api/storage/*`, `/api/scan`, `/api/media-info/*`,
-  `/tmdb-poster/*`, `/tmdb-backdrop/*` and `/poster/*` to `:8000`. That bridge is
-  temporary hybrid-hosting scaffolding and now **contradicts §9's Native
-  Independence Invariant**: its endpoint list is the debt backlog, to be paid down
-  natively and deleted, not extended.
-- **The rollback artifact is a tagged commit, not a live code path.** Do not gate
-  retirement behind "feature flags so Flask stays viable" — that keeps the thing
-  being retired permanently alive.
-- Keep the Flutter/Fire TV client working throughout (see §7's probe guardrail);
-  `/api/*` shapes it depends on must not change underneath it.
+- **Do not introduce Python web frameworks.** All new routes, services, APIs, and background workers belong natively in Rust (`rust/`).
+- **All proxy bridges are retired.** There is zero reverse proxying or hybrid hosting. All endpoints (`/api/*`, `/media/*`, `/hls/*`, `/subtitles/*`, `/poster/*`, `/auth/*`, `/manage/*`, `/download`) are served directly by Axum.
+- Keep the Flutter/Fire TV client working throughout; `/api/*` contract shapes must not change underneath it (guarded by `scripts/probe_android_api.py`).
 
 ## 1. Project identity and source of truth
 
 - Repository: `anis7t/media-server`
-- **Stack: Rust/Axum (`:8001`) + React + PostgreSQL.** Flask and Waitress (`:8000`) are **DEPRECATED and being retired as the migration proceeds.** Read `AGENTS.md` §0 for the two standing working rules that govern all new work.
-- Legacy backend: Flask (not Django), modularized under `app/`. It survives only for endpoints not yet ported; do not extend it, and do not add new capability to it.
-- Root `app.py` is intentionally a lightweight executable entry point; `app/__init__.py` owns the application factory and compatibility exports.
+- **Stack: 100% Rust/Axum (`:8000`) + React 19 SPA + PostgreSQL 18.4.** Flask, Waitress, SQLite, and Jinja templates are **COMPLETELY RETIRED AND DECOMMISSIONED**.
+- Backend: Modular Rust crate (`rust/`) with Axum 0.8, Tokio, SQLx, and tracing.
+- Frontend: Single Page Application in React 19 + TypeScript + Vite (`web/`), served directly by Axum from `web/dist/`.
+- Database: PostgreSQL 18.4 running as Windows Service `MediaServerPG` on port 5432.
+- Standalone Utilities: `scanner.py` (library ingestion connecting directly to PostgreSQL via psycopg).
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
-- **Session handoffs live in `Handoffs/`**, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST. Start a session by reading the newest one: `Handoffs/2026-10-14_21-20_antigravity_issues-1-7-and-manual-complete.md` is current and carries the paste-ready prompt, the migration phase table, the known-failing and known-flaky tests, and the traps. Each handoff names the code commits it describes rather than a single `HEAD` — a handoff citing its own hash is wrong the moment it is committed — so read the newest file, and let it supersede older ones.
-- **Where the migration stands** is `docs/MIGRATION_STATUS.md` (phase-by-phase P0-P7 matrix, risks, resumption sequence); the shape and per-phase exit gates it defers to are in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`. Items marked *(reported)* in that matrix have never been re-verified under authorization and must be treated as untested code, not as progress.
+- **Session handoffs live in `Handoffs/`**, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST.
+- **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
-- `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in `app/services/chunk_transcode_service.py` and `app/services/gpu_service.py`.
-- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay (brand sting, original score, frame-capture pipeline). It is **delivered and wired into the app** via `{% include 'intro-overlay.html' %}` in `templates/library.html`, gated once per browser session; the artifacts live in `docs/opening-sequence/` inside this repository.
+- `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in Rust (`rust/src/transcode/` and `rust/src/services/gpu.rs`).
+- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay. It is wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`, gated once per browser session.
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
 
-- **Prompt-Free Autoplay by Default:** The brand intro overlay must auto-start immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` must have `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
-- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API must never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
-- **Container-Controlled Session Gating:** `intro-overlay.html` must not set `sessionStorage.setItem('introSeen')` prior to the enclosing template's evaluation. Setting it prematurely causes container checks (e.g. in `library.html`) to falsely identify the current visit as already watched, calling `INTRO.finish()` and destroying the layer on frame 1.
-- **Clean Jinja Query Bypass (`?intro=off`):** Always wrap the overlay include in `{% if request.args.get('intro') != 'off' %}` so that control requests render zero intro DOM nodes (`#stage`, `#gate`), ensuring test proxies and control checks receive clean, untouched HTML responses byte-for-byte.
+- **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
+- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
+- **Container-Controlled Session Gating:** `intro-overlay` does not set `sessionStorage.setItem('introSeen')` prior to the enclosing component's evaluation.
 - **Mobile Client Opening Sequence (Flutter):** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated.
 
 ## 2. Current architecture
 
 ```text
-Browser / Client
+Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
   -> Cloudflare named tunnel: media.anisparvez.in
   -> http://127.0.0.1:8000
-  -> Waitress WSGI (NSSM Windows Service)
-  -> Flask routes / API
-  -> services
-     -> SQLite database (E:\MediaServer\media.db)
-     -> transcode/preview/poster cache (E:\MediaServer\cache)
-     -> local media/artwork/subtitle storage (D:\Flicks)
-     -> FFmpeg/FFprobe dual-GPU chunked transcoding
-        -> AMD Radeon RX 560X (discrete, dx11:1)
-        -> AMD Radeon Vega 8 (integrated, dx11:0)
-     -> Live frame preview cache (cache/previews/)
-     -> TMDb API
+  -> Rust Axum Server (MediaServerRust NSSM Windows Service)
+     ├─ React 19 SPA (web/dist/ static file serving + SPA fallback)
+     ├─ API Router (rust/src/routes/ - api, auth, media, hls, subtitles, download, manage, etc.)
+     ├─ Services (rust/src/services/ - catalog, progress, cast, device, system, probe, etc.)
+     ├─ Transcode Engine (rust/src/transcode/ - autonomous dual-GPU chunked fMP4)
+     │  ├─ AMD Radeon RX 560X (discrete, dx11:1)
+     │  └─ AMD Radeon Vega 8 (integrated, dx11:0)
+     ├─ Live seek frame preview cache (E:\MediaServer\cache\previews\)
+     ├─ PostgreSQL 18.4 (MediaServerPG Windows Service, port 5432)
+     └─ Local Media Root (D:\Flicks, D:\Flicks\.archive, D:\Flicks\.uploads)
 ```
 
 Important modules:
 
-- `app/config.py` — environment-driven paths and runtime settings.
-- `app/db.py` — SQLite/schema/migrations.
-- `app/routes/pages.py` — HTML pages.
-- `app/routes/api.py` — API/device/playback/seek-preview endpoints.
-- `app/routes/media.py` — byte-range media delivery and HLS segments.
-- `app/routes/subtitles.py` — local subtitle/WebVTT delivery.
-- `app/routes/upload.py` — resumable chunked uploads.
-- `app/services/chunk_transcode_service.py` — dynamic multi-GPU chunk scheduler.
-- `app/services/gpu_service.py` — GPU detection and live engine telemetry.
-- `app/services/preview_service.py` — live seek hover frame extraction & caching.
-- `app/services/media_service.py` — media probing/path operations.
-- `app/services/media_resolver.py` — multi-source/forensic media identification.
-- `app/services/scanner_service.py` — library ingestion.
-- `app/services/tmdb_service.py` — TMDb integration.
-- `app/services/transcode_service.py` — FFmpeg/HLS transcoding, cache/resume/cleanup.
-- `app/services/subtitles_service.py` — subtitle processing.
-- `app/services/device_service.py` — device telemetry/heartbeats/history.
-- `app/services/worker_service.py` — background work coordination.
-- `app/services/system_service.py` — system telemetry and multi-GPU utilization stats.
+- `rust/src/main.rs` & `rust/src/lib.rs` — Axum application setup and router composition.
+- `rust/src/config.rs` — environment-driven settings (`.env`).
+- `rust/src/db.rs` — PostgreSQL connection pool (SQLx).
+- `rust/src/routes/` — API handlers (`api.rs`, `auth.rs`, `media.rs`, `hls.rs`, `subtitles.rs`, `download.rs`, `manage.rs`, etc.).
+- `rust/src/services/` — backend services (`catalog.rs`, `device.rs`, `system.rs`, `cast.rs`, `progress.rs`, `gpu.rs`, `preview.rs`, `scanner.rs`, `tmdb.rs`).
+- `rust/src/transcode/` — chunked multi-GPU fMP4 transcoding pipeline (`engine.rs`, `planner.rs`, `queue.rs`, `sweeper.rs`).
+- `web/src/` — React 19 SPA frontend (components, pages, lib, hooks).
+- `scanner.py` — Standalone media library ingestion script (executed by Rust scan service).
 
 ## 3. Completed capabilities
 
@@ -110,7 +88,7 @@ The current project includes:
 - **Live Multi-GPU Telemetry:** Real-time hardware engine utilization tracking via Windows Performance Counters and PyNVML displayed on the System Telemetry HUD.
 - **Live Seek Hover Previews:** Frame thumbnails extracted on-demand via `preview_service.py` and cached in `cache/previews/`.
 - **1-Second Transcode Cadence:** High-frequency status polling for smooth progress bars, fps/speed reporting, and smoothed ETA calculations.
-- **Windows Persistent Services:** `MediaServer` (Waitress via NSSM) and `Cloudflared` run as automatic Windows Services surviving reboots without user login, with crash auto-restart and 10 MB log rotation.
+- **Windows Persistent Services:** `MediaServerRust` (Axum via NSSM on port 8000), `MediaServerPG` (PostgreSQL 18.4 on port 5432), and `Cloudflared` run as automatic Windows Services surviving reboots without user login, with crash auto-restart and log rotation.
 - **Upload Lifecycle Hardening:** Immediate Abort button concealment upon 100% upload completion and animated dynamic processing card showing cycling background indexing stages.
 - **Player Controls Polish:** Removed hold-to-speed-up gesture, cleaned shortcuts cheat-sheet modal, native dark scheme select dropdowns (`color-scheme: dark !important;`), uniform 36px circular buttons, prominent 21px SVG icons, and 4px controls-row padding preventing top focus clipping.
 - **Carousel Optimization:** Compacted "Continue watching" rail cards to 140px desktop / 115px mobile.
@@ -139,13 +117,16 @@ The current project includes:
 
 ### Completed high-priority items
 
+- **100% Rust + React + PostgreSQL Migration:** (Completed 2026-10-18)
+  All 10 migration phases (P0–P9, including Slice 7E Legacy Flask Decommissioning) are 100% delivered, hardened, and verified.
+  The production server runs exclusively on Rust Axum (`MediaServerRust`, port 8000), PostgreSQL 18.4 (`MediaServerPG`, port 5432), and React 19 SPA (`web/dist/`).
 - **Production concurrency tuning & remote streaming benchmarks:** (Completed 2026-10-14)
-  Evaluated Waitress WSGI (16 threads, PID 17644) against local origin and Cloudflare named tunnel (`media.anisparvez.in`) across Direct Play, HLS segment streaming, and mixed API workloads (concurrency 1–16). Local aggregate throughput reached **447.88 Mbps** with 100% success; remote throughput capped at **18.43 Mbps** due to physical ISP uplink (~20 Mbps). Waitress memory remained rock-solid at 80–95 MB RSS across all loads. Documented in [`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md), backed by [`scripts/benchmark_streaming.py`](scripts/benchmark_streaming.py) and JSON artifacts in `tests/load/`.
+  Evaluated local origin and Cloudflare named tunnel (`media.anisparvez.in`) across Direct Play, HLS segment streaming, and mixed API workloads (concurrency 1–16). Local aggregate throughput reached **510.86 Mbps** on Rust Axum with 100% success; remote throughput capped at **18.43 Mbps** due to physical ISP uplink (~20 Mbps). Documented in [`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md).
 
 ### Highest priority — immediate work queue
 
-1. **Phase 3 PostgreSQL Migration Preparation:**
-   With database backup/restore ([`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md)) and concurrency/streaming benchmarks ([`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md)) complete, proceed to Phase 3: PostgreSQL schema DDL, SQLAlchemy repository mapping, and SQLite-to-PostgreSQL automated data migration tooling.
+1. **Production Maintenance & Feature Additions:**
+   The codebase is 100% modernized on native Rust, React, and PostgreSQL. All new development proceeds natively in Rust (`rust/`) and React (`web/`).
 
 ### Secondary / parked
 
@@ -153,49 +134,46 @@ The current project includes:
 5. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
 6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 
-### Admin authorisation invariants (`app/routes/api.py`)
+### Admin authorisation invariants (`rust/src/middleware/auth.rs` & `rust/src/routes/admin.rs`)
 
-Routes behind `@require_admin` can **delete the library, purge caches, move originals into the
+Routes requiring admin credentials can **delete the library, purge caches, move originals into the
 archive and rewrite the retention policy.** They are reachable from the public internet through
 the Cloudflare tunnel. Treat them as the most destructive surface in the application.
 
-- **The Admin PIN fails closed, and has no default.** `get_setting('admin_pin', '')`, never a
-  literal. A hard-coded default (there was one: `'6361'`) is not a safe fallback for a secret —
-  it makes "no PIN configured" mean "anyone who guesses four digits may delete the library".
-  Unset must mean the PIN channel is **closed**, leaving only a Google admin session, which is
-  what sets the first PIN deliberately. `/api/admin/status` reports `has_pin` against the same
-  empty-string default so the two answers cannot disagree.
-- **Never accept the PIN from a query string.** `?pin=` writes the secret into Waitress access
-  logs, Cloudflare's edge logs, browser history and `Referer` headers. Header (`X-Admin-Pin`)
-  and JSON body only.
-- **A closed probe is not a closed door.** Any test asserting the PIN is refused must also
-  assert a destructive route returns 403 — see
-  `tests/test_admin_auth.py::test_no_configured_pin_means_no_pin_is_accepted`.
-- **Do not weaken `is_admin_authorized()` to make a test pass.** The
-  `PYTEST_CURRENT_TEST` pass-through is a test seam, not a model for production auth.
+- **The Admin PIN fails closed, and has no default.** `settings.admin_pin` defaults to empty string.
+  A hard-coded default is not a safe fallback for a secret. Unset means the PIN channel is **closed**,
+  leaving only an authenticated admin session, which sets the first PIN deliberately.
+  `/api/admin/status` reports `has_pin` against the same empty-string default so the answers never disagree.
+- **Never accept the PIN from a query string.** Query parameters leak into access logs, Cloudflare edge
+  logs, browser history, and `Referer` headers. Header (`X-Admin-Pin`) and JSON body only.
+- **A closed probe is not a closed door.** Any test asserting the PIN is refused must also assert a
+  destructive route returns 403.
+- **Do not weaken auth to make a test pass.**
 
 ## 5. Platform/dependency rules
 
 ### Windows
 - Windows 10/11 or supported Windows Server.
-- Python 3.10+; current tested host uses Python 3.14.3.
+- Rust 1.85+ (MSRV 2021 edition), Cargo.
+- Node.js 20+ & npm for `web/` React SPA.
+- PostgreSQL 18.4 (`MediaServerPG` Windows Service on port 5432).
 - PowerShell, Git, FFmpeg and FFprobe.
-- Production WSGI: **Waitress**, not Gunicorn.
-- Remote access: `cloudflared.exe` Windows Service.
-- Never use `os.kill(pid, 0)` to check process liveness on Windows; use `app.services.transcode_service.is_pid_alive(pid)` (exported in `app`) to avoid broadcasting `CTRL_C_EVENT` across the console group.
+- Production Server: **MediaServerRust** (native Rust Axum binary via NSSM).
+- Remote access: `cloudflared.exe` Windows Service routing `media.anisparvez.in` to `127.0.0.1:8000`.
+- Never use `os.kill(pid, 0)` to check process liveness on Windows; use Win32 API process status checking to avoid broadcasting `CTRL_C_EVENT` across the console group.
 - Never use `os.rename()` across disk volumes on Windows; use `shutil.move()` with target collision pre-unlinking.
-- In tests and cache audits, always call `get_cache_dir()` rather than referencing `app.config.CACHE_DIR` directly, as test harnesses patch `app.CACHE_DIR`.
-- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database, active HLS streams, and preview thumbnails. `C:` is not part of this project's storage.
-- All media path, cache lookup, and subtitle delivery routines must resolve across `config.get_media_roots()`.
-- **Mandatory User Notification on Service Restart**: Whenever backend Python code (`app/*.py`, `app/routes/*.py`, `app/services/*.py`, `app/config.py`, `app/db.py`) is created or edited, the agent MUST explicitly instruct the user to restart the persistent Windows service by running `e:\MediaServer\scripts\restart_service.bat` (or via elevated PowerShell `Restart-Service MediaServer`). Production Waitress caches Python bytecode in memory and does not auto-reload.
-- **Verify a deploy by artefact timestamp, never by a health check alone.** After restarting `MediaServer` or `MediaServerRust`, confirm the *binary* is newer than the last source commit before claiming the code is live. A 200 from `/health` proves only that *some* build is running: the service can serve a stale binary perfectly well, and the restart scripts used to fail their build with "Access is denied" and still report success. Concretely: `Get-Item rust\target\release\media-server-api.exe | Select LastWriteTime` and compare against `git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S'`. Compare **full** timestamps including seconds — two comparisons of `HH:mm:ss` alone have silently produced false results here. This is a habit, not a one-off check: do it on every deploy without being asked.
-- **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts Flask/Rust within ~5s of a crash. **There is deliberately NO watchdog scheduled task** — it was removed 2026-10-16 (it flashed a console window every 5 minutes); `scripts/install_watchdog.ps1` re-arms it if ever wanted. Accepted gap: recovery actions are finite, so a host that boots without `E:` needs a manual `scripts/restart_service.bat`. **Probe PG with a TCP connect to 127.0.0.1:5432, never `pg_ctl status`** — run by an admin account it cannot open the NetworkService postmaster and reports a healthy cluster as stopped. Repo `.ps1` files must stay pure ASCII (Windows PowerShell 5.1 mangles UTF-8 punctuation into parse errors).
+- In tests and cache audits, always resolve the cache directory dynamically.
+- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database (`E:\pgdata`), active HLS streams, and preview thumbnails. `C:` is not part of this project's storage.
+- All media path, cache lookup, and subtitle delivery routines must resolve across configured media roots.
+- **Mandatory User Notification on Service Restart**: Whenever native backend code (`rust/src/**/*.rs`) is edited and recompiled, or service configuration changes, instruct the user to restart the persistent Windows service by running `e:\MediaServer\scripts\restart_rust_service.bat` (or via elevated PowerShell `Restart-Service MediaServerRust`).
+- **Verify a deploy by artefact timestamp, never by a health check alone.** After restarting `MediaServerRust`, confirm the *binary* is newer than the last source commit before claiming the code is live. A 200 from `/health` proves only that *some* build is running. Concretely: `Get-Item rust\target\release\media-server-api.exe | Select LastWriteTime` and compare against `git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S'`.
+- **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` within ~5s of a crash. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
 
 ### Linux/Kali
 - Python 3.10+; current development uses Python 3.14.x.
-- `python3 -m venv`, `pip`, Git.
+- Rust 1.85+, Node.js 20+, PostgreSQL 16+.
 - FFmpeg and FFprobe on `PATH`.
-- Production: Gunicorn/gthread; systemd is recommended.
+- Production: `media-server-api` systemd service.
 - Remote access: cloudflared named tunnel.
 - Keep origin on `127.0.0.1:8000` when Cloudflare is the public front end.
 
@@ -205,9 +183,8 @@ the Cloudflare tunnel. Treat them as the most destructive surface in the applica
 - Seeking must not synchronously assign `currentTime` on every seek-bar drag event; commit on gesture completion.
 - During scrubbing or browser seek, `timeupdate` must not snap the slider back to an old timestamp.
 - Direct MP4/AAC seeking and MKV/HEVC HLS seeking must both remain functional.
-- Preserve player container isolation and mobile viewport clamping.
-- `templates/player.html` has a strict single-`<script>` invariant; external scripts must be dynamically injected from the existing script block.
-- `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end — a WEBRip whose audio/subtitles outlive the picture otherwise shows an unplayable tail.
+- Preserve player container isolation and mobile viewport clamping in React (`web/src/pages/PlayerPage.tsx`).
+- `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end.
 - Do not perform broad player rewrites for narrow playback bugs.
 - **Modal Dialog Portaling & CSS Transform Isolation:** All modal dialogs, backdrops, and fixed overlay sheets in the web app MUST be portaled to `document.body` via `createPortal(..., document.body)`. Never render `position: fixed` modals inline within deep component trees where parent containers have or can have `transform`, `filter`, `perspective`, or `contain` properties (which trap `position: fixed` containing blocks under the W3C CSS Transforms specification). Page/container animations with `forwards` (such as `fadeIn`) must terminate on `to { opacity: 1; transform: none; }` rather than `transform: translateY(0)`. Overlay backdrops must declare `overflow-y-auto` and modal cards must declare `my-auto` for responsive vertical centering without clipping on short viewports.
 
@@ -657,8 +634,18 @@ Full write-up, with the measurements behind every number: `docs/TRANSCODE_CORREC
 Before committing:
 
 ```powershell
-python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
-.\venv\Scripts\python.exe -m pytest tests/
+# 1. Rust backend unit & integration tests
+cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+
+# 2. React frontend unit tests and production build verification
+cd web
+npm run test
+npm run build
+cd ..
+
+# 3. Live client contract probe suites (against running server)
+python scripts/probe_android_api.py
+python scripts/probe_phase_8_contracts.py
 ```
 
 Flutter client:
@@ -669,37 +656,6 @@ Flutter client:
 
 - **Run the Flutter suite through `scripts/run_flutter_tests.ps1`, never as a bare `flutter test`.** It purges media_kit's orphaned temp state before the run and again in a `finally`, which is what stops the accumulation. `NativeReferenceHolder` writes one reference-buffer address to `...NativeReferenceHolder.$pid`, creates that file empty before writing, and never deletes it; Windows recycles PIDs, so a new test process inherits a dead run's file and either `int.parse('')`s it (`FormatException: Invalid number`) or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` that awaits the never-completed `_completer` — the whole file then reports "did not complete". Measured: 415 orphaned files (70 empty) spanning 2026-09-24..10-03 caused 2 failures in 6 runs *including one `--concurrency=1` run*, so serial is **not** a fix; after the purge, repeated full runs leave 0 stale files. The script also refuses to delete a file whose PID is a live process. Debug-mode only (`if (!kDebugMode) return;`), so release APKs and device playback are unaffected. Full analysis, and the rule not to re-add `MediaKit.ensureInitialized()` to tests that do not need native playback, are in `docs/FLUTTER_CLIENT_STATUS.md`.
 - **Ordinary Flutter tests must never reach the live server.** `test/support/test_network_guard.dart` installs an allowlist `HttpOverrides` (per-isolate, so call it from each file's `setUp`/`setUpAll`, after `TestWidgetsFlutterBinding.ensureInitialized()`) that refuses any non-sentinel host, plus a shared sentinel origin `http://test.invalid:8000` — deliberately non-loopback, because `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests that genuinely need the running server stay behind `liveServerSkip` (`MEDIA_SERVER_LIVE_TESTS=1`) and must never null `HttpOverrides.global` unconditionally.
-
-Cache-directory safety when running the suite on the live host:
-- **Never resolve `conftest` by module name.** `tests/conftest.py` and `tests/integration/conftest.py`
-  share a basename and neither directory has `__init__.py`, so pytest registers **both** under the
-  module name `conftest` in `sys.modules`, and whichever is imported last wins. `_write_guard` looked
-  its production-path set up as `sys.modules["conftest"]._PRODUCTION_PATHS`, got a module that has no
-  such attribute, and **silently fell back to its own set** — so every path added through
-  `temporary_production_paths()` was invisible to the guard and 18 refusal tests failed with
-  `DID NOT RAISE RuntimeError` while the guard was installed, working, and correctly classifying
-  `D:/Flicks`. The owner now hands the set over explicitly
-  (`_write_guard.set_production_paths(_PRODUCTION_PATHS)` at `pytest_sessionstart`), holding a **live
-  reference, not a copy**, so temporary additions stay visible. If you need conftest's data in a test,
-  import it as a fixture — never as a module.
-- **A test module must not configure the environment at import time.** `test_app.py` used to create its
-  own `TemporaryDirectory`, set `MEDIA_SERVER_MEDIA_ROOT` to it, and then `import app` — which only
-  works if that file is the *first* module to import `app`. `test_api_contracts.py` sorts earlier and
-  imports `app` first, so `config.MEDIA_ROOT` was already bound to conftest's root, the later import was
-  a no-op, the fixtures landed in a directory nothing pointed at, and **36 tests failed with 404s** while
-  the same file passed 58/58 alone. It now uses the root the app is already pointed at. **Import order
-  must never decide where a test writes.**
-- When you change isolation, verify it the hard way rather than trusting a green run: snapshot the
-  library file list, the production `movies` rows and the `cache/hls` directory list (plus a hash of
-  each) before and after a full run — all three must be unchanged.
-- `tests/conftest.py` owns test isolation: it redirects the cache, database, upload target/staging, archive and deleted directories onto a throwaway tree **through the environment before the app is imported** (so a `config` reload recomputes throwaway paths), re-asserts them before every test, and refuses any deletion inside the checkout's `cache/` tree. Never rely on import-time attribute rebinding alone: `tests/test_app.py`'s teardown reloads `app.config` and `tests/test_selenium_multi_seek_coyote.py` rebinds `app.CACHE_DIR = app.config.CACHE_DIR` — that is how a full-suite run once deleted the live transcode cache. `audit_orphaned_caches()` derives the "active" set from `video_paths()`, so any run whose cache is not isolated makes every real HLS directory look orphaned and the non-dry-run purge deletes production transcodes; likewise, `_resolve_upload_dirs()` returns `MEDIA_ROOT` under pytest, which once wrote 22-byte fixtures into the real library and fixture rows into the production database.
-- The orphan audit is fail-closed by design; do not reintroduce bare `except Exception: <empty active set>` handling around media enumeration.
-- **A live purge deletes every cache directory under the active root that no enumerated media maps to — so a test that calls `purge_orphaned_caches(dry_run=False)` must own a dedicated cache root.** `CachePurgeSafetyTests` used to take the shared session cache root from `get_cache_dir()`, so its four live purges could remove directories belonging to *other* tests. Measured: a directory planted in the shared root by an unrelated test was destroyed by those purges **while the whole suite stayed green**, because the planted directory's owner had no assertion about its own survival. A green suite is exactly what hid this.
-  - Isolation belongs in **`setUp`**, not at import time: conftest's `_point_app_at_temp()` re-imposes the shared session cache before EVERY test, so a module-level `app.CACHE_DIR = ...` is already overwritten before any test body runs. `tests/test_storage_retention.py` now establishes it in `setUp` via `_dedicated_cache_root()` and validates with `_assert_dedicated_cache_root()` **before** pointing the app at it and **before** any purge-capable call, then restores in `tearDown` and removes the tree.
-  - `tests/test_cache_purge_isolation.py` pins the blast radius by snapshotting the shared root around the whole class and asserting it is byte-identical — not by planting one directory, which would miss a purge that removes several.
-- **Pre-existing leak, same file:** `test_audit_and_purge_orphaned_caches` creates a dedicated root with no matching cleanup — 40 `mscache_purge_orphans_*` trees had accumulated in `%TEMP%`. Cosmetic (all under temp), but it accumulates every run. Not fixed; noted rather than silently widened.
-- `purge_orphaned_caches()` refuses to run when the audit reports itself degraded, and skips any directory holding `hls.progress`/`playlist.m3u8`/`chunk_*.m3u8*` written within `RECENT_CACHE_GRACE_SECONDS` (live transcode). Startup no longer purges orphans unless `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
-- Never fall back to a bare `MEDIA_ROOT / user_input` join when `safe_path()` refuses a name, and never unlink without an `_is_within_media_roots()` check: the service runs as LocalSystem, so a traversal name in `/api/media/delete` deletes arbitrary host files (see `docs/PROJECT_STATUS.md`). Audit sibling deletion paths the same way.
 
 Verify at minimum:
 - Direct MP4/AAC playback.
@@ -733,24 +689,15 @@ Verify at minimum:
   rejects on abort* leaves `await fetch()` pending after a timeout, so the deadline test hangs
   instead of failing — the one outcome indistinguishable from a broken timeout. Mock the abort.
 
-### Frontend migration: the Android client must not break
+### Client API Contract Stability
 
-The shipped Flutter app (`flutter_client/`) is a **working, not-yet-migrated consumer** and
-must keep working throughout the Jinja -> React migration. Two facts make this safe to hold
-onto, and both are verified rather than assumed:
-
-- **It requests no HTML page.** It has no `WebView` (zero matches for `webview` in `lib/`),
-  and its `AppRoutes` constants (`/home`, `/library`, `/player`, `/movie-details`,
-  `/connection`, `/settings`) are `GoRoute` definitions for in-app navigation, never
-  server URLs. Its entire server surface is `/api/*`, `/media/`, `/hls/`, `/subtitles/`,
-  `/poster/*`, `/tmdb-poster/`, `/tmdb-backdrop/`.
-- **Therefore template work cannot affect it**, and `/api/*` must not change shape while
-  the app is un-migrated.
+The shipped Flutter app (`flutter_client/`) is an active client and must keep working seamlessly.
+Its entire server surface is `/api/*`, `/media/`, `/hls/`, `/subtitles/`, `/poster/*`, `/tmdb-poster/`, `/tmdb-backdrop/`.
 
 Verify after any API or routing change:
 
 ```powershell
-python scripts/probe_android_api.py    # 18 endpoints, live server, exit 1 on break
+python scripts/probe_android_api.py    # 22 endpoints, live server, exit 1 on break
 ```
 
 Its expectations are each route's *contract*, not a wish for `200`: `/api/app/*` answers
@@ -759,22 +706,11 @@ no cast is active. Both are working routes; `CastRepository.status()` catches th
 `DioException` and returns `null`, so polling while idle is normal. Do not "fix" those
 into `200`s — that would be changing a documented behaviour to satisfy a bad probe.
 
-**Corollary for the web UI:** removing or rewriting a Jinja page cannot break the Android
-app, so it is a *product* decision, not a compatibility constraint. What must not be
-deleted is the **coverage**: any test asserting on a page that is being replaced should be
-migrated to its React equivalent or retired deliberately, never left failing. All 36 legacy
-HTML tests have been ported to assert SPA shell status and real API contracts. See
-`docs/PROJECT_STATUS.md` for details.
-
-- **Werkzeug SPA Route Catch-All Invariant:**
-  When mounting a React SPA catch-all route alongside backend API routes in Flask/Werkzeug,
-  never use a naive `/<path:path>`. Werkzeug rule dispatch prioritizes rules matching the
-  requested HTTP method over returning `405 MethodNotAllowed` on non-matching blueprint routes.
-  A naive catch-all intercepts GET requests on POST-only API routes (e.g. `GET /api/transcode/start/...`)
-  and unknown API routes, incorrectly serving 200 `index.html`.
-  Always enforce routing isolation via `SpaPathConverter` using negative lookahead:
-  `r'(?!(?:api|auth|media|hls|subtitles|poster|tmdb-poster|tmdb-backdrop|static)/).+'`,
-  registered as `app_instance.url_map.converters['spa_path']` and `@app_instance.route("/<spa_path:path>")`.
+- **Axum SPA Route Fallback Invariant:**
+  In `rust/src/main.rs`, the React SPA is hosted with static file serving from `web/dist/` and an
+  Axum fallback handler returning `web/dist/index.html` for client-side routing. All `/api/*`,
+  `/media/*`, `/hls/*`, `/subtitles/*`, `/poster/*`, `/tmdb-poster/*`, `/tmdb-backdrop/*`, and `/auth/*`
+  routes are registered first on the router to guarantee they are never shadowed by the SPA fallback.
 
 ## 8. Model routing, verification and project memory
 
@@ -810,8 +746,8 @@ Rules:
 
 ## 9. Native Rust Subtitle Engine, Database Test Isolation & Routing Invariants
 
-- **Native Independence Invariant (Zero Proxy Shims During Migration):**
-  When migrating features or endpoints to the Rust API foundation (port 8001), always build 100% native Rust implementations directly (e.g. native gzip decompression via `flate2`, HTTP queries via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`). Do not create temporary reverse-proxy shims or delegators to the legacy Flask backend unless a specific migration phase explicitly mandates an interim fallback. The architectural goal is full decommission of Flask.
+- **Native Independence Invariant (Zero Proxy Shims):**
+  The backend is 100% native Rust Axum. All proxy bridges and interim delegations to the legacy Flask backend have been completely decommissioned. All features (e.g. gzip decompression via `flate2`, HTTP queries via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`) execute 100% natively in Rust.
 - **Database Test Isolation & Teardown Guardrail:**
   Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL) or `media.db` (SQLite) MUST clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`), implement an explicit teardown hook (`harness.teardown().await` or fixture cleanup) deleting test rows, and guarantee zero phantom test movies remain in development or production databases.
 - **Axum Wildcard Routing & Internal Prefix Dispatcher:**

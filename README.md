@@ -1,10 +1,10 @@
 # Anis' Home Media Server
 
-A modern, modular, self-hosted **personal home media server** built with Python and Flask for streaming a private movie library over a local network, with secure, CGNAT-compatible remote access through Cloudflare Named Tunnels.
+A modern, high-performance, self-hosted **personal home media server** built with **Rust (Axum)**, **React 19**, and **PostgreSQL 18** for streaming a private movie library over a local network, with secure, CGNAT-compatible remote access through Cloudflare Named Tunnels.
 
-The platform includes dedicated routes, services, utilities, background workers, SQLite persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, subtitle processing with automatic language detection, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.
+The platform includes 100% native Rust routes, services, background workers, PostgreSQL persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, native subtitle extraction with automatic language detection, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.
 
-> **Current status:** Fully functional home media server. Core library and playback workflows are operational, hardware-accelerated transcoding utilizes dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails are operational, and the system runs persistently as background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record and [`docs/MANUAL.md`](docs/MANUAL.md) for the comprehensive user manual.
+> **Current status:** Fully modernized and functional home media server. 100% native Rust Axum backend on port 8000 (`MediaServerRust`), React 19 SPA frontend (`web/dist/`), PostgreSQL 18.4 database (`MediaServerPG`), hardware-accelerated transcoding utilizing dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails, and persistent background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record and [`docs/MANUAL.md`](docs/MANUAL.md) for the comprehensive user manual.
 
 ## Android app
 
@@ -69,11 +69,11 @@ Media requiring compatibility conversion (such as MKV containers or HEVC/H.265 v
 
 ## Dynamic Multi-GPU Chunked Transcoding
 
-To maximize encoding throughput on multi-GPU systems, the server incorporates a dynamic chunk-scheduling architecture (`chunk_transcode_service.py` & `gpu_service.py`):
+To maximize encoding throughput on multi-GPU systems, the server incorporates a dynamic chunk-scheduling architecture implemented natively in Rust (`rust/src/transcode/` & `rust/src/services/gpu.rs`):
 
 - **Independent Worker Pipelines:** Rather than forcing multiple GPUs into a single encoder pipe, the server treats each GPU as an independent transcoding worker.
 - **Dual-GPU Allocation:** On tested Windows systems with an AMD Radeon RX 560X discrete GPU and an AMD Radeon Vega 8 integrated GPU, jobs are distributed dynamically across FFmpeg D3D11 adapters `dx11:1` and `dx11:0`.
-- **Keyframe-Aware Segmentation:** Source media is partitioned into sequential, keyframe-aligned chunks that are encoded concurrently by available GPUs and assembled into unified HLS playlists.
+- **Keyframe-Aware Segmentation:** Source media is partitioned into sequential, keyframe-aligned chunks that are encoded concurrently by available GPUs and assembled into unified fMP4 HLS playlists.
 - **Real-Time Engine Telemetry:** Live hardware engine utilization for all engaged GPUs is tracked via Windows Performance Counters and PyNVML, displayed in the System Telemetry HUD and `/api/system/stats`.
 
 ---
@@ -83,21 +83,19 @@ To maximize encoding throughput on multi-GPU systems, the server incorporates a 
 The player features YouTube-style interactive seek previews:
 
 - **Live Frame Previews:** Hovering or scrubbing across the seek bar displays an accurate, high-fidelity frame thumbnail representing the exact target timestamp.
-- **Dynamic Thumbnail Service:** `preview_service.py` extracts frame thumbnails on-demand using fast input-seeking (`-ss` before `-i`) and caches them under `cache/previews/` for instantaneous subsequent lookups.
+- **Dynamic Thumbnail Service:** Fast input-seeking (`-ss` before `-i`) extracts frame thumbnails on-demand and caches them under `cache/previews/` for instantaneous subsequent lookups.
 - **Responsive Clamping:** Preview cards automatically clamp to viewport boundaries to ensure they never overflow screen edges on desktop or mobile devices.
 
 ---
 
 ## Player
 
-The custom HTML5 player (`templates/player.html`) is built for both desktop precision and mobile ergonomics:
+The custom React 19 cinema player (`web/src/pages/PlayerPage.tsx`) is built for both desktop precision and mobile ergonomics:
 
 - **Responsive Viewport Clamping:** Absolute inset clamping prevents container height blowout on tiled or non-standard desktop windows.
 - **Tap-to-Reveal Controls:** Single tap reveals playback controls without toggling play/pause; play/pause toggles only if controls are already visible.
-- **Circular Geometries & Prominent Icons:** Uniform 36px circular control buttons with prominent 21px SVG icons.
-- **Top Boundary Clearance:** Added 4px vertical breathing room to `.controls-row` to eliminate hover lift and focus outline clipping.
-- **Native Dark Scheme Dropdowns:** Explicit `color-scheme: dark !important;` and dark styling for speed and subtitle dropdown options prevent white-on-white popups.
-- **Hold-to-Speed Removal:** Eliminated hold-to-accelerate (2×) pointer gestures and removed hold shortcuts from the help modal in favor of clean standard dropdown control.
+- **Circular Geometries & Prominent Icons:** Uniform circular control buttons with prominent SVG icons.
+- **Native Dark Scheme Dropdowns:** Explicit dark styling for speed and subtitle dropdown options prevent white-on-white popups.
 - **Compact Continue Watching Cards:** Carousel thumbnails sized to 140px on desktop (115px on mobile) with sub-scroll gesture isolation (`overscroll-behavior-x: contain; touch-action: pan-x;`).
 - **Aspect Ratio & Rotation:** Cycle through native, 16:9, 4:3, zoom/crop, stretch, and 90° hardware rotation.
 
@@ -105,7 +103,7 @@ The custom HTML5 player (`templates/player.html`) is built for both desktop prec
 
 ## Seek Bar
 
-The YouTube-style layered seek bar (`static/js/seekbar-youtube.js` & `static/css/seekbar-youtube.css`) visualizes:
+The YouTube-style layered seek bar (`web/src/components/LayeredSeekBar.tsx`) visualizes:
 1. **Played Position:** Red progress fill.
 2. **Buffered Position:** Semi-transparent buffered progress.
 3. **Hover / Preview Position:** Visual ghost scrubber with live thumbnail preview and timestamp.
@@ -153,8 +151,8 @@ The `/devices` telemetry dashboard provides full visibility into connected clien
 
 ## Dual-Drive Storage Tiering
 
-- **Tiered Multi-Volume Architecture:** Optimizes the fast SSD `E:` (`E:\MediaServer`) for the application and runtime, SQLite (`E:\MediaServer\media.db`), in-progress scratch, seek frame previews (`E:\MediaServer\cache\previews`), and active HLS stream caches (`E:\MediaServer\cache\hls`), while offloading cold raw media, upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`), and archives to high-capacity storage `D:` (`D:\Flicks`, `D:\Flicks\.archive`). `C:` is not used by this project.
-- **Post-Transcode Retention Policies:** Configurable policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table.
+- **Tiered Multi-Volume Architecture:** Optimizes the fast SSD `E:` (`E:\MediaServer`) for the application runtime, PostgreSQL database cluster (`E:\pgdata`), in-progress transcode scratch, seek frame previews (`E:\MediaServer\cache\previews`), and active fMP4 HLS stream caches (`E:\MediaServer\cache\hls`), while offloading cold raw media, upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`), and archives to high-capacity storage `D:` (`D:\Flicks`, `D:\Flicks\.archive`). `C:` is not used by this project.
+- **Post-Transcode Retention Policies:** Configurable policies (`keep`, `archive`, `purge_cache`) persisted in PostgreSQL `settings` table.
 - **Safe Orphaned Cache Purge:** One-click automated cache reconciliation auditing and removing stale HLS directories without disrupting active transcodes.
 
 ---
@@ -165,7 +163,7 @@ Technical HUD (`n` / `N` key) reporting:
 - Dropped vs total frames via `getVideoPlaybackQuality()`.
 - Viewport resolution vs native stream resolution.
 - Forward buffer length.
-- Active stream type (Direct RFC 7233 vs HLS Transcode).
+- Active stream type (Direct RFC 7233 vs Adaptive fMP4 Stream).
 - Live GPU engine utilization.
 
 ---
@@ -173,33 +171,31 @@ Technical HUD (`n` / `N` key) reporting:
 # Architecture
 
 ```text
-Browser / Client (Desktop, Tablet, Mobile)
+Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
                    │
                    ▼
-       Cloudflare Named Tunnel (your-media-hostname.example.com)
+       Cloudflare Named Tunnel (media.anisparvez.in)
                    │
                    ▼
-       Waitress WSGI (127.0.0.1:8000) [NSSM Service]
+       Rust Axum Server (127.0.0.1:8000) [MediaServerRust NSSM Service]
                    │
-                   ▼
-         Flask Application Factory (app/__init__.py)
+    ┌──────────────┼──────────────────────────────┐
+    ▼              ▼                              ▼
+ React 19 SPA   API Router                  Transcode Engine
+ (web/dist/)    ├─ api.rs (catalog/system)  ├─ planner.rs
+                ├─ auth.rs (pin/session)    ├─ queue.rs
+                ├─ media.rs (RFC 7233)      ├─ engine.rs (dual-GPU)
+                ├─ hls.rs (fMP4/quality)    └─ sweeper.rs
+                ├─ subtitles.rs (native)
+                ├─ download.rs (APK stream)
+                └─ manage.rs (storage)
                    │
-    ┌──────────────┼──────────────────────────┐
-    ▼              ▼                          ▼
- Routes         Services                  Utilities
- ├─ pages.py    ├─ transcode_service.py   ├─ filesystem.py
- ├─ api.py      ├─ chunk_transcode_service.py ├─ formatting.py
- ├─ media.py    ├─ gpu_service.py         └─ subtitles.py
- ├─ upload.py   ├─ preview_service.py
- └─ subs.py     ├─ media_resolver.py
-                ├─ device_service.py
-                └─ system_service.py
-                   │
-    ┌──────────────┼──────────────────────────┐
-    ▼              ▼                          ▼
- SQLite DB      Dual-GPU FFmpeg Workers    Local Media Root
- (media.db)     ├─ GPU 0: AMD RX 560X      (D:\Flicks)
-                └─ GPU 1: AMD Vega 8
+    ┌──────────────┴──────────────────────────────┐
+    ▼                                             ▼
+PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
+(E:\pgdata\ - movies, progress, settings)    ├─ D:\Flicks (raw media)
+                                             ├─ D:\Flicks\.archive
+                                             └─ D:\Flicks\.uploads
 ```
 
 ---
@@ -210,43 +206,41 @@ Browser / Client (Desktop, Tablet, Mobile)
 
 ### Prerequisites
 - Windows 10/11 or Windows Server.
-- Python 3.14+ (installed to `E:\MediaServer\venv`).
+- Rust 1.85+ (MSRV 2021 edition) & Cargo.
+- Node.js 20+ & npm (for building the React SPA in `web/`).
+- PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
 - Cloudflared CLI (`C:\Cloudflared\bin\cloudflared.exe`).
 
-### Service Deployment via NSSM
-The server runs persistently as a Windows Service named `MediaServer`:
-```powershell
-# Run the automated installer as Administrator
-cd E:\MediaServer
-.\scripts\install_service.bat
-```
-This configures:
-- Service startup: `Automatic` (starts at boot without user login).
-- Failure action: Automatic restart on crash.
-- Log rotation: 10 MB threshold (`logs/waitress.log`).
-- Environment: Automatic injection of FFmpeg binaries on `PATH`.
+### Persistent Services via NSSM
+The server runs persistently as automatic Windows Services:
+1. **MediaServerRust**: Native Rust Axum binary (`rust\target\release\media-server-api.exe`) listening on `127.0.0.1:8000`.
+2. **MediaServerPG**: PostgreSQL 18.4 server listening on `127.0.0.1:5432`.
+3. **Cloudflared**: Cloudflare Named Tunnel routing `media.anisparvez.in` to `http://127.0.0.1:8000`.
 
 ### Service Control
-- Start / Restart: `scripts\restart_service.bat`
-- Status Check: `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1`
-- Uninstall: `scripts\uninstall_service.bat`
+- Restart Server: `scripts\restart_rust_service.bat`
+- Check Status: `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1`
+- Backup Database: `scripts\backup_postgres.bat`
+- Restore Database: `python scripts\restore_postgres.py <backup_file>`
 
 ---
 
-## Linux / Kali / Debian-family
+## Linux / Debian / Kali Hosting
 
 ```bash
 git clone https://github.com/anis7t/media-server.git
 cd media-server
 
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Build React frontend
+cd web && npm ci && npm run build && cd ..
 
-# Production execution via Gunicorn
-gunicorn -c gunicorn.conf.py "app:create_app()"
+# Build Rust binary
+cd rust && cargo build --release && cd ..
+
+# Run native binary
+./rust/target/release/media-server-api
 ```
 
 ---
@@ -256,13 +250,14 @@ gunicorn -c gunicorn.conf.py "app:create_app()"
 Store environment variables in `E:\MediaServer\.env` (never commit this file):
 
 ```ini
-TMDB_API_TOKEN=<your_tmdb_bearer_token>  # set locally; do not commit the token
+DATABASE_URL=postgres://postgres:<password>@127.0.0.1:5432/media_server
+RUST_PORT=8000
+RUST_HOST=0.0.0.0
+TMDB_API_TOKEN=<your_tmdb_bearer_token>
 MEDIA_SERVER_MEDIA_ROOT=D:\Flicks
-MEDIA_SERVER_DATABASE=E:\MediaServer\media.db
 MEDIA_SERVER_BASE_DIR=E:\MediaServer
+MEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache
 MEDIA_SERVER_LOG_LEVEL=INFO
-MEDIA_SERVER_TRANSCODE_PRESET=superfast
-MEDIA_SERVER_TRANSCODE_CRF=23
 MEDIA_SERVER_ENABLE_AMF=1
 ```
 
@@ -272,53 +267,38 @@ MEDIA_SERVER_ENABLE_AMF=1
 
 Remote access is powered by a named Cloudflare Tunnel:
 ```text
-Hostname: your-media-hostname.example.com
+Hostname: media.anisparvez.in
 Origin:   http://127.0.0.1:8000
 Service:  Cloudflared (Automatic Windows Service)
 ```
 
-To resolve stale CNAME records dynamically without web dashboard intervention:
-```powershell
-cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> your-media-hostname.example.com
-```
-
 ---
 
-# Active Roadmap & Next Steps
+# Modernization Status & Roadmap
 
-The next stage of development focuses on four specific engineering objectives:
-
-### 1. In-Transcode Playback Synchronization & Timeline Offset
-- **Issue:** When media is actively being transcoded into HLS, starting playback does not begin from `0:00`. It begins midway into the timeline despite the seek indicator showing `0:00`. Seeking behaves erratically and playback frequently halts after several seconds.
-- **Root Cause:** Sliding-window live playlist semantics, non-zero presentation timestamps (PTS) without `#EXT-X-DISCONTINUITY`, and player buffer underruns when catching up to active transcoding.
-- **Solution:** Implement VOD playlist synchronization (`#EXT-X-PLAYLIST-TYPE:EVENT` with explicit `#EXT-X-START:TIME-OFFSET=0`) or gate playback with an informative transcode progress screen until a safe initial buffer (or 100% completion) is achieved.
-
-### 2. Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger
-- **Issue:** Movie ratings, vote counts, popularity scores, and poster artwork update continuously on TMDb, but are only ingested once during initial library addition.
-- **Solution:** Implement a recurring 4-hour background worker in `worker_service.py` to refresh TMDb details for all library entries, and connect the UI "↻ Scan" button to trigger metadata re-synchronization.
-
-### 3. Server-Wide Manual Subtitle Upload with Language Auto-Detection
-- **Issue:** Users need the ability to upload `.srt` / `.vtt` subtitles after a movie is added, persisted server-wide across all sessions and devices.
-- **Solution:** Add an upload modal on `/details/<filename>`. Detect subtitle language automatically from content text (via script analysis or language detection), and persist files using the standardized naming format:
-  `<short_movie_name>_<detected_language>_<incremental_number>.<ext>`
-  (e.g., `moana_en_1.srt`, `the_odyssey_fr_1.vtt`).
-
-### 4. Post-Transcode Storage Strategy & Safe Orphaned Cache Purge
-- **Issue:** Storing both large original files (5–20 GB MKV/HEVC) and full transcode caches causes disk bloat. Aborted transcodes also leave residual artifacts.
-- **Solution:** Add configurable retention policies allowing users to delete/archive original sources post-transcode, and implement comprehensive orphaned cache auditing in `cache/hls/` against active database entries.
+The architecture is **100% modernized**:
+- **Phase 0–9 + Slice 7E Delivered**: Full native Rust Axum backend, React 19 SPA, PostgreSQL 18.4 persistence, adaptive fMP4 streaming with dynamic quality ladder, client capability probing, and complete decommissioning of legacy Flask/Waitress code.
+- **Client Stability**: Preserved 100% contract compatibility for the universal Android / Fire TV client (`scripts/probe_android_api.py`).
 
 ---
 
 # Testing
 
-Run the automated test suite before committing changes:
+Run the automated test battery:
 
 ```powershell
-# Syntax compile check
-python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+# 1. Rust backend unit & integration tests
+cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
 
-# Pytest suite (125 tests)
-.\venv\Scripts\python.exe -m pytest tests/
+# 2. React frontend unit tests and production build verification
+cd web
+npm run test
+npm run build
+cd ..
+
+# 3. Live client contract probe suites
+python scripts/probe_android_api.py
+python scripts/probe_phase_8_contracts.py
 ```
 
 ---
