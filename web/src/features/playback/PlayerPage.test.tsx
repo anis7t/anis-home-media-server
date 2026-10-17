@@ -11,6 +11,10 @@ import { PlayerPage } from './PlayerPage';
  * nothing about playback. Mocking it also keeps the dynamic import from pulling
  * a 500 kB module into the test run.
  */
+const mockLoadSource = vi.fn();
+const mockAttachMedia = vi.fn();
+const mockDestroy = vi.fn();
+
 vi.mock('hls.js', () => {
   class MockHls {
     static isSupported(): boolean {
@@ -18,12 +22,12 @@ vi.mock('hls.js', () => {
     }
     static Events = { ERROR: 'hlsError' };
     static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
-    loadSource = vi.fn();
-    attachMedia = vi.fn();
+    loadSource = mockLoadSource;
+    attachMedia = mockAttachMedia;
     on = vi.fn();
     startLoad = vi.fn();
     recoverMediaError = vi.fn();
-    destroy = vi.fn();
+    destroy = mockDestroy;
   }
   return { default: MockHls };
 });
@@ -54,6 +58,9 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
+  mockLoadSource.mockClear();
+  mockAttachMedia.mockClear();
+  mockDestroy.mockClear();
 });
 
 afterEach(() => {
@@ -332,6 +339,7 @@ describe('PlayerPage extended controls & telemetry', () => {
     expect(document.getElementById('mute')).toBeInTheDocument();
     expect(document.getElementById('volume')).toBeInTheDocument();
     expect(document.getElementById('speed')).toBeInTheDocument();
+    expect(document.getElementById('qualityBtn')).toBeInTheDocument();
     expect(document.getElementById('ccMergedPill')).toBeInTheDocument();
     expect(document.getElementById('aspectBtn')).toBeInTheDocument();
     expect(document.getElementById('rotateBtn')).toBeNull();
@@ -602,5 +610,156 @@ describe('PlayerPage extended controls & telemetry', () => {
 
     const shell = document.getElementById('shell');
     expect(shell).toHaveStyle({ display: 'none' });
+  });
+});
+
+describe('PlayerPage quality ladder & switching', () => {
+  beforeEach(() => {
+    Reflect.deleteProperty(HTMLMediaElement.prototype, 'duration');
+    Reflect.deleteProperty(HTMLMediaElement.prototype, 'currentTime');
+  });
+
+  function qualityLadderPayload() {
+    return {
+      container: 'matroska',
+      duration: 3600,
+      direct_play: false,
+      needs_transcode: true,
+      is_transcode_ready: true,
+      quality_ladder: [
+        {
+          label: '1080p',
+          quality: '1080p',
+          height: 1080,
+          width: 1920,
+          bitrate: 4500000,
+          is_direct: false,
+          is_ready: true,
+          hls_url: '/hls/test/1080p/playlist.m3u8',
+        },
+        {
+          label: '720p',
+          quality: '720p',
+          height: 720,
+          width: 1280,
+          bitrate: 2500000,
+          is_direct: false,
+          is_ready: false,
+          hls_url: '/hls/test/720p/playlist.m3u8',
+        },
+      ],
+    };
+  }
+
+  function setupLadderPlayer() {
+    stubVideo({ duration: 3600, currentTime: 250 });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/media-info/')) return jsonResponse(qualityLadderPayload());
+      if (url.startsWith('/api/seek-preview-meta/')) {
+        return jsonResponse({ duration: 3600, interval: 10, count: 360, base_url: '/seek-preview/test.mp4' });
+      }
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
+      if (url.startsWith('/api/progress?')) return jsonResponse({ position: 250, duration: 3600 });
+      if (url.includes('/api/transcode/start/')) {
+        return jsonResponse({ ok: true, status: 'started' });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    return renderPlayer();
+  }
+
+  it('renders #qualityBtn in controls and opens QualitySelectorModal with ladder options', async () => {
+    setupLadderPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const qualityBtn = document.getElementById('qualityBtn');
+    expect(qualityBtn).toBeInTheDocument();
+    expect(qualityBtn?.textContent).toContain('HD');
+
+    // Click qualityBtn to open modal
+    fireEvent.click(qualityBtn!);
+    expect(await screen.findByRole('dialog', { name: /playback quality/i })).toBeInTheDocument();
+
+    // Verify ladder items are rendered
+    expect(screen.getByTestId('quality-opt-auto')).toBeInTheDocument();
+    expect(screen.getByTestId('quality-opt-1080p')).toBeInTheDocument();
+    expect(screen.getByTestId('quality-opt-720p')).toBeInTheDocument();
+  });
+
+  it('switches to ready quality tier, updates stream source, and preserves currentTime', async () => {
+    setupLadderPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const qualityBtn = document.getElementById('qualityBtn')!;
+    fireEvent.click(qualityBtn);
+
+    const opt1080p = await screen.findByTestId('quality-opt-1080p');
+    fireEvent.click(opt1080p);
+
+    // Modal closes
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /playback quality/i })).not.toBeInTheDocument();
+    });
+
+    // Badge updates to 1080P
+    expect(qualityBtn.textContent).toContain('1080P');
+
+    // Hls loads 1080p playlist
+    await waitFor(() => {
+      expect(mockLoadSource).toHaveBeenCalledWith(
+        expect.stringContaining('/1080p/playlist.m3u8'),
+      );
+    });
+
+    // Simulating metadata loaded restores seek position
+    const video = document.querySelector('video') as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(250);
+  });
+
+  it('triggers on-demand transcode when selecting a non-ready quality tier', async () => {
+    setupLadderPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    const qualityBtn = document.getElementById('qualityBtn')!;
+    fireEvent.click(qualityBtn);
+
+    const opt720p = await screen.findByTestId('quality-opt-720p');
+    fireEvent.click(opt720p);
+
+    // Should POST to start transcode for 720p
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.filter(
+        (call) =>
+          String(call[0]).includes('/api/transcode/start/') &&
+          String(call[0]).includes('quality=720p'),
+      );
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Stream switches to 720p playlist
+    await waitFor(() => {
+      expect(mockLoadSource).toHaveBeenCalledWith(
+        expect.stringContaining('/720p/playlist.m3u8'),
+      );
+    });
+  });
+
+  it('toggles Quality modal via keyboard shortcut q and dismisses with Escape', async () => {
+    setupLadderPlayer();
+    await waitFor(() => expect(screen.getByTestId('player')).toBeInTheDocument());
+
+    expect(screen.queryByRole('dialog', { name: /playback quality/i })).not.toBeInTheDocument();
+
+    // Open via 'q'
+    fireEvent.keyDown(window, { key: 'q' });
+    expect(await screen.findByRole('dialog', { name: /playback quality/i })).toBeInTheDocument();
+
+    // Close via 'Escape'
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /playback quality/i })).not.toBeInTheDocument();
+    });
   });
 });

@@ -24,7 +24,7 @@ export function InventoryToolbar({
 }: InventoryToolbarProps) {
   const filterChips: Array<{ id: FilterCategory; label: string }> = [
     { id: 'all', label: `All (${totalCount})` },
-    { id: 'hls', label: 'HLS / MKV' },
+    { id: 'hls', label: 'Adaptive / MKV' },
     { id: 'direct', label: 'Direct Play' },
     { id: 'watched', label: 'In Progress' },
     { id: 'unwatched', label: 'Unwatched' },

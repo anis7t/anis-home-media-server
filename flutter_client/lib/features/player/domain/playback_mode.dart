@@ -31,14 +31,14 @@ enum PlaybackMode {
   /// Short badge label for the player's quality chip.
   String get badgeLabel => switch (this) {
         PlaybackMode.directPlay => 'DIRECT PLAY',
-        PlaybackMode.hls => 'HLS STREAM',
+        PlaybackMode.hls => 'ADAPTIVE STREAM',
         PlaybackMode.unknown => 'STREAM',
       };
 
   /// Longer description for the stream-specification table.
   String get specLabel => switch (this) {
         PlaybackMode.directPlay => 'Direct Stream (RFC 7233)',
-        PlaybackMode.hls => 'HLS Segmented',
+        PlaybackMode.hls => 'Adaptive Segmented',
         PlaybackMode.unknown => 'Unknown (server mode unavailable)',
       };
 }

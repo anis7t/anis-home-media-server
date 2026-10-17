@@ -98,7 +98,7 @@ export function DeleteConfirmationModal({
             </li>
             <li className="flex items-center gap-2">
               <span className="text-rose-400">✕</span>
-              <span>HLS transcode cache chunks &amp; live seek thumbnails</span>
+              <span>Adaptive stream cache chunks &amp; live seek thumbnails</span>
             </li>
             <li className="flex items-center gap-2">
               <span className="text-rose-400">✕</span>

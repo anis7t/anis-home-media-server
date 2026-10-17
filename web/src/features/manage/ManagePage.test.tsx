@@ -175,8 +175,8 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(screen.getByText('Inception')).toBeInTheDocument();
     expect(screen.queryByText('The Matrix')).not.toBeInTheDocument();
 
-    // Filter by HLS (.mkv)
-    const hlsBtn = screen.getByRole('button', { name: /hls \/ mkv/i });
+    // Filter by Adaptive (.mkv)
+    const hlsBtn = screen.getByRole('button', { name: /adaptive \/ mkv/i });
     await user.click(hlsBtn);
     expect(screen.getByText('The Matrix')).toBeInTheDocument();
     expect(screen.queryByText('Inception')).not.toBeInTheDocument();
@@ -299,7 +299,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     });
   });
 
-  it('renders HLS Cached badge instantly from movie metadata even while storage audit is pending', async () => {
+  it('renders Stream Ready badge instantly from movie metadata even while storage audit is pending', async () => {
     sessionStorage.setItem('ms_admin_pin', '6361');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
@@ -326,9 +326,9 @@ describe('ManagePage Comprehensive Edge Cases', () => {
 
     renderManage();
 
-    // The Matrix should be visible and immediately show "HLS Cached" without waiting for audit
+    // The Matrix should be visible and immediately show "Stream Ready" without waiting for audit
     await screen.findByText('The Matrix');
-    const hlsBadges = screen.getAllByText(/hls cached/i);
+    const hlsBadges = screen.getAllByText(/stream ready/i);
     expect(hlsBadges.length).toBeGreaterThanOrEqual(2);
 
     // And the storage pool section should show the auditing loading indicator

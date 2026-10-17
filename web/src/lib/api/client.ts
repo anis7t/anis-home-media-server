@@ -219,11 +219,25 @@ export function getMediaInfo(
 
 export function getTranscodeStatus(
   filename: string,
-  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number; quality?: string } = {},
 ) {
+  const { quality, ...reqOptions } = options;
+  const qStr = quality ? `?quality=${encodeURIComponent(quality)}` : '';
   return request<TranscodeStatusResponse>(
-    `/api/transcode-status/${encodePathSegments(filename)}`,
-    { timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...options },
+    `/api/transcode-status/${encodePathSegments(filename)}${qStr}`,
+    { timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...reqOptions },
+  );
+}
+
+export function startTranscode(
+  filename: string,
+  options: { signal?: AbortSignal; timeoutMs?: number; quality?: string } = {},
+) {
+  const { quality, ...reqOptions } = options;
+  const qStr = quality ? `?quality=${encodeURIComponent(quality)}` : '';
+  return request<{ status: string; message: string; quality?: string }>(
+    `/api/transcode/start/${encodePathSegments(filename)}${qStr}`,
+    { method: 'POST', timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...reqOptions },
   );
 }
 

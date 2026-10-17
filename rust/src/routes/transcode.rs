@@ -119,53 +119,63 @@ pub async fn transcode_handler(
     return Ok(res);
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct TranscodeStatusQuery {
+    pub quality: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct TranscodeStartQuery {
+    pub quality: Option<String>,
+}
+
 pub async fn transcode_status_handler(
     State(state): State<TranscodeState>,
+    Query(query): Query<TranscodeStatusQuery>,
     Path(filename): Path<String>,
 ) -> Result<Json<TranscodeStatusResponse>, AppError> {
     let video_path = PathResolver::resolve_media_path(&filename, &state.roots)?;
+    let q_norm = query.quality.as_deref().filter(|q| !q.is_empty() && *q != "default");
 
-    // 6A: a live job row is authoritative when one exists. Anything else -
-    // including every terminal state, and every title with no row at all -
-    // falls through to the filesystem derivation below, so this change
-    // cannot alter the response for any title that has no job record.
+    // 6A: a live job row is authoritative when one exists.
     if let Some(pool) = state.pool.as_ref() {
-        match JobService::get_by_filename(pool, &video_path_key(&video_path, &state.roots), "hls")
-            .await
-        {
-            Ok(Some(job)) => {
-                let live = JobStatus::parse(&job.status).map(|s| s.is_live()).unwrap_or(false);
-                if live {
-                    let status = if job.status == "queued" {
-                        "queued".to_string()
-                    } else {
-                        "transcoding".to_string()
-                    };
-                    return Ok(Json(TranscodeStatusResponse {
-                        status,
-                        progress: job.progress,
-                        percent: job.progress,
-                        speed: job.speed,
-                        fps: job.fps,
-                        eta: job.eta,
-                        remaining: job.eta,
-                        is_complete: false,
-                        error: job.error,
-                        ..Default::default()
-                    }));
-                }
+        let rel_key = video_path_key(&video_path, &state.roots);
+        let job_opt = if let Some(q) = q_norm {
+            match JobService::get_by_filename(pool, &rel_key, &format!("hls:{}", q)).await {
+                Ok(Some(j)) => Some(j),
+                _ => JobService::get_by_filename(pool, &rel_key, "hls").await.ok().flatten(),
             }
-            // A pool read failure must not take status down: the filesystem
-            // derivation is still correct for everything except a job in
-            // flight, which is strictly better than a 500.
-            Err(_) => {}
-            Ok(None) => {}
+        } else {
+            JobService::get_by_filename(pool, &rel_key, "hls").await.ok().flatten()
+        };
+
+        if let Some(job) = job_opt {
+            let live = JobStatus::parse(&job.status).map(|s| s.is_live()).unwrap_or(false);
+            if live {
+                let status = if job.status == "queued" {
+                    "queued".to_string()
+                } else {
+                    "transcoding".to_string()
+                };
+                return Ok(Json(TranscodeStatusResponse {
+                    status,
+                    progress: job.progress,
+                    percent: job.progress,
+                    speed: job.speed,
+                    fps: job.fps,
+                    eta: job.eta,
+                    remaining: job.eta,
+                    is_complete: false,
+                    error: job.error,
+                    ..Default::default()
+                }));
+            }
         }
     }
 
-    let hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
+    let hls_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, q_norm);
 
-    // 1. Check if completed HLS playlist exists
+    // 1. Check if completed HLS playlist exists in target directory
     let playlist_file = hls_dir.join("playlist.m3u8");
     if playlist_file.is_file() {
         if let Ok(content) = std::fs::read_to_string(&playlist_file) {
@@ -189,18 +199,34 @@ pub async fn transcode_status_handler(
         }
     }
 
-    // 2. Check if direct transcode cache file exists
-    let direct_cache = HlsService::get_transcode_cache_path(&video_path, "direct", &state.cache_dir);
-    if direct_cache.is_file() {
-        return Ok(Json(TranscodeStatusResponse {
-            status: "complete".to_string(),
-            progress: Some(100.0),
-            percent: Some(100.0),
-            eta: Some(0.0),
-            remaining: Some(0.0),
-            is_complete: true,
-            ..Default::default()
-        }));
+    // If no quality specified, also check aggregate completion across tiers via is_hls_complete
+    if q_norm.is_none() {
+        let base_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
+        if HlsService::is_hls_complete(&base_dir) {
+            return Ok(Json(TranscodeStatusResponse {
+                status: "complete".to_string(),
+                progress: Some(100.0),
+                percent: Some(100.0),
+                eta: Some(0.0),
+                remaining: Some(0.0),
+                is_complete: true,
+                ..Default::default()
+            }));
+        }
+
+        // 2. Check if direct transcode cache file exists
+        let direct_cache = HlsService::get_transcode_cache_path(&video_path, "direct", &state.cache_dir);
+        if direct_cache.is_file() {
+            return Ok(Json(TranscodeStatusResponse {
+                status: "complete".to_string(),
+                progress: Some(100.0),
+                percent: Some(100.0),
+                eta: Some(0.0),
+                remaining: Some(0.0),
+                is_complete: true,
+                ..Default::default()
+            }));
+        }
     }
 
     // 3. Otherwise idle
@@ -213,12 +239,15 @@ pub async fn transcode_status_handler(
 
 /// `POST /api/transcode/start/{*path}`
 ///
-/// Legacy transcode start compatibility endpoint invoked by the Flutter client.
+/// Transcode start endpoint invoked by clients. Supports optional quality targeting
+/// (e.g. `?quality=720p` or JSON `{"quality":"720p"}`).
 /// Verifies the video exists across roots, then enqueues background HLS transcoding
 /// (or returns ready if direct-play / complete). If nonexistent or non-video, returns 404.
 pub async fn transcode_start_handler(
     State(state): State<TranscodeState>,
+    Query(query): Query<TranscodeStartQuery>,
     Path(path): Path<String>,
+    body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let decoded = crate::routes::jobs::percent_decode(&path);
     if decoded.is_empty() {
@@ -240,6 +269,51 @@ pub async fn transcode_start_handler(
         return Err(AppError::NotFound("Not a video file".to_string()));
     }
 
+    let body_quality = if !body.is_empty() {
+        serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("quality").and_then(|q| q.as_str().map(|s| s.to_string())))
+    } else {
+        None
+    };
+    let quality = query.quality.or(body_quality);
+    let q_norm = quality.as_deref().filter(|q| !q.is_empty() && *q != "source" && *q != "default");
+
+    if let Some(q) = q_norm {
+        let q_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, Some(q));
+        let playlist_file = q_dir.join("playlist.m3u8");
+        if playlist_file.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&playlist_file) {
+                if content.contains("#EXT-X-ENDLIST") {
+                    return Ok(Json(serde_json::json!({
+                        "status": "ready",
+                        "message": "Media is already fully transcoded for requested quality"
+                    })));
+                }
+            }
+        }
+
+        let rel_key = video_path_key(&video_path, &state.roots);
+        let mode = format!("hls:{}", q);
+        if let Some(pool) = state.pool.as_ref() {
+            let _ = JobService::enqueue_with_priority(
+                pool,
+                &rel_key,
+                &mode,
+                false,
+                crate::services::job_service::PRIORITY_INTERACTIVE,
+            )
+            .await?;
+        }
+
+        return Ok(Json(serde_json::json!({
+            "status": "queued",
+            "message": format!("Transcoding started in background for quality {}", q),
+            "quality": q
+        })));
+    }
+
+    // Default (no specific quality requested)
     let is_direct_play = matches!(ext.as_str(), "mp4" | "m4v" | "webm");
     if is_direct_play {
         return Ok(Json(serde_json::json!({
@@ -260,6 +334,12 @@ pub async fn transcode_start_handler(
             }
         }
     }
+    if HlsService::is_hls_complete(&hls_dir) {
+        return Ok(Json(serde_json::json!({
+            "status": "ready",
+            "message": "Media is already fully transcoded"
+        })));
+    }
 
     let rel_key = video_path_key(&video_path, &state.roots);
     if let Some(pool) = state.pool.as_ref() {
@@ -278,4 +358,5 @@ pub async fn transcode_start_handler(
         "message": "Transcoding started in background"
     })))
 }
+
 

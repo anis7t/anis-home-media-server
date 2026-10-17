@@ -25,3 +25,16 @@ pub struct TranscodeStatusResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QualityOption {
+    pub label: String,
+    pub quality: String,
+    pub height: u32,
+    pub width: u32,
+    pub bitrate: u64,
+    pub is_direct: bool,
+    pub is_ready: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hls_url: Option<String>,
+}

@@ -1301,6 +1301,17 @@ export interface components {
             rating?: number | null;
             runtime?: number | null;
             reason?: string;
+            quality_ladder?: Array<components["schemas"]["QualityOption"]>;
+        };
+        QualityOption: {
+            label: string;
+            quality: string;
+            height: number;
+            width: number;
+            bitrate: number;
+            is_direct: boolean;
+            is_ready: boolean;
+            hls_url?: string | null;
         };
         MediaReadinessResponse: {
             filename: string;

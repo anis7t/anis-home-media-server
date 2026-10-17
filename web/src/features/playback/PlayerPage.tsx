@@ -9,15 +9,17 @@ import {
   getTranscodeStatus,
   setProgress,
   encodePathSegments,
+  startTranscode,
 } from '../../lib/api/client';
 import { playbackModeFor, playbackUrlFor, type PlaybackMode } from '../../lib/api/media';
 import { useDeviceId } from '../../lib/useDeviceId';
-import type { MediaInfoResponse, TranscodeStatusResponse } from '../../lib/api/types';
+import type { MediaInfoResponse, TranscodeStatusResponse, QualityOption } from '../../lib/api/types';
 import type { MovieSummary } from '../../lib/api/spec-drift';
 import { posterUrl } from '../../lib/api/poster';
 import { PosterImage } from '../../components/PosterImage';
 import { useSubtitles } from './useSubtitles';
 import { SubtitleSettingsModal } from './SubtitleSettingsModal';
+import { QualitySelectorModal } from './QualitySelectorModal';
 import { NerdStatsHud } from './NerdStatsHud';
 import { ShortcutsModal } from './ShortcutsModal';
 import { PlayerPreloader } from './PlayerPreloader';
@@ -131,6 +133,9 @@ export function PlayerPage() {
   const [isPipActive, setIsPipActive] = useState(false);
   const [isNerdStatsOpen, setIsNerdStatsOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState('auto');
+  const pendingQualityRestoreRef = useRef<{ seekTime: number; shouldPlay: boolean } | null>(null);
 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -316,6 +321,12 @@ export function PlayerPage() {
 
   const directPlay = info?.direct_play ?? false;
   const mode: PlaybackMode | undefined = info ? playbackModeFor(directPlay) : undefined;
+  const effectiveMode: PlaybackMode =
+    selectedQuality === 'source' && directPlay
+      ? 'direct'
+      : selectedQuality !== 'auto' && selectedQuality !== 'source'
+        ? 'hls'
+        : (mode ?? 'direct');
 
   /**
    * 100% Transcode Completion & Playback Ready Gate:
@@ -468,7 +479,7 @@ export function PlayerPage() {
     const video = videoRef.current;
     if (!video || !mode || !isPlaybackReady) return;
 
-    const src = playbackUrlFor(decoded, mode);
+    const src = playbackUrlFor(decoded, effectiveMode, selectedQuality);
     let destroyed = false;
     // Type is inferred at runtime from the dynamic import below; declared
     // structurally so the cleanup can call `destroy()` without a static import.
@@ -482,7 +493,7 @@ export function PlayerPage() {
       video.load();
     };
 
-    if (mode === 'hls') {
+    if (effectiveMode === 'hls') {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         // Safari plays HLS natively; instantiating Hls.js there would
         // double-load the playlist for no benefit.
@@ -501,7 +512,7 @@ export function PlayerPage() {
         .then(({ default: HlsCtor }) => {
           if (destroyed) return;
           if (!HlsCtor.isSupported()) {
-            setError(new Error('This browser cannot play HLS.'));
+            setError(new Error('This browser cannot play adaptive streams.'));
             return;
           }
           const instance = new HlsCtor({ lowLatencyMode: true });
@@ -512,11 +523,11 @@ export function PlayerPage() {
             if (!data.fatal) return;
             if (data.type === HlsCtor.ErrorTypes.NETWORK_ERROR) instance.startLoad();
             else if (data.type === HlsCtor.ErrorTypes.MEDIA_ERROR) instance.recoverMediaError();
-            else setError(new Error(`HLS playback failed: ${data.details}`));
+            else setError(new Error(`Adaptive playback failed: ${data.details}`));
           });
         })
         .catch(() => {
-          if (!destroyed) setError(new Error('Failed to load the HLS playback engine.'));
+          if (!destroyed) setError(new Error('Failed to load the adaptive playback engine.'));
         });
     } else {
       // Direct play: the browser issues RFC 7233 range requests itself.
@@ -524,7 +535,7 @@ export function PlayerPage() {
     }
 
     return teardown;
-  }, [decoded, mode]);
+  }, [decoded, effectiveMode, selectedQuality, isPlaybackReady, mode]);
 
   // --- Persist resume progress --------------------------------------------
   const reportProgress = useCallback(
@@ -587,6 +598,23 @@ export function PlayerPage() {
     if (!video) return;
     setDuration(video.duration);
     lastDurationRef.current = video.duration || info?.duration || 0;
+
+    if (pendingQualityRestoreRef.current) {
+      const { seekTime, shouldPlay } = pendingQualityRestoreRef.current;
+      pendingQualityRestoreRef.current = null;
+      if (seekTime > 0) {
+        video.currentTime = seekTime;
+        lastPositionRef.current = seekTime;
+        setPosition(seekTime);
+      }
+      if (shouldPlay && typeof video.play === 'function') {
+        const p = video.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {});
+        }
+      }
+      return;
+    }
 
     /*
      * Resume, but only when there is something worth resuming. Two guards:
@@ -655,6 +683,49 @@ export function PlayerPage() {
     }
     resetControlsTimer();
   };
+
+  const handleSelectQuality = useCallback(
+    async (quality: string, option?: QualityOption) => {
+      const video = videoRef.current;
+      const seekTime = video ? video.currentTime : position;
+      const shouldPlay = video ? !video.paused : playing;
+
+      pendingQualityRestoreRef.current = { seekTime, shouldPlay };
+      setSelectedQuality(quality);
+      setIsQualityModalOpen(false);
+
+      if (option && !option.is_direct && !option.is_ready) {
+        showHud(`Starting transcode for ${option.label}...`);
+        try {
+          await startTranscode(decoded, { quality: option.quality });
+        } catch (err) {
+          showHud(err instanceof Error ? err.message : 'Failed to start transcode');
+        }
+      } else {
+        const label = option ? option.label : quality === 'auto' ? 'Auto (Adaptive)' : quality;
+        showHud(`Quality: ${label}`);
+      }
+
+      if (video) {
+        let restored = false;
+        const restore = () => {
+          if (restored) return;
+          restored = true;
+          if (seekTime > 0) {
+            video.currentTime = seekTime;
+            lastPositionRef.current = seekTime;
+            setPosition(seekTime);
+          }
+          if (shouldPlay && typeof video.play === 'function') {
+            void video.play()?.catch?.(() => {});
+          }
+        };
+        video.addEventListener('loadedmetadata', restore, { once: true });
+        video.addEventListener('canplay', restore, { once: true });
+      }
+    },
+    [decoded, position, playing, showHud],
+  );
 
   /**
    * Commit the seek on change (the native range control fires continuously).
@@ -790,7 +861,7 @@ export function PlayerPage() {
     if (!target) return;
     if (
       target.closest(
-        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
+        '#controls, .player-controls-overlay, .sub-modal, .quality-modal, .nerd-stats-hud, #nerdStatsBtn, #qualityBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
       )
     ) {
       return;
@@ -808,13 +879,17 @@ export function PlayerPage() {
     if (!target) return;
     if (
       target.closest(
-        '#controls, .player-controls-overlay, .sub-modal, .nerd-stats-hud, #nerdStatsBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
+        '#controls, .player-controls-overlay, .sub-modal, .quality-modal, .nerd-stats-hud, #nerdStatsBtn, #qualityBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
       )
     ) {
       return;
     }
 
     // Dismiss any active modals on outside click
+    if (isQualityModalOpen) {
+      setIsQualityModalOpen(false);
+      return;
+    }
     if (isSubModalOpen) {
       setIsSubModalOpen(false);
       return;
@@ -888,9 +963,11 @@ export function PlayerPage() {
       }
     }, 280);
   }, [
+    isQualityModalOpen,
     isSubModalOpen,
     isShortcutsOpen,
     isNerdStatsOpen,
+    setIsQualityModalOpen,
     setIsSubModalOpen,
     handleSkip,
     triggerRipple,
@@ -914,6 +991,10 @@ export function PlayerPage() {
 
       // Escape dismisses any open modal first
       if (e.key === 'Escape') {
+        if (isQualityModalOpen) {
+          setIsQualityModalOpen(false);
+          return;
+        }
         if (isNerdStatsOpen) {
           setIsNerdStatsOpen(false);
           return;
@@ -1095,6 +1176,14 @@ export function PlayerPage() {
         return;
       }
 
+      // Quality modal
+      if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault();
+        setIsQualityModalOpen((prev) => !prev);
+        resetControlsTimer();
+        return;
+      }
+
       // Cheat sheet
       if (e.key === '?' || (e.key === '/' && !e.shiftKey)) {
         e.preventDefault();
@@ -1107,6 +1196,7 @@ export function PlayerPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    isQualityModalOpen,
     isNerdStatsOpen,
     isShortcutsOpen,
     isSubModalOpen,
@@ -1127,6 +1217,7 @@ export function PlayerPage() {
     toggleCC,
     resetControlsTimer,
     showHud,
+    setIsQualityModalOpen,
     setIsSubModalOpen,
   ]);
 
@@ -1193,7 +1284,7 @@ export function PlayerPage() {
               ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
               : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
           }`}>
-            {mode === 'direct' ? 'Direct Play' : 'HLS Stream'}
+            {mode === 'direct' ? 'Direct Play' : 'Adaptive Stream'}
           </span>
         </div>
       </div>
@@ -1533,6 +1624,32 @@ export function PlayerPage() {
                 <option value="2">2×</option>
               </select>
 
+              {/* Playback Quality Selector Button */}
+              <button
+                id="qualityBtn"
+                type="button"
+                onClick={() => {
+                  setIsQualityModalOpen((prev) => !prev);
+                  resetControlsTimer();
+                }}
+                disabled={!ready}
+                title="Quality (q)"
+                aria-label="Playback quality"
+                className={`flex h-9 sm:h-10 items-center justify-center gap-1 px-2.5 sm:px-3 rounded-full border text-xs font-bold shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-40 ${
+                  selectedQuality !== 'auto'
+                    ? 'border-brand-500/80 bg-brand-500/30 text-brand-300 shadow-brand-500/20'
+                    : 'border-white/20 bg-black/60 text-white/90 hover:border-white/40 hover:bg-black/80 hover:text-white'
+                }`}
+              >
+                <span className="font-mono tracking-wider">
+                  {selectedQuality === 'auto'
+                    ? 'HD'
+                    : selectedQuality === 'source'
+                      ? 'SRC'
+                      : selectedQuality.toUpperCase()}
+                </span>
+              </button>
+
               {/* Subtitles & Settings Pill */}
               <span
                 id="ccMergedPill"
@@ -1660,6 +1777,16 @@ export function PlayerPage() {
           </div>
         </div>
 
+        {/* Quality Selector Modal */}
+        <QualitySelectorModal
+          isOpen={isQualityModalOpen}
+          onClose={() => setIsQualityModalOpen(false)}
+          qualityLadder={info.quality_ladder ?? []}
+          selectedQuality={selectedQuality}
+          onSelectQuality={handleSelectQuality}
+          supportsDirectPlay={directPlay}
+        />
+
         {/* Subtitle Settings Modal */}
         <SubtitleSettingsModal
           isOpen={isSubModalOpen}
@@ -1682,6 +1809,7 @@ export function PlayerPage() {
           directPlay={directPlay}
           isTranscodeReady={info.is_transcode_ready}
           transcodePercent={transcode?.percent}
+          selectedQuality={selectedQuality}
         />
 
         {/* Shortcuts Modal */}

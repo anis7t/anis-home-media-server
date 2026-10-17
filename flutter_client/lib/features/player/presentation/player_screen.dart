@@ -36,6 +36,7 @@ import 'widgets/player_hud_toast.dart';
 import 'widgets/player_key_dispatcher.dart';
 import 'widgets/player_loading_indicator.dart';
 import 'widgets/player_surface.dart';
+import 'widgets/quality_selector_sheet.dart';
 import 'widgets/track_selector_sheet.dart';
 
 export '../domain/player_overlay_status.dart';
@@ -182,6 +183,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   /// (`direct_play`). Never derived from the URL, filename, codec or subtitle.
   PlaybackMode _playbackMode = PlaybackMode.unknown;
 
+  /// Quality ladder resolved dynamically from backend `/api/media-info`.
+  List<QualityOption> _qualityLadder = [];
+  String _selectedQuality = 'auto';
+
   // Seek preview & scrubbing state
   late final SeekPreviewController _seekPreviewController;
   PreviewUrlResolver? _previewUrlResolver;
@@ -207,7 +212,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   // 10-foot TV navigation state
   TvPlayerFocusZone _tvFocusZone = TvPlayerFocusZone.timeline;
   int _tvFocusedControlIndex = 1; // Default to Play/Pause
-  static const int _tvControlCount = 7;
+  static const int _tvControlCount = 8;
 
   @override
   void initState() {
@@ -505,6 +510,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         onOverviewResolved: (meta) {
           if (mounted) setState(() => _movieMeta = meta);
         },
+        onQualityLadderResolved: (ladder) {
+          if (mounted) setState(() => _qualityLadder = ladder);
+        },
       );
 
       debugPrint(
@@ -590,12 +598,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   Dio _apiDio() => widget.customDio ?? ref.read(apiClientProvider).dio;
 
   String _applyAuthoritativeMode(String url) {
-    if (_playbackMode != PlaybackMode.hls) return url;
+    if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto') return url;
     final filename = _resolveFilename();
     if (filename == null || filename.isEmpty) return url;
     final origin = _apiServerOrigin();
     if (origin == null || origin.isEmpty) return url;
-    return '$origin/hls/${Uri.encodeComponent(filename)}/playlist.m3u8';
+    return PlayerMediaResolver.resolveQualityUrl(
+      serverOrigin: origin,
+      filename: filename,
+      quality: _selectedQuality,
+      mode: _playbackMode,
+    );
   }
 
   Future<void> _openMedia() async {
@@ -772,6 +785,74 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         }
       },
     );
+  }
+
+  String get _selectedQualityBadge {
+    if (_selectedQuality == 'source') return 'DIRECT';
+    if (_selectedQuality == 'auto') {
+      return _playbackMode == PlaybackMode.directPlay ? 'DIRECT' : 'HD';
+    }
+    final match = _qualityLadder.where((q) => q.quality == _selectedQuality).firstOrNull;
+    if (match != null) return match.shortBadge;
+    return _selectedQuality.toUpperCase();
+  }
+
+  void _openQualitySheet() {
+    _onUserInteraction();
+    QualitySelectorSheet.show(
+      context: context,
+      qualityLadder: _qualityLadder,
+      selectedQuality: _selectedQuality,
+      supportsDirectPlay: _playbackMode == PlaybackMode.directPlay,
+      onQualitySelected: _handleQualitySelected,
+    );
+  }
+
+  Future<void> _handleQualitySelected(QualityOption option) async {
+    if (_selectedQuality == option.quality) return;
+
+    final currentPos = _transportPosition;
+    final wasPlaying = _state == PlayerPlaybackState.playing;
+
+    setState(() => _selectedQuality = option.quality);
+
+    final filename = _resolveFilename();
+    final serverOrigin = _apiServerOrigin();
+    if (filename == null || serverOrigin == null) return;
+
+    // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto
+    if (!option.isReady && !option.isDirect && option.quality != 'auto') {
+      try {
+        final encoded = Uri.encodeComponent(filename);
+        _showHudToast('Starting ${option.label}...', icon: Icons.high_quality_rounded);
+        // Fire-and-forget transcode start request
+        unawaited(
+          _apiDio().post(
+            '$serverOrigin/api/transcode/start/$encoded',
+            queryParameters: {'quality': option.quality},
+          ).then((_) {}, onError: (_) {}),
+        );
+      } catch (_) {}
+    }
+
+    final newUrl = PlayerMediaResolver.resolveQualityUrl(
+      serverOrigin: serverOrigin,
+      filename: filename,
+      quality: option.quality,
+      mode: _playbackMode,
+    );
+
+    _effectiveMediaUrl = newUrl;
+    _showHudToast('Quality: ${option.label}', icon: Icons.high_quality_rounded);
+
+    try {
+      await _controller.open(newUrl, startPosition: currentPos);
+      if (wasPlaying) {
+        await _controller.play();
+      }
+    } catch (e) {
+      debugPrint('[PlayerScreen] Failed to switch quality URL: $e');
+    }
   }
 
   void _openAudioTrackSheet() {
@@ -1113,12 +1194,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         _openPlaybackSpeedSheet();
         break;
       case 4:
-        _openAudioTrackSheet();
+        _openQualitySheet();
         break;
       case 5:
-        _openSubtitleTrackSheet();
+        _openAudioTrackSheet();
         break;
       case 6:
+        _openSubtitleTrackSheet();
+        break;
+      case 7:
         _cycleAspectRatio();
         break;
     }
@@ -1441,6 +1525,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             previewMeta: _previewMeta,
             onRestart: _restart,
             onOpenSpeedSheet: _openPlaybackSpeedSheet,
+            onOpenQualitySheet: _openQualitySheet,
+            selectedQualityLabel: _selectedQualityBadge,
             onOpenAudioSheet: _openAudioTrackSheet,
             onOpenSubtitleSheet: _openSubtitleTrackSheet,
             onToggleAspectRatio: _cycleAspectRatio,
@@ -1554,6 +1640,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                               serverOrigin: _apiServerOrigin() ?? 'http://127.0.0.1:8000',
                               filename: _resolveFilename() ?? 'Media Stream',
                               playbackMode: _playbackMode,
+                              selectedQualityLabel: _selectedQualityBadge,
                               movieMeta: _movieMeta,
                               position: _position,
                               duration: _duration,

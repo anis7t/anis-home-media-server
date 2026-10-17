@@ -9,10 +9,12 @@ export interface NerdStatsHudProps {
   directPlay?: boolean;
   isTranscodeReady?: boolean;
   transcodePercent?: number;
+  selectedQuality?: string;
 }
 
 interface StatsState {
   file: string;
+  quality: string;
   res: string;
   viewport: string;
   codecs: string;
@@ -31,9 +33,11 @@ export function NerdStatsHud({
   directPlay = false,
   isTranscodeReady = false,
   transcodePercent,
+  selectedQuality,
 }: NerdStatsHudProps) {
   const [stats, setStats] = useState<StatsState>({
     file: '-',
+    quality: 'Auto',
     res: '-',
     viewport: '-',
     codecs: '-',
@@ -70,8 +74,16 @@ export function NerdStatsHud({
         }
       }
 
+      const quality = selectedQuality
+        ? selectedQuality === 'auto'
+          ? 'Auto (Adaptive)'
+          : selectedQuality === 'source'
+            ? 'Direct Play (Source)'
+            : `${selectedQuality} (Pinned)`
+        : 'Auto';
+
       if (!v) {
-        setStats((prev) => ({ ...prev, file: baseName, codecs, transcode }));
+        setStats((prev) => ({ ...prev, file: baseName, quality, codecs, transcode }));
         return;
       }
       const w = v.videoWidth || 0;
@@ -110,6 +122,7 @@ export function NerdStatsHud({
 
       setStats({
         file: baseName,
+        quality,
         res,
         viewport,
         codecs,
@@ -124,7 +137,8 @@ export function NerdStatsHud({
     const timer = setInterval(updateStats, 400);
 
     return () => clearInterval(timer);
-  }, [isOpen, videoRef, filename, mode, directPlay, isTranscodeReady, transcodePercent]);
+  }, [isOpen, videoRef, filename, mode, directPlay, isTranscodeReady, transcodePercent, selectedQuality]);
+
 
   if (!isOpen) return null;
 
@@ -164,6 +178,12 @@ export function NerdStatsHud({
           <span>Resolution</span>
           <span id="nsRes" className="ns-val">
             {stats.res}
+          </span>
+        </div>
+        <div className="nerd-row">
+          <span>Quality Tier</span>
+          <span id="nsQuality" className="ns-val">
+            {stats.quality}
           </span>
         </div>
         <div className="nerd-row">

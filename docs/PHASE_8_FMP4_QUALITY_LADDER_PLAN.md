@@ -146,6 +146,35 @@ flowchart TD
     * Add Quality Selector action into Zone 2 (Controls rail).
     * Render D-pad focusable modal dialog (`TvQualityDialog`) displaying the dynamically filtered quality ladder.
 
+### Slice 5: UI/UX Terminology Modernization & HLS Label Retirement
+This slice replaces internal/legacy developer jargon ("HLS", "MPEG-TS", "HLS Transcode") across all user-facing web and mobile views with modern, consumer-friendly streaming terminology ("Adaptive Stream (fMP4)", "Stream Ready", "Direct vs Adaptive", "Transcode Cache").
+
+* **Target UI/UX Element Replacements**:
+  1. **Player Playback Mode Badge** (`web/src/features/playback/PlayerPage.tsx` & `flutter_client/.../playback_mode.dart`):
+     * *Current*: `"HLS Stream"` / `'HLS STREAM'` / `'HLS Segmented'`
+     * *Modernized*: **`"Adaptive Stream"`** (or **`"Adaptive (fMP4)"`** in technical views).
+  2. **Player Preloader & Transcode Waiting Gate** (`web/src/features/playback/TranscodeGate.tsx`, `PlayerPreloader.tsx`):
+     * *Current*: `"Please wait a moment while the server finalizes all HLS chunks..."` / `"Preparing Dual-GPU HLS streams..."`
+     * *Modernized*: **`"Please wait a moment while the server finalizes stream segments..."`** / **`"Preparing Adaptive Dual-GPU Stream..."`**
+  3. **Quality Selector Options** (`web/src/features/playback/QualitySelectorModal.tsx` & `flutter_client/.../quality_selector_sheet.dart`):
+     * *Current*: `"Auto (Adaptive HLS)"`
+     * *Modernized*: **`"Auto (Adaptive)"`** with subtext *"Dynamically scales resolution based on bandwidth"*.
+  4. **Home Spotlight Badge** (`web/src/features/library/HeroSpotlight.tsx`):
+     * *Current*: Badge: `"HLS"`
+     * *Modernized*: Badge: **`"Adaptive"`** (paired with 4K/1080p resolution badges).
+  5. **Active Transcodes Telemetry Card** (`web/src/features/library/ActiveTranscodes.tsx`):
+     * *Current*: `mode: 'HLS Transcode'`
+     * *Modernized*: `mode: 'Adaptive Stream (fMP4)'`.
+  6. **Manage Library Inventory Filters & Badges** (`web/src/features/manage/ManagePage.tsx`, `InventoryToolbar.tsx`, `InventoryList.tsx`):
+     * *Current*: Filter: `{ id: 'hls', label: 'HLS / MKV' }` → *Modernized*: **`{ id: 'transcoded', label: 'Transcoded / MKV' }`** or **`{ id: 'adaptive', label: 'Adaptive / MKV' }`**.
+     * *Current*: Badges: `"HLS Cached"`, `"⚙ On-Demand HLS"` → *Modernized*: **`"Stream Ready"`**, **`"⚙ On-Demand Stream"`**.
+     * *Current*: Count badge: `"${activeHlsMap.size} HLS Cached"` → *Modernized*: **`"${activeHlsMap.size} Stream Ready"`**.
+  7. **Manage Retention Policy & Delete Dialogs** (`web/src/features/manage/components/RetentionPolicyCard.tsx`, `DeleteConfirmationModal.tsx`):
+     * *Current*: References to `"HLS transcode cache"`, `"fast SSD HLS stream caches"`.
+     * *Modernized*: **`"stream transcode cache"`**, **`"fast SSD stream caches"`**.
+  8. **User Manual Documentation** (`web/src/features/manual/ManualPage.tsx` & `docs/MANUAL.md`):
+     * Update architectural references from legacy HLS MPEG-TS to **Fragmented MP4 (fMP4) Adaptive Streaming**.
+
 ---
 
 ## 4. Exit Criteria & Checkable Gates
@@ -156,7 +185,8 @@ flowchart TD
 | **Gate 8.2 (No-Upscaling Ladder)** | `/api/media-info` for a 1080p source returns only $\le 1080\text{p}$ options; 4K source returns $\le 2160\text{p}$ options. | Rust unit test asserting `quality_ladder` output across 480p, 720p, 1080p, 1440p, and 2160p sample probes. |
 | **Gate 8.3 (Android Direct Play)** | Android client request for MKV file receives `direct_play = true` and streams directly via `/media/{*path}` with 0% server transcode load. | API contract test with `X-Client-Platform: android` header; confirm zero spawned transcode jobs. |
 | **Gate 8.4 (Web Player Quality Switch)** | User clicking quality option in web player switches resolution without resetting seek position or crashing Hls.js. | Headless E2E Selenium test verifying quality toggle and video playback continuity. |
-| **Gate 8.5 (Regression & Contract Safety)** | All 254 Rust tests pass, Android probe (`22/22`) passes, and existing `.ts` caches remain playable. | Full execution of `cargo test` and `scripts/probe_android_api.py`. |
+| **Gate 8.5 (UI/UX Terminology Modernization)** | Zero user-facing instances of raw "HLS" in player badges, manage tables, or quality menus; modern "Adaptive" / "Stream Ready" displayed. | Web component tests and visual inspection across Library, Details, Player, and Manage pages. |
+| **Gate 8.6 (Regression & Contract Safety)** | All 254 Rust tests pass, Android probe (`22/22`) passes, and existing `.ts` caches remain playable. | Full execution of `cargo test` and `scripts/probe_android_api.py`. |
 
 ---
 
@@ -182,9 +212,11 @@ flowchart TD
        │
        ├──► Slice 2: Rust API Quality Ladder & Android Direct Play (`media_info.rs`, `hls.rs`)
        │
-       ├──► Slice 3: React Web Player In-Player Quality Selector (`PlayerControlsRow.tsx`, `PlayerPage.tsx`)
+       ├──► Slice 3: React Web Player In-Player Quality Selector (`PlayerControlsRow.tsx`, `PlayerPage.tsx`, `QualitySelectorModal.tsx`)
        │
-       ├──► Slice 4: Flutter Android & Fire TV Direct Play + Remote Modal (`player_media_resolver.dart`, `player_screen.dart`)
+       ├──► Slice 4: Flutter Android & Fire TV Direct Play + Remote Modal (`player_media_resolver.dart`, `player_screen.dart`, `quality_selector_sheet.dart`)
+       │
+       ├──► Slice 5: UI/UX Terminology Modernization & HLS Label Retirement (`HeroSpotlight.tsx`, `ActiveTranscodes.tsx`, `ManagePage.tsx`, etc.)
        │
        └──► Verification: End-to-End Live Transcode, Android Contract Probe, and Full Test Suites
 ```

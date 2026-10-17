@@ -268,7 +268,7 @@ export function ManagePage() {
 
     const confirmed = confirm(
       `Move original MKV file for "${movie.title}" to cold archive (D:\\Flicks\\.archive)?\n\n` +
-      `The fast SSD HLS stream cache will remain active so you can continue streaming without interruption.`
+      `The fast SSD stream cache will remain active so you can continue streaming without interruption.`
     );
     if (!confirmed) return;
 
@@ -445,8 +445,8 @@ export function ManagePage() {
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
               {activeHlsMap.size > 0
-                ? `${activeHlsMap.size} HLS Cached`
-                : `${movies.filter((m) => m.hls_cached).length} HLS Cached`}
+                ? `${activeHlsMap.size} Stream Ready`
+                : `${movies.filter((m) => m.hls_cached).length} Stream Ready`}
               {auditLoading ? (
                 <span className="text-[10px] text-white/35">(auditing…)</span>
               ) : null}

@@ -112,7 +112,7 @@ export function InventoryList({
                   {hasHlsCache ? (
                     <span className="rounded-md bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 flex items-center gap-1">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                      HLS Cached
+                      Stream Ready
                       {hlsItem?.size_bytes ? ` (${formatBytes(hlsItem.size_bytes)})` : ''}
                     </span>
                   ) : isMkv ? (
@@ -123,7 +123,7 @@ export function InventoryList({
                       </span>
                     ) : (
                       <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
-                        ⚙ On-Demand HLS
+                        ⚙ On-Demand Transcode
                       </span>
                     )
                   ) : (
@@ -183,7 +183,7 @@ export function InventoryList({
                   disabled={busy}
                   onClick={() => onArchiveMovie(m)}
                   className="rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-30"
-                  title="Move original MKV file to .archive cold storage to save space while keeping HLS stream cache"
+                  title="Move original MKV file to .archive cold storage to save space while keeping fast stream cache"
                 >
                   <Icon name="archive" size={12} />
                   <span>Archive</span>

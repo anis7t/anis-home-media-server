@@ -14,8 +14,8 @@ describe('PlayerPreloader', () => {
   });
 
   it('renders custom message when provided', () => {
-    render(<PlayerPreloader visible={true} message="Preparing Dual-GPU HLS streams..." />);
-    expect(screen.getByText('Preparing Dual-GPU HLS streams...')).toBeInTheDocument();
+    render(<PlayerPreloader visible={true} message="Preparing Dual-GPU adaptive streams..." />);
+    expect(screen.getByText('Preparing Dual-GPU adaptive streams...')).toBeInTheDocument();
   });
 
   it('is hidden when visible is false', () => {

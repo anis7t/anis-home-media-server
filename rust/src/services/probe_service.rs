@@ -20,11 +20,15 @@ pub struct ProbeStream {
     pub duration_ts: Option<i64>,
     #[serde(default)]
     pub tags: HashMap<String, String>,
+    #[serde(default)]
+    pub bit_rate: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProbeFormat {
     pub duration: Option<String>,
+    #[serde(default)]
+    pub bit_rate: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -42,6 +46,14 @@ impl ProbeResult {
             .as_deref()
             .and_then(|d| d.parse::<f64>().ok())
             .unwrap_or(0.0)
+    }
+
+    pub fn container_bitrate(&self) -> u64 {
+        self.format
+            .bit_rate
+            .as_deref()
+            .and_then(|b| b.parse::<u64>().ok())
+            .unwrap_or(0)
     }
 
     /// First stream of a given type. `ffprobe` orders streams by index, so
@@ -398,8 +410,17 @@ mod tests {
 
     #[test]
     fn container_duration_parses_and_defaults_to_zero() {
-        let p = ProbeResult { format: ProbeFormat { duration: Some("8931.59".into()) }, ..Default::default() };
+        let p = ProbeResult {
+            format: ProbeFormat {
+                duration: Some("8931.59".into()),
+                bit_rate: Some("4500000".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!((p.container_duration() - 8931.59).abs() < 0.01);
+        assert_eq!(p.container_bitrate(), 4_500_000);
         assert_eq!(ProbeResult::default().container_duration(), 0.0);
+        assert_eq!(ProbeResult::default().container_bitrate(), 0);
     }
 }

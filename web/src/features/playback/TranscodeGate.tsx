@@ -74,7 +74,7 @@ export function TranscodeGate({ filename, transcode, onRefresh }: TranscodeGateP
 
       <div className="relative flex items-center gap-2 text-xs text-white/40">
         <span className="animate-spin inline-block">⏳</span>
-        <span>Please wait a moment while the server finalizes all HLS chunks...</span>
+        <span>Please wait a moment while the server finalizes stream packaging...</span>
         {onRefresh && (
           <button
             type="button"

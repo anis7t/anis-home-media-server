@@ -73,7 +73,7 @@ export function ActiveTranscodes({ onActiveChange }: ActiveTranscodesProps = {})
               return {
                 filename: j.filename,
                 title: cleanTitle,
-                mode: 'HLS Transcode',
+                mode: 'Adaptive Transcode',
                 status: j.status,
                 percent: pct,
                 speed: spd,

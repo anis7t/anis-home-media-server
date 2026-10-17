@@ -73,7 +73,7 @@ export function MovieCard({ movie, priority = 'lazy' }: MovieCardProps) {
             {movie.year ? <span>{movie.year}</span> : null}
             {movie.needs_transcode && !movie.is_transcoding ? (
               <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/70">
-                HLS
+                ADAPTIVE
               </span>
             ) : null}
             {movie.is_transcoding ? (

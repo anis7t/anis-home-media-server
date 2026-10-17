@@ -89,6 +89,7 @@ class PlayerDetailsPanel extends StatelessWidget {
   final String serverOrigin;
   final String filename;
   final PlaybackMode playbackMode;
+  final String? selectedQualityLabel;
   final Map<String, dynamic>? movieMeta;
   final Duration position;
   final Duration duration;
@@ -102,6 +103,7 @@ class PlayerDetailsPanel extends StatelessWidget {
     required this.serverOrigin,
     required this.filename,
     required this.playbackMode,
+    this.selectedQualityLabel,
     this.movieMeta,
     required this.position,
     required this.duration,
@@ -507,6 +509,10 @@ class PlayerDetailsPanel extends StatelessWidget {
                   const SizedBox(height: 6),
                   _buildSpecRow('Playback Type', playbackMode.specLabel),
                   const SizedBox(height: 6),
+                  if (selectedQualityLabel != null && selectedQualityLabel!.isNotEmpty) ...[
+                    _buildSpecRow('Quality Tier', selectedQualityLabel!),
+                    const SizedBox(height: 6),
+                  ],
                   _buildSpecRow('Server Origin', serverOrigin),
                   const SizedBox(height: 6),
                   _buildSpecRow(

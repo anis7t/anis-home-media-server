@@ -21,9 +21,16 @@ export function directMediaUrl(filename: string): string {
   return `${DIRECT_MEDIA_PATH}${encodePathSegments(filename)}`;
 }
 
-/** Master playlist URL for transcoded playback (MKV/HEVC). */
-export function hlsPlaylistUrl(filename: string): string {
-  return `/hls/${encodePathSegments(filename)}${HLS_PLAYLIST_SUFFIX}`;
+/** Master playlist or tiered quality URL for transcoded playback. */
+export function hlsPlaylistUrl(filename: string, quality?: string): string {
+  const enc = encodePathSegments(filename);
+  if (!quality || quality === 'default') {
+    return `/hls/${enc}${HLS_PLAYLIST_SUFFIX}`;
+  }
+  if (quality === 'auto') {
+    return `/hls/${enc}/master.m3u8`;
+  }
+  return `/hls/${enc}/${quality}${HLS_PLAYLIST_SUFFIX}`;
 }
 
 export type PlaybackMode = 'direct' | 'hls';
@@ -41,6 +48,6 @@ export function playbackModeFor(directPlay: boolean): PlaybackMode {
   return directPlay ? 'direct' : 'hls';
 }
 
-export function playbackUrlFor(filename: string, mode: PlaybackMode): string {
-  return mode === 'direct' ? directMediaUrl(filename) : hlsPlaylistUrl(filename);
+export function playbackUrlFor(filename: string, mode: PlaybackMode, quality?: string): string {
+  return mode === 'direct' ? directMediaUrl(filename) : hlsPlaylistUrl(filename, quality);
 }

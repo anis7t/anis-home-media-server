@@ -392,6 +392,29 @@ Do not remove migration compatibility or old runtime support while rollback stil
 
 **Exit gate:** all production responsibilities have explicit owners in the new architecture, no production workflow depends on Flask, recovery procedures are tested, and all release criteria are met.
 
+### Phase 8 — Fragmented MP4 (fMP4) Streaming, Quality Ladder, and Client-Adaptive Playback
+
+**Estimate:** 1–2 weeks  
+**Depends on:** Phase 6 (Rust transcode worker engine) and Phase 2 (React player)  
+**Governing Plan:** `docs/PHASE_8_FMP4_QUALITY_LADDER_PLAN.md`
+
+Modernizes the streaming pipeline from legacy MPEG-2 Transport Stream (`.ts`) to ISO BMFF Fragmented MP4 (`.m4s` / `fMP4`), unlocking hardware-accelerated HEVC and H.264 playback across Chromium (Chrome, Edge) and Safari browsers with zero JavaScript demuxing overhead.
+
+1. **Fragmented MP4 (fMP4) Chunk Engine**:
+   - Update Rust transcode worker to emit `-hls_segment_type fmp4` with `#EXT-X-MAP:URI="init_chunk_{id}.mp4"` initialization headers and `.m4s` media fragments.
+   - Retain full backward compatibility for existing completed `.ts` caches in `rust/src/routes/hls.rs`.
+2. **Dynamic Multi-Bitrate Quality Ladder**:
+   - Provide user-selectable quality levels in the Web and Flutter players: 4K (2160p), 2K (1440p), 1080p (FHD), 720p (HD), 480p (SD), 360p (Data Saver), and Direct Play.
+   - **Strict No-Upscaling Invariant**: Dynamically bound allowed resolutions to $\le \text{source\_height}$.
+   - On-Demand Single-Stream Transcoding (Option A) to preserve dual-GPU capacity and SSD cache headroom.
+3. **Android Client MKV Direct Play**:
+   - Expand `/api/media-info` to recognize Android / Fire TV client hardware capabilities and permit Direct Play for `.mkv` containers (H.264, HEVC, AAC, AC3, EAC3) over RFC 7233 byte-range streaming (`/media/{*path}`) with 0% server transcode overhead.
+4. **UI/UX Terminology Modernization & HLS Label Retirement**:
+   - Retire internal protocol jargon ("HLS", "MPEG-TS", "HLS Transcode") across Web and Mobile user interfaces.
+   - Modernize player badges to `"Adaptive Stream (fMP4)"`, library inventory badges to `"Stream Ready"`, and transcode statuses to consumer-friendly terminology.
+
+**Exit gate:** Web browsers play fMP4 streams with native hardware acceleration; quality selector displays dynamically clamped ladder without upscaling; Android clients Direct Play MKV media with 0% server CPU/GPU load; all user-facing HLS jargon is retired in favor of clean streaming terminology.
+
 ## 6. Testing and release gates
 
 | Test layer | Required coverage |
