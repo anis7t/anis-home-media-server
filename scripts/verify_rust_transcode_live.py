@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.transcode_service import hls_cache_dir
 
-BASE_URL = os.environ.get("RUST_BASE_URL", "http://127.0.0.1:8001")
+BASE_URL = os.environ.get("RUST_BASE_URL", "http://127.0.0.1:8000")
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/media_server")
 SAMPLE_FILENAME = "test_transcode_live_sample.mkv"
 SAMPLE_PATH = Path("D:/Flicks") / SAMPLE_FILENAME

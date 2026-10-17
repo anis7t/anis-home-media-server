@@ -516,8 +516,8 @@ def main() -> int:
         return 1
     file_size = int(size_str)
 
-    # Locate server PID for telemetry (port 8001 for Rust, port 8000 for Waitress)
-    target_port = 8001 if args.target == "rust" else 8000
+    # Locate server PID for telemetry (port 8000 for Rust Axum)
+    target_port = 8000
     server_pid = None
     for proc in psutil.process_iter(["pid", "name"]):
         try:
@@ -535,10 +535,8 @@ def main() -> int:
     levels = [int(x.strip()) for x in args.levels.split(",") if x.strip().isdigit()]
 
     targets = []
-    if args.target in ("local", "both", "all"):
-        targets.append((LOCAL_ORIGIN, "Local Origin Waitress (127.0.0.1:8000)"))
-    if args.target in ("rust", "all"):
-        targets.append(("http://127.0.0.1:8001", "Native Rust Axum (127.0.0.1:8001)"))
+    if args.target in ("local", "rust", "both", "all"):
+        targets.append((LOCAL_ORIGIN, "Native Rust Axum (127.0.0.1:8000)"))
     if args.target in ("remote", "both", "all"):
         targets.append((REMOTE_TUNNEL, "Cloudflare Tunnel (media.anisparvez.in)"))
 

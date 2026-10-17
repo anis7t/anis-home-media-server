@@ -4,7 +4,7 @@ r"""Benchmark and Verification Script for Real Production Movie Transcoding.
 Performs:
 1. Identifies a real production MKV movie in D:\Flicks.
 2. Identifies and deletes its existing HLS cache in E:\MediaServer\cache\hls.
-3. Triggers transcoding via native Rust worker on MediaServerRust (:8001).
+3. Triggers transcoding via native Rust worker on MediaServerRust (:8000).
 4. Actively monitors telemetry: CPU load, GPU 1 (RX 560X) & GPU 2 (Vega 8) engine loads,
    transcoding speed, elapsed time, and ETA.
 5. Verifies 100% correctness of generated HLS stream (discontinuities, stride32, ffprobe duration).
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.transcode_service import hls_cache_dir
 
-BASE_URL = os.environ.get("RUST_BASE_URL", "http://127.0.0.1:8001")
+BASE_URL = os.environ.get("RUST_BASE_URL", "http://127.0.0.1:8000")
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/media_server")
 
 # Default production movie: 10-bit HEVC MKV (~7 minutes, 7 chunks)

@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 
-BASE = "http://127.0.0.1:8001"
+BASE = "http://127.0.0.1:8000"
 SAMPLE_CLIP = r"D:\Flicks\test_phase8_fmp4_sample.mkv"
 CACHE_ROOT = r"E:\MediaServer\cache\hls"
 

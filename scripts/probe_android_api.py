@@ -20,8 +20,7 @@ parser = argparse.ArgumentParser(description="Android client API contract probe"
 parser.add_argument(
     "--base",
     default="http://127.0.0.1:8000",
-    help="origin to probe (default: the Flask origin the installed APKs use). "
-         "Pass http://127.0.0.1:8001 to probe the Rust service.",
+    help="origin to probe (default: http://127.0.0.1:8000 Rust/Axum).",
 )
 args = parser.parse_args()
 BASE = args.base.rstrip("/")

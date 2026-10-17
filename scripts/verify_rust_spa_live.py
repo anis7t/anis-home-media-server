@@ -26,7 +26,7 @@ from selenium.webdriver.support import expected_conditions as EC
 BASE_DIR = Path(r"E:\MediaServer")
 BINARY_PATH = BASE_DIR / "rust" / "target" / "debug" / "media-server-api.exe"
 SHOTS_DIR = BASE_DIR / "_shots"
-PORT = 8001
+PORT = 8000
 BASE_URL = f"http://127.0.0.1:{PORT}"
 
 def wait_for_server(url: str, timeout: float = 12.0) -> bool:

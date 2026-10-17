@@ -20,7 +20,10 @@ Active branch: `feat/rust-react-postgres-migration`
 | 3 | PostgreSQL Migration | ✅ COMPLETE — Automated migration utility (`scripts/migrate_sqlite_to_postgres.py`) with 100% row parity (852/852 rows), dual psycopg 3 adapter with parameter tokenization & ON CONFLICT translation, 26/26 real-PG integration tests, all core suites verified |
 | 4 | Rust API Foundation | ✅ COMPLETE — Modular Rust Axum/Tokio/SQLx crate (`rust/`) with PostgreSQL 18.4 connection pool, health endpoints, movies catalog, system telemetry, and structured tracing |
 | 5 | Media Playback & Native Streaming Engine | ✅ COMPLETE — Watch progress upserts, RFC 7233 byte-range Direct Play, 100% native subtitles (embedded container extraction via FFprobe/FFmpeg, OpenSubtitles hash download & gzip decompression via reqwest/flate2, sidecars, and multipart uploads), seek hover frame previews, and dual-GPU transcode telemetry; 61/61 Rust tests passing |
-| 2R | React SPA Direct Integration | ✅ COMPLETE — Direct React SPA hosting on Rust port 8001 with client-side routing fallback and transparent static asset delivery |
+| 2R | React SPA Direct Integration | ✅ COMPLETE — Direct React SPA hosting on Rust with client-side routing fallback and transparent static asset delivery |
+| 6 | Multi-GPU Worker Cutover & Active Transcodes UI | ✅ COMPLETE — Autonomous dual-GPU chunked transcoding in Rust with AMD AMF VPP filters and live telemetry |
+| 8 | fMP4 Adaptive Streaming & Quality Ladder | ✅ COMPLETE — Fragmented MP4 (`.m4s`) HLS pipeline with `#EXT-X-MAP`, dynamic quality ladder (4K–360p), client-aware direct play, and cross-platform quality selectors |
+| 7 | Unified Production Cutover & Modernization Completion | 🔄 IN PROGRESS — Slices 7A (Daemons), 7B (Port 8000 Cutover), 7C (Hardening Battery), and 7D (Operational Tooling) complete; Slice 7E (Flask Retirement) next |
 
 ---
 

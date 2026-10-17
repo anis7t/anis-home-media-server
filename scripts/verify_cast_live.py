@@ -5,7 +5,7 @@ starts a cast on the user's television, so `stop` runs in a `finally` that no
 early return, exception or timeout can skip. A verification script that can
 leave a film playing on someone's TV is not a verification script.
 
-The two commands run against :8001 by default and both quit the receiver app,
+The two commands run against :8000 by default and both quit the receiver app,
 so the television returns to its home screen rather than sitting on an idle
 black receiver app.
 
@@ -126,7 +126,7 @@ def volume_ramp(base, device_id):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://127.0.0.1:8001")
+    ap.add_argument("--base", default="http://127.0.0.1:8000")
     ap.add_argument("--skip-resume", action="store_true")
     ap.add_argument("--volume-ramp", action="store_true",
                     help="play, then ramp the volume so a human can see and hear it")

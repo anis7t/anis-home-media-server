@@ -70,14 +70,14 @@ if (Test-Path $releaseExe) {
     }
 }
 
-# 6. Stop any existing processes on port 8001
-Write-Host "Checking for existing processes on port 8001..." -ForegroundColor Yellow
-$connections = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue
+# 6. Stop any existing processes on port 8000
+Write-Host "Checking for existing processes on port 8000..." -ForegroundColor Yellow
+$connections = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
 if ($connections) {
     $pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique
     foreach ($p in $pids) {
         if ($p -gt 4) {
-            Write-Host "Terminating existing process on port 8001 (PID: $p)..." -ForegroundColor Yellow
+            Write-Host "Terminating existing process on port 8000 (PID: $p)..." -ForegroundColor Yellow
             Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
         }
     }
@@ -108,7 +108,7 @@ Write-Host "Configuring service parameters..." -ForegroundColor Yellow
 & $NssmExe set $serviceName Application $exePath
 & $NssmExe set $serviceName AppDirectory $BaseDir
 & $NssmExe set $serviceName DisplayName "Media Server API (Rust/Axum)"
-& $NssmExe set $serviceName Description "Self-hosted personal media streaming server backend running Rust Axum on port 8001"
+& $NssmExe set $serviceName Description "Self-hosted personal media streaming server backend running Rust Axum on port 8000"
 & $NssmExe set $serviceName Start SERVICE_AUTO_START
 
 # Logging configuration
@@ -124,17 +124,10 @@ Write-Host "Configuring service parameters..." -ForegroundColor Yellow
 
 # Environment variables injection
 $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\Scripts;C:\Python314;E:\postgres\pgsql\bin;$env:PATH"
-$envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8001`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive,E:\MediaServer`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nRUST_LOG=info"
+$envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8000`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive,E:\MediaServer`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nRUST_LOG=info"
 & $NssmExe set $serviceName AppEnvironmentExtra $envExtra
 
 # 8b. Firewall: allow inbound on this executable.
-#
-# Flask has an inbound allow rule for python.exe, which is why a cast receiver
-# could always fetch media from :8000. Without an equivalent rule for the Rust
-# binary nothing else on the LAN can reach :8001 at all - and a DLNA renderer
-# answers SetAVTransportURI with an empty HTTP 500 when it cannot fetch the URL
-# it was just given, so the failure looks like a cast bug rather than a
-# firewall one. It also blocks the port swap, where this service takes :8000.
 $RuleName = "MediaServerRust (media-server-api.exe)"
 $ExePath = "$RustDir\target\release\media-server-api.exe"
 if (Test-Path $ExePath) {
@@ -162,16 +155,16 @@ $svc = Get-Service -Name $serviceName
 Write-Host "Service '$serviceName' status: $($svc.Status) (Startup: $($svc.StartType))" -ForegroundColor Green
 
 # 11. Verify Local HTTP Response
-Write-Host "Testing local HTTP endpoint (http://127.0.0.1:8001)..." -ForegroundColor Yellow
+Write-Host "Testing local HTTP endpoint (http://127.0.0.1:8000)..." -ForegroundColor Yellow
 try {
-    $res = Invoke-WebRequest -Uri "http://127.0.0.1:8001/" -UseBasicParsing -TimeoutSec 5
+    $res = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 5
     Write-Host "Local HTTP SPA probe SUCCESS! Status: $($res.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "Local SPA probe warning: $_" -ForegroundColor Yellow
 }
 
 try {
-    $apiRes = Invoke-WebRequest -Uri "http://127.0.0.1:8001/api/movies" -UseBasicParsing -TimeoutSec 5
+    $apiRes = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/movies" -UseBasicParsing -TimeoutSec 5
     Write-Host "Local API probe SUCCESS! Status: $($apiRes.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "Local API probe warning: $_" -ForegroundColor Yellow
@@ -179,5 +172,5 @@ try {
 
 Write-Host "====================================================" -ForegroundColor Cyan
 Write-Host " Deployment Complete! Media Server Rust runs         " -ForegroundColor Green
-Write-Host " automatically at boot on port 8001.                " -ForegroundColor Green
+Write-Host " automatically at boot on port 8000.                " -ForegroundColor Green
 Write-Host "====================================================" -ForegroundColor Cyan

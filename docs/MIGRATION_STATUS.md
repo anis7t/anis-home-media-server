@@ -1,6 +1,18 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-17
+> ## Current session handoff — 2026-10-18
+>
+> **Phase 7 (Production Port Cutover, Autonomous Operation & Operational Tooling) Slices 7A–7D are COMPLETE & VERIFIED.**
+> - **Slice 7A (Autonomous Rust Daemons)**: Background scan scheduler (`scan_service`), storage cache maintenance daemon (`storage_service`), and transcode job sweeper (`transcode_sweeper`) running natively in Tokio runtime.
+> - **Slice 7B (Port Cutover to `:8000`)**: Rust Axum and React Web SPA unified on `0.0.0.0:8000`. Legacy port `8001` released and retired. Legacy Waitress/Flask service (`MediaServer`) stopped and set to Manual. Cloudflare named tunnel (`media.anisparvez.in`) updated to forward directly to `http://127.0.0.1:8000`.
+> - **Slice 7C (Multi-Tier Verification & Hardening Battery)**: Rust test suite (**258 passed, 0 failed**), React Web tests (**183/183 passed**), React TypeScript check (**0 errors**), Android API contract probe (**22/22 endpoints OK**), Phase 8 fMP4 streaming probe (**100% OK**).
+> - **Slice 7D (Operational Tooling & Script Harmonization)**: Harmonized `scripts/restart_service.bat` into unified elevated restarter (restarts `MediaServerRust` and executes status diagnostic); updated `scripts/service_status.ps1` to authoritative health monitor; decoupled `scripts/service_watchdog.ps1` from legacy Flask; added automated compressed PostgreSQL backup tooling `scripts/backup_postgres.bat` and `backup_postgres.ps1` with 7-backup retention pruning.
+> - **Active Transcode**: Real hardware transcode job #794 (*Ghost in the Cell* 1440p, 107 chunks) actively running across AMD Radeon RX 560X and Vega 8 GPUs.
+>
+> Repository state: branch `feat/phase-7d-operational-tooling` ready to commit.
+> Next Slice: **Phase 7 Slice 7E** — Legacy Flask retirement (`app/` cleanup) and final modernization sign-off.
+>
+> ### Previous handoff — 2026-10-17
 >
 > **Phase 8 (Fragmented MP4 Streaming, Dynamic Quality Ladder Engine, Client-Aware Direct Play, and Modernized UI/UX) is 100% COMPLETE & VERIFIED.**
 > - **Tier 1 (Automated Tests)**: Rust Backend (**103 lib + 42 integration passed**), Web Frontend (**183/183 passed**, built in 793ms), Flutter Frontend (**110/110 passed**, 0 analysis issues).

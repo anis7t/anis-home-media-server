@@ -29,7 +29,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 BASE_DIR = Path(r"E:\MediaServer")
 SHOTS_DIR = BASE_DIR / "_shots"
 ARTIFACTS_DIR = Path(r"C:\Users\anis7\.gemini\antigravity-ide\brain\47618974-f5f7-41ea-8c03-fbe2adbf0765")
-PORT = 8001
+PORT = 8000
 BASE_URL = f"http://127.0.0.1:{PORT}"
 
 def get_sample_movie():

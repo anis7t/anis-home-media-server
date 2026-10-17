@@ -1,4 +1,4 @@
-# Media Server watchdog - keeps Flask, Rust and PostgreSQL alive across
+# Media Server watchdog - keeps Rust and PostgreSQL alive across
 # USB-volume (E:) dropouts. Idempotent: a healthy system is a logged no-op.
 # Runs every 5 min from the MediaServerWatchdog scheduled task
 # (principal awais\anis7, highest privileges). Safe to run by hand.
@@ -79,8 +79,9 @@ if (Test-PgUp) {
     }
 }
 
-# 3. NSSM services. Rust after PG so its pool connects on first try.
-foreach ($svc in @("MediaServerRust", "MediaServer")) {
+# 3. NSSM services. MediaServerRust after PG so its pool connects on first try.
+# Legacy Flask (MediaServer) is retired and deliberately excluded.
+foreach ($svc in @("MediaServerRust")) {
     $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
     if (-not $s) {
         Write-WatchdogLog "MISS service not installed: $svc"
