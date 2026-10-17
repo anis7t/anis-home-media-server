@@ -156,36 +156,19 @@ impl HlsService {
             return primary_dir;
         }
 
-        // 1. Prefer fully completed playlist with #EXT-X-ENDLIST
+        // 1. Prefer fully completed playlist with #EXT-X-ENDLIST (checking root and quality tiers)
         for d in &existing_dirs {
-            let pl = d.join("playlist.m3u8");
-            if pl.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&pl) {
-                    if content.contains("#EXT-X-ENDLIST") {
-                        return d.clone();
-                    }
-                }
+            if Self::is_hls_complete(d) {
+                return d.clone();
             }
         }
 
-        // 2. Prefer directory with most progress (segments / chunks)
+        // 2. Prefer directory with most progress (segments / chunks across root and tiers)
         let mut best_dir = None;
         let mut max_progress = -1i64;
 
         for d in &existing_dirs {
-            let mut seg_count = 0i64;
-            let mut chunk_count = 0i64;
-            if let Ok(entries) = std::fs::read_dir(d) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".ts") || name.ends_with(".m4s") {
-                        seg_count += 1;
-                    } else if name.starts_with("chunk_") && name.ends_with(".m3u8") {
-                        chunk_count += 1;
-                    }
-                }
-            }
-            let prog = seg_count + (chunk_count * 15);
+            let prog = Self::calculate_dir_progress(d);
             if prog > max_progress {
                 max_progress = prog;
                 best_dir = Some(d.clone());
@@ -203,6 +186,149 @@ impl HlsService {
         }
 
         existing_dirs.remove(0)
+    }
+
+    /// Check if an HLS directory has reached 100% transcode completion (#EXT-X-ENDLIST).
+    /// Inspects root playlist.m3u8, master.m3u8, and all known quality subdirectories.
+    pub fn is_hls_complete(dir: &Path) -> bool {
+        // 1. Root playlist or master
+        for name in &["playlist.m3u8", "master.m3u8"] {
+            let p = dir.join(name);
+            if p.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    if content.contains("#EXT-X-ENDLIST") {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 2. Tiered quality subdirectories
+        for (label, _, _, _, _) in Self::STANDARD_QUALITIES {
+            let p = dir.join(label).join("playlist.m3u8");
+            if p.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    if content.contains("#EXT-X-ENDLIST") {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Calculate aggregate progress score (segments + chunks * 15) across root and quality subdirectories.
+    pub fn calculate_dir_progress(dir: &Path) -> i64 {
+        let mut score = Self::count_progress_in_single_dir(dir);
+
+        // Also aggregate progress from tiered subdirectories
+        for (label, _, _, _, _) in Self::STANDARD_QUALITIES {
+            let q_dir = dir.join(label);
+            if q_dir.is_dir() {
+                score += Self::count_progress_in_single_dir(&q_dir);
+            }
+        }
+
+        score
+    }
+
+    fn count_progress_in_single_dir(dir: &Path) -> i64 {
+        let mut seg_count = 0i64;
+        let mut chunk_count = 0i64;
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".ts") || name.ends_with(".m4s") {
+                    seg_count += 1;
+                } else if name.starts_with("chunk_") && name.ends_with(".m3u8") {
+                    chunk_count += 1;
+                }
+            }
+        }
+        seg_count + (chunk_count * 15)
+    }
+
+    /// Standard quality tiers with resolution, bitrate, and codecs matching Apple HLS authoring specs.
+    pub const STANDARD_QUALITIES: &'static [(&'static str, u32, u32, u64, &'static str)] = &[
+        ("2160p", 3840, 2160, 14000000, "avc1.640033,mp4a.40.2"),
+        ("1440p", 2560, 1440, 8000000, "avc1.640032,mp4a.40.2"),
+        ("1080p", 1920, 1080, 4500000, "avc1.640028,mp4a.40.2"),
+        ("720p", 1280, 720, 2200000, "avc1.64001f,mp4a.40.2"),
+        ("480p", 854, 480, 1200000, "avc1.64001f,mp4a.40.2"),
+        ("360p", 640, 360, 800000, "avc1.64001e,mp4a.40.2"),
+    ];
+
+    /// Dynamically assemble an RFC 8216 multi-variant master playlist advertising all active quality tiers.
+    pub fn build_master_playlist(base_hls_dir: &Path) -> Option<String> {
+        let mut streams = Vec::new();
+
+        // 1. Collect published tiered streams
+        for (label, w, h, bandwidth, codecs) in Self::STANDARD_QUALITIES {
+            let q_pl = base_hls_dir.join(label).join("playlist.m3u8");
+            if q_pl.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&q_pl) {
+                    if content.contains("segment_") {
+                        streams.push(format!(
+                            "#EXT-X-STREAM-INF:BANDWIDTH={},RESOLUTION={}x{},CODECS=\"{}\"\n{}/playlist.m3u8",
+                            bandwidth, w, h, codecs, label
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 2. If no quality subdirectories exist, check for legacy root playlist
+        if streams.is_empty() {
+            let root_pl = base_hls_dir.join("playlist.m3u8");
+            if root_pl.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&root_pl) {
+                    if content.contains("segment_") {
+                        if content.contains("#EXT-X-STREAM-INF") {
+                            return Some(content);
+                        }
+                        streams.push(
+                            "#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\"\nplaylist.m3u8".to_string()
+                        );
+                    }
+                }
+            }
+        }
+
+        if streams.is_empty() {
+            return None;
+        }
+
+        let mut out = String::from("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n\n");
+        out.push_str(&streams.join("\n\n"));
+        out.push('\n');
+        Some(out)
+    }
+
+    /// Write or synchronize `master.m3u8` to disk inside `base_hls_dir`.
+    pub fn update_master_playlist_file(base_hls_dir: &Path) -> Option<PathBuf> {
+        if let Some(master_content) = Self::build_master_playlist(base_hls_dir) {
+            let master_path = base_hls_dir.join("master.m3u8");
+            if let Ok(()) = std::fs::write(&master_path, master_content) {
+                return Some(master_path);
+            }
+        }
+        None
+    }
+
+    /// Check if base HLS directory contains multiple active quality tiers.
+    pub fn has_multiple_qualities(base_hls_dir: &Path) -> bool {
+        let mut count = 0;
+        for (label, _, _, _, _) in Self::STANDARD_QUALITIES {
+            let q_pl = base_hls_dir.join(label).join("playlist.m3u8");
+            if q_pl.is_file() {
+                count += 1;
+                if count >= 2 {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Resolve the authoritative HLS cache directory for a given video path and optional quality tier.

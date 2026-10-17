@@ -435,22 +435,9 @@ impl StorageService {
             return Err(AppError::NotFound("Media file not found.".to_string()));
         }
 
-        // Verify HLS completion
+        // Verify HLS completion across root and tiered quality subdirectories
         let hls_dir = HlsService::find_hls_dir(&media_path, media_roots, cache_dir);
-        let playlist = hls_dir.join("playlist.m3u8");
-        let master = hls_dir.join("master.m3u8");
-
-        let is_complete = if playlist.is_file() {
-            fs::read_to_string(&playlist)
-                .map(|s| s.contains("#EXT-X-ENDLIST"))
-                .unwrap_or(false)
-        } else if master.is_file() {
-            fs::read_to_string(&master)
-                .map(|s| s.contains("#EXT-X-ENDLIST"))
-                .unwrap_or(false)
-        } else {
-            false
-        };
+        let is_complete = HlsService::is_hls_complete(&hls_dir);
 
         if !is_complete {
             return Err(AppError::BadRequest(
@@ -606,25 +593,7 @@ impl StorageService {
         let mut file_count = 0usize;
         let mut latest_mtime = 0.0f64;
 
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() {
-                    if let Ok(meta) = entry.metadata() {
-                        total_size += meta.len();
-                        file_count += 1;
-                        if let Ok(m) = meta.modified() {
-                            if let Ok(dur) = m.duration_since(UNIX_EPOCH) {
-                                let sec = dur.as_secs_f64();
-                                if sec > latest_mtime {
-                                    latest_mtime = sec;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        Self::collect_dir_stats(dir, &mut total_size, &mut file_count, &mut latest_mtime);
 
         if latest_mtime == 0.0 {
             if let Ok(meta) = dir.metadata() {
@@ -637,6 +606,30 @@ impl StorageService {
         }
 
         (total_size, file_count, latest_mtime)
+    }
+
+    fn collect_dir_stats(dir: &Path, total_size: &mut u64, file_count: &mut usize, latest_mtime: &mut f64) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Ok(meta) = entry.metadata() {
+                        *total_size += meta.len();
+                        *file_count += 1;
+                        if let Ok(m) = meta.modified() {
+                            if let Ok(dur) = m.duration_since(UNIX_EPOCH) {
+                                let sec = dur.as_secs_f64();
+                                if sec > *latest_mtime {
+                                    *latest_mtime = sec;
+                                }
+                            }
+                        }
+                    }
+                } else if p.is_dir() {
+                    Self::collect_dir_stats(&p, total_size, file_count, latest_mtime);
+                }
+            }
+        }
     }
 
     fn walk_videos(dir: &Path, out: &mut Vec<PathBuf>) {

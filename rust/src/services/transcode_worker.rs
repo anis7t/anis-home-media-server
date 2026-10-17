@@ -198,6 +198,7 @@ impl TranscodeWorker {
         let job_done = Arc::new(AtomicBool::new(false));
         let job_done_clone = job_done.clone();
         let pool_clone = pool.clone();
+        let base_hls_dir_clone = base_hls_dir.clone();
         let hls_dir_clone = hls_dir.clone();
         let playlist_path_clone = playlist_path.clone();
         let job_id = job.id;
@@ -276,6 +277,10 @@ impl TranscodeWorker {
                     speed.unwrap_or(1.0),
                     false,
                 );
+
+                if encoded_sec > 0.0 {
+                    let _ = HlsService::update_master_playlist_file(&base_hls_dir_clone);
+                }
             }
         });
 
@@ -386,6 +391,7 @@ impl TranscodeWorker {
         }
 
         let _ = ChunkTranscodeService::write_progress_file(&hls_dir, final_encoded, 1.0, true);
+        let _ = HlsService::update_master_playlist_file(&base_hls_dir);
         JobService::complete(pool, job.id, worker_id).await?;
 
         info!("Job #{} successfully completed and published", job.id);

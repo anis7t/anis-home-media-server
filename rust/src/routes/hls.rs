@@ -55,9 +55,79 @@ pub async fn hls_handler(
     };
 
     let video_path = PathResolver::resolve_media_path(raw_filename, &state.roots)?;
+    let base_hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
     let hls_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, quality);
 
+    // 1. Multi-Variant Master Playlist request: GET /hls/{path}/master.m3u8
+    if target == "master.m3u8" {
+        let master_file = base_hls_dir.join("master.m3u8");
+        let content_opt = if master_file.is_file() {
+            tokio::fs::read_to_string(&master_file)
+                .await
+                .ok()
+                .filter(|s| s.contains("#EXT-X-STREAM-INF"))
+        } else {
+            None
+        };
+
+        let content = match content_opt {
+            Some(c) => c,
+            None => match HlsService::build_master_playlist(&base_hls_dir) {
+                Some(built) => {
+                    let _ = tokio::fs::write(&master_file, &built).await;
+                    built
+                }
+                None => {
+                    // No streams are ready yet; return 503 retry response
+                    let empty_body = "#EXTM3U\n#EXT-X-VERSION:7\n";
+                    let mut res = Response::new(Body::from(empty_body));
+                    *res.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                    let h = res.headers_mut();
+                    h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
+                    h.insert(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+                    h.insert(header::RETRY_AFTER, "1".parse().unwrap());
+                    h.insert("access-control-allow-origin", "*".parse().unwrap());
+                    h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
+                    h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
+                    h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
+                    h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+                    return Ok(res);
+                }
+            },
+        };
+
+        let mut res = Response::new(Body::from(content));
+        *res.status_mut() = StatusCode::OK;
+        let h = res.headers_mut();
+        h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
+        h.insert(header::CACHE_CONTROL, "no-cache, max-age=0".parse().unwrap());
+        h.insert("access-control-allow-origin", "*".parse().unwrap());
+        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
+        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
+        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
+        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        return Ok(res);
+    }
+
     if target == "playlist.m3u8" {
+        // If no quality was explicitly requested and multiple quality tiers exist,
+        // serve the multi-variant master playlist so adaptive players can auto-select quality
+        if quality.is_none() && HlsService::has_multiple_qualities(&base_hls_dir) {
+            if let Some(master_content) = HlsService::build_master_playlist(&base_hls_dir) {
+                let mut res = Response::new(Body::from(master_content));
+                *res.status_mut() = StatusCode::OK;
+                let h = res.headers_mut();
+                h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
+                h.insert(header::CACHE_CONTROL, "no-cache, max-age=0".parse().unwrap());
+                h.insert("access-control-allow-origin", "*".parse().unwrap());
+                h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
+                h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
+                h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
+                h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+                return Ok(res);
+            }
+        }
+
         let playlist_file = hls_dir.join("playlist.m3u8");
         if playlist_file.is_file() {
             let content = tokio::fs::read_to_string(&playlist_file)

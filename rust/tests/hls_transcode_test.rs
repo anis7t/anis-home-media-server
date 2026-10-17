@@ -430,3 +430,103 @@ async fn test_hls_and_transcode_options_cors() {
     assert_eq!(res2.status(), StatusCode::OK);
     assert_eq!(res2.headers().get("access-control-allow-origin").unwrap(), "*");
 }
+
+#[tokio::test]
+async fn test_hls_master_playlist_multi_tier_delivery() {
+    let harness = setup_hls_test().await;
+
+    let video_path = harness.media_dir.join("Inception.mkv");
+    fs::write(&video_path, b"inception media data").unwrap();
+
+    let base_hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let q1080 = base_hls_dir.join("1080p");
+    let q720 = base_hls_dir.join("720p");
+    let q480 = base_hls_dir.join("480p");
+    fs::create_dir_all(&q1080).unwrap();
+    fs::create_dir_all(&q720).unwrap();
+    fs::create_dir_all(&q480).unwrap();
+
+    // Write tier playlists
+    let pl_1080 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
+    let pl_720 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
+    let pl_480 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
+    fs::write(q1080.join("playlist.m3u8"), pl_1080).unwrap();
+    fs::write(q720.join("playlist.m3u8"), pl_720).unwrap();
+    fs::write(q480.join("playlist.m3u8"), pl_480).unwrap();
+
+    // 1. GET /hls/Inception.mkv/master.m3u8
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Inception.mkv/master.m3u8")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = harness.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get(header::CONTENT_TYPE).unwrap(), "application/vnd.apple.mpegurl");
+
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8_lossy(&body);
+
+    assert!(body_str.contains("#EXTM3U"));
+    assert!(body_str.contains("#EXT-X-VERSION:7"));
+    assert!(body_str.contains("#EXT-X-INDEPENDENT-SEGMENTS"));
+    assert!(body_str.contains("RESOLUTION=1920x1080"));
+    assert!(body_str.contains("1080p/playlist.m3u8"));
+    assert!(body_str.contains("RESOLUTION=1280x720"));
+    assert!(body_str.contains("720p/playlist.m3u8"));
+    assert!(body_str.contains("RESOLUTION=854x480"));
+    assert!(body_str.contains("480p/playlist.m3u8"));
+
+    // 2. GET /hls/Inception.mkv/playlist.m3u8 without quality subpath should auto-serve master playlist
+    let req2 = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Inception.mkv/playlist.m3u8")
+        .body(Body::empty())
+        .unwrap();
+
+    let res2 = harness.app.clone().oneshot(req2).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::OK);
+    let body2 = res2.into_body().collect().await.unwrap().to_bytes();
+    let body2_str = String::from_utf8_lossy(&body2);
+    assert!(body2_str.contains("#EXT-X-STREAM-INF"));
+    assert!(body2_str.contains("1080p/playlist.m3u8"));
+}
+
+#[tokio::test]
+async fn test_hls_master_playlist_in_flight_503() {
+    let harness = setup_hls_test().await;
+
+    let video_path = harness.media_dir.join("Dune.mkv");
+    fs::write(&video_path, b"dune media data").unwrap();
+
+    // No playlists exist yet
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/Dune.mkv/master.m3u8")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = harness.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(res.headers().get(header::RETRY_AFTER).unwrap(), "1");
+}
+
+#[test]
+fn test_hls_service_detects_completed_tiered_transcode() {
+    let temp_dir = std::env::temp_dir().join(format!("rust_tier_test_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    assert!(!HlsService::is_hls_complete(&temp_dir));
+
+    let q1080 = temp_dir.join("1080p");
+    fs::create_dir_all(&q1080).unwrap();
+    let pl_1080 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.0,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
+    fs::write(q1080.join("playlist.m3u8"), pl_1080).unwrap();
+
+    // is_hls_complete must detect #EXT-X-ENDLIST in nested quality tier
+    assert!(HlsService::is_hls_complete(&temp_dir));
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
