@@ -90,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [account.oauthConfigured]);
 
   const signOut = useCallback(() => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('ms_admin_pin');
+      sessionStorage.removeItem('ms_admin_unlocked');
+      sessionStorage.removeItem('ms_admin_manual_lock');
+    }
     window.location.assign('/auth/logout');
   }, []);
 

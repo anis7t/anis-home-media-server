@@ -42,10 +42,13 @@ export function ManagePage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Admin PIN verification state
+  // Admin PIN verification state & manual lock override
   const [adminPin, setAdminPin] = useState<string>(() => sessionStorage.getItem('ms_admin_pin') || '');
   const [isPinUnlocked, setIsPinUnlocked] = useState<boolean>(
     () => sessionStorage.getItem('ms_admin_unlocked') === 'true'
+  );
+  const [isManuallyLocked, setIsManuallyLocked] = useState<boolean>(
+    () => sessionStorage.getItem('ms_admin_manual_lock') === 'true'
   );
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInputValue, setPinInputValue] = useState('');
@@ -63,8 +66,8 @@ export function ManagePage() {
   const [deleteTarget, setDeleteTarget] = useState<MovieItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // User is considered admin if signed in with Google as admin OR unlocked via PIN
-  const isAdmin = role === 'admin' || isPinUnlocked;
+  // User is considered admin if signed in with Google as admin OR unlocked via PIN, unless manually locked
+  const isAdmin = !isManuallyLocked && (role === 'admin' || isPinUnlocked);
 
   const loadData = useCallback(async () => {
     // 1. Fetch movies immediately so inventory renders in < 100ms
@@ -184,8 +187,10 @@ export function ManagePage() {
       if (data.success) {
         setAdminPin(candidatePin);
         setIsPinUnlocked(true);
+        setIsManuallyLocked(false);
         sessionStorage.setItem('ms_admin_pin', candidatePin);
         sessionStorage.setItem('ms_admin_unlocked', 'true');
+        sessionStorage.removeItem('ms_admin_manual_lock');
         setPinModalOpen(false);
         setPinInputValue('');
         setFeedback('Admin mode unlocked successfully!');
@@ -195,6 +200,18 @@ export function ManagePage() {
     } catch {
       setPinModalError('Failed to verify Admin PIN');
     }
+  };
+
+  const handleLockAdmin = () => {
+    sessionStorage.removeItem('ms_admin_pin');
+    sessionStorage.removeItem('ms_admin_unlocked');
+    sessionStorage.setItem('ms_admin_manual_lock', 'true');
+    setAdminPin('');
+    setIsPinUnlocked(false);
+    setIsManuallyLocked(true);
+    setSettings(null);
+    setAuditData(null);
+    setFeedback('Admin controls locked.');
   };
 
   const onUpdatePolicy = async (newPolicy: string) => {
@@ -378,20 +395,31 @@ export function ManagePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-            {/* Admin Verification Badge / Button */}
+            {/* Admin Verification Badge & Lock Button */}
             {isAdmin ? (
-              <span
-                className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm"
-                title={email ? `Signed in as Admin (${email})` : 'Admin unlocked with PIN'}
-              >
-                <Icon name="shield" size={13} />
-                <span>Admin Verified</span>
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm"
+                  title={email ? `Signed in as Admin (${email})` : 'Admin unlocked with PIN'}
+                >
+                  <Icon name="shield" size={13} />
+                  <span>Admin Verified</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLockAdmin}
+                  className="card-ring rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                  title="Lock admin controls and require PIN or re-login"
+                >
+                  <Icon name="lock" size={13} />
+                  <span>Lock Admin</span>
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setPinModalOpen(true)}
-                className="card-ring rounded-full border border-white/20 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/80 hover:text-white transition flex items-center gap-1.5 cursor-pointer"
+                className="card-ring rounded-full border border-white/20 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/80 hover:text-white transition flex items-center gap-1.5 cursor-pointer active:scale-95"
                 title="Unlock administrator controls with Admin PIN"
               >
                 <Icon name="shield" size={13} />

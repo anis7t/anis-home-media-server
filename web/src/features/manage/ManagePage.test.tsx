@@ -213,6 +213,29 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(sessionStorage.getItem('ms_admin_unlocked')).toBe('true');
   });
 
+  it('locks admin mode on Lock Admin click', async () => {
+    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
+
+    renderManage();
+    const user = userEvent.setup();
+
+    await screen.findByText(/admin verified/i);
+    const lockBtn = screen.getByRole('button', { name: /lock admin/i });
+    expect(lockBtn).toBeInTheDocument();
+
+    await user.click(lockBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/admin verified/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /unlock with admin pin/i })).toBeInTheDocument();
+    });
+
+    expect(sessionStorage.getItem('ms_admin_pin')).toBeNull();
+    expect(sessionStorage.getItem('ms_admin_unlocked')).toBeNull();
+    expect(sessionStorage.getItem('ms_admin_manual_lock')).toBe('true');
+  });
+
   it('prompts for PIN when deleting a movie while locked', async () => {
     // Admin role via Google session but PIN not entered yet
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {

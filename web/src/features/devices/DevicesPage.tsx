@@ -171,6 +171,15 @@ export function DevicesPage() {
     return true;
   });
 
+  const handleLockFleet = async () => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('ms_admin_pin');
+      sessionStorage.removeItem('ms_admin_unlocked');
+    }
+    setIsFleetUnlocked(false);
+    await loadDevices();
+  };
+
   const hasStoredPin = Boolean(getStoredAdminPin());
   const isSingleCurrentDevice = Boolean(data && data.devices.length === 1 && data.devices[0].is_current);
   const isPrivacyScoped = isSingleCurrentDevice && !hasStoredPin && !isFleetUnlocked;
@@ -199,17 +208,28 @@ export function DevicesPage() {
               <button
                 type="button"
                 onClick={() => setShowPinModal(true)}
-                className="card-ring rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-300 hover:text-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                className="card-ring rounded-full border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-300 hover:text-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                 title="Unlock full fleet telemetry across all household devices with Admin PIN"
               >
                 <Icon name="shield" size={13} />
                 <span>Unlock Fleet Telemetry</span>
               </button>
             ) : (
-              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm">
-                <Icon name="shield" size={13} />
-                <span>Fleet Admin View</span>
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm">
+                  <Icon name="shield" size={13} />
+                  <span>Fleet Admin View</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleLockFleet()}
+                  className="card-ring rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                  title="Lock fleet telemetry and restore privacy scoping"
+                >
+                  <Icon name="lock" size={13} />
+                  <span>Lock Fleet</span>
+                </button>
+              </div>
             )}
 
             <NavLink
