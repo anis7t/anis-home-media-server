@@ -350,7 +350,7 @@ pub fn create_app_full(
             cache_dir: cache_dir_arc.clone(),
         });
 
-    // Phase C5: native scan trigger and status.
+    // Phase 10: native scan trigger and status.
     let base_dir = std::env::var("MEDIA_SERVER_BASE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -358,9 +358,16 @@ pub fn create_app_full(
         });
     let base_dir_arc = Arc::new(base_dir);
 
+    let tmdb_token = std::env::var("TMDB_API_TOKEN")
+        .ok()
+        .map(|t| t.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+        .filter(|t| !t.is_empty());
+
     let scan_state = routes::scan::ScanState {
         pool: Arc::new(pool.clone()),
-        base_dir: base_dir_arc.clone(),
+        media_roots: roots_arc.clone(),
+        cache_dir: cache_dir_arc.clone(),
+        tmdb_token,
     };
 
     let scan_routes = Router::new()

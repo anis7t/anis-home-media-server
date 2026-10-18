@@ -1,17 +1,28 @@
+use crate::scanner::{ScannerEngine, ScannerReport};
 use axum::http::HeaderMap;
 use sqlx::PgPool;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tracing::{error, info};
 
 static SCANNER_BUSY: AtomicBool = AtomicBool::new(false);
 
+fn last_report() -> &'static Mutex<Option<ScannerReport>> {
+    static REPORT: OnceLock<Mutex<Option<ScannerReport>>> = OnceLock::new();
+    REPORT.get_or_init(|| Mutex::new(None))
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScanResponse {
     pub status: String,
     pub busy: bool,
+    pub files_discovered: usize,
+    pub unindexed_discovered: usize,
+    pub movies_indexed: usize,
+    pub orphans_pruned: usize,
+    pub errors: usize,
     pub transcodes_queued: u64,
     pub transcodes_started: u64,
     pub transcodes_skipped: u64,
@@ -32,11 +43,21 @@ impl ScanService {
         SCANNER_BUSY.store(busy, Ordering::SeqCst);
     }
 
-    /// Trigger an asynchronous library scan if not already running.
+    /// Get telemetry snapshot of the last completed scan.
+    pub fn get_last_report() -> Option<ScannerReport> {
+        last_report().lock().ok().and_then(|guard| guard.clone())
+    }
+
+    /// Trigger an in-process native library scan if not already running.
     ///
-    /// Spawns `scanner.py` using the project's virtualenv Python under the given base directory.
+    /// Spawns an asynchronous task executing `ScannerEngine::scan`.
     /// Returns `true` if a new scan process was started, or `false` if one was already running.
-    pub fn trigger_scan(base_dir: &Path) -> bool {
+    pub fn trigger_scan(
+        pool: Arc<PgPool>,
+        media_roots: Arc<Vec<PathBuf>>,
+        cache_dir: Arc<PathBuf>,
+        tmdb_token: Option<String>,
+    ) -> bool {
         if SCANNER_BUSY
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
@@ -44,39 +65,26 @@ impl ScanService {
             return false;
         }
 
-        let base_dir_buf = base_dir.to_path_buf();
         tokio::spawn(async move {
             let _guard = ScannerLockGuard;
+            info!("Triggering native in-process library scan across {} media root(s)...", media_roots.len());
 
-            // Determine virtualenv Python binary
-            let py_exe = Self::resolve_python_executable(&base_dir_buf);
-            let scanner_script = base_dir_buf.join("scanner.py");
-
-            if !scanner_script.exists() {
-                error!(
-                    "Cannot trigger library scan: scanner.py not found at {}",
-                    scanner_script.display()
-                );
-                return;
-            }
-
-            info!(
-                "Triggering background library scan with {} on {}",
-                py_exe.display(),
-                scanner_script.display()
-            );
-
-            let mut cmd = tokio::process::Command::new(&py_exe);
-            cmd.arg("scanner.py")
-                .current_dir(&base_dir_buf)
-                .env("MEDIA_SERVER_BASE_DIR", &base_dir_buf);
-
-            match cmd.status().await {
-                Ok(status) => {
-                    info!("Background library scan completed with status: {}", status);
+            match ScannerEngine::scan(
+                &pool,
+                &media_roots,
+                &cache_dir,
+                tmdb_token.as_deref(),
+            )
+            .await
+            {
+                Ok(report) => {
+                    info!("Native library scan completed successfully: {:?}", report);
+                    if let Ok(mut lock) = last_report().lock() {
+                        *lock = Some(report);
+                    }
                 }
                 Err(err) => {
-                    error!("Background library scan failed to spawn or execute: {}", err);
+                    error!("Native library scan failed: {}", err);
                 }
             }
         });
@@ -86,17 +94,21 @@ impl ScanService {
 
     /// Start periodic background library scanner daemon.
     ///
-    /// Periodically executes `trigger_scan(&base_dir)` on the configured `interval`.
+    /// Periodically executes `trigger_scan` on the configured `interval`.
     /// Skips tick if a scan is already active or if `shutdown_flag` is set.
     pub fn start_daemon(
-        base_dir: Arc<PathBuf>,
+        pool: PgPool,
+        media_roots: Arc<Vec<PathBuf>>,
+        cache_dir: Arc<PathBuf>,
+        tmdb_token: Option<String>,
         interval: Duration,
         initial_delay: Duration,
         shutdown_flag: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
+        let pool_arc = Arc::new(pool);
         tokio::spawn(async move {
             info!(
-                "ScanService background daemon started (interval: {:?}, initial delay: {:?})",
+                "ScanService native background daemon started (interval: {:?}, initial delay: {:?})",
                 interval, initial_delay
             );
             if !initial_delay.is_zero() {
@@ -113,27 +125,19 @@ impl ScanService {
                 }
 
                 if !Self::is_busy() {
-                    info!("Periodic background library scan triggered");
-                    Self::trigger_scan(&base_dir);
+                    info!("Periodic native background library scan triggered");
+                    Self::trigger_scan(
+                        pool_arc.clone(),
+                        media_roots.clone(),
+                        cache_dir.clone(),
+                        tmdb_token.clone(),
+                    );
                 } else {
                     info!("Periodic background library scan skipped: scanner already active");
                 }
             }
             info!("ScanService background daemon stopped cleanly");
         })
-    }
-
-    /// Resolve the path to Python inside virtual environment, with system fallbacks.
-    fn resolve_python_executable(base_dir: &Path) -> PathBuf {
-        let win_venv = base_dir.join("venv").join("Scripts").join("python.exe");
-        if win_venv.exists() {
-            return win_venv;
-        }
-        let nix_venv = base_dir.join("venv").join("bin").join("python");
-        if nix_venv.exists() {
-            return nix_venv;
-        }
-        PathBuf::from("python")
     }
 
     /// Verify whether a request is administrator-authorized (via valid configured Admin PIN).

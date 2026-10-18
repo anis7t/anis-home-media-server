@@ -4,19 +4,27 @@ use media_server_api::{
     services::scan_service::ScanService,
     services::storage_service::StorageService,
 };
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::test]
 async fn test_scan_service_daemon_lifecycle_and_shutdown() {
-    let base_dir = Arc::new(PathBuf::from("E:\\MediaServer"));
+    let config = AppConfig::from_env();
+    let pool = db::create_pool(&config.database_url)
+        .await
+        .expect("Failed to connect to test database");
+    let media_roots = Arc::new(config.media_roots);
+    let cache_dir = Arc::new(config.cache_dir);
+    let tmdb_token = config.tmdb_api_token;
     let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     // Start daemon with short interval and zero initial delay for testing
     let handle = ScanService::start_daemon(
-        base_dir,
+        pool,
+        media_roots,
+        cache_dir,
+        tmdb_token,
         Duration::from_millis(50),
         Duration::ZERO,
         shutdown_flag.clone(),

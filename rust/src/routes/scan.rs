@@ -13,7 +13,9 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ScanState {
     pub pool: Arc<PgPool>,
-    pub base_dir: Arc<PathBuf>,
+    pub media_roots: Arc<Vec<PathBuf>>,
+    pub cache_dir: Arc<PathBuf>,
+    pub tmdb_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -29,8 +31,14 @@ pub struct ScanRequest {
 pub async fn get_scan_handler(
     State(state): State<ScanState>,
 ) -> Result<Json<ScanResponse>, AppError> {
-    let started = ScanService::trigger_scan(&state.base_dir);
+    let started = ScanService::trigger_scan(
+        state.pool.clone(),
+        state.media_roots.clone(),
+        state.cache_dir.clone(),
+        state.tmdb_token.clone(),
+    );
     let busy = ScanService::is_busy();
+    let last = ScanService::get_last_report().unwrap_or_default();
 
     Ok(Json(ScanResponse {
         status: if started || busy {
@@ -39,6 +47,11 @@ pub async fn get_scan_handler(
             "idle".to_string()
         },
         busy,
+        files_discovered: last.files_discovered,
+        unindexed_discovered: last.unindexed_discovered,
+        movies_indexed: last.movies_indexed,
+        orphans_pruned: last.orphans_pruned,
+        errors: last.errors,
         transcodes_queued: 0,
         transcodes_started: 0,
         transcodes_skipped: 0,
@@ -69,14 +82,25 @@ pub async fn post_scan_handler(
         ));
     }
 
-    let started = ScanService::trigger_scan(&state.base_dir);
+    let started = ScanService::trigger_scan(
+        state.pool.clone(),
+        state.media_roots.clone(),
+        state.cache_dir.clone(),
+        state.tmdb_token.clone(),
+    );
     let busy = ScanService::is_busy();
+    let last = ScanService::get_last_report().unwrap_or_default();
 
     Ok((
         StatusCode::OK,
         Json(serde_json::json!({
             "status": if started || busy { "scanning" } else { "idle" },
             "busy": busy,
+            "files_discovered": last.files_discovered,
+            "unindexed_discovered": last.unindexed_discovered,
+            "movies_indexed": last.movies_indexed,
+            "orphans_pruned": last.orphans_pruned,
+            "errors": last.errors,
             "transcodes_queued": 0,
             "transcodes_started": 0,
             "transcodes_skipped": 0,

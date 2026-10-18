@@ -51,10 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shutdown_flag.clone(),
     );
 
-    // Phase 7A: Autonomous Library Scanner daemon (1-hour interval, 30s initial delay)
-    let base_dir = std::sync::Arc::new(config.base_dir.clone());
+    // Phase 10: Autonomous Native Library Scanner daemon (1-hour interval, 30s initial delay)
     media_server_api::services::scan_service::ScanService::start_daemon(
-        base_dir,
+        pool.clone(),
+        sweeper_roots.clone(),
+        sweeper_cache.clone(),
+        config.tmdb_api_token.clone(),
         std::time::Duration::from_secs(3600),
         std::time::Duration::from_secs(30),
         shutdown_flag.clone(),
