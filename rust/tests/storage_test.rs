@@ -267,8 +267,12 @@ async fn test_storage_audit_and_purge() {
     assert_eq!(body["result"]["refused"], true);
     assert!(body["result"]["reason"].as_str().unwrap().contains("Transcode in progress"));
 
-    // Cleanup active job
+    // Cleanup active job and test movie
     sqlx::query("DELETE FROM transcode_jobs WHERE filename = 'ActiveJob.mp4'")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM movies WHERE filename = 'TestMovie.mp4'")
         .execute(&ctx.pool)
         .await
         .unwrap();
