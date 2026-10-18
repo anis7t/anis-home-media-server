@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub static_dir: PathBuf,
     pub flask_origin: String,
     pub base_dir: PathBuf,
+    pub tmdb_api_token: Option<String>,
 }
 
 impl AppConfig {
@@ -89,6 +90,11 @@ impl AppConfig {
                 env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
             });
 
+        let tmdb_api_token = env::var("TMDB_API_TOKEN")
+            .ok()
+            .map(|t| t.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+            .filter(|t| !t.is_empty());
+
         Self {
             database_url,
             host,
@@ -99,6 +105,7 @@ impl AppConfig {
             static_dir,
             flask_origin,
             base_dir,
+            tmdb_api_token,
         }
     }
 }
