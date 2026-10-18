@@ -25,6 +25,7 @@ Active branch: `feat/rust-react-postgres-migration`
 | 8 | fMP4 Adaptive Streaming & Quality Ladder | ✅ COMPLETE — Fragmented MP4 (`.m4s`) HLS pipeline with `#EXT-X-MAP`, dynamic quality ladder (4K–360p), client-aware direct play, and cross-platform quality selectors |
 | 9 | Client Capability Probing & Pre-Transcoding Architecture | ✅ COMPLETE — W3C Media Capabilities API probe, strict 100% transcode gating, Option 1C native resolution baseline, Option 2A layman warnings, automated sweeper, `/manage` operator tooling |
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
+| 10 | Native Rust Media Scanner & Ingestion Engine | 🟡 IN PROGRESS — Porting `scanner.py` to native Rust (Slices 10.1–10.5, Options 1A & 2A); [`docs/PHASE_10_NATIVE_RUST_SCANNER_PLAN.md`](PHASE_10_NATIVE_RUST_SCANNER_PLAN.md) |
 
 ---
 
