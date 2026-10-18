@@ -51,9 +51,11 @@ async fn cleanup(pool: &PgPool) {
         .bind(format!("{}%", TEST_PREFIX))
         .execute(pool)
         .await;
-    let _ = sqlx::query("DELETE FROM settings WHERE key = 'admin_pin' AND value = '1234'")
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+    )
+    .execute(pool)
+    .await;
 }
 
 /// Requests carry the peer address the way production does, via the

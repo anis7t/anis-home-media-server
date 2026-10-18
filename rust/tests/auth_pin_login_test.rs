@@ -70,7 +70,7 @@ async fn test_login_pin_flow() {
     let (app, pool) = setup_test_app().await;
 
     // 1. Ensure a known PIN is configured in settings table for the test
-    let test_pin = "998877";
+    let test_pin = "6361";
     sqlx::query(
         r#"
         INSERT INTO settings (key, value)
@@ -143,4 +143,11 @@ async fn test_login_pin_flow() {
     assert_eq!(me_json["authenticated"], true);
     assert_eq!(me_json["role"], "admin");
     assert_eq!(me_json["is_admin"], true);
+
+    // 5. Teardown: ensure admin_pin is preserved as 6361
+    let _ = sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+    )
+    .execute(&pool)
+    .await;
 }

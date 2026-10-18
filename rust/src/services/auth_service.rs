@@ -10,7 +10,7 @@ use sqlx::{PgPool, Row};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 static ENTROPY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -637,6 +637,29 @@ impl AuthService {
 
     // --- Google OAuth ---
 
+    /// Unpadded URL-safe Base64 encoder per RFC 4648 §5 / RFC 7636 §4.2 (OAuth 2.0 PKCE).
+    pub fn base64url_encode(data: &[u8]) -> String {
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+        let mut i = 0;
+        while i < data.len() {
+            let b0 = data[i];
+            let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
+            let b2 = if i + 2 < data.len() { data[i + 2] } else { 0 };
+
+            result.push(CHARSET[(b0 >> 2) as usize] as char);
+            result.push(CHARSET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+            if i + 1 < data.len() {
+                result.push(CHARSET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+            }
+            if i + 2 < data.len() {
+                result.push(CHARSET[(b2 & 0x3f) as usize] as char);
+            }
+            i += 3;
+        }
+        result
+    }
+
     pub fn is_oauth_configured() -> bool {
         let client_id = std::env::var("GOOGLE_CLIENT_ID")
             .or_else(|_| std::env::var("MEDIA_SERVER_GOOGLE_CLIENT_ID"))
@@ -667,7 +690,7 @@ impl AuthService {
 
         let mut hasher = Sha256::new();
         hasher.update(verifier.as_bytes());
-        let challenge = hex::encode(hasher.finalize());
+        let challenge = Self::base64url_encode(&hasher.finalize());
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -766,12 +789,19 @@ impl AuthService {
             ])
             .send()
             .await
-            .map_err(|e| AppError::BadGateway(format!("Google token exchange failed: {}", e)))?;
+            .map_err(|e| {
+                error!("Google token exchange network error: {}", e);
+                AppError::BadGateway(format!("Google token exchange failed: {}", e))
+            })?;
 
         if !token_res.status().is_success() {
-            return Err(AppError::BadGateway(
-                "Could not complete sign-in with Google.".to_string(),
-            ));
+            let status = token_res.status();
+            let err_body = token_res.text().await.unwrap_or_default();
+            error!("Google OAuth token exchange rejected (HTTP {}): {}", status, err_body);
+            return Err(AppError::BadGateway(format!(
+                "Could not complete sign-in with Google: {}",
+                err_body
+            )));
         }
 
         let token_data: serde_json::Value = token_res
@@ -795,9 +825,15 @@ impl AuthService {
             .get(format!("https://oauth2.googleapis.com/tokeninfo?id_token={}", id_token))
             .send()
             .await
-            .map_err(|e| AppError::Unauthorized(format!("Tokeninfo failed: {}", e)))?;
+            .map_err(|e| {
+                error!("Google tokeninfo network error: {}", e);
+                AppError::Unauthorized(format!("Tokeninfo failed: {}", e))
+            })?;
 
         if !info_res.status().is_success() {
+            let status = info_res.status();
+            let err_body = info_res.text().await.unwrap_or_default();
+            error!("Google tokeninfo rejected (HTTP {}): {}", status, err_body);
             return Err(AppError::Unauthorized(
                 "Google sign-in could not be verified.".to_string(),
             ));
@@ -957,4 +993,20 @@ fn rand_pseudo() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     now.as_nanos() as u64 ^ 0x517cc1b727220a95
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rfc7636_pkce_challenge_vector() {
+        // Official RFC 7636 Appendix B test vector
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+        let mut hasher = Sha256::new();
+        hasher.update(verifier.as_bytes());
+        let challenge = AuthService::base64url_encode(&hasher.finalize());
+        assert_eq!(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        assert_eq!(challenge.len(), 43);
+    }
 }
