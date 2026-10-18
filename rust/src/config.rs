@@ -29,6 +29,23 @@ impl AppConfig {
             let _ = dotenvy::from_path(&default_env);
         }
 
+        // Defensive manual fallback in case dotenvy encounters escape syntax on Windows
+        if let Ok(content) = std::fs::read_to_string("E:\\MediaServer\\.env") {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || !trimmed.contains('=') {
+                    continue;
+                }
+                if let Some((k, v)) = trimmed.split_once('=') {
+                    let k = k.trim();
+                    let v = v.trim().trim_matches(|c| c == '\'' || c == '"');
+                    if !k.is_empty() && env::var(k).is_err() {
+                        env::set_var(k, v);
+                    }
+                }
+            }
+        }
+
         let database_url = env::var("MEDIA_SERVER_DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string());
 
