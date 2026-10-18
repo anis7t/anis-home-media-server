@@ -717,7 +717,7 @@ impl AuthService {
         .map_err(|e| AppError::Internal(format!("Failed to record OAuth attempt: {}", e)))?;
 
         let auth_url = format!(
-            "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&response_type=code&scope=openid+email+profile&redirect_uri={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256",
+            "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&response_type=code&scope=openid+email+profile&redirect_uri={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
             urlencoding::encode(&client_id),
             urlencoding::encode(redirect_uri),
             urlencoding::encode(&state),
