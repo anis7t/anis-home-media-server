@@ -94,6 +94,7 @@ pub async fn post_scan_handler(
     Ok((
         StatusCode::OK,
         Json(serde_json::json!({
+            "success": true,
             "status": if started || busy { "scanning" } else { "idle" },
             "busy": busy,
             "files_discovered": last.files_discovered,

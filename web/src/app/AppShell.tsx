@@ -42,45 +42,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState<string | null>(null);
 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  /* Trigger server library re-scan */
-  const onScan = async () => {
-    if (scanning) return;
-    setScanning(true);
-    setScanStatus('Scanning…');
-    try {
-      const res = await fetch('/api/scan', { method: 'POST' });
-      if (res.ok) {
-        const body = (await res.json()) as {
-          transcodes_queued?: number;
-          transcodes_started?: number;
-        };
-        const q = body.transcodes_queued || 0;
-        const s = body.transcodes_started || 0;
-        if (q > 0) {
-          setScanStatus(`Queued ${q} transcode${q === 1 ? '' : 's'}`);
-        } else if (s > 0) {
-          setScanStatus(`Started ${s} transcode${s === 1 ? '' : 's'}`);
-        } else {
-          setScanStatus('Scan complete');
-        }
-      } else {
-        setScanStatus('Scan failed');
-      }
-    } catch {
-      setScanStatus('Scan failed');
-    } finally {
-      setTimeout(() => {
-        setScanning(false);
-        setScanStatus(null);
-      }, 2500);
-    }
-  };
 
   /* Close dropdown when clicked outside */
   useEffect(() => {
@@ -145,26 +109,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="hidden sm:inline">Library</span>
             </NavLink>
 
-            {/* Scan Library Trigger Button with Live Feedback */}
-            <button
-              type="button"
-              onClick={() => void onScan()}
-              disabled={scanning}
-              className={`flex items-center gap-2 rounded-full px-3 sm:px-4 py-2 text-sm font-medium transition border border-white/10 ${
-                scanning
-                  ? 'bg-brand-500/20 text-brand-300 border-brand-500/40 shadow-sm'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white active:scale-95'
-              }`}
-              title="Scan library for newly added media files"
-            >
-              <Icon
-                name="refresh"
-                className={`transition-transform ${scanning ? 'animate-spin text-brand-400' : 'text-white/50'}`}
-              />
-              <span className="text-xs sm:text-sm font-medium">
-                {scanStatus ?? 'Scan'}
-              </span>
-            </button>
+
 
             {/* Get the App - Links to APK Distribution */}
             <NavLink

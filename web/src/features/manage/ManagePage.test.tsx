@@ -399,4 +399,44 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(transcodeTriggered).toBe(true);
     expect(await screen.findByText(/pre-transcode queued for "ghost in the shell"/i)).toBeInTheDocument();
   });
+
+  it('triggers library scan with admin credentials and displays feedback', async () => {
+    let scanTriggered = false;
+
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return jsonResponse({ authenticated: true, email: 'admin@example.com', name: 'Admin', role: 'admin' });
+      }
+      if (url === '/api/movies') {
+        return jsonResponse({ movies: sampleMovies });
+      }
+      if (url === '/api/storage/settings') {
+        return jsonResponse(sampleSettings);
+      }
+      if (url === '/api/storage/audit') {
+        return jsonResponse(sampleAudit);
+      }
+      if (url === '/api/scan') {
+        expect(init?.method).toBe('POST');
+        scanTriggered = true;
+        return jsonResponse({ success: true, status: 'scanning', busy: true });
+      }
+      return jsonResponse({});
+    });
+
+    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
+
+    renderManage();
+    const user = userEvent.setup();
+
+    const scanBtn = await screen.findByRole('button', { name: /scan library/i });
+    expect(scanBtn).toBeInTheDocument();
+
+    await user.click(scanBtn);
+
+    expect(scanTriggered).toBe(true);
+    expect(await screen.findByText(/library scan started! refreshing files and metadata/i)).toBeInTheDocument();
+  });
 });

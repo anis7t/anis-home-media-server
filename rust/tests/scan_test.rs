@@ -133,6 +133,7 @@ async fn test_post_scan_with_valid_header_pin_succeeds() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
     assert_eq!(json["busy"], true);
 
@@ -166,6 +167,7 @@ async fn test_post_scan_with_valid_body_pin_succeeds() {
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
 
     let _ = sqlx::query("DELETE FROM settings WHERE key = 'admin_pin'")

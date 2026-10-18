@@ -162,15 +162,20 @@ export function purgeOrphanedCaches(
   });
 }
 
-export function triggerLibraryScan(
+export async function triggerLibraryScan(
   adminPin?: string,
   signal?: AbortSignal,
-): Promise<{ success: boolean; message?: string }> {
-  return request<{ success: boolean; message?: string }>('/api/scan', {
+): Promise<{ success: boolean; status?: string; message?: string }> {
+  const body = await request<{ status?: string; success?: boolean; message?: string }>('/api/scan', {
     method: 'POST',
     headers: adminHeaders(adminPin),
     signal,
   });
+  return {
+    success: body.success ?? (body.status === 'scanning' || body.status === 'idle'),
+    status: body.status,
+    message: body.message,
+  };
 }
 
 export function archiveMovieMedia(
