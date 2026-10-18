@@ -53,6 +53,15 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - Passed video dimensions from `PlayerPage.tsx`. Unlocks Direct Play for 4K HEVC MP4 streams on supported platforms.
    - Committed in `62d4984`; Walkthrough in [`docs/SLICE_D_WALKTHROUGH.md`](SLICE_D_WALKTHROUGH.md).
 
+5. **Static Public IP & Caddy Let's Encrypt HTTPS Migration** — ✅ **RESOLVED (2026-10-19)**:
+   - Migrated from Cloudflare Tunnel to direct public IP (`122.163.124.18`) on Airtel Xstream Fiber with zero CGNAT.
+   - Decommissioned and removed `Cloudflared` persistent Windows Service; set Cloudflare DNS to DNS-only (`media.anisparvez.in` $\rightarrow$ `122.163.124.18`).
+   - Configured automated Port Forwarding on Zyxel router (`AOT5222ZY`): Ports `443` (HTTPS), `80` (HTTP), and `8000` (Direct) $\rightarrow$ `192.168.1.16`.
+   - Deployed Caddy reverse proxy (`E:\MediaServer\bin\caddy_custom.exe`) with Cloudflare DNS module as Windows Service `MediaServerCaddy` via NSSM.
+   - Provisioned Let's Encrypt TLS 1.3 certificate via automated DNS-01 challenge with lifetime background renewal.
+   - Enabled clean URL access (`https://media.anisparvez.in`) without port numbers, and verified 4K HDR fMP4 streaming (*Ghost in the Cell*) over the public internet.
+   - Documented in [`docs/STATIC_IP_MIGRATION_WALKTHROUGH.md`](STATIC_IP_MIGRATION_WALKTHROUGH.md) and [`docs/CADDY_HTTPS_WALKTHROUGH.md`](CADDY_HTTPS_WALKTHROUGH.md).
+
 ### Active Roadmap Backlog
 - **Modernization 100% Complete**: All modernization phases (Phases 0–9, Slices 7A–7E) are 100% delivered, hardened, and signed off. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md).
 

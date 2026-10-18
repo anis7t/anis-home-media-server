@@ -1,5 +1,7 @@
 # Secrets
 .env
+Caddyfile
+secrets/
 
 # Python
 venv/

@@ -1,16 +1,23 @@
-# Authoritative diagnostic script to check MediaServer (Rust/Axum), PostgreSQL, Cloudflared tunnel, and HTTP endpoints.
+# Authoritative diagnostic script to check MediaServer (Rust/Axum), PostgreSQL, Router Port Forwarding, and HTTP endpoints.
 
 Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "         Media Server & Tunnel Health Check         " -ForegroundColor Cyan
+Write-Host "         Media Server & Ingress Health Check        " -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
 
 # 1. Services Status
 Write-Host "`n[1/5] Windows Services Status:" -ForegroundColor Yellow
-$services = Get-Service -Name "MediaServerRust", "MediaServerPG", "Cloudflared" -ErrorAction SilentlyContinue
+$services = Get-Service -Name "MediaServerRust", "MediaServerPG", "MediaServerCaddy" -ErrorAction SilentlyContinue
 if ($services) {
     $services | Format-Table -AutoSize Name, DisplayName, Status, StartType
 } else {
     Write-Host "  No MediaServer services were found." -ForegroundColor Red
+}
+
+$cfService = Get-Service -Name "Cloudflared" -ErrorAction SilentlyContinue
+if ($cfService) {
+    Write-Host "  Cloudflared service status: $($cfService.Status) (Decommissioning pending)" -ForegroundColor DarkYellow
+} else {
+    Write-Host "  Cloudflared service: Successfully decommissioned/removed." -ForegroundColor DarkGray
 }
 
 # 2. Port Listeners Check
@@ -43,21 +50,46 @@ if ($conn8001) {
     Write-Host "  Port 8001 (Retired): Correctly closed/released." -ForegroundColor DarkGray
 }
 
+# Port 443 (Caddy HTTPS)
+$conn443 = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($conn443) {
+    $proc443 = Get-Process -Id $conn443.OwningProcess -ErrorAction SilentlyContinue
+    Write-Host "  Caddy     (Port 443) : Listening by $($proc443.ProcessName) (PID: $($proc443.Id))" -ForegroundColor Green
+} else {
+    Write-Host "  Caddy     (Port 443) : NOT listening." -ForegroundColor Red
+}
+
+# Port 80 (Caddy HTTP redirect)
+$conn80 = Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($conn80) {
+    Write-Host "  Caddy     (Port 80)  : Listening (HTTP -> HTTPS redirect)" -ForegroundColor Green
+} else {
+    Write-Host "  Caddy     (Port 80)  : NOT listening." -ForegroundColor DarkYellow
+}
+
 # 3. HTTP Probes
 Write-Host "`n[3/5] HTTP Connectivity Tests:" -ForegroundColor Yellow
 
-# Local Health Probe
+# Local Loopback Health Probe
 try {
     $resHealth = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 4
-    Write-Host "  Local Health  (http://127.0.0.1:8000/health): OK [Engine: $($resHealth.engine), Status: $($resHealth.status)]" -ForegroundColor Green
+    Write-Host "  Local Loopback (http://127.0.0.1:8000/health): OK [Engine: $($resHealth.engine), Status: $($resHealth.status)]" -ForegroundColor Green
 } catch {
-    Write-Host "  Local Health Error: $_" -ForegroundColor Red
+    Write-Host "  Local Loopback Error: $_" -ForegroundColor Red
+}
+
+# Local LAN Ingress Probe (192.168.1.16)
+try {
+    $resLan = Invoke-RestMethod -Uri "http://192.168.1.16:8000/health" -TimeoutSec 4
+    Write-Host "  LAN Ingress    (http://192.168.1.16:8000/health): OK [Engine: $($resLan.engine), Status: $($resLan.status)]" -ForegroundColor Green
+} catch {
+    Write-Host "  LAN Ingress Error: $_" -ForegroundColor Red
 }
 
 # Local SPA Probe
 try {
     $resLocal = Invoke-WebRequest -Uri "http://127.0.0.1:8000/" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local SPA     (http://127.0.0.1:8000/): $($resLocal.StatusCode) OK" -ForegroundColor Green
+    Write-Host "  Local SPA      (http://127.0.0.1:8000/): $($resLocal.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local SPA Error: $_" -ForegroundColor Red
 }
@@ -65,17 +97,17 @@ try {
 # Local API Probe
 try {
     $resApi = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/movies" -UseBasicParsing -TimeoutSec 4
-    Write-Host "  Local API     (http://127.0.0.1:8000/api/movies): $($resApi.StatusCode) OK" -ForegroundColor Green
+    Write-Host "  Local API      (http://127.0.0.1:8000/api/movies): $($resApi.StatusCode) OK" -ForegroundColor Green
 } catch {
     Write-Host "  Local API Error: $_" -ForegroundColor Red
 }
 
-# Cloudflare Ingress Probe
+# Domain HTTPS Probe (Port 443 - Standard Clean URL)
 try {
-    $resPublic = Invoke-RestMethod -Uri "https://media.anisparvez.in/health" -TimeoutSec 6
-    Write-Host "  Public Tunnel (https://media.anisparvez.in/health): OK [Engine: $($resPublic.engine)]" -ForegroundColor Green
+    $resHttps = Invoke-RestMethod -Uri "https://media.anisparvez.in/health" -TimeoutSec 5
+    Write-Host "  Domain HTTPS   (https://media.anisparvez.in/health): OK [TLS Valid, Engine: $($resHttps.engine)]" -ForegroundColor Green
 } catch {
-    Write-Host "  Public Tunnel Error: $_" -ForegroundColor Red
+    Write-Host "  Domain HTTPS   (https://media.anisparvez.in/health): $_" -ForegroundColor DarkYellow
 }
 
 # 4. Active Transcode Telemetry

@@ -211,13 +211,13 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 - PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
-- Cloudflared CLI (`C:\Cloudflared\bin\cloudflared.exe`).
+- Static Public IP (`106.222.224.208`) with Router Port Forwarding (`8000` -> `192.168.1.16:8000`).
 
 ### Persistent Services via NSSM
 The server runs persistently as automatic Windows Services:
-1. **MediaServerRust**: Native Rust Axum binary (`rust\target\release\media-server-api.exe`) listening on `127.0.0.1:8000`.
+1. **MediaServerRust**: Native Rust Axum binary (`rust\target\release\media-server-api.exe`) listening on `0.0.0.0:8000`.
 2. **MediaServerPG**: PostgreSQL 18.4 server listening on `127.0.0.1:5432`.
-3. **Cloudflared**: Cloudflare Named Tunnel routing `media.anisparvez.in` to `http://127.0.0.1:8000`.
+3. **Public Ingress**: Direct WAN routing via Static IP (`106.222.224.208`) and A-record `media.anisparvez.in`.
 
 ### Service Control
 - Restart Server: `scripts\restart_rust_service.bat`
