@@ -1,17 +1,19 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-18 (13:00 IST)
+> ## Current session handoff — 2026-10-18 (13:50 IST)
 >
-> **Phase 10 (Native Rust Media Scanner Engine) is IN PROGRESS & APPROVED.**
+> **Phase 10 (Native Rust Media Scanner Engine) is 100% COMPLETE & VERIFIED.**
 > - **Objective**: Completely eliminate Python from production runtime by porting `scanner.py` to native Rust.
 > - **Decisions**: Option 1A (Strict Reconciliation / Orphaned Pruning) and Option 2A (ffprobe Container Duration Fallback).
-> - **Execution Slices**:
->   - Slice 10.1: Filename & Release Parser (Regex Cleaning & Scene Tag Stripping)
->   - Slice 10.2: TMDb Async Client & Data Models (429 Rate Limiter & JSON Synthesizer)
->   - Slice 10.3: Crawler, ffprobe Fallback (2A) & Delta Database Engine (1A)
->   - Slice 10.4: ScanService In-Process Integration & REST API Wiring
->   - Slice 10.5: Decommission scanner.py, Full Verification Battery & Service Restart
+> - **Delivered Slices**:
+>   - Slice 10.1: Filename & Release Parser (Regex Cleaning & Multi-Year Resolution) — `84aef59`
+>   - Slice 10.2: TMDb Async Client & Data Models (429 Backoff & JSON Synthesizer) — `59b8721`
+>   - Slice 10.3: Crawler, ffprobe Fallback (2A) & Delta Database Engine (1A) — `d21e371`
+>   - Slice 10.4: ScanService In-Process Integration & REST API Wiring (`/api/scan`) — `55ad242`
+>   - Slice 10.5: Decommission `scanner.py`, Release Compilation & Test Battery — `4793fdb`
+> - **Test Battery**: 21/21 tests passing across all 5 scanner suites (`background_daemon_test`, `scan_test`, `scanner_engine_test`, `scanner_parser_test`, `scanner_tmdb_test`).
 > - Master Plan: [`docs/PHASE_10_NATIVE_RUST_SCANNER_PLAN.md`](PHASE_10_NATIVE_RUST_SCANNER_PLAN.md).
+> - Master Walkthrough: [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md).
 >
 > ### Previous handoff — 2026-10-18 (03:15 IST)
 >
