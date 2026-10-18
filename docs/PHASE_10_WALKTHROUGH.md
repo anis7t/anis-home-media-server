@@ -156,3 +156,20 @@ To activate the newly compiled release binary:
    Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
    Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/scan" -Method Post -Headers @{ "X-Admin-Pin" = "6361" }
    ```
+
+---
+
+## Post-Ingestion Hardening & Transcode Cache Isolation
+
+Following initial verification of Phase 10, an edge case was identified where the scanner crawled internal transcode caches:
+1. **Root Cause**: `rust/src/config.rs` had historically appended `E:\MediaServer` to the fallback `media_roots` list. When triggered, the recursive scanner traversed `E:\MediaServer\cache\hls/` and began indexing segmented streaming pieces (`init_chunk_*.mp4`) into the `movies` table.
+2. **Scanner Isolation**:
+   - Removed `E:\MediaServer` from `AppConfig::media_roots` default fallback in `rust/src/config.rs`. Only `D:\Flicks` (and `D:\Flicks\.archive`) are treated as media roots.
+   - Hardened `ScannerEngine::discover_video_files` in `rust/src/scanner/engine.rs` to ignore internal directories: `cache`, `.git`, `node_modules`, `target`, `.venv`, `.uploads`, and `.deleted`.
+   - Updated `ScannerEngine::is_video_file` to explicitly reject fragmented streaming chunks (`chunk_*.mp4`, `init_chunk_*.mp4`, `*.m4s`).
+3. **Database Remediation**:
+   - Executed clean database purge: `DELETE FROM movies WHERE filename LIKE '%chunk%' OR filename LIKE 'cache/%'`.
+   - Restored inventory count to exactly 35 legitimate movies.
+4. **Test Suite Isolation**:
+   - Updated `test_reconcile_orphans_prunes_missing_files` in `rust/tests/scanner_engine_test.rs` to include `config.media_roots` alongside `temp_root`, ensuring production library rows are never flagged as orphans during automated test runs.
+

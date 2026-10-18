@@ -58,15 +58,16 @@ async fn test_reconcile_orphans_prunes_missing_files() {
     .await
     .unwrap();
 
-    // Reconcile against temp_root (where orphan_filename does NOT exist)
-    let roots = vec![temp_root.clone()];
+    // Reconcile against live roots + temp_root (so real movies are preserved and only orphan is pruned)
+    let mut roots = config.media_roots.clone();
+    roots.push(temp_root.clone());
     let pruned = ScannerEngine::reconcile_orphans(&pool, &roots)
         .await
         .expect("Reconciliation succeeds");
 
-    assert!(pruned >= 1, "Expected at least 1 orphan to be pruned");
+    assert!(pruned >= 1, "Expected at least the orphan test movie to be pruned");
 
-    // Verify it is gone from PostgreSQL
+    // Verify orphan is gone from PostgreSQL
     let row = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies WHERE filename = $1")
         .bind(&orphan_filename)
         .fetch_optional(&pool)
@@ -74,6 +75,13 @@ async fn test_reconcile_orphans_prunes_missing_files() {
         .unwrap();
 
     assert!(row.is_none(), "Orphaned movie record was pruned as expected (Decision 1A)");
+
+    // Verify real library movie is preserved
+    let real_movie = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies WHERE filename = 'Oculus.2013.1080p.BluRay.x264.YIFY.mp4'")
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+    assert!(real_movie.is_some(), "Production movie was preserved and not pruned");
 
     let _ = fs::remove_dir_all(&temp_root);
 }

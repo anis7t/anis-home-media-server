@@ -58,10 +58,8 @@ impl AppConfig {
         if media_roots.is_empty() {
             media_roots.push(media_root.clone());
             let archive_dir = media_root.join(".archive");
-            media_roots.push(archive_dir);
-            let app_root = PathBuf::from("E:\\MediaServer");
-            if !media_roots.contains(&app_root) {
-                media_roots.push(app_root);
+            if archive_dir.exists() {
+                media_roots.push(archive_dir);
             }
         }
 

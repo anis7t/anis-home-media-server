@@ -29,6 +29,12 @@ pub struct ScannerEngine;
 impl ScannerEngine {
     /// Check whether a path has a supported video extension.
     pub fn is_video_file(path: &Path) -> bool {
+        if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+            let lower = file_name.to_lowercase();
+            if lower.starts_with("chunk_") || lower.starts_with("init_chunk_") || lower.ends_with(".m4s") {
+                return false;
+            }
+        }
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| {
@@ -69,8 +75,14 @@ impl ScannerEngine {
                 .into_iter()
                 .filter_entry(|e| {
                     let file_name = e.file_name().to_string_lossy();
-                    // Skip temporary uploads, deleted bins, and hidden directories
-                    file_name != ".uploads" && file_name != ".deleted" && file_name != "target"
+                    // Skip temporary uploads, deleted bins, caches, node modules, build targets, and git
+                    file_name != ".uploads"
+                        && file_name != ".deleted"
+                        && file_name != "cache"
+                        && file_name != ".git"
+                        && file_name != "target"
+                        && file_name != "node_modules"
+                        && file_name != ".venv"
                 })
                 .filter_map(|e| e.ok())
             {
