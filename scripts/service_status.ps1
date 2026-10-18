@@ -17,7 +17,7 @@ if ($services) {
 Write-Host "[2/5] Port Listeners Check:" -ForegroundColor Yellow
 
 # Port 8000 (Rust Primary)
-$conn8000 = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
+$conn8000 = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn8000) {
     $proc8000 = Get-Process -Id $conn8000.OwningProcess -ErrorAction SilentlyContinue
     Write-Host "  Rust/Axum (Port 8000): Listening by $($proc8000.ProcessName) (PID: $($proc8000.Id), RAM: $([math]::Round($proc8000.WorkingSet64/1MB, 1)) MB)" -ForegroundColor Green
@@ -26,7 +26,7 @@ if ($conn8000) {
 }
 
 # Port 5432 (PostgreSQL)
-$conn5432 = Get-NetTCPConnection -LocalPort 5432 -ErrorAction SilentlyContinue | Select-Object -First 1
+$conn5432 = Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn5432) {
     $proc5432 = Get-Process -Id $conn5432.OwningProcess -ErrorAction SilentlyContinue
     Write-Host "  Postgres  (Port 5432): Listening by $($proc5432.ProcessName) (PID: $($proc5432.Id))" -ForegroundColor Green
@@ -35,7 +35,7 @@ if ($conn5432) {
 }
 
 # Port 8001 (Retired)
-$conn8001 = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -First 1
+$conn8001 = Get-NetTCPConnection -LocalPort 8001 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn8001) {
     $proc8001 = Get-Process -Id $conn8001.OwningProcess -ErrorAction SilentlyContinue
     Write-Host "  Warning: Port 8001 is listening by $($proc8001.ProcessName) (should be released)." -ForegroundColor DarkYellow
