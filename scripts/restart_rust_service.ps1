@@ -80,6 +80,14 @@ if ($svc) {
         Write-Host "  Binary released by NSSM." -ForegroundColor DarkGray
     }
 
+    # Refresh NSSM AppEnvironmentExtra to ensure clean roots and base dir
+    $NssmExe = "C:\MediaServer\bin\nssm.exe"
+    if (Test-Path $NssmExe) {
+        $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\Scripts;C:\Python314;E:\postgres\pgsql\bin;$env:PATH"
+        $envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8000`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nMEDIA_SERVER_BASE_DIR=E:\MediaServer`nRUST_LOG=info"
+        & $NssmExe set $serviceName AppEnvironmentExtra $envExtra | Out-Null
+    }
+
     # Optional Rebuild while service is stopped
     if (-not $NoRebuild) {
         Write-Host "[3/5] Compiling latest Rust release binary..." -ForegroundColor Yellow

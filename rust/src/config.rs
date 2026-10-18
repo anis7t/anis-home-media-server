@@ -18,6 +18,16 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+        if let Ok(base) = env::var("MEDIA_SERVER_BASE_DIR") {
+            let p = PathBuf::from(base).join(".env");
+            if p.exists() {
+                let _ = dotenvy::from_path(&p);
+            }
+        }
+        let default_env = PathBuf::from("E:\\MediaServer\\.env");
+        if default_env.exists() {
+            let _ = dotenvy::from_path(&default_env);
+        }
 
         let database_url = env::var("MEDIA_SERVER_DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string());

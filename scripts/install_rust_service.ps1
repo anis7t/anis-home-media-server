@@ -124,7 +124,7 @@ Write-Host "Configuring service parameters..." -ForegroundColor Yellow
 
 # Environment variables injection
 $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\Scripts;C:\Python314;E:\postgres\pgsql\bin;$env:PATH"
-$envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8000`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive,E:\MediaServer`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nRUST_LOG=info"
+$envExtra = "PATH=$ExtraPath`nMEDIA_SERVER_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/media_server`nRUST_HOST=0.0.0.0`nRUST_PORT=8000`nMEDIA_SERVER_MEDIA_ROOT=D:\Flicks`nMEDIA_SERVER_MEDIA_ROOTS=D:\Flicks,D:\Flicks\.archive`nMEDIA_SERVER_CACHE_DIR=E:\MediaServer\cache`nMEDIA_SERVER_STATIC_DIR=E:\MediaServer\web\dist`nMEDIA_SERVER_BASE_DIR=E:\MediaServer`nRUST_LOG=info"
 & $NssmExe set $serviceName AppEnvironmentExtra $envExtra
 
 # 8b. Firewall: allow inbound on this executable.
