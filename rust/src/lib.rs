@@ -219,6 +219,10 @@ pub fn create_app_full(
             "/api/transcode/start/{*path}",
             axum::routing::post(routes::transcode::transcode_start_handler),
         )
+        .route(
+            "/api/transcode/sweep",
+            axum::routing::post(routes::transcode::transcode_sweep_handler),
+        )
         .with_state(transcode_state);
 
     // Phase 6A: durable transcode job queue. Admission, listing and cancel

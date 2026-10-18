@@ -452,13 +452,14 @@ impl TranscodeWorker {
             cmd.arg(arg);
         }
 
-        // Audio args (standard stereo AAC 192k)
+        // Audio args (standard stereo AAC 192k) + disable subtitle muxing into chunks
         cmd.arg("-c:a")
             .arg("aac")
             .arg("-b:a")
             .arg("192k")
             .arg("-ac")
-            .arg("2");
+            .arg("2")
+            .arg("-sn");
 
         // HLS output container args: Fragmented MP4 (fMP4)
         cmd.arg("-output_ts_offset")

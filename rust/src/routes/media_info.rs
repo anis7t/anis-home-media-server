@@ -117,15 +117,32 @@ fn build_quality_ladder(
         return ladder;
     }
 
-    // 2. Iterate standard qualities, strictly filtering out any tier where tier_height > source_h
-    for &(label, _, tier_h, bitrate, _) in HlsService::STANDARD_QUALITIES {
-        if tier_h > source_h {
+    // 2. Iterate standard qualities, supporting native widescreen tiers while enforcing strict no-upscaling
+    let mut seen_heights = std::collections::HashSet::new();
+
+    for &(label, tier_w, tier_h, bitrate, _) in HlsService::STANDARD_QUALITIES {
+        let is_applicable = if tier_h <= source_h {
+            true
+        } else if source_w >= tier_w.saturating_sub(32) && (source_h as u64 * 2 >= tier_h as u64) {
+            // Native widescreen tier for letterboxed/cropped theatrical aspect ratio
+            true
+        } else {
+            false
+        };
+
+        if !is_applicable {
+            continue;
+        }
+
+        let effective_h = tier_h.min(source_h);
+        if !seen_heights.insert(effective_h) {
+            // Avoid duplicate effective resolutions
             continue;
         }
 
         // Calculate aspect-ratio scaled width, guaranteed even (divisible by 2)
-        // w = (round((source_w * tier_h) / source_h)) & !1
-        let scaled_w = ((source_w as u64 * tier_h as u64 + (source_h as u64 / 2)) / source_h as u64) as u32;
+        // w = (round((source_w * effective_h) / source_h)) & !1
+        let scaled_w = ((source_w as u64 * effective_h as u64 + (source_h as u64 / 2)) / source_h as u64) as u32;
         let even_w = scaled_w & !1;
 
         let q_dir = HlsService::find_hls_quality_dir(video_path, roots, cache_dir, Some(label));
@@ -146,7 +163,7 @@ fn build_quality_ladder(
         ladder.push(QualityOption {
             label: label.to_string(),
             quality: label.to_string(),
-            height: tier_h,
+            height: effective_h,
             width: even_w,
             bitrate,
             is_direct: false,

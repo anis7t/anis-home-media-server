@@ -359,4 +359,22 @@ pub async fn transcode_start_handler(
     })))
 }
 
+/// `POST /api/transcode/sweep`
+///
+/// Triggers a full-library autonomous transcode sweep across all movies and applicable quality presets.
+pub async fn transcode_sweep_handler(
+    State(state): State<TranscodeState>,
+) -> Result<Json<crate::services::transcode_sweeper::SweeperStats>, AppError> {
+    let pool = state.pool.as_ref().ok_or_else(|| {
+        AppError::Internal("Database connection pool not available".to_string())
+    })?;
+    let stats = crate::services::transcode_sweeper::TranscodeSweeperService::sweep_once(
+        pool,
+        &state.roots,
+        &state.cache_dir,
+    )
+    .await?;
+    Ok(Json(stats))
+}
+
 
