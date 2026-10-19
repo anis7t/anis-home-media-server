@@ -219,3 +219,42 @@ pub async fn storage_archive_media_handler(
         )),
     }
 }
+
+/// `DELETE /api/media/{*filename}`
+/// `POST /api/media/delete/{*filename}`
+///
+/// Permanently delete a media item and purge all associated metadata, caches, and streams.
+/// Administrator-gated: requires valid `X-Admin-Pin` header or body PIN.
+pub async fn storage_delete_media_handler(
+    State(state): State<StorageState>,
+    Path(filename): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !AuthService::is_admin_authorized(&state.pool, &headers, None).await {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "Administrator privileges required to delete and purge media."
+            })),
+        ));
+    }
+
+    match StorageService::purge_media(&state.pool, &filename, &state.media_roots, &state.cache_dir).await {
+        Ok(res) => Ok(Json(res)),
+        Err(AppError::BadRequest(msg)) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "error": msg
+            })),
+        )),
+        Err(err) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "error": err.to_string()
+            })),
+        )),
+    }
+}

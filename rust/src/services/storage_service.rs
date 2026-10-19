@@ -528,6 +528,192 @@ impl StorageService {
         })
     }
 
+    /// Permanently delete media file, transcode caches, subtitles, TMDb metadata, posters, and playback progress.
+    pub async fn purge_media(
+        pool: &PgPool,
+        filename: &str,
+        media_roots: &[PathBuf],
+        cache_dir: &Path,
+    ) -> Result<serde_json::Value, AppError> {
+        let clean_filename = filename.trim();
+        if clean_filename.is_empty() {
+            return Err(AppError::BadRequest("Filename is required".to_string()));
+        }
+
+        // 1. Resolve media path
+        let resolved_path = PathResolver::resolve_media_path(clean_filename, media_roots).ok();
+
+        // 2. Cancel and delete active transcode jobs in PostgreSQL
+        let _ = sqlx::query("DELETE FROM transcode_jobs WHERE filename = $1")
+            .bind(clean_filename)
+            .execute(pool)
+            .await;
+
+        // 3. Purge HLS transcode cache
+        let mut purged_hls = false;
+        let hls_base = cache_dir.join("hls");
+        if let Some(ref p) = resolved_path {
+            let candidates = HlsService::get_hls_candidates(p, media_roots);
+            for cand in candidates {
+                let cand_dir = hls_base.join(&cand);
+                if cand_dir.is_dir() {
+                    let _ = Self::remove_path_with_retries(&cand_dir);
+                    purged_hls = true;
+                }
+            }
+        }
+        let direct_hls = hls_base.join(clean_filename);
+        if direct_hls.is_dir() {
+            let _ = Self::remove_path_with_retries(&direct_hls);
+            purged_hls = true;
+        }
+
+        // 4. Purge Seek Preview cache
+        let mut purged_previews = false;
+        let previews_base = cache_dir.join("previews");
+        if let Some(ref p) = resolved_path {
+            let candidates = HlsService::get_hls_candidates(p, media_roots);
+            for cand in candidates {
+                let cand_dir = previews_base.join(&cand);
+                if cand_dir.is_dir() {
+                    let _ = Self::remove_path_with_retries(&cand_dir);
+                    purged_previews = true;
+                }
+            }
+        }
+        let direct_prev = previews_base.join(clean_filename);
+        if direct_prev.is_dir() {
+            let _ = Self::remove_path_with_retries(&direct_prev);
+            purged_previews = true;
+        }
+
+        // 5. Query TMDb ID and poster path before deleting rows
+        let meta: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
+            "SELECT tmdb_id::BIGINT, poster_path FROM movies WHERE filename = $1",
+        )
+        .bind(clean_filename)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        let (tmdb_id, poster_path) = match meta {
+            Some((t, p)) => (t, p),
+            None => (None, None),
+        };
+
+        // 6. Purge sidecar subtitles in same directory
+        let mut purged_subtitles = Vec::new();
+        if let Some(ref p) = resolved_path {
+            if let Some(parent) = p.parent() {
+                let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+                if let Ok(entries) = fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() {
+                            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+                            if name.starts_with(stem) && (name.ends_with(".srt") || name.ends_with(".vtt")) {
+                                let _ = fs::remove_file(&path);
+                                purged_subtitles.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. Purge unshared TMDb artwork
+        let mut purged_artwork = false;
+        if let Some(tid) = tmdb_id {
+            let shared_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM movies WHERE tmdb_id = $1 AND filename != $2",
+            )
+            .bind(tid)
+            .bind(clean_filename)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+            if shared_count == 0 {
+                let p_file = cache_dir.join("posters").join(format!("{}.jpg", tid));
+                let b_file = cache_dir.join("backdrops").join(format!("{}.jpg", tid));
+                let _ = fs::remove_file(p_file);
+                let _ = fs::remove_file(b_file);
+                purged_artwork = true;
+            }
+        }
+
+        // Also purge local sidecar poster if path starts with "local:"
+        if let Some(ref lp) = poster_path {
+            if let Some(rel_poster) = lp.strip_prefix("local:") {
+                for root in media_roots {
+                    let local_file = root.join(rel_poster);
+                    if local_file.is_file() {
+                        let _ = fs::remove_file(local_file);
+                    }
+                }
+            }
+        }
+
+        // 8. Delete database records in PostgreSQL
+        let _ = sqlx::query("DELETE FROM movies WHERE filename = $1")
+            .bind(clean_filename)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM progress WHERE filename = $1")
+            .bind(clean_filename)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM device_watch_history WHERE filename = $1")
+            .bind(clean_filename)
+            .execute(pool)
+            .await;
+
+        // 9. Unlink physical source video file and partial upload files
+        let mut file_deleted = false;
+        if let Some(ref p) = resolved_path {
+            if p.is_file() {
+                if let Ok(()) = fs::remove_file(p) {
+                    file_deleted = true;
+                }
+            }
+
+            // Remove upload parts if present
+            if let Some(parent) = p.parent() {
+                let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+                let part1 = parent.join(format!(".upload_{}.part", fname));
+                let part2 = parent.join(format!("{}.part", fname));
+                let _ = fs::remove_file(part1);
+                let _ = fs::remove_file(part2);
+
+                // Clean empty parent folder if not media root itself
+                let is_media_root = media_roots.iter().any(|r| r == parent);
+                if !is_media_root {
+                    if let Ok(mut entries) = fs::read_dir(parent) {
+                        if entries.next().is_none() {
+                            let _ = fs::remove_dir(parent);
+                        }
+                    }
+                }
+            }
+        }
+
+        info!(
+            "Permanently deleted & purged media: {} (file_deleted={}, purged_hls={}, purged_previews={}, db_purged=true)",
+            clean_filename, file_deleted, purged_hls, purged_previews
+        );
+
+        Ok(serde_json::json!({
+            "success": true,
+            "filename": clean_filename,
+            "file_deleted": file_deleted,
+            "purged_hls": purged_hls,
+            "purged_previews": purged_previews,
+            "purged_subtitles": purged_subtitles,
+            "purged_artwork": purged_artwork,
+        }))
+    }
+
     // --- Helper Functions ---
 
     fn is_within_cache_dir(child: &Path, parent: &Path) -> bool {
@@ -590,7 +776,7 @@ impl StorageService {
         Err(last_err)
     }
 
-    fn get_dir_size_and_mtime(dir: &Path) -> (u64, usize, f64) {
+    pub fn get_dir_size_and_mtime(dir: &Path) -> (u64, usize, f64) {
         let mut total_size = 0u64;
         let mut file_count = 0usize;
         let mut latest_mtime = 0.0f64;

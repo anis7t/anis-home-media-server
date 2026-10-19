@@ -10,6 +10,7 @@ interface DeleteConfirmationModalProps {
   readonly adminPin: string;
   readonly modalPinInput: string;
   readonly email: string | null | undefined;
+  readonly error?: string | null;
   readonly onChangePinInput: (value: string) => void;
   readonly onConfirmDelete: () => void;
   readonly onClose: () => void;
@@ -22,6 +23,7 @@ export function DeleteConfirmationModal({
   adminPin,
   modalPinInput,
   email,
+  error,
   onChangePinInput,
   onConfirmDelete,
   onClose,
@@ -62,6 +64,14 @@ export function DeleteConfirmationModal({
             ✕
           </button>
         </div>
+
+        {/* Error Alert Banner */}
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/50 bg-rose-500/15 p-3.5 text-xs font-semibold text-rose-300 animate-fade-in flex items-start gap-2.5 shadow-lg shadow-rose-950/40">
+            <span className="text-sm shrink-0">⚠️</span>
+            <span className="flex-1 leading-relaxed">{error}</span>
+          </div>
+        ) : null}
 
         {/* Target Media Card */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex items-center gap-3">

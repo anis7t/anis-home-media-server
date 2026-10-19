@@ -5,7 +5,6 @@ import { StateMessage } from '../../components/StateMessage';
 import { useAsync } from '../../lib/useAsync';
 import { MovieGrid } from '../../components/MovieGrid';
 import { HeroSpotlight } from './HeroSpotlight';
-import { ActiveTranscodes } from './ActiveTranscodes';
 import { Icon } from '../../components/icons';
 
 export function LibraryPage() {
@@ -22,7 +21,6 @@ export function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'recent' | 'title' | 'rating' | 'year'>('recent');
-  const [hasActiveTranscodes, setHasActiveTranscodes] = useState(false);
 
   // Featured billboard candidate: prefer active watch or title with rich artwork
   const featured = useMemo(() => {
@@ -77,12 +75,9 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Live Hardware Transcoding Streams Banner */}
-      <ActiveTranscodes onActiveChange={setHasActiveTranscodes} />
-
       {/* Cinematic Hero Billboard (only shown when catalog is populated and featured has artwork) */}
       {!loading && !error && featured && (featured.overview || featured.backdrop_path) && !hasActiveFilters ? (
-        <HeroSpotlight movie={featured} hasTopBanner={hasActiveTranscodes} />
+        <HeroSpotlight movie={featured} hasTopBanner={false} />
       ) : null}
 
       {/* Interactive Search, Filter & Sort Bar */}

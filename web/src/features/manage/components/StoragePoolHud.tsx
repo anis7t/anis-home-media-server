@@ -30,11 +30,16 @@ export function StoragePoolHud({ auditData, loading }: StoragePoolHudProps) {
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/40">
           <span>Drive D: (Raw Media) + Drive E: (SSD Runtime)</span>
-          {auditData.storage.drives?.map((d) => (
-            <span key={d.drive} className="text-white/50">
-              {d.drive} {d.free_str} free ({d.percent}%)
-            </span>
-          ))}
+          {auditData.storage.drives
+            ?.filter((d) => {
+              const letter = d.drive.charAt(0).toUpperCase();
+              return letter === 'D' || letter === 'E';
+            })
+            .map((d) => (
+              <span key={d.drive} className="text-white/50">
+                {d.drive} {d.free_str} free ({d.percent}%)
+              </span>
+            ))}
           <span className="font-semibold text-white/70">
             {auditData.storage.percent ?? 0}% Allocated
           </span>

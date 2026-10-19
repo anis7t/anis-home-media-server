@@ -17,7 +17,7 @@ use crate::services::probe_service::ProbeService;
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -208,10 +208,12 @@ impl TranscodeWorker {
         let start_time = Instant::now();
         let active_pids: Arc<Mutex<HashSet<u32>>> = Arc::new(Mutex::new(HashSet::new()));
 
-        // Process chunks with bounded concurrency corresponding to worker slots
-        let concurrency = workers.len().max(1);
-        let mut last_lease_renew = Instant::now();
-        let mut chunk_idx = 0;
+        // Process chunks using an asynchronous work-pool across all GPU worker slots
+        let pending_chunks_arc = Arc::new(pending_chunks);
+        let next_chunk_idx = Arc::new(AtomicUsize::new(0));
+        let cancel_requested = Arc::new(AtomicBool::new(false));
+        let was_canceled = Arc::new(AtomicBool::new(false));
+        let worker_error: Arc<Mutex<Option<AppError>>> = Arc::new(Mutex::new(None));
 
         // Background 1.5-second cadence progress monitor
         let job_done = Arc::new(AtomicBool::new(false));
@@ -303,9 +305,98 @@ impl TranscodeWorker {
             }
         });
 
+        // Spawn independent asynchronous worker loops for each hardware GPU worker slot
+        let mut worker_tasks = Vec::new();
+        for (w_idx, worker_cfg) in workers.iter().enumerate() {
+            let worker_cfg = worker_cfg.clone();
+            let v_path = video_path.clone();
+            let h_dir = hls_dir.clone();
+            let pids = active_pids.clone();
+            let next_idx = next_chunk_idx.clone();
+            let cancel = cancel_requested.clone();
+            let err_slot = worker_error.clone();
+            let pending_chunks_ref = pending_chunks_arc.clone();
+
+            worker_tasks.push(tokio::spawn(async move {
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    {
+                        let guard = err_slot.lock().await;
+                        if guard.is_some() {
+                            break;
+                        }
+                    }
+
+                    let idx = next_idx.fetch_add(1, Ordering::SeqCst);
+                    if idx >= pending_chunks_ref.len() {
+                        break;
+                    }
+
+                    let chunk = &pending_chunks_ref[idx];
+                    let chunk_res = Self::execute_single_chunk(
+                        &v_path,
+                        &h_dir,
+                        chunk,
+                        &worker_cfg,
+                        use_vpp_amf,
+                        effective_target_height,
+                        pids.clone(),
+                    )
+                    .await;
+
+                    if let Err(e) = chunk_res {
+                        error!(
+                            "Worker slot {} ({}) failed chunk {}: {:?}",
+                            w_idx, worker_cfg.name, chunk.chunk_id, e
+                        );
+                        let mut guard = err_slot.lock().await;
+                        if guard.is_none() {
+                            *guard = Some(e);
+                        }
+                        break;
+                    }
+                }
+            }));
+        }
+
+        let was_canceled_clone = was_canceled.clone();
+        let cancel_requested_clone = cancel_requested.clone();
+        let active_pids_clone = active_pids.clone();
+
         let run_result: Result<(), AppError> = async {
-            while chunk_idx < pending_chunks.len() {
+            let mut last_lease_renew = Instant::now();
+
+            loop {
+                // Check if any worker encountered an error
+                {
+                    let guard = worker_error.lock().await;
+                    if let Some(err) = guard.as_ref() {
+                        cancel_requested_clone.store(true, Ordering::Relaxed);
+                        return Err(AppError::Internal(format!("Worker failed: {}", err)));
+                    }
+                }
+
+                // Check if all worker tasks finished
+                let all_finished = worker_tasks.iter().all(|t| t.is_finished());
+                if all_finished {
+                    for t in worker_tasks {
+                        if let Err(join_err) = t.await {
+                            return Err(AppError::Internal(format!("Worker task join error: {}", join_err)));
+                        }
+                    }
+                    let guard = worker_error.lock().await;
+                    if let Some(err) = guard.as_ref() {
+                        return Err(AppError::Internal(format!("Worker failed: {}", err)));
+                    }
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+
                 if shutdown.load(Ordering::SeqCst) {
+                    cancel_requested_clone.store(true, Ordering::Relaxed);
                     return Err(AppError::Internal("Worker interrupted by server shutdown".into()));
                 }
 
@@ -313,6 +404,14 @@ impl TranscodeWorker {
                 if let Ok(Some(current)) = JobService::get_by_id(pool, job.id).await {
                     if current.status == "canceled" {
                         info!("Job #{} was canceled; stopping execution", job.id);
+                        was_canceled_clone.store(true, Ordering::Relaxed);
+                        cancel_requested_clone.store(true, Ordering::Relaxed);
+                        // Abort active FFmpeg child processes immediately
+                        for pid in active_pids_clone.lock().await.iter() {
+                            let _ = std::process::Command::new("taskkill")
+                                .args(["/PID", &pid.to_string(), "/F", "/T"])
+                                .output();
+                        }
                         return Ok(());
                     }
                 }
@@ -321,50 +420,13 @@ impl TranscodeWorker {
                 if last_lease_renew.elapsed() > Duration::from_secs(45) {
                     let renewed = JobService::renew_lease(pool, job.id, worker_id, 300).await?;
                     if !renewed {
+                        cancel_requested_clone.store(true, Ordering::Relaxed);
                         return Err(AppError::Internal("Lost lease ownership of transcode job".into()));
                     }
                     last_lease_renew = Instant::now();
                 }
-
-                // Batch up to `concurrency` chunks
-                let batch_end = (chunk_idx + concurrency).min(pending_chunks.len());
-                let batch = &pending_chunks[chunk_idx..batch_end];
-
-                let mut tasks = Vec::new();
-                for (i, chunk) in batch.iter().enumerate() {
-                    let worker_cfg = workers[i % workers.len()].clone();
-                    let v_path = video_path.clone();
-                    let h_dir = hls_dir.clone();
-                    let c_item = chunk.clone();
-                    let pids = active_pids.clone();
-
-                    tasks.push(tokio::spawn(async move {
-                        Self::execute_single_chunk(
-                            &v_path,
-                            &h_dir,
-                            &c_item,
-                            &worker_cfg,
-                            use_vpp_amf,
-                            effective_target_height,
-                            pids,
-                        )
-                        .await
-                    }));
-                }
-
-                // Wait for batch completion
-                for task in tasks {
-                    match task.await {
-                        Ok(Ok(())) => {}
-                        Ok(Err(e)) => return Err(e),
-                        Err(join_err) => {
-                            return Err(AppError::Internal(format!("Chunk task join error: {}", join_err)))
-                        }
-                    }
-                }
-
-                chunk_idx = batch_end;
             }
+
             Ok(())
         }
         .await;
@@ -380,6 +442,11 @@ impl TranscodeWorker {
                     .output();
             }
             return Err(e);
+        }
+
+        if was_canceled.load(Ordering::Relaxed) {
+            info!("Job #{} was canceled; skipping final playlist publish", job.id);
+            return Ok(());
         }
 
         // 5. Finalize and validate coverage

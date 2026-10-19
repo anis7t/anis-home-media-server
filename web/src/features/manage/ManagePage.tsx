@@ -65,6 +65,7 @@ export function ManagePage() {
   // Purge modal state
   const [deleteTarget, setDeleteTarget] = useState<MovieItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // User is considered admin if signed in with Google as admin OR unlocked via PIN, unless manually locked
   const isAdmin = !isManuallyLocked && (role === 'admin' || isPinUnlocked);
@@ -328,6 +329,7 @@ export function ManagePage() {
   const onConfirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
+    setDeleteError(null);
     setError(null);
     try {
       const candidatePin = modalPinInput || adminPin;
@@ -343,13 +345,18 @@ export function ManagePage() {
         const purgedFilename = deleteTarget.filename;
         setDeleteTarget(null);
         setModalPinInput('');
+        setDeleteError(null);
         setMovies((prev) => prev.filter((m) => m.filename !== purgedFilename));
         await loadData();
       } else {
-        setError(data.error || 'Failed to delete media file. Administrator privileges required.');
+        const msg = data.error || 'Failed to delete media file. Administrator privileges required.';
+        setDeleteError(msg);
+        setError(msg);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error during delete');
+      const msg = err instanceof Error ? err.message : 'Network error during delete';
+      setDeleteError(msg);
+      setError(msg);
     } finally {
       setDeleting(false);
     }
@@ -435,7 +442,7 @@ export function ManagePage() {
               title="Rescan media folders and refresh metadata"
             >
               <Icon name="refresh" className={scanning ? 'animate-spin' : ''} size={13} />
-              <span>{scanning ? 'Scanning…' : '↻ Scan Library'}</span>
+              <span>{scanning ? 'Scanning…' : 'Scan Library'}</span>
             </button>
 
             <NavLink
@@ -532,6 +539,7 @@ export function ManagePage() {
           onDeleteClick={(m) => {
             setDeleteTarget(m);
             setModalPinInput(adminPin);
+            setDeleteError(null);
           }}
           onPreTranscodeMovie={(m) => void handlePreTranscodeMovie(m)}
         />
@@ -559,9 +567,16 @@ export function ManagePage() {
         adminPin={adminPin}
         modalPinInput={modalPinInput}
         email={email}
-        onChangePinInput={setModalPinInput}
+        error={deleteError}
+        onChangePinInput={(pin) => {
+          setModalPinInput(pin);
+          if (deleteError) setDeleteError(null);
+        }}
         onConfirmDelete={() => void onConfirmDelete()}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
       />
 
       {/* Standalone Admin PIN Unlock Dialog */}

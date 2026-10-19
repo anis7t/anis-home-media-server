@@ -237,12 +237,15 @@ pub fn create_app_full(
     let job_routes = Router::new()
         .route("/api/transcodes", get(routes::jobs::active_transcodes_handler))
         .route("/api/transcode/jobs", get(routes::jobs::list_jobs_handler))
+        .route("/api/transcode/dashboard", get(routes::jobs::transcode_dashboard_handler))
         .route(
             "/api/transcode/jobs/{*path}",
             axum::routing::post(routes::jobs::jobs_dispatch_handler),
         )
         .with_state(routes::jobs::JobState {
             pool: Arc::new(pool.clone()),
+            roots: roots_arc.clone(),
+            cache_dir: cache_dir_arc.clone(),
         });
 
     // Phase C1a: locally stored poster art, native. Registered BEFORE the proxy
@@ -403,6 +406,14 @@ pub fn create_app_full(
         .route(
             "/api/storage/archive/{*filename}",
             axum::routing::post(routes::storage::storage_archive_media_handler),
+        )
+        .route(
+            "/api/media/{*filename}",
+            axum::routing::delete(routes::storage::storage_delete_media_handler),
+        )
+        .route(
+            "/api/media/delete/{*filename}",
+            axum::routing::post(routes::storage::storage_delete_media_handler),
         )
         .with_state(storage_state);
 

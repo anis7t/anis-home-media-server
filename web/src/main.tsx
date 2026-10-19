@@ -12,6 +12,7 @@ import ManagePage from './features/manage/ManagePage';
 import ManualPage from './features/manual/ManualPage';
 import MovieDetailsPage from './features/media-details/MovieDetailsPage';
 import PlayerPage from './features/playback/PlayerPage';
+import TranscodeDashboardPage from './features/transcodes/TranscodeDashboardPage';
 import './index.css';
 
 const container = document.getElementById('root');
@@ -35,6 +36,8 @@ createRoot(container).render(
             <Route path="/account" element={<AccountPage />} />
             <Route path="/manage" element={<ManagePage />} />
             <Route path="/library-manage" element={<ManagePage />} />
+            <Route path="/transcodes" element={<TranscodeDashboardPage />} />
+            <Route path="/admin/transcodes" element={<TranscodeDashboardPage />} />
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/clients" element={<DevicesPage />} />
             <Route path="/download" element={<DownloadPage />} />

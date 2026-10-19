@@ -48,8 +48,8 @@ impl SystemService {
 
         for disk in &disks {
             let mount = disk.mount_point().to_string_lossy().to_string();
-            // Focus on primary Windows drive letters D: and E: (or all fixed disks)
-            if mount.starts_with("D:") || mount.starts_with("E:") || mount.starts_with("C:") {
+            // Explicit whitelist: strictly include only Drive D: (media storage) and Drive E: (SSD runtime & cache).
+            if mount.starts_with("D:") || mount.starts_with("E:") {
                 let total = disk.total_space();
                 let free = disk.available_space();
                 let used = total.saturating_sub(free);
@@ -62,10 +62,8 @@ impl SystemService {
                 let drive_letter = mount.chars().next().unwrap_or('?').to_string();
                 let label = if drive_letter == "E" {
                     "Fast SSD (Apps & Cache)".to_string()
-                } else if drive_letter == "D" {
-                    "Mass Storage (Flicks)".to_string()
                 } else {
-                    format!("Drive {}:", drive_letter)
+                    "Mass Storage (Flicks)".to_string()
                 };
 
                 let u_str = format!("{:.1} GB", used as f64 / (1024.0 * 1024.0 * 1024.0));
@@ -84,11 +82,9 @@ impl SystemService {
                     total_str: t_str,
                 });
 
-                if drive_letter == "E" || drive_letter == "D" {
-                    pool_used += used;
-                    pool_total += total;
-                    pool_free += free;
-                }
+                pool_used += used;
+                pool_total += total;
+                pool_free += free;
             }
         }
 

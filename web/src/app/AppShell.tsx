@@ -63,6 +63,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   }, [location.pathname]);
 
+  /* Live active transcode count polling for compact header beacon */
+  const [activeTranscodeCount, setActiveTranscodeCount] = useState<number>(0);
+  useEffect(() => {
+    let mounted = true;
+    const checkTranscodes = async () => {
+      try {
+        const res = await fetch('/api/transcodes');
+        if (res.ok) {
+          const body = await res.json();
+          if (mounted && Array.isArray(body.transcodes)) {
+            setActiveTranscodeCount(body.transcodes.length);
+          }
+        }
+      } catch {
+        // tolerate network blip
+      }
+    };
+    void checkTranscodes();
+    const interval = setInterval(checkTranscodes, 3500);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
 
   return (
     <div className="min-h-screen">
@@ -108,6 +133,29 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="film" className="text-brand-400" />
               <span className="hidden sm:inline">Library</span>
             </NavLink>
+
+            {/* Glowing Active Transcode Indicator Pill */}
+            {activeTranscodeCount > 0 ? (
+              <NavLink
+                to="/transcodes"
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 sm:gap-2 rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 shadow-sm transition active:scale-95 hover:bg-amber-500/25 ${
+                    isActive ? 'ring-2 ring-amber-400 font-bold' : ''
+                  }`
+                }
+                title="Active Transcodes Command Center"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <Icon name="bolt" size={13} className="text-amber-400" />
+                <span className="hidden sm:inline">
+                  {activeTranscodeCount} {activeTranscodeCount === 1 ? 'Transcode' : 'Transcodes'}
+                </span>
+                <span className="sm:hidden">{activeTranscodeCount}</span>
+              </NavLink>
+            ) : null}
 
 
 
@@ -220,6 +268,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                       >
                         <Icon name="folder" className="text-amber-400" />
                         <span>Storage &amp; File Manager</span>
+                      </NavLink>
+                      <NavLink
+                        to="/transcodes"
+                        onClick={() => setMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
+                            isActive
+                              ? 'bg-brand-500/20 text-brand-300 font-medium'
+                              : 'text-white/80 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        <Icon name="bolt" className="text-amber-400" />
+                        <span>Transcodes Dashboard</span>
                       </NavLink>
                       <NavLink
                         to="/devices"
@@ -335,6 +397,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLink to="/manage" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
                 <Icon name="folder" className="text-amber-400" />
                 <span>File Manager</span>
+              </NavLink>
+              <NavLink to="/transcodes" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
+                <Icon name="bolt" className="text-amber-400" />
+                <span>Transcodes</span>
               </NavLink>
               <NavLink to="/devices" className="inline-flex items-center gap-1.5 hover:text-white transition-colors">
                 <Icon name="gauge" className="text-emerald-400" />

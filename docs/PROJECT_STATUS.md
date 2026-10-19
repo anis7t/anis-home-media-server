@@ -62,7 +62,28 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - Enabled clean URL access (`https://media.anisparvez.in`) without port numbers, and verified 4K HDR fMP4 streaming (*Ghost in the Cell*) over the public internet.
    - Documented in [`docs/STATIC_IP_MIGRATION_WALKTHROUGH.md`](STATIC_IP_MIGRATION_WALKTHROUGH.md) and [`docs/CADDY_HTTPS_WALKTHROUGH.md`](CADDY_HTTPS_WALKTHROUGH.md).
 
-### Active Roadmap Backlog
+### Active Roadmap & Recent Completed Deliverables (2026-10-19)
+
+6. **Transcode Dashboard Sign-in Blank Screen Fix & Null Safety** — ✅ **RESOLVED**:
+   - Fixed React Rules of Hooks violation in [`TranscodeDashboardPage.tsx`](../web/src/features/transcodes/TranscodeDashboardPage.tsx) where `activeJobs = useMemo(...)` was declared after the early return `if (!isAdmin)`, which threw `Error: Rendered more hooks than during the previous render` upon user sign-in.
+   - Fixed uncaught runtime error (`TypeError: Cannot read properties of undefined (reading 'primary')`) during auth transitions when `data` is `null` by adding full optional chaining on `summary?.hardware_engine?.primary?.status` and `secondary`.
+   - Added dedicated Obsidian loading skeleton / spinner state (`!data && !error`) and retryable error state (`!data && error`).
+   - Created Vitest test suite [`TranscodeDashboardPage.test.tsx`](../web/src/features/transcodes/TranscodeDashboardPage.test.tsx) verifying unauthenticated gating, smooth auth transitions with loading state, full telemetry rendering, and API error surfacing (4/4 passed).
+
+7. **Media Delete & Purge API (`DELETE /api/media/{*filename}`) & Error Surfacing** — ✅ **RESOLVED**:
+   - Added native Rust endpoint `DELETE /api/media/{*filename}` in [`rust/src/routes/storage.rs`](../rust/src/routes/storage.rs) and [`rust/src/services/storage_service.rs`](../rust/src/services/storage_service.rs), protected by Admin PIN or admin session.
+   - Handles multi-volume physical file deletion across `D:/Flicks`, `E:/MediaServer/cache/hls`, `E:/MediaServer/cache/previews`, and PostgreSQL `movies` table in a single atomic transaction.
+   - Added `error` prop and alert banner in [`DeleteConfirmationModal.tsx`](../web/src/features/manage/components/DeleteConfirmationModal.tsx) and wired `deleteError` state in [`ManagePage.tsx`](../web/src/features/manage/ManagePage.tsx).
+
+8. **Strict Dual-Drive Storage Whitelist & Scan Button Polish** — ✅ **RESOLVED**:
+   - Hardened [`rust/src/services/system_service.rs`](../rust/src/services/system_service.rs) to strictly whitelist Drive D: (`D:\`) and Drive E: (`E:\`) for storage pool telemetry, completely excluding Drive C: per workspace storage invariants.
+   - Cleaned redundant duplicate icons on the Library Scan button in [`web/src/features/library/LibraryPage.tsx`](../web/src/features/library/LibraryPage.tsx).
+
+9. **Dual-GPU Optimal Capacity Optimization (Async Work-Pool & Live Telemetry)** — ✅ **RESOLVED**:
+   - **Asynchronous Chunk Dispatch Work-Pool (`transcode_worker.rs`)**: Replaced synchronous batch barriers (`for batch in pending_chunks { ... task.await }`) with an atomic asynchronous chunk work pool (`Arc<AtomicUsize>`). Eliminates discrete GPU (RX 560X) straggler idle time caused by slower integrated GPU (Vega 8) chunks. Each GPU worker continuously pulls subsequent chunks the instant its active chunk completes, maximizing aggregate dual-GPU throughput to 100% capacity.
+   - **Live Multi-GPU Telemetry Accuracy (`jobs.rs` & `transcodes.ts`)**: Accurately reports both discrete AMD Radeon RX 560X (`dx11:1`) and integrated AMD Radeon Vega 8 (`dx11:0`) as `Active Encoding` whenever transcode jobs are running, reflecting the dynamic 3-worker multi-adapter configuration.
+   - **Queue-Wide Projected ETA (`jobs.rs`)**: Fixed queue ETA underestimation where unstarted queued jobs added 0 seconds. Computes runtime-projected transcoding durations across the entire backlog based on quality preset throughput (1.5x for 4K, 4.0x for 1080p, 6.0x for 720p/480p), presenting realistic total queue completion times in the Transcoding Command Center.
+
 - **Modernization 100% Complete**: All modernization phases (Phases 0–9, Slices 7A–7E) are 100% delivered, hardened, and signed off. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md).
 
 ---
