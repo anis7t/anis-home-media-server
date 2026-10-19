@@ -25,37 +25,69 @@ if (-not $rule80) {
     Write-Host "  [*] Port 80 Rule already exists" -ForegroundColor Gray
 }
 
-# 2. NSSM Service Registration
+# 2. NSSM Service Registration & C: Drive Resilience
 Write-Host ""
-Write-Host "[2/3] Registering MediaServerCaddy Service via NSSM..." -ForegroundColor Yellow
-$nssm = "E:\MediaServer\bin\nssm.exe"
-$caddyExe = "E:\MediaServer\bin\caddy_custom.exe"
-if (-not (Test-Path $caddyExe)) {
-    $caddyExe = "E:\MediaServer\bin\caddy.exe"
-}
-$caddyfile = "E:\MediaServer\Caddyfile"
-$appDir = "E:\MediaServer"
-$serviceName = "MediaServerCaddy"
+Write-Host "[2/3] Registering MediaServerCaddy Service via NSSM on C:\..." -ForegroundColor Yellow
 
-$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-if (-not $existing) {
-    & $nssm install $serviceName $caddyExe "run --config $caddyfile"
-    & $nssm set $serviceName AppDirectory $appDir
-    & $nssm set $serviceName Description "Caddy Reverse Proxy for Anis Media Server (HTTPS :443 -> :8000)"
-    & $nssm set $serviceName Start SERVICE_AUTO_START
-    & $nssm set $serviceName AppStdout "E:\MediaServer\logs\caddy.log"
-    & $nssm set $serviceName AppStderr "E:\MediaServer\logs\caddy_error.log"
-    & $nssm set $serviceName AppRotateFiles 1
-    & $nssm set $serviceName AppRotateBytes 10485760
-    Write-Host "  [+] Installed $serviceName as an Automatic Windows Service" -ForegroundColor Green
-} else {
-    Write-Host "  [*] Service $serviceName already installed, updating configuration..." -ForegroundColor Gray
-    & $nssm set $serviceName Application $caddyExe
-    & $nssm set $serviceName AppParameters "run --config $caddyfile"
-    & $nssm set $serviceName AppDirectory $appDir
-    & $nssm set $serviceName AppStdout "E:\MediaServer\logs\caddy.log"
-    & $nssm set $serviceName AppStderr "E:\MediaServer\logs\caddy_error.log"
+# Internal drive C: paths for resilience against USB E: disconnects
+$cRoot = "C:\MediaServer"
+$cBin = "$cRoot\bin"
+$cLogs = "$cRoot\logs"
+if (-not (Test-Path $cBin)) { New-Item -ItemType Directory -Path $cBin -Force | Out-Null }
+if (-not (Test-Path $cLogs)) { New-Item -ItemType Directory -Path $cLogs -Force | Out-Null }
+
+$nssm = "$cBin\nssm.exe"
+if (-not (Test-Path $nssm)) {
+    if (Test-Path "E:\MediaServer\bin\nssm.exe") {
+        Copy-Item "E:\MediaServer\bin\nssm.exe" $nssm -Force
+    } else {
+        $nssm = "E:\MediaServer\bin\nssm.exe"
+    }
 }
+
+$serviceName = "MediaServerCaddy"
+$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if ($existing -and $existing.Status -eq 'Running') {
+    Write-Host "  [*] Stopping running $serviceName service to allow binary update..." -ForegroundColor Yellow
+    Stop-Service $serviceName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
+$sourceCaddy = "E:\MediaServer\bin\caddy_custom.exe"
+if (-not (Test-Path $sourceCaddy)) {
+    $sourceCaddy = "E:\MediaServer\bin\caddy.exe"
+}
+$targetCaddy = "$cBin\caddy_custom.exe"
+Copy-Item $sourceCaddy $targetCaddy -Force
+
+$sourceCaddyfile = "E:\MediaServer\Caddyfile"
+$targetCaddyfile = "$cRoot\Caddyfile"
+Copy-Item $sourceCaddyfile $targetCaddyfile -Force
+
+if (-not $existing) {
+    & $nssm install $serviceName $targetCaddy "run --config $targetCaddyfile"
+}
+
+# Ensure the Windows service wrapper executable itself is hosted on C:
+sc.exe config $serviceName binpath= $nssm | Out-Null
+
+# Configure service parameters pointing to resilient C:\ drive
+& $nssm set $serviceName Application $targetCaddy
+& $nssm set $serviceName AppParameters "run --config $targetCaddyfile"
+& $nssm set $serviceName AppDirectory $cRoot
+& $nssm set $serviceName DisplayName "MediaServerCaddy"
+& $nssm set $serviceName Description "Caddy Reverse Proxy for Anis Media Server (HTTPS :443 -> :8000)"
+& $nssm set $serviceName Start SERVICE_AUTO_START
+& $nssm set $serviceName AppStdout "$cLogs\caddy.log"
+& $nssm set $serviceName AppStderr "$cLogs\caddy_error.log"
+& $nssm set $serviceName AppRotateFiles 1
+& $nssm set $serviceName AppRotateOnline 1
+& $nssm set $serviceName AppRotateSeconds 86400
+& $nssm set $serviceName AppRotateBytes 10485760
+& $nssm set $serviceName AppRestartDelay 5000
+
+# Windows Service Control Manager automatic crash recovery (5s delay, survives reboots)
+sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/5000/restart/10000
 
 # 3. Start or Restart Service
 Write-Host ""
@@ -65,7 +97,7 @@ Start-Sleep -Seconds 3
 
 $svc = Get-Service -Name $serviceName
 if ($svc.Status -eq "Running") {
-    Write-Host "  [SUCCESS] $serviceName is RUNNING!" -ForegroundColor Green
+    Write-Host "  [SUCCESS] $serviceName is RUNNING from C:\ with auto-recovery!" -ForegroundColor Green
 } else {
     Write-Host "  [WARNING] $serviceName status: $($svc.Status)" -ForegroundColor Yellow
 }

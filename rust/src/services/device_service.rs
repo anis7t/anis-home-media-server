@@ -715,8 +715,8 @@ impl DeviceService {
         pool: &PgPool,
         current_device_id: Option<&str>,
         is_admin: bool,
-        cache_dir: &Path,
-        roots: &[PathBuf],
+        _cache_dir: &Path,
+        _roots: &[PathBuf],
     ) -> Result<(Vec<DeviceDetail>, DeviceStats), AppError> {
         let dev_rows = sqlx::query(
             r#"
@@ -818,33 +818,13 @@ impl DeviceService {
                 .map(|dt| format_time_ago(dt, now))
                 .unwrap_or_else(|| "Unknown".to_string());
 
+            let m_poster: Option<String> = h.try_get("poster_path").ok().flatten();
             let poster_url = if let Some(id) = tmdb_id.filter(|&id| id > 0) {
-                if cache_dir.join("posters").join(format!("{}.jpg", id)).is_file() {
-                    Some(format!("/tmdb-poster/{}", id))
-                } else {
-                    None
-                }
+                Some(format!("/tmdb-poster/{}", id))
+            } else if m_poster.is_some() {
+                Some(format!("/poster/{}", fname))
             } else {
-                let clean = fname.trim_start_matches(|c| c == '/' || c == '\\');
-                let rel = Path::new(clean);
-                let mut found = false;
-                for ext in &[".jpg", ".jpeg", ".png", ".webp"] {
-                    let with_ext = rel.with_extension(&ext[1..]);
-                    for root in roots {
-                        if root.join(&with_ext).is_file() {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if found {
-                        break;
-                    }
-                }
-                if found {
-                    Some(format!("/poster/{}", fname))
-                } else {
-                    None
-                }
+                None
             };
 
             let item = WatchHistoryItem {

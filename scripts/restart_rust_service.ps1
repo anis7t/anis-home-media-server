@@ -101,6 +101,7 @@ if ($svc) {
     }
 
     Write-Host "[4/5] Starting '$serviceName' service..." -ForegroundColor Cyan
+    sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/5000/restart/10000 | Out-Null
     Start-Service -Name $serviceName
     Start-Sleep -Seconds 2
 

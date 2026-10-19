@@ -211,9 +211,9 @@ pub async fn create_test_pool(database_url: &str) -> Result<PgPool, sqlx::Error>
 
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
-        .max_connections(16)
-        .min_connections(2)
-        .acquire_timeout(Duration::from_secs(5))
+        .max_connections(50)
+        .min_connections(8)
+        .acquire_timeout(Duration::from_secs(30))
         .idle_timeout(Duration::from_secs(300))
         .connect(database_url)
         .await?;

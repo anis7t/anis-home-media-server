@@ -75,17 +75,18 @@ export function DevicesPage() {
     return headers;
   }, []);
 
-  const loadDevices = useCallback(async () => {
+  const loadDevices = useCallback(async (signal?: AbortSignal) => {
     try {
       const pin = getStoredAdminPin();
       const headers: Record<string, string> = {};
       if (pin) headers['X-Admin-Pin'] = pin;
-      const res = await fetch('/api/devices', { headers });
+      const res = await fetch('/api/devices', { headers, signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as DevicesResponse;
       setData(body);
       setError(null);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
@@ -119,10 +120,14 @@ export function DevicesPage() {
   };
 
   useEffect(() => {
-    void loadDevices();
+    const controller = new AbortController();
+    void loadDevices(controller.signal);
     // Poll keepalive devices every 15s
-    const timer = setInterval(() => void loadDevices(), 15000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => void loadDevices(controller.signal), 15000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [loadDevices]);
 
   const onRename = async (deviceId: string) => {

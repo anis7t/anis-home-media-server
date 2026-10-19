@@ -70,8 +70,7 @@ describe('AccountPage', () => {
     expect(await screen.findByText('Guest Mode')).toBeInTheDocument();
     expect(screen.getByText('Not signed in · Browsing as a local guest')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in with google →/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /guest session/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^sign in with google$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in with admin pin/i })).toBeInTheDocument();
   });
 
   it('shows the signed-in identity', async () => {
@@ -276,6 +275,30 @@ describe('AccountPage', () => {
     renderAccount();
     expect(await screen.findByRole('button', { name: /sign in to pair →/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add device/i })).not.toBeInTheDocument();
+  });
+
+  it('does not fetch tokens or display 403 error when browsing as unauthenticated guest', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') {
+        return jsonResponse({ authenticated: false, email: null, role: null });
+      }
+      if (String(input) === '/api/auth/tokens') {
+        return jsonResponse(
+          { error: 'Sign in or provide the Admin PIN to manage device tokens.' },
+          403,
+        );
+      }
+      return jsonResponse({});
+    });
+
+    renderAccount();
+    expect(await screen.findByRole('button', { name: /sign in to pair →/i })).toBeInTheDocument();
+    expect(screen.queryByText(/request failed: 403/i)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('Sign in to view your paired devices or generate a new TV pairing token.'),
+    ).toBeInTheDocument();
+    const tokenCalls = fetchMock.mock.calls.filter((call) => String(call[0]) === '/api/auth/tokens');
+    expect(tokenCalls).toHaveLength(0);
   });
 
   it('surfaces a failure rather than silently showing an empty list', async () => {

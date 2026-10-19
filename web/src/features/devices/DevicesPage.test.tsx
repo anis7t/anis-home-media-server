@@ -173,4 +173,28 @@ describe('DevicesPage', () => {
     });
     expect(sessionStorage.getItem('ms_admin_pin')).toBe('6361');
   });
+
+  it('passes AbortSignal to fetch and aborts on unmount', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/devices') {
+        capturedSignal = init?.signal as AbortSignal | undefined;
+        return jsonResponse({
+          current_device_id: 'dev_123',
+          stats: { total_devices: 1, active_now: 1, offline: 0 },
+          devices: [],
+        });
+      }
+      return jsonResponse({});
+    });
+
+    const { unmount } = renderDevices();
+    await waitFor(() => {
+      expect(capturedSignal).toBeDefined();
+    });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
 });

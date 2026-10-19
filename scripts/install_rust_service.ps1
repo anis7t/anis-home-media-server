@@ -121,6 +121,7 @@ Write-Host "Configuring service parameters..." -ForegroundColor Yellow
 
 # Restart policy on crash / unexpected exit
 & $NssmExe set $serviceName AppRestartDelay 5000
+sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/5000/restart/10000 | Out-Null
 
 # Environment variables injection
 $ExtraPath = "C:\Users\anis7\AppData\Local\Microsoft\WinGet\Links;C:\Python314\Scripts;C:\Python314;E:\postgres\pgsql\bin;$env:PATH"

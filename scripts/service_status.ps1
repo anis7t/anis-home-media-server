@@ -133,3 +133,10 @@ if ((Test-Path $rustErr) -and (Get-Item $rustErr).Length -gt 0) {
     Write-Host "--- Last 5 lines of logs\rust_api_error.log ---" -ForegroundColor DarkYellow
     Get-Content $rustErr -Tail 5 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
 }
+
+$caddyErr = "C:\MediaServer\logs\caddy_error.log"
+if (-not (Test-Path $caddyErr)) { $caddyErr = "E:\MediaServer\logs\caddy_error.log" }
+if ((Test-Path $caddyErr) -and (Get-Item $caddyErr).Length -gt 0) {
+    Write-Host "--- Last 5 lines of caddy_error.log ---" -ForegroundColor DarkYellow
+    Get-Content $caddyErr -Tail 5 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
+}
