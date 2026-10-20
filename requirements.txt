@@ -1,7 +1,48 @@
-# Operational tooling, client contract probes & standalone library scanner
-requests>=2.31,<3
-python-dotenv>=1.0,<2
+# Python is NOT a runtime dependency of the media server.
+#
+# The backend is 100% native Rust (rust/), the frontend is a React 19 SPA
+# (web/), and the database is PostgreSQL 18.4. Nothing here is needed to
+# BUILD or RUN the service.
+#
+# This file covers the OPERATIONAL TOOLING only - the live probe scripts,
+# the release helpers, and the browser-driven verification scripts.
+#
+# Most of those scripts are deliberately standard-library only, and need
+# nothing installed at all:
+#
+#   scripts/probe_android_api.py          stdlib only
+#   scripts/probe_phase_8_contracts.py    stdlib only
+#   scripts/verify_cast_live.py           stdlib only
+#   scripts/verify_phase_8_live_fmp4.py   stdlib only
+#   scripts/publish_update.py             stdlib only
+#   scripts/release_android.py            stdlib only
+#   scripts/update_intro_doc.py           stdlib only
+#   tests/load/load_test.py               stdlib only
+#
+# The exceptions are listed below. Install them into a virtual environment
+# if you need the scripts that use them:
+#
+#   python -m venv .venv
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# The scripts that need each package:
+#   selenium   scripts/live_player_seek_check.py, scripts/verify_rust_spa_live.py
+#   websockets docs/opening-sequence/scripts/cdp_local.py (and the three
+#              scripts that import it)
+#
+# The packages below the "untracked local trees" heading are used by
+# .agents/ and Hermes-agent-android-PC-companion-app/, which are NOT tracked
+# by git. They are listed here so a fresh environment can still run them.
 
-# PostgreSQL database driver
-psycopg[binary]>=3.2.0,<4
-psycopg-pool>=3.2.0,<4
+# --- Browser-driven verification -------------------------------------------------
+selenium>=4.0,<5
+websockets>=12.0,<16
+
+# --- Used by the untracked local trees (not part of the git repository) ----------
+playwright>=1.40,<2
+pillow>=10.0,<12
+pynacl>=1.5,<2
+pystray>=0.19,<1
+pytest>=8.0,<9
+qrcode>=7.4,<9
+zeroconf>=0.132,<1

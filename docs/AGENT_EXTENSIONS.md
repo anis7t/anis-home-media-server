@@ -39,9 +39,14 @@ LSP servers start lazily, when a file of a matching extension is opened. There i
 no status command for them; the cheapest direct check is running the analyzer:
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests/     # Python
-cd flutter_client; dart analyze lib test       # Dart/Flutter
+cd rust; cargo clippy --all-targets      # Rust
+cd web; npx tsc -b --noEmit              # React/TypeScript
+cd flutter_client; dart analyze lib test # Dart/Flutter
 ```
+
+> The Python test suite was decommissioned with the Flask backend in Slice 7E, so
+> `pytest tests/` no longer collects anything. The Rust suite and Vitest are the
+> tests now — see [`docs/DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) §4.
 
 ## Rust, React and PostgreSQL dev stack (added 2026-10-10)
 

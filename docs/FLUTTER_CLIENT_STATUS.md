@@ -610,9 +610,13 @@ does not execute when every test in a file is skipped. Only files that genuinely
 
 ### Backend Testing
 ```powershell
-cd E:\MediaServer
-.\venv\Scripts\python.exe -m pytest tests/                  # 344 collected
+cd E:\MediaServer\rust
+cmd /c "e:\MediaServer\scripts\cargo.bat test --no-fail-fast -- --test-threads=1"
 ```
+
+> The Python backend test suite was decommissioned with the Flask backend in Slice 7E, so
+> `pytest tests/` no longer collects anything. The Rust integration suite is what validates the
+> `/api/*` contract the client depends on — see [`docs/DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) §4.
 
 ### Publishing an Update
 

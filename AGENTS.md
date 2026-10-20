@@ -223,8 +223,11 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
 - **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` within ~5s of a crash. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
 
 ### Linux/Kali
-- Python 3.10+; current development uses Python 3.14.x.
 - Rust 1.85+, Node.js 20+, PostgreSQL 16+.
+- **Python is tooling-only, not a runtime dependency.** The backend is native Rust, the frontend is
+  a React SPA, and the database is PostgreSQL — none of them need Python to build or run. Python
+  remains only for the operational probe and release scripts, and most of those are
+  standard-library only. See `requirements.txt`.
 - FFmpeg and FFprobe on `PATH`.
 - Production: `media-server-api` systemd service.
 - Remote access: cloudflared named tunnel.
