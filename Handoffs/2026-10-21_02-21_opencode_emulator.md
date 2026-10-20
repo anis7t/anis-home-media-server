@@ -169,3 +169,19 @@ all three places that carried the same false claim: L22 in
 `docs/OPENING_SEQUENCE.md`, section 11.7.6 of the plan, and
 `scripts/capture-intro-video.mjs`'s own header comment, which said "the app
 fades in behind the video's last quarter-second".
+
+## THE APK TO INSTALL IS THE RIGHT ONE
+
+Two version numbers disagree, and both are true: `pubspec.yaml` says
+`1.2.18+138`, and the APK is **1.2.21 / 143** because it was built with
+`--build-name` / `--build-number` overrides, so the pubspec was never bumped.
+`aapt dump badging` is the authority for what a package carries:
+
+    package: name='in.anisparvez.media_server_client' versionCode='143' versionName='1.2.21'
+
+It was built at **01:19**. The newest source file it has to contain,
+`brand_intro_overlay.dart`, was written at **01:15**, and it carries both
+`decoration: TextDecoration.none` rules (`:1067` the wordmark's merged style,
+`:1155` the subtitle's). So the artifact on disk **is** the one with the
+underline fix - **nothing needs rebuilding before the device check**, and
+nobody should be surprised by the 138 in the pubspec.
