@@ -1,7 +1,8 @@
 # Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)
 
-**Status:** 📋 **PLANNED.** Slice 11.1 (canonical specification) and Slice 11.1a (remove the Flutter
-Replay action) are **complete**; 11.2 onward await slice-by-slice plans.
+**Status:** 📋 **PLANNED.** Slices 11.1 (canonical specification), 11.1a (remove the Flutter Replay
+action) and 11.2 (the web canvas renderer) are **complete**; 11.3 onward await slice-by-slice
+plans.
 **Branch:** `feature/phase-11-opening-sequence`
 **Parent:** `fb8b5f6` (on `feature/qr-signin-web-tv`)
 
@@ -207,26 +208,60 @@ its test is deleted, and the `markFinished` test was re-based on the provider-ov
 already used in `brand_intro_overlay_test.dart` so the playing→finished transition stays covered
 without any production refactor. The docs that advertised the action were updated. **Next: 11.2.**
 
-### Slice 11.2 — Web: the canvas renderer *(no audio yet)*
+### Slice 11.2 — Web: the canvas renderer *(no audio yet)* ✅ **COMPLETE (2026-10-20)**
 
-The hard technical core.
+The hard technical core, and the one the whole phase rests on.
 
-- Port `renderAt(t)` from `docs/opening-sequence/source/intro-overlay.html` to TypeScript as a
-  **pure function of time** — `web/src/lib/intro/render.ts` — so it is unit-testable and directly
-  comparable to the reference frames. The camera shake is made **deterministic** per D9.
-- Reimplement the DOM layers as React: `web/src/components/brand/BrandIntroOverlay.tsx` (the name
-  the Phase 0 audit already reserved).
-- Compositing: **transparent stage, opaque curtain**, vignette, grain at 5 %, responsive lockup,
-  seam glow, the `handover` phase. The **canonical layer stack**, in order, is
-  `veilL/veilR (z2) → seam (z3) → **FX canvas (z4)** → vignette (z5) → grain (z6) → lockup (z7) →
-  HUD (z8, hidden)` — **the FX canvas is above the curtain**, which the previous draft of this
-  document got backwards. See the spec §4.
-- Responsive: preserve the vmin scaling and the portrait breakpoint; no per-aspect-ratio assets.
-- **Exit:** the renderer matches `capture_overlay_frames.py` output **frame for frame** (the
-  shake window is compared against the re-captured oracle from 11.6); the pure function is
-  unit-tested against captured reference frames.
+**What was built:**
 
-### Slice 11.3 — Web: lifecycle, gating, modes, audio
+| File | What it is |
+|---|---|
+| `web/src/lib/intro/timeline.ts` | **Pure.** The cue constants, the easings, the seeded particle fields, and the deterministic camera shake. |
+| `web/src/lib/intro/frame.ts` | **Pure.** `computeFrame(t, opts) → Frame` — every derived DOM-layer value, as the source's exact CSS strings. |
+| `web/src/lib/intro/fx.ts` | The canvas port of `drawFX(t)`. |
+| `web/src/lib/intro/geometry.ts` | **Pure.** The design unit, the portrait breakpoint, the device pixel ratio. |
+| `web/src/components/brand/BrandIntroOverlay.tsx` | The React component: the layer structure, the rAF loop, the frame applier. |
+| `web/src/components/brand/brand-intro.css` | The layer styles, ported from the source's stylesheet. |
+| `web/src/components/BrandMark.tsx` | The canonical brand mark, shared by the app and the sequence. |
+
+**The three decisions taken with the plan:**
+
+- **Direct DOM writes to refs**, not React state per frame. React renders the layer structure
+  once; the applier writes the per-frame values straight to the elements, from the same
+  `requestAnimationFrame` loop the original used. The rule that follows: **no element the
+  applier writes to may carry a React `style` prop**, because React would overwrite it.
+- **The oracle lives in the web repo** — Playwright specs in `web/e2e/` plus vitest units in
+  `web/src/lib/intro/`. Playwright and Chromium were already installed.
+- **One brand mark in the app.** `AppShell`'s simplified `BrandMark` and the remote-login
+  screen's copy were replaced by the canonical SVG — the one the sequence was authored against,
+  with the specular highlight and the drop shadow. The app header, the footer, the device
+  sign-in screen and the sequence now show the same mark.
+
+**The oracle** (`web/e2e/intro-frame.spec.ts`) puts the archived original and the port side by
+side, drives both to the same instant, and compares what they painted — **the FX canvas by the
+SHA-256 of its pixels, every DOM layer's style and geometry (including every letter of both
+wordmarks), and the rendered page pixel by pixel** — at 20 instants, in landscape and portrait.
+**All three comparisons are exact.** See the canonical spec §13 for the three rendering
+mechanics that are normalised, and why.
+
+**Six further findings, all from reading the source rather than the summary:**
+
+| # | Finding |
+|---|---|
+| **F7** | The source's `mulberry32` re-seeds and re-mixes on **every call** — the whole body is inside the returned closure. The obvious "tidier" port, which hoists the initialisation out, produces a completely different sequence, and every particle in the sequence lands somewhere else. The oracle caught it. |
+| **F8** | `renderAt` measures the DOM **before** it writes to it, so every frame is drawn against the **previous** frame's geometry. The canvas is therefore drawn *first* and the DOM written *after* — the port must keep that order or the FX shift by a frame. |
+| **F9** | The app's font stack leads with **Inter**; the source's does not. The overlay must set the source's own stack, or the wordmarks are not the same picture. |
+| **F10** | The source's brand SVG is **richer** than the app's: three paths, a specular highlight and a drop shadow. |
+| **F11** | The original paints frame zero **at load**. A port that does not accumulates a different history, and the compositor then rasterises the wordmark's glyphs differently — invisible to the eye, but 58 of 255 on a glyph edge. |
+| **F12** | The `will-change` compositor hint changes a promoted layer's antialiasing. The two documents promote the mark differently, so the hint has to be taken out of the comparison on both sides. |
+
+**Verified:** `tsc -b` clean · `oxlint` exit 0 · vitest **275/275** across 38 files (27 new) ·
+`vite build` succeeds · the Playwright oracle **5/5**.
+
+**Exit:** met. The renderer matches the archived original frame for frame; the pure function is
+unit-tested against golden values taken from the source's own algorithm.
+
+### Slice 11.3 — Web: lifecycle, gating, modes, audio ⏭️ **NEXT**
 
 - `web/src/hooks/useIntroSequence.ts`: `?intro=` modes (`auto` / `gate` / `capture` / `off`), the
   **container-owned** session gate, dismissal, `prefers-reduced-motion` (D11), the Web Audio score

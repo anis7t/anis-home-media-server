@@ -23,7 +23,7 @@ One brand opening sequence, implemented natively for three targets — the **web
 
 | Target | Implementation | Score | Visible Skip | Replay action | Gating | Lockup |
 |---|---|---|---|---|---|---|
-| **Web** | **none yet** (11.2, 11.3) | live Web Audio synthesis | none | none | once per browser session | responsive |
+| **Web** | **the renderer is built** (11.2); the lifecycle is 11.3 | live Web Audio synthesis | none | none | once per browser session | responsive |
 | **Android phone** | `CustomPaint` | none yet (11.5) | **present — to go (11.4)** | **none** (removed in 11.1a) | every launch | responsive |
 | **Android TV** | same `CustomPaint` | none yet (11.5) | **present — to go (11.4)** | **none** (removed in 11.1a) | every launch | responsive |
 | *Original web (archived)* | Canvas `renderAt(t)` | live Web Audio synthesis | none (`SHOW_HUD=false`) | none | once per browser session | responsive |
@@ -319,23 +319,58 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 
 | # | Element | Canonical | Web (today) | Flutter (today) | Closed in |
 |---|---|---|---|---|---|
-| **L1** | Layer order | veils 2 → seam 3 → **fx 4** → vignette 5 → grain 6 → lockup 7 | n/a — to be built | **fx is first in the `Stack`, i.e. at the bottom** (`brand_intro_overlay.dart:141-284`) | 11.2, 11.4 |
-| **L2** | FX layer visible | beams, converging particles, impact flash, shockwave rings, standing glow, embers — **above** the curtain | to be built | **never seen** — drawn *under* the opaque veils, so the whole 0.12–1.95 s build-up is invisible | 11.4 |
-| **L3** | Grain | 5 % film grain over the FX, fading to 0 as the curtain opens | to be built | **absent** | 11.4 |
-| **L4** | Lockup layout | side by side in landscape, stacked in portrait | to be built | **stacked unconditionally** (`:347`) — right for the phone, wrong for the TV | 11.4 |
+| **L1** | Layer order | veils 2 → seam 3 → **fx 4** → vignette 5 → grain 6 → lockup 7 | built (11.2) | **fx is first in the `Stack`, i.e. at the bottom** (`brand_intro_overlay.dart:141-284`) | 11.2, 11.4 |
+| **L2** | FX layer visible | beams, converging particles, impact flash, shockwave rings, standing glow, embers — **above** the curtain | built (11.2) | **never seen** — drawn *under* the opaque veils, so the whole 0.12–1.95 s build-up is invisible | 11.4 |
+| **L3** | Grain | 5 % film grain over the FX, fading to 0 as the curtain opens | built (11.2) | **absent** | 11.4 |
+| **L4** | Lockup layout | side by side in landscape, stacked in portrait | built (11.2) | **stacked unconditionally** (`:347`) — right for the phone, wrong for the TV | 11.4 |
 | **L5** | Skip affordance | **none** | none (by design) | **visible Skip pill** (`:241-282`) | 11.4 |
 | **L6** | Replay affordance | **none** (D4) | none (by design) | [CLOSED in 11.1a (2026-10-20)] - the Settings "Replay Brand Intro" item and the `BRAND & EXPERIENCE` section that contained it are gone, as are `IntroController.replay()` and its test. The docs that advertised it are updated. | **11.1a - done** |
-| **L7** | Score | web: live synthesis · Android: the WAV | to be built (11.3) | **absent** | 11.3, 11.5 |
-| **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | to be built | halves **shrink** to zero width with **hard edges**, each with its own centred gradient (`:151-171`, `:297-320`) | 11.4 |
+| **L7** | Score | web: live synthesis · Android: the WAV | the lifecycle is 11.3 | **absent** | 11.3, 11.5 |
+| **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | built (11.2) | halves **shrink** to zero width with **hard edges**, each with its own centred gradient (`:151-171`, `:297-320`) | 11.4 |
 | **L9** | Ambient drift | **none** (D10 — dropped) | none (D10) | none | — closed by D10 |
-| **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | to be built (11.2) | **absent** | 11.2, 11.4 |
-| **L11** | Reduced motion | honoured on all three (D11) | to be built (11.3) | **not honoured** | 11.3, 11.4 |
-| **L12** | Outro | layer **removed** at 3.00 s | to be built | 300 ms opacity fade after 3.00 s, plus a 3.5 s safety timeout (`:81-83, 97-102`) | 11.4 |
-| **L13** | Gating semantics | documented, deliberate | to be built (11.3) | "every launch" is **accidental** — `hasSeenIntro` is never persisted or consulted | 11.4 |
+| **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | built (11.2) | **absent** | 11.2, 11.4 |
+| **L11** | Reduced motion | honoured on all three (D11) | the lifecycle is 11.3 | **not honoured** | 11.3, 11.4 |
+| **L12** | Outro | layer **removed** at 3.00 s | built (11.2) | 300 ms opacity fade after 3.00 s, plus a 3.5 s safety timeout (`:81-83, 97-102`) | 11.4 |
+| **L13** | Gating semantics | documented, deliberate | the lifecycle is 11.3 | "every launch" is **accidental** — `hasSeenIntro` is never persisted or consulted | 11.4 |
 | **L14** | Dead asset | — | — | `assets/videos/intro-demo-portrait.mp4` is declared in `pubspec.yaml` and **never played** — 2.43 MB in every APK | 11.5 |
 | **L15** | AGENTS.md's Flutter invariant | — | — | claims the intro is *"hardware-accelerated portrait video"*, claims `IntroController` provides session gating, and lists the Replay action — **all three wrong** | 11.1 (closed by this document) |
 
 ## 13. The oracle — how a later slice proves it matches
+
+### 13.1 The frame-for-frame oracle (built in Slice 11.2)
+
+**`web/e2e/intro-frame.spec.ts` puts the archived original and the port side by side, drives
+both to the same instant, and compares what they painted.** Three comparisons, at three levels:
+
+| Level | How | Result |
+|---|---|---|
+| **The FX canvas** | the SHA-256 of the canvas's pixels | **byte-exact** |
+| **Every DOM layer** | the inline style (parsed, so the order the properties happen to be serialised in does not matter) and the rendered box — for the mark, the glow, both wordmark containers **and every letter of both**, the subtitle, the rule, both veil halves and their masks, the seam, the vignette, the grain, and the lockup | **exact** |
+| **The whole overlay** | the rendered page, pixel by pixel | **exact** |
+
+It runs at **20 sampled instants** covering every effect in the sequence — the beams, the
+converging particles, the impact and its burst, the flash, the shockwave rings, the sheen, the
+wordmarks, the subtitle, the rule, the embers, the curtain parting, the handover and the hold —
+in **landscape (1920×1080) and portrait (1080×1920)**.
+
+**Three things are normalised, and each is a rendering mechanic rather than a design element:**
+
+1. **The camera shake's randomness.** The original draws it from `Math.random()` and the port's
+   is deterministic (D9), so the two can never agree by accident. The oracle patches the
+   original's `Math.random` to hand it **exactly the two draws the port used**, so the original
+   computes the same offsets from the same formula. The shake window is compared like any other
+   — it is not skipped.
+2. **The compositor hint.** The mark and the lockup carry `will-change`, which promotes them to
+   their own composited layers, and a promoted layer's antialiasing is a hair different from the
+   same content painted directly. The markup, the computed styles and the geometry are identical
+   to the last bit; the two *documents* simply promote them differently. The hint is taken out of
+   the comparison on both sides.
+3. **The first frame.** The original paints frame zero at load (source 965). The harness must do
+   the same, or the two documents accumulate a different history — and the compositor then
+   rasterises the wordmark's glyphs differently, which is invisible to the eye but was 58 of 255
+   on a glyph edge.
+
+### 13.2 The archived asset pipeline (the offline renders)
 
 | Tool | What it does |
 |---|---|
@@ -345,11 +380,10 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 | `docs/opening-sequence/scripts/verify_overlay.py` | 12 behavioural checks against the running server. |
 | `docs/opening-sequence/scripts/verify_app_integration.py` | Live-service verifier — drives the real app. |
 
-**The oracle is frame-for-frame, with one documented exception.** Because of D9 the camera shake is
-now deterministic, so the **archived** PNGs — captured with the original's random shake
-(`source: 541-544`) — are a *visual* reference inside the `0.62 – 1.04 s` window, and a **byte**
-oracle everywhere else. Slice 11.6 re-captures them against the shipped implementation, after
-which they are a byte oracle everywhere.
+The **archived** PNGs were captured with the original's random shake (`source: 541-544`), so they
+are a *visual* reference inside the `0.62 – 1.04 s` window and a byte oracle everywhere else.
+Slice 11.6 re-captures them against the shipped implementation, after which they are a byte
+oracle everywhere.
 
 ---
 
