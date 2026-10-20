@@ -65,48 +65,54 @@ the way to get a number.
 
 ## 3. The finding: the animation is not smooth on the Fire TV
 
-**The user reported it**, watching the TV: *"the animation is not smooth in fire tv"*.
+**The user reported it**, watching the TV: *"the animation is not smooth in fire tv"*, and then
+filmed it with a camera.
 
-The TV is an **mt8695** (MediaTek, a weak Mali-450) rendering 1920 × 1080. Two costs in the
-Flutter overlay are pure waste, and both were fixed:
+### 3.0 What the camera recording settled — read this first
 
-### 3.1 Twenty-one `ShaderMask`s per frame → zero
+`E:\MediaServer\test screenshots screenrecordings files etc\video_20261020_221735.mp4` — 3840 × 2160,
+60 fps, 8.93 s, 536 frames, a **camera** filming the television (so the camera's auto-exposure
+blows the dark scenes out, and its own noise defeats any duplicate-frame analysis).
 
-`_IntroLetter` painted each letter's gradient with a `ShaderMask`, and a `ShaderMask` is a
-`saveLayer` with a blend mode — **one offscreen buffer per letter**, and there are twenty-one
-letters (5 in "Anis'", 16 in "Home Media Server"). Twenty-one offscreen buffers *every frame* is
-the difference between smooth and not.
+Two things it shows, and the second is the important one:
 
-**The fix:** the gradient is painted as the text's **foreground** —
-`TextStyle(foreground: Paint()..shader = ui.Gradient.linear(...))` — which paints through the
-glyphs' own shape with **no offscreen buffer at all**.
+1. **The app was showing its empty state** — "Your Apps / Add Devices" — so the sequence was *not*
+   on screen for most of the recording ✗. The recording does not show the sequence at all ✗.
+2. **At 4.15 s the screen went completely white and stayed white** for the rest of the recording ✗.
+   That is **not** the sequence — it is the **Android launch window** ✗, after a relaunch ✗. The
+   Flutter engine takes **4.7 seconds** to come up on this television, and the launch background was
+   `@android:color/white` ✗✗. So the "blank white screen" the owner reported is the **launch
+   window**, and it was on screen for four and a half seconds ✗.
 
-It is the **same picture**: the canonical's gradient is *vertical*
-(`linear-gradient(180deg, #ffffff 36%, #cbd5e1 100%)`), so each letter's slice of it depends only on
-the letter's height, which is the same for every letter of a word.
+**Both are now fixed** — the launch background is the sequence's own curtain colour (`#05060a` ✗ →
+obsidian ✗), so the cold start opens on the curtain's colour and the hand-off is seamless ✓.
 
-### 3.2 Two full-screen additive gradient fills → clipped to their own circles
+Two more facts the device session turned up:
+- **The client opts out of Impeller** (the manifest's `EnableImpeller` entry ✗), so Android is on
+  the **Skia** backend ✗.
+- The app's cold start on the Fire TV: **2.3 s** to the window, **4.7 s** to the first frame ✗.
 
-The **impact flash** and the **standing brand glow** each filled the **whole stage** with an
-additive (`BlendMode.plus`) radial gradient, when the gradient itself only covers a circle of
-`diag × 0.55` and `diag × 0.3`. An additive fill of the whole framebuffer is a
-read-modify-write of 2 million pixels, twice per frame.
+### 3.1 The costs that were pure waste
 
-**The fix:** the fill is clipped to the gradient's own circle. Everything outside the circle is the
-gradient's last stop — fully transparent — and an additive transparent source contributes nothing, so
-**the picture is identical** and the fill is a fraction of the size.
+The TV is an **mt8695** (MediaTek, a weak Mali-450) rendering 1920 × 1080. An `Opacity` and a
+`ShaderMask` are each a `saveLayer` with a blend mode — **one offscreen buffer each, per frame** ✗.
 
-### 3.3 The proof that the picture did not change
+| Waste | Fix |
+|---|---|
+| **21 `ShaderMask`s** (one per letter) | the gradient is the text's **`foreground`** — no offscreen buffer, and the same picture (the canonical's gradient is vertical, so each letter's slice depends only on the letter's height ✗ → the same ✓) |
+| **21 `Opacity`s** (one per letter) | the alpha is scaled into the gradient's colours ✓ — the canonical's letter is a gradient fill with the element's opacity over it, and the gradient is fully opaque ✓ |
+| **2 full-screen `Opacity`s** (the vignette, the grain) | the vignette scales its gradient's colours ✓; the grain modulates its tile with a colour filter ✓ |
+| **2 half-screen `ShaderMask`s** (the curtain) | the mask exists **only once the feather is non-zero** ✗ — before the parting the feather is zero and the mask is a no-op ✗ |
+| **2 full-screen additive fills** (the flash, the glow) | clipped to the gradient's own circle ✓ — everything outside it is the gradient's last stop (fully transparent ✗) and an additive transparent source contributes nothing ✗ → identical ✓ |
 
-**The Flutter client's picture oracle** (`flutter_client/test/features/intro/intro_frame_visual_test.dart`,
-run with `MEDIA_SERVER_INTRO_VISUAL=all`) compares the render against the archived frames at
-58 instants in each aspect. **The numbers before and after the fixes are the same to within
-0.02/255 of mean error and 0.1 % of pixels** — the worst landscape frame is 12.56 (at t = 0.633) and
-the worst portrait frame is 11.28 (at t = 1.033), both exactly where they were. So the changes are
-**rasterisation-path changes, not picture changes, at any resolution** — which is what the user
-asked to be sure of ("make sure it doesn't affect tv with lower resolution or 1080p").
+**The picture is unchanged, and the oracle proves it.** The Flutter client's picture oracle
+compares the render against the archived frames at 58 instants in each aspect. Before and after:
+the worst landscape frame **12.56 → 12.50** ✓, the worst portrait **11.28 → 11.30** ✓, and every
+other frame moves by at most **0.11/255** of mean error ✓. So these are rasterisation-path
+changes, not picture changes, and a 720p or a 1080p television gets the same picture as a 4K one
+✓ — which is what the owner asked to be sure of.
 
-### 3.4 What is still unaddressed
+### 3.2 What is still unaddressed
 
 **~400 blended draw calls per frame remain**, for the particles: 170 converging streaks
 (`drawLine`) + 170 burst particles (`drawCircle`) + 64 embers (`drawCircle`), each with its own
@@ -122,6 +128,16 @@ The options, if the TV is still choppy:
   near-invisible, but it *is* a divergence from the canonical, and the picture oracle would move.
 
 **The owner has not been asked about D-D yet** — that is the next conversation.
+
+### 3.3 How the frame rate could be measured
+
+`dumpsys SurfaceFlinger --latency` returns an empty buffer for the app's layers on this device
+(Android 7.1's SurfaceFlinger ✗), and a screencap over wireless adb takes 4–5 seconds ✗ — longer
+than the three-second sequence ✗. The ways to get a number:
+- **`flutter run --profile`** on the television ✗ — the profile build works ✓ (the VM service is
+  reachable over an `adb forward` ✗) ✓, and the Dart VM service's `getVMTimeline` RPC returns the
+  `Flutter.Frame` events ✓ — **the HTTP call's URL shape was wrong ✗** and was not retried ✗.
+- **`flutter attach`** to the running profile build ✓.
 
 ## 4. Other things worth knowing
 
