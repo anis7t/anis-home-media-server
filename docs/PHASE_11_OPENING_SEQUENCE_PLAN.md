@@ -128,8 +128,11 @@ against `capture_overlay_frames.py`) rather than to re-implement it as a pile of
 
 ## 4. Slice structure
 
-Each slice is independently verifiable and leaves the tree green. **Plan each slice before
-implementing it** (AGENTS.md §0.1).
+Each slice is independently verifiable and leaves the tree green. **Plan a slice only when the
+owner asks for it, and plan only that one** (AGENTS.md §0.1: *"Always ask the user before
+drafting an implementation plan... Do not draft or write an implementation plan document until the
+user has explicitly requested or approved doing so."*). Approval of one slice is not approval of
+the next.
 
 ### Slice 11.1 — Canonical design specification *(no code)*
 Freeze the design so every downstream slice is written from one source.
