@@ -89,6 +89,8 @@ Registered via `pg_ctl register` (`scripts\move_pg_to_c.ps1`):
 - **Port:** `5432`, database `media_server`
 - **Management Scripts:** `scripts\start_postgres.bat`, `scripts\stop_postgres.bat` (prefer `C:\postgres`, fall back to `E:\postgres`)
 - **Database Backup:** `scripts\backup_postgres.bat` (invokes `scripts\backup_postgres.ps1`, generating timestamped, compressed custom-format dumps in `E:\MediaServer\backups\postgres\` with 7-backup automatic rotation pruning)
+- **Database Restore:** `scripts\restore_postgres.ps1` — verifies the archive, takes a pre-restore rollback point, restores via `pg_restore`, and reports row counts. Requires `-Confirm` to act, and `MediaServerRust` must be stopped first.
+- **Scheduled Backup Task:** `MediaServerBackup` — daily at 03:00, runs as `SYSTEM`, logs to `E:\MediaServer\logs\backup_postgres.log`. Installed with `scripts\install_backup_task.bat`, removed with `scripts\uninstall_backup_task.ps1`. Full detail in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) §2.3.
 
 ### C. MediaServerCaddy (Reverse Proxy & TLS Terminator) — Active
 Runs as an automatic Windows Service, fronting the Rust origin with a Let's Encrypt certificate:

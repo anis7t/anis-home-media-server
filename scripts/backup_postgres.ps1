@@ -7,7 +7,10 @@ param(
     [string]$DbHost = "127.0.0.1",
     [int]$Port = 5432,
     [string]$DestDir = "E:\MediaServer\backups\postgres",
-    [int]$Keep = 7
+    [int]$Keep = 7,
+    # Pre-restore rollback points are pruned on their own budget, so a
+    # rollback point can never displace a scheduled backup from the rotation.
+    [int]$KeepRollbacks = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,17 +77,32 @@ try {
     exit 1
 }
 
-# 4. Prune old backups (Retention: Keep newest $Keep)
+# 4. Prune old backups (Retention: Keep newest $Keep scheduled backups)
 if ($Keep -gt 0) {
-    $existing = Get-ChildItem -Path $DestDir -Filter "${Database}_*.dump" | Sort-Object CreationTime -Descending
-    if ($existing.Count -gt $Keep) {
-        $toRemove = $existing | Select-Object -Skip $Keep
+    # Scheduled backups and pre-restore rollback points are pruned on separate
+    # budgets. Without the split, a rollback point (which is also a full dump)
+    # would occupy a slot in the scheduled rotation.
+    $scheduled = Get-ChildItem -Path $DestDir -Filter "${Database}_*.dump" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notlike "${Database}_prerestore_*" } |
+        Sort-Object CreationTime -Descending
+    if ($scheduled.Count -gt $Keep) {
+        $toRemove = $scheduled | Select-Object -Skip $Keep
         foreach ($f in $toRemove) {
             Write-Host "Pruning old backup: $($f.Name)" -ForegroundColor DarkGray
             Remove-Item -Path $f.FullName -Force -ErrorAction SilentlyContinue
         }
     }
+
+    $rollbacks = Get-ChildItem -Path $DestDir -Filter "${Database}_prerestore_*.dump" -ErrorAction SilentlyContinue |
+        Sort-Object CreationTime -Descending
+    if ($KeepRollbacks -gt 0 -and $rollbacks.Count -gt $KeepRollbacks) {
+        $toRemove = $rollbacks | Select-Object -Skip $KeepRollbacks
+        foreach ($f in $toRemove) {
+            Write-Host "Pruning old rollback point: $($f.Name)" -ForegroundColor DarkGray
+            Remove-Item -Path $f.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
-Write-Host "Backup operation complete. Retained newest $Keep backups." -ForegroundColor Green
+Write-Host "Backup operation complete. Retained newest $Keep scheduled backups." -ForegroundColor Green
 exit 0

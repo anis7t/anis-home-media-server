@@ -9,6 +9,7 @@
 | **Default Backup Store** | `E:\MediaServer\backups\postgres\` (gitignored) |
 | **Backup Tool** | [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) → `pg_dump -Fc` |
 | **Restore Tool** | [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) → `pg_restore` |
+| **Scheduled Task** | `MediaServerBackup` — daily at 03:00, as `SYSTEM` ([§2.3](#23-the-scheduled-task)) |
 | **Live Database Size** | ~10 MB (13 tables) |
 | **Last Verified** | **2026-10-20** — full backup → restore → restart drill, all row counts matched |
 
@@ -74,9 +75,48 @@ pg_dump -h 127.0.0.1 -p 5432 -U postgres -d media_server -F c -b -v -f <dest>
 | `-User` | `postgres` | Connecting role. |
 | `-DbHost` / `-Port` | `127.0.0.1` / `5432` | Server address. |
 | `-DestDir` | `E:\MediaServer\backups\postgres` | Where the archive is written. |
-| `-Keep` | `7` | Retention. **Prunes the oldest beyond this count. `0` disables pruning entirely** (the guard is `if ($Keep -gt 0)`), so `-Keep 0` means *keep everything*, not *keep none*. |
+| `-Keep` | `7` | Retention for **scheduled** backups. **Prunes the oldest beyond this count. `0` disables pruning entirely** (the guard is `if ($Keep -gt 0)`), so `-Keep 0` means *keep everything*, not *keep none*. |
+| `-KeepRollbacks` | `3` | Retention for **pre-restore rollback points**, pruned on their own budget. |
 
-### 2.3 Output
+### 2.3 The scheduled task
+
+Backups run unattended via the **`MediaServerBackup`** Scheduled Task.
+
+| Property | Value |
+|---|---|
+| Schedule | Daily at **03:00** |
+| Runs as | `SYSTEM` (full write access to the backup store) |
+| Action | `E:\MediaServer\scripts\run_backup_task.bat` |
+| Working directory | `E:\MediaServer` |
+| Log | `E:\MediaServer\logs\backup_postgres.log` |
+| If the machine was off at 03:00 | Runs at the next opportunity (`StartWhenAvailable`) — never silently skipped |
+| Overlapping runs | Ignored (`MultipleInstances = IgnoreNew`) |
+| Time limit | 1 hour |
+
+**Why the task calls `run_backup_task.bat` and not `backup_postgres.bat`:** the latter ends with
+a `pause`, which would hang a non-interactive scheduled run. The wrapper appends the output to the
+log and propagates the exit code, so Task Scheduler records a real result.
+
+```powershell
+# Install (or re-install - it is idempotent)
+E:\MediaServer\scripts\install_backup_task.bat
+
+# Run it now
+Start-ScheduledTask -TaskName "MediaServerBackup"
+
+# Check the outcome
+Get-ScheduledTaskInfo -TaskName "MediaServerBackup" | Select LastRunTime, LastTaskResult, NextRunTime
+Get-Content E:\MediaServer\logs\backup_postgres.log -Tail 20
+
+# Remove it
+E:\MediaServer\scripts\uninstall_backup_task.ps1
+```
+
+> The task is registered for `SYSTEM`, so **a non-elevated shell cannot read it** —
+> `schtasks /query` returns *Access is denied*. Query it from an elevated PowerShell. That is
+> the correct posture for a task that runs as SYSTEM, not a misconfiguration.
+
+### 2.4 Output
 
 ```text
 E:\MediaServer\backups\postgres\media_server_<yyyyMMdd_HHmmss>.dump
@@ -95,11 +135,20 @@ Each archive records its own provenance in its header:
 ;     Dumped by pg_dump version: 18.4
 ```
 
-### 2.4 Rotation
+### 2.5 Rotation
 
-The script prunes the oldest archives beyond `-Keep` on each run. Note the default of 7 daily
-backups covers **one week** — with no scheduling in place (see [§7](#7-known-gaps)) the store will
-not actually roll over until backups are being taken regularly.
+The script prunes on each run, on **two separate budgets**:
+
+- **Scheduled backups** — the newest `-Keep` (default 7) of `media_server_<timestamp>.dump`.
+- **Pre-restore rollback points** — the newest `-KeepRollbacks` (default 3) of
+  `media_server_prerestore_<timestamp>.dump`.
+
+They are pruned separately on purpose. A rollback point *is* a full dump of the database, so
+without the split it would occupy a slot in the scheduled rotation and could displace a scheduled
+backup.
+
+Seven daily backups cover **one week**. If a restore is ever needed, the newest usable archive is
+at most 24 hours old.
 
 ---
 
@@ -255,10 +304,11 @@ Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
 
 Honest list of what this runbook does **not** yet solve.
 
-1. **No scheduled backup.** Nothing on this host runs `backup_postgres.ps1` automatically — there
-   is no Scheduled Task referencing it. The archives in the store were taken by hand. **Until a
-   daily task exists, a restore is only as good as the last manual run.** A Scheduled Task
-   invoking `scripts\backup_postgres.bat` daily would close this.
+1. ~~**No scheduled backup.**~~ **CLOSED 2026-10-20.** The `MediaServerBackup` Scheduled Task now
+   runs `pg_dump` daily at 03:00 as `SYSTEM`, logging to
+   `E:\MediaServer\logs\backup_postgres.log`. See [§2.3](#23-the-scheduled-task). Verified by
+   triggering it manually: *Last Result 0*, a valid 73-object archive produced, and the service
+   unaffected.
 2. **Backups live beside the data.** `E:\pgdata` and `E:\MediaServer\backups` are both on `E:`. A
    volume failure takes the database *and* the backups together. Off-host or off-volume copies are
    the actual fix.
@@ -270,6 +320,9 @@ Honest list of what this runbook does **not** yet solve.
 5. **No `pg_dumpall` for the cluster.** The `postgres` maintenance database and the role
    definitions are not backed up, only the `media_server` database. Cluster-level recovery is out
    of scope here.
+6. **The rotation budget is one week.** Seven daily archives is a short window if a corruption goes
+   unnoticed for several days. Raising `-Keep` costs ~100 KB per archive, so this is cheap to
+   extend — it is a parameter, not a structural limit.
 
 ---
 
