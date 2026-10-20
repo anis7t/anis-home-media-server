@@ -10,7 +10,6 @@ import '../../../../core/models/app_channel.dart';
 import '../../../../core/storage/settings_service.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../../../intro/presentation/controllers/intro_controller.dart';
 import '../controllers/update_controller.dart';
 import 'update_prompt_dialog.dart';
 
@@ -628,75 +627,6 @@ class SettingsContent extends ConsumerWidget {
                       },
                     ),
                   ),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 20),
-
-        // Section 6: Brand & Experience
-        _buildSectionHeader('BRAND & EXPERIENCE'),
-        const SizedBox(height: 8),
-        TvFocusable(
-          borderRadius: BorderRadius.circular(12),
-          onPressed: () {
-            ref.read(introControllerProvider.notifier).replay();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Brand Intro will replay on next launch or navigation'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          },
-          builder: (context, isFocused, child) {
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: isFocused
-                    ? AppColors.brandRed.withValues(alpha: 0.15)
-                    : AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
-                  width: isFocused ? 2.5 : 1.0,
-                ),
-                boxShadow: isFocused
-                    ? [
-                        const BoxShadow(
-                          color: AppColors.brandRedGlow,
-                          blurRadius: 18,
-                          spreadRadius: 2,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.movie_filter_rounded, color: AppColors.brandRed, size: 22),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Replay Brand Intro',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Play the signature opening sting animation and score.',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.play_circle_outline_rounded, color: AppColors.brandRedLight, size: 20),
                 ],
               ),
             );

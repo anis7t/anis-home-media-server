@@ -37,10 +37,6 @@ class IntroController extends Notifier<IntroState> {
   void markFinished() {
     state = state.copyWith(hasSeenIntro: true, isPlaying: false);
   }
-
-  void replay() {
-    state = state.copyWith(isPlaying: true);
-  }
 }
 
 final introControllerProvider =

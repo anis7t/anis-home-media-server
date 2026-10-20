@@ -440,9 +440,9 @@ Press <kbd>n</kbd> on desktop or tap the **Stats for Nerds** icon in player cont
 - **Hardware Telemetry:** Live discrete and integrated GPU engine utilization, memory consumption, and active transcoding speed.
 
 ### Cinematic Brand Opening Sequence
-- On cold boot launch, the application displays a brand opening sting with custom original audio.
-- **Resilient Web Audio:** Non-blocking playback that handles browser autoplay restrictions gracefully.
-- **Once-Per-Session Gating:** Displays once per session; can be replayed at any time via **Settings → Replay Brand Intro**.
+The **Android phone and TV apps** play a 3-second brand opening sting on cold boot launch.
+- It plays on **every launch** — there is **no Skip control and no Replay control**.
+- **Tap anywhere, or press any key, to dismiss it early**; control returns to the app immediately.
 
 ---
 

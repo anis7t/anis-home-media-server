@@ -2,6 +2,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/intro/presentation/controllers/intro_controller.dart';
 
+/// A controller whose intro is already playing.
+///
+/// The canonical design has no Replay path (decision D4), so `IntroController.build()`
+/// is the only place the playing state comes from - and it forces `isPlaying: false`
+/// under `FLUTTER_TEST`. Overriding `build()` is therefore the only way to exercise the
+/// playing -> finished transition, and it mirrors the pattern already established by
+/// `brand_intro_overlay_test.dart`.
+class _PlayingIntroController extends IntroController {
+  @override
+  IntroState build() {
+    return const IntroState(hasSeenIntro: false, isPlaying: true);
+  }
+}
+
 void main() {
   group('IntroController Unit Tests', () {
     test('initial state handles test environment defaults safely', () {
@@ -14,23 +28,16 @@ void main() {
       expect(state.hasSeenIntro, isTrue);
     });
 
-    test('replay sets isPlaying to true', () {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-
-      final notifier = container.read(introControllerProvider.notifier);
-      notifier.replay();
-
-      final state = container.read(introControllerProvider);
-      expect(state.isPlaying, isTrue);
-    });
-
     test('markFinished sets hasSeenIntro true and isPlaying false', () {
-      final container = ProviderContainer();
+      final container = ProviderContainer(
+        overrides: [
+          introControllerProvider.overrideWith(() => _PlayingIntroController()),
+        ],
+      );
       addTearDown(container.dispose);
 
       final notifier = container.read(introControllerProvider.notifier);
-      notifier.replay();
+      // The intro is playing, so markFinished() has a real transition to make.
       expect(container.read(introControllerProvider).isPlaying, isTrue);
 
       notifier.markFinished();

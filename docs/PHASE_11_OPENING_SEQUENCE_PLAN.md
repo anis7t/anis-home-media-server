@@ -1,7 +1,7 @@
 # Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)
 
-**Status:** 📋 **PLANNED.** Slice 11.1 (canonical specification) is **complete**; 11.2 onward await
-slice-by-slice plans.
+**Status:** 📋 **PLANNED.** Slice 11.1 (canonical specification) and Slice 11.1a (remove the Flutter
+Replay action) are **complete**; 11.2 onward await slice-by-slice plans.
 **Branch:** `feature/phase-11-opening-sequence`
 **Parent:** `fb8b5f6` (on `feature/qr-signin-web-tv`)
 
@@ -182,7 +182,7 @@ dismissal contract, the reduced-motion contract, the gating contract, the **dive
 
 **Exit:** the spec is referenced by every later slice; no code changes.
 
-### Slice 11.1a — Flutter: remove the Replay action *(code)* ⏭️ **NEXT**
+### Slice 11.1a — Flutter: remove the Replay action *(code)* ✅ **COMPLETE (2026-10-20)**
 
 D4 as extended: **no Replay action anywhere.** A small, self-contained deletion, deliberately
 separated from 11.4 so that 11.4 is purely about the visual design.
@@ -200,6 +200,12 @@ redundant by construction. After the removal the only path to `isPlaying: true` 
 
 **Exit:** the Flutter suite is green; the action, the controller method and its test are gone; no
 document advertises a Replay action.
+
+**Delivered (2026-10-20):** the Settings item and the `BRAND & EXPERIANCE` section are removed
+from `settings_content.dart` (with its now-unused import), `IntroController.replay()` is removed,
+its test is deleted, and the `markFinished` test was re-based on the provider-override pattern
+already used in `brand_intro_overlay_test.dart` so the playing→finished transition stays covered
+without any production refactor. The docs that advertised the action were updated. **Next: 11.2.**
 
 ### Slice 11.2 — Web: the canvas renderer *(no audio yet)*
 

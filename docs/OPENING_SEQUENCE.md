@@ -24,8 +24,8 @@ One brand opening sequence, implemented natively for three targets — the **web
 | Target | Implementation | Score | Visible Skip | Replay action | Gating | Lockup |
 |---|---|---|---|---|---|---|
 | **Web** | **none yet** (11.2, 11.3) | live Web Audio synthesis | none | none | once per browser session | responsive |
-| **Android phone** | `CustomPaint` | none yet (11.5) | **present — to go** | **present — to go** | every launch | responsive |
-| **Android TV** | same `CustomPaint` | none yet (11.5) | **present — to go** | **present — to go** | every launch | responsive |
+| **Android phone** | `CustomPaint` | none yet (11.5) | **present — to go (11.4)** | **none** (removed in 11.1a) | every launch | responsive |
+| **Android TV** | same `CustomPaint` | none yet (11.5) | **present — to go (11.4)** | **none** (removed in 11.1a) | every launch | responsive |
 | *Original web (archived)* | Canvas `renderAt(t)` | live Web Audio synthesis | none (`SHOW_HUD=false`) | none | once per browser session | responsive |
 
 "Responsive" means the **responsive lockup rule** of §6: side by side in landscape, stacked in
@@ -324,7 +324,7 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 | **L3** | Grain | 5 % film grain over the FX, fading to 0 as the curtain opens | to be built | **absent** | 11.4 |
 | **L4** | Lockup layout | side by side in landscape, stacked in portrait | to be built | **stacked unconditionally** (`:347`) — right for the phone, wrong for the TV | 11.4 |
 | **L5** | Skip affordance | **none** | none (by design) | **visible Skip pill** (`:241-282`) | 11.4 |
-| **L6** | Replay affordance | **none** (D4) | none (by design) | **Settings → "Replay Brand Intro"** (`settings_content.dart:638-704`), plus `IntroController.replay()` (`intro_controller.dart:41-43`) and its test (`intro_controller_test.dart` — "replay sets isPlaying to true"). The `BRAND & EXPERIENCE` section contains **only** that item, so the section header goes with it. Docs to update: `docs/MANUAL.md:445`, `docs/FLUTTER_CLIENT_STATUS.md:498`. | **11.1a** |
+| **L6** | Replay affordance | **none** (D4) | none (by design) | [CLOSED in 11.1a (2026-10-20)] - the Settings "Replay Brand Intro" item and the `BRAND & EXPERIENCE` section that contained it are gone, as are `IntroController.replay()` and its test. The docs that advertised it are updated. | **11.1a - done** |
 | **L7** | Score | web: live synthesis · Android: the WAV | to be built (11.3) | **absent** | 11.3, 11.5 |
 | **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | to be built | halves **shrink** to zero width with **hard edges**, each with its own centred gradient (`:151-171`, `:297-320`) | 11.4 |
 | **L9** | Ambient drift | **none** (D10 — dropped) | none (D10) | none | — closed by D10 |

@@ -179,5 +179,5 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
     layer**; its lockup rule is a constant rather than the canonical portrait/landscape
     breakpoint; and `renderAt(t)` in the archived source is **not pure** (a `Math.random()` camera
     shake), so a frame-for-frame oracle required explicit determinism decisions (D9, D10).
-  - **Next:** Slice 11.1a — remove the Flutter "Replay Brand Intro" action. Then 11.2 (the web
-    canvas renderer). Roadmap: `docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`.
+  - **Next:** Slice 11.2 — the web canvas renderer. Slice 11.1a (removing the Flutter Replay
+    action) is **complete**. Roadmap: `docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`.
