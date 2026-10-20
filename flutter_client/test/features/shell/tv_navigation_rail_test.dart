@@ -102,5 +102,5 @@ class _MockIntroNotifier extends IntroController {
   _MockIntroNotifier(this.initialPlaying);
 
   @override
-  IntroState build() => IntroState(hasSeenIntro: true, isPlaying: initialPlaying);
+  IntroState build() => IntroState(isPlaying: initialPlaying);
 }

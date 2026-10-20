@@ -62,6 +62,13 @@ Settled 2026-10-20. Each is a **decision**, not a default to be re-litigated in 
 | **D13** | Should the port's noise be seeded, like the original's camera shake (D9)? | **Seeded.** The original drew its reverb impulse response and every noise buffer from `Math.random()` (`source: 602, 610`), so its live synthesis was never bit-reproducible. Seeding makes the port's render reproducible, which is what lets the oracle compare renders at all. The perceptual difference is nil — it is noise either way. |
 | **D14** | The gate card's wording | **The original's, verbatim** (`source: 940-944`): the button reads *"▶ Play with sound"* and the hint reads *"Original synthesized theme. Browsers require a click before audio can play, so press play — `space` skips, `m` mutes."* The `m` mute is ported with it, because a hint that says *"`m` mutes"* and a key that also skips would be a lie. |
 
+### 2.1b The two decisions taken with the Slice 11.4 plan (2026-10-20)
+
+| # | Question | Answer |
+|---|---|---|
+| **D15** | The gating: the specification says "Android: every launch", and the code did that **accidentally**. How should it be made deliberate? | **Keep "every launch", and say so.** The dead `hasSeenIntro` flag — written when the sequence finished, never persisted, never read — is gone, and the controller now states the behaviour. The alternative was to persist it (`shared_preferences` is already a dependency) and play **once per install**; that is a visible change to the product, and the specification does not ask for it. |
+| **D16** | The handover at 2.57 s: the web releases **both** touches and keys, but on a television a D-pad press must not navigate the app behind the sequence. | **The Flutter client releases touches at 2.57 s and keeps the keyboard for the whole three seconds.** A remote cannot drive the app while the sequence is still on screen. This is a deliberate divergence from the web, and it is recorded as **L17**. |
+
 ### 2.2 D4 and D6 read together
 
 The web original's HUD — the skip / replay / mute chrome — is **hidden by default**
@@ -382,6 +389,12 @@ papered over. It does not block 11.3a: the oracle in §13.2 proves what 11.3a se
 Skipping renders the final frame and finishes (`source: 857-864`): the layer is removed, the
 audio stops over 0.10 s, and the app underneath is live and interactive.
 
+**And one exception on Flutter, which is a divergence from the web (D16).** The Flutter client
+releases **touches** at the handover (2.57 s) so the app underneath is live, but it keeps the
+**keyboard** for the whole three seconds, so a D-pad press dismisses the sequence rather than
+navigating the app behind it. The web releases both, because a browser's key events and pointer
+events are the same kind of thing; on a television they are not. **L17** in §12.
+
 > **The original's click-to-skip does not work, and the port's does.** The source tests
 > `e.target === el.stage` (`source: 888`), but the FX canvas (z-index 4) and the curtain halves
 > (z-index 2) have no `pointer-events: none` — so a click always lands on one of them and never
@@ -474,21 +487,23 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 
 | # | Element | Canonical | Web (today) | Flutter (today) | Closed in |
 |---|---|---|---|---|---|
-| **L1** | Layer order | veils 2 → seam 3 → **fx 4** → vignette 5 → grain 6 → lockup 7 | built (11.2) | **fx is first in the `Stack`, i.e. at the bottom** (`brand_intro_overlay.dart:141-284`) | 11.2, 11.4 |
-| **L2** | FX layer visible | beams, converging particles, impact flash, shockwave rings, standing glow, embers — **above** the curtain | built (11.2) | **never seen** — drawn *under* the opaque veils, so the whole 0.12–1.95 s build-up is invisible | 11.4 |
-| **L3** | Grain | 5 % film grain over the FX, fading to 0 as the curtain opens | built (11.2) | **absent** | 11.4 |
-| **L4** | Lockup layout | side by side in landscape, stacked in portrait | built (11.2) | **stacked unconditionally** (`:347`) — right for the phone, wrong for the TV | 11.4 |
-| **L5** | Skip affordance | **none** | none (by design) | **visible Skip pill** (`:241-282`) | 11.4 |
+| **L1** | Layer order | veils 2 → seam 3 → **fx 4** → vignette 5 → grain 6 → lockup 7 | built (11.2) | **CLOSED in 11.4 (2026-10-20)** — the FX canvas is now **above** the curtain, as is the seam, the vignette, the grain and the lockup. It was the **first** child of the `Stack` (the bottom), so the whole build-up was painted and then covered by two opaque halves. | 11.2, **11.4** |
+| **L2** | FX layer visible | beams, converging particles, impact flash, shockwave rings, standing glow, embers — **above** the curtain | built (11.2) | **CLOSED in 11.4** — all seven effects and the sheen are now implemented in `flutter_client/lib/features/intro/presentation/painters/intro_fx_painter.dart`, ported from the canonical renderer. The particles are the canonical's: the same seeded fields, bit for bit. | 11.2, **11.4** |
+| **L3** | Grain | 5 % film grain over the FX, fading to 0 as the curtain opens | built (11.2) | **CLOSED in 11.4, with one recorded divergence** — the grain exists, at the same 5 % and the same fade. The canonical's is an SVG `feTurbulence` filter, which Flutter cannot render (there is no SVG filter support); the Flutter client uses a **seeded white-noise** texture with the same tile size and the same colour matrix. The same *kind* of texture, not the same pixels. | 11.2, **11.4** |
+| **L4** | Lockup layout | side by side in landscape, stacked in portrait | built (11.2) | **CLOSED in 11.4** — the layout is now the canonical **breakpoint rule**, decided by the **stage's aspect** (`H > W`) and never by the device type. It was a `Column`, stacked unconditionally: right for the phone, wrong for the TV. | 11.2, **11.4** |
+| **L5** | Skip affordance | **none** | none (by design) | **CLOSED in 11.4** — the visible Skip pill is gone. Dismissal is implicit: a tap anywhere, or any key. | **11.4** |
 | **L6** | Replay affordance | **none** (D4) | none (by design) | [CLOSED in 11.1a (2026-10-20)] - the Settings "Replay Brand Intro" item and the `BRAND & EXPERIENCE` section that contained it are gone, as are `IntroController.replay()` and its test. The docs that advertised it are updated. | **11.1a - done** |
 | **L7** | Score | web: live synthesis · Android: the WAV | **built (11.3a)** — the port of the original's Web Audio, in `web/src/lib/intro/audio.ts`, with the score anchored to the animation's clock, the unlocking gesture consumed by the audio (D12), the `m` mute, and the drop rule (§7.4-§7.7) | **absent** | 11.3a (web) **done**, 11.5 (Flutter) |
-| **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | built (11.2) | halves **shrink** to zero width with **hard edges**, each with its own centred gradient (`:151-171`, `:297-320`) | 11.4 |
+| **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | built (11.2) | **CLOSED in 11.4** — the halves **translate** ±100 % of their own width, they overlap by 1 px, their inner edges feather only once they part, and they carry **one** continuous image (the same stage-wide gradient, offset by half a stage to the left and to the right). They used to **shrink to zero width** with hard edges, each with its own centred gradient. | 11.2, **11.4** |
 | **L9** | Ambient drift | **none** (D10 — dropped) | none (D10) | none | — closed by D10 |
-| **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | built (11.2) | **absent** | 11.2, 11.4 |
-| **L11** | Reduced motion | honoured on all three (D11) | the lifecycle is 11.3 | **not honoured** | 11.3, 11.4 |
-| **L12** | Outro | layer **removed** at 3.00 s | built (11.2) | 300 ms opacity fade after 3.00 s, plus a 3.5 s safety timeout (`:81-83, 97-102`) | 11.4 |
-| **L13** | Gating semantics | documented, deliberate | the lifecycle is 11.3 | "every launch" is **accidental** — `hasSeenIntro` is never persisted or consulted | 11.4 |
+| **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | built (11.2) | **CLOSED in 11.4** — the same deterministic hash, so the two targets shake identically. It was absent. | 11.2, **11.4** |
+| **L11** | Reduced motion | honoured on all three (D11) | the lifecycle is 11.3 | **CLOSED in 11.4** — `MediaQuery.disableAnimationsOf` is honoured, and it suppresses **exactly** the four things: the impact burst, the camera shake, the icon's rotation and the icon's scale. It was honoured by nothing. | 11.3, **11.4** |
+| **L12** | Outro | layer **removed** at 3.00 s | built (11.2) | **CLOSED in 11.4** — the layer is removed at 3.00 s. It used to fade to zero over 300 ms, and carry a 3.5 s safety timeout. | 11.2, **11.4** |
+| **L13** | Gating semantics | documented, deliberate | the lifecycle is 11.3 | **CLOSED in 11.4** — "every launch" is now **stated**, and the dead `hasSeenIntro` flag is gone. It was set when the sequence finished and never persisted and never read, so the behaviour was accidental rather than designed. | 11.3, **11.4** |
 | **L14** | Dead asset | — | — | `assets/videos/intro-demo-portrait.mp4` is declared in `pubspec.yaml` and **never played** — 2.43 MB in every APK | 11.5 |
 | **L15** | AGENTS.md's Flutter invariant | — | — | claims the intro is *"hardware-accelerated portrait video"*, claims `IntroController` provides session gating, and lists the Replay action — **all three wrong** | 11.1 (closed by this document) |
+| **L16** | The mark | the canonical SVG, path for path | the shared `BrandMark` | **CLOSED in 11.4** — the mark is now the canonical artwork. The Flutter client's re-implementation had the **wrong specular highlight** (`v 19.4 … L23.2 18.0` where the canonical is `v8.5 l14.2-1.4 L12 9.2z`, so the highlight covered roughly twice its area) and a hard `drawShadow` at six units where the canonical has a soft `feDropShadow dy=2 stdDeviation=3`. | 11.2, **11.4** |
+| **L17** | The handover | the app underneath is interactive from 2.57 s | the layer releases `pointer-events` at 2.57 s | **CLOSED in 11.4, with one recorded divergence** — the Flutter client releases **touches** at 2.57 s and keeps the **keyboard** for the whole three seconds, so a D-pad press cannot navigate the app behind the sequence. The web releases both. §8. | 11.2, **11.4** |
 
 ## 13. The oracle — how a later slice proves it matches
 
@@ -567,7 +582,62 @@ noise beds are created in the same order in both.
 > oracle asserts what it can prove exactly — the graph — and the tolerance it does assert is
 > measured, not guessed.
 
-### 13.3 The archived asset pipeline (the offline renders)
+### 13.3 The Flutter client's oracle (built in Slice 11.4)
+
+The Flutter client cannot be compared to the archived original **pixel for pixel** — Chromium's
+rasteriser and Flutter's are not the same, and they never will be: font metrics, gradient
+interpolation, antialiasing and blend modes all differ. So the comparison is in **two tiers**, and
+each answers a different question.
+
+| Tier | What it compares | How | Result |
+|---|---|---|---|
+| **The parameters** | every animated value, at **69 instants** | the canonical renderer (the web's, which is pixel-identical to the archived original) is exported to `docs/opening-sequence/frame-golden.json`, and the Flutter client's own frame is asserted against it, **value for value** | **exact** — to 1 × 10⁻⁹ |
+| **The picture** | the rendered frame, against the **archived original's own frames** | the Flutter overlay is rendered at the archived frames' instants and at their viewports, and the two are compared perceptually | the mean error stays **under 14 / 255**, and **at least 86.5 %** of the pixels stay within 32 / 255, at every one of the 58 frames of the closed-curtain window, in both aspects |
+
+**The parameters are the load-bearing tier.** The fixture is generated by
+`scripts/gen-intro-frame-golden.mjs`, and it records the values the canonical implementation
+**rendered** — parsed out of the very strings it wrote to the DOM, because the rounding is part of
+the rendering. The Flutter client's `jsToFixed` is JavaScript's `toFixed`, and that equivalence is
+itself tested (`intro_tofixed_test.dart`, against a captured reference).
+
+**The picture tier covers the closed-curtain window** — every frame up to t = 1.90 s, 58 of the 90
+in each aspect. That is the whole build-up: the beams, the converging particles, the impact, the
+burst, the flash, the shockwaves, the standing glow, the sheen, the wordmarks, the subtitle, the
+rule, the embers, the mark's landing — every effect the previous Flutter implementation painted
+and then hid under an opaque curtain. It is also the window in which the comparison is *exact in
+principle*: the curtain is opaque, so what is behind it does not matter.
+
+> **The parting window is not compared as pictures, and the reason is not a convenience.** The
+> archived frames were captured over the **web** application, so what shows through the parting
+> curtain is the web app. The Flutter client runs a different application, and the two cannot be
+> compared there. The parting is not left unproven: its **geometry** is pinned exactly by the
+> parameter tier — both halves' travel, both halves' feather, the seam's opacity, the lockup's
+> dismissal, the vignette and the grain, at 69 instants. What the picture tier adds is that the
+> geometry is not merely right but *drawn* right.
+
+> **Two things about the picture tier that are worth knowing.** The frames are compared at the
+> **logical** scale, because a widget test can only capture there — the archived portrait frames are
+> 1080 × 1920 *pixels* (a 540 × 960 viewport at a device pixel ratio of 2), and comparing a
+> 540 × 960 capture against them compares the top-left quarter of one with the whole of the other.
+> And the **word column is excluded**: a Flutter widget test renders text with the **Ahem** test
+> font, whose glyphs are solid squares, so the wordmarks cannot be compared as pictures at all.
+> Their *parameters* are pinned exactly by the parameter tier instead.
+
+**The seeded fields are compared too.** The converging particles and the embers come from the
+source's `mulberry32`, and Dart's 64-bit integers do not behave like JavaScript's 32-bit ones.
+The port reimplements JavaScript's `Math.imul` and the `| 0` coercions, and
+`intro_timeline_test.dart` asserts the particles, the embers and the camera shake against a
+captured reference — **bit for bit**.
+
+> **Three things the oracle caught that no listening test would have.** The first port of the
+> particle fields took the random draws in the order the constructor's *named arguments* happened
+> to be evaluated — and Dart does not promise that order — so every particle landed somewhere
+> else. The first `toFixed` multiplied by the scale factor, which rounds: a value just below a
+> midpoint can land exactly on it, and the curtain's feather at t = 2.57 came out one unit in the
+> last place away from the canonical's. And the mark had **no size** at all: a `CustomPaint` with
+> no child and no size is zero-sized, so the canonical mark simply did not appear.
+
+### 13.4 The archived asset pipeline (the offline renders)
 
 | Tool | What it does |
 |---|---|

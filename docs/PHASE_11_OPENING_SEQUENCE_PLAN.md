@@ -360,8 +360,7 @@ WAV's within **16 dB**. Spec §7.9 carries the full list of what was ruled out.
 **Verified:** `tsc -b` clean · `oxlint` exit 0 · vitest **300/300** across 41 files (8 new) ·
 `vite build` succeeds · the Playwright oracle **9/9** (the six frame oracles plus three audio
 oracles).
-### Slice 11.4 - Flutter: align to the canonical design
-
+### Slice 11.4 - Flutter: align to the canonical design ✅ **DONE (2026-10-20)**
 
 Makes the shipped app match the canonical design. **This is a visible change to the phone app.**
 Its scope is **larger** than the original three drifts — see §1.1 finding 3.
@@ -378,10 +377,60 @@ Its scope is **larger** than the original three drifts — see §1.1 finding 3.
   (removal at 3.00 s, not a 300 ms fade, L12).
 - Honour **`prefers-reduced-motion`** (L11) and make the "every launch" gating **deliberate rather
   than accidental** (L13).
-- Add a TV test asserting a D-pad press dismisses the overlay and **does not fall through** to the
-  app behind it.
+- Add a TV test asserting a D-pad press dismisses the overlay and **does not fall through** to
+  the app behind it.
 - **Exit:** the Flutter suite is green; the phone and TV both show the canonical design.
 
+**What was built.** The Flutter client is now a **port of the canonical renderer**, not a
+re-implementation of the idea:
+
+| File | What it is |
+|---|---|
+| `flutter_client/lib/features/intro/domain/intro_timeline.dart` | The cue constants, the easings, the source's `mulberry32` (with JavaScript's 32-bit semantics), the two seeded particle fields, and the deterministic camera shake |
+| `flutter_client/lib/features/intro/domain/intro_frame.dart` | `computeIntroFrame(t)` — every animated value, rounded the way the canonical rounds it |
+| `flutter_client/lib/features/intro/presentation/painters/intro_fx_painter.dart` | All seven FX and the sheen, with `BlendMode.plus` for the canvas's `lighter` |
+| `flutter_client/lib/features/intro/presentation/painters/intro_veil_painter.dart` | The curtain: two halves of **one** continuous image |
+| `flutter_client/lib/features/intro/presentation/widgets/brand_intro_overlay.dart` | The canonical layer stack, the responsive lockup, the handover, the removal at 3.00 s, and no Skip pill |
+| `flutter_client/lib/features/intro/presentation/widgets/brand_mark.dart` | The canonical mark, path for path |
+| `flutter_client/lib/features/intro/presentation/controllers/intro_controller.dart` | The deliberate gating |
+
+**Two decisions were taken with the plan** and are recorded as **D15** (the gating: "every launch"
+is kept and made deliberate, and the dead `hasSeenIntro` flag is gone) and **D16** (the handover:
+Flutter releases **touches** at 2.57 s and keeps the **keyboard** for the whole three seconds, so
+a D-pad press cannot navigate the app behind the sequence) in the spec's §2.1b.
+
+**Three things the ledger did not name, and the slice found:**
+
+1. **The mark was wrong.** The Flutter client's specular highlight used
+   `v 19.4 … L23.2 18.0` where the canonical is `v8.5 l14.2-1.4 L12 9.2z` — roughly twice the area
+   it should cover — and its shadow was a hard `drawShadow` at six units where the canonical has a
+   soft `feDropShadow dy=2 stdDeviation=3`. Now **L16**.
+2. **The handover was missing entirely.** The overlay absorbed every touch for the whole three
+   seconds; the app underneath was not live until the sequence had gone. Now **L17**.
+3. **The curtain's gradient was wrong**, not only its geometry: the canonical is one stage-wide
+   image carried by both halves, and the Flutter client had two independent radial blobs.
+
+**The oracle is two tiers**, and the parameter tier is the load-bearing one:
+
+| Tier | What it compares | Result |
+|---|---|---|
+| **The parameters** | every animated value, at **69 instants**, against `docs/opening-sequence/frame-golden.json` — which is generated from the canonical renderer and records the values it **rendered** | **exact**, to 1 × 10⁻⁹ |
+| **The picture** | the rendered frame against the **archived original's own frames** (90 per aspect, 30 fps), over the closed-curtain window | within a **measured** threshold |
+
+**Two things the oracle caught that no listening test would have.** The first port of the particle
+fields took the random draws in the order the constructor's *named arguments* happened to be
+evaluated — and Dart does not promise that order — so every particle landed somewhere else. And
+the first `toFixed` multiplied by the scale factor, which rounds: a value just below a midpoint can
+land exactly on it, and the curtain's feather at t = 2.57 came out one unit in the last place away
+from the canonical's.
+
+**Two divergences are recorded, and neither is hidden:** the **grain** (Flutter cannot render the
+canonical's SVG `feTurbulence`, so it uses a seeded white-noise texture of the same tile size and
+colour matrix — the same *kind* of texture, not the same pixels) and the **handover** (D16).
+
+**Verified:** `flutter analyze` clean across the whole client · the Flutter suite **+294 ~8 -3**,
+against a baseline of **+275 ~8 -3** — the same three pre-existing `libmpv` failures (Issue 11),
+unchanged and named, and **+19 passes** from the new intro tests.
 ### Slice 11.5 — Flutter: the score
 
 - Add the audio dependency and ship `intro-theme.wav` (D8).

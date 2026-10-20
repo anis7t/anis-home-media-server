@@ -1,0 +1,9954 @@
+{
+ "_comment": [
+  "The canonical frame, for every sampled instant.",
+  "",
+  "It is generated from the CANONICAL implementation - the web renderer, which",
+  "is pixel-identical to the archived original - and it records the values that",
+  "implementation RENDERED, parsed out of the strings it wrote to the DOM.",
+  "",
+  "The Flutter client computes the same frame and is asserted against this file",
+  "by flutter_client/test/features/intro/intro_frame_golden_test.dart.",
+  "",
+  "`u` is the design unit the fixture was generated for: 1920x1080 -> ${U}.",
+  "Every field except the lockup's vertical travel is independent of it."
+ ],
+ "u": 10.8,
+ "frames": [
+  {
+   "t": 0,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.05,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.1,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.12,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.15,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.2,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.25,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.3,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.35,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.4,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.45,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.5,
+   "icon": {
+    "scale": 1.55,
+    "rotationDeg": -7,
+    "opacity": 0
+   },
+   "iconGlow": {
+    "opacity": 0
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.55,
+   "icon": {
+    "scale": 1.3505,
+    "rotationDeg": -4.46,
+    "opacity": 0.507905092592593
+   },
+   "iconGlow": {
+    "opacity": 1.1099999999999999
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.6,
+   "icon": {
+    "scale": 1.1183,
+    "rotationDeg": -1.51,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 1.0541176470588234
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 0.62,
+   "icon": {
+    "scale": 1.0558,
+    "rotationDeg": -0.71,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.9982352941176469
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 2.86,
+    "translateYPx": -0.71,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 2.857604973949492,
+    "y": -0.7106375698931515
+   }
+  },
+  {
+   "t": 0.65,
+   "icon": {
+    "scale": 0.9894,
+    "rotationDeg": 0.13,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.9144117647058821
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 3.28,
+    "translateYPx": 6.42,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 3.27856423467046,
+    "y": 6.423775803454562
+   }
+  },
+  {
+   "t": 0.7,
+   "icon": {
+    "scale": 0.9381,
+    "rotationDeg": 0.79,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.7747058823529411
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 1.3,
+    "translateYPx": -4.82,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 1.299518060224245,
+    "y": -4.820503518042365
+   }
+  },
+  {
+   "t": 0.74,
+   "icon": {
+    "scale": 0.9358,
+    "rotationDeg": 0.82,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.6629411764705881
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": -0.77,
+    "translateYPx": 2.08,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": -0.7650981115519393,
+    "y": 2.0797704306089
+   }
+  },
+  {
+   "t": 0.75,
+   "icon": {
+    "scale": 0.9388,
+    "rotationDeg": 0.78,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.6349999999999999
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 2.06,
+    "translateYPx": -1.78,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 2.058464932830396,
+    "y": -1.7776324224102367
+   }
+  },
+  {
+   "t": 0.8,
+   "icon": {
+    "scale": 0.9659,
+    "rotationDeg": 0.43,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.49529411764705855
+   },
+   "w1": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 1.54,
+    "translateYPx": 1.56,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 1.5442140543339202,
+    "y": 1.5564903334087254
+   }
+  },
+  {
+   "t": 0.85,
+   "icon": {
+    "scale": 0.9937,
+    "rotationDeg": 0.08,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.3555882352941175
+   },
+   "w1": {
+    "blurPx": 4.69,
+    "letters": [
+     {
+      "translateYEm": 0.248,
+      "opacity": 0.549
+     },
+     {
+      "translateYEm": 0.314,
+      "opacity": 0.429
+     },
+     {
+      "translateYEm": 0.394,
+      "opacity": 0.284
+     },
+     {
+      "translateYEm": 0.488,
+      "opacity": 0.112
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": -0.77,
+    "translateYPx": -0.99,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": -0.7673836135215185,
+    "y": -0.9948298974076707
+   }
+  },
+  {
+   "t": 0.9,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.21588235294117616
+   },
+   "w1": {
+    "blurPx": 2.95,
+    "letters": [
+     {
+      "translateYEm": 0.096,
+      "opacity": 0.825
+     },
+     {
+      "translateYEm": 0.128,
+      "opacity": 0.767
+     },
+     {
+      "translateYEm": 0.167,
+      "opacity": 0.696
+     },
+     {
+      "translateYEm": 0.216,
+      "opacity": 0.607
+     },
+     {
+      "translateYEm": 0.275,
+      "opacity": 0.5
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": -0.04,
+    "translateYPx": -0.67,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": -0.04496925231069327,
+    "y": -0.6686204713769258
+   }
+  },
+  {
+   "t": 0.92,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 2.4,
+    "letters": [
+     {
+      "translateYEm": 0.062,
+      "opacity": 0.887
+     },
+     {
+      "translateYEm": 0.085,
+      "opacity": 0.846
+     },
+     {
+      "translateYEm": 0.114,
+      "opacity": 0.794
+     },
+     {
+      "translateYEm": 0.149,
+      "opacity": 0.728
+     },
+     {
+      "translateYEm": 0.194,
+      "opacity": 0.648
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 7,
+    "letters": [
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0.37,
+    "translateYPx": 0.08,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0.3693670082305158,
+    "y": 0.07962423369136391
+   }
+  },
+  {
+   "t": 0.95,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 1.71,
+    "letters": [
+     {
+      "translateYEm": 0.03,
+      "opacity": 0.946
+     },
+     {
+      "translateYEm": 0.043,
+      "opacity": 0.922
+     },
+     {
+      "translateYEm": 0.06,
+      "opacity": 0.892
+     },
+     {
+      "translateYEm": 0.081,
+      "opacity": 0.852
+     },
+     {
+      "translateYEm": 0.109,
+      "opacity": 0.802
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 5.6,
+    "letters": [
+     {
+      "translateYEm": 0.347,
+      "opacity": 0.37
+     },
+     {
+      "translateYEm": 0.432,
+      "opacity": 0.214
+     },
+     {
+      "translateYEm": 0.534,
+      "opacity": 0.029
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": -0.36,
+    "translateYPx": 0.07,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": -0.35756090331147944,
+    "y": 0.06534025877505092
+   }
+  },
+  {
+   "t": 1,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 0.88,
+    "letters": [
+     {
+      "translateYEm": 0.007,
+      "opacity": 0.988
+     },
+     {
+      "translateYEm": 0.01,
+      "opacity": 0.981
+     },
+     {
+      "translateYEm": 0.016,
+      "opacity": 0.971
+     },
+     {
+      "translateYEm": 0.024,
+      "opacity": 0.956
+     },
+     {
+      "translateYEm": 0.035,
+      "opacity": 0.936
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 3.71,
+    "letters": [
+     {
+      "translateYEm": 0.144,
+      "opacity": 0.738
+     },
+     {
+      "translateYEm": 0.187,
+      "opacity": 0.66
+     },
+     {
+      "translateYEm": 0.24,
+      "opacity": 0.564
+     },
+     {
+      "translateYEm": 0.304,
+      "opacity": 0.447
+     },
+     {
+      "translateYEm": 0.381,
+      "opacity": 0.307
+     },
+     {
+      "translateYEm": 0.474,
+      "opacity": 0.139
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0.06,
+    "translateYPx": -0.01,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0.060579260963262486,
+    "y": -0.012293585937242148
+   }
+  },
+  {
+   "t": 1.05,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 0.37,
+    "letters": [
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.997
+     },
+     {
+      "translateYEm": 0.003,
+      "opacity": 0.995
+     },
+     {
+      "translateYEm": 0.005,
+      "opacity": 0.991
+     },
+     {
+      "translateYEm": 0.008,
+      "opacity": 0.985
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 2.3,
+    "letters": [
+     {
+      "translateYEm": 0.049,
+      "opacity": 0.91
+     },
+     {
+      "translateYEm": 0.068,
+      "opacity": 0.876
+     },
+     {
+      "translateYEm": 0.092,
+      "opacity": 0.832
+     },
+     {
+      "translateYEm": 0.123,
+      "opacity": 0.776
+     },
+     {
+      "translateYEm": 0.161,
+      "opacity": 0.707
+     },
+     {
+      "translateYEm": 0.208,
+      "opacity": 0.621
+     },
+     {
+      "translateYEm": 0.266,
+      "opacity": 0.517
+     },
+     {
+      "translateYEm": 0.336,
+      "opacity": 0.39
+     },
+     {
+      "translateYEm": 0.419,
+      "opacity": 0.238
+     },
+     {
+      "translateYEm": 0.518,
+      "opacity": 0.057
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.1,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 0.11,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.998
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 1.31,
+    "letters": [
+     {
+      "translateYEm": 0.013,
+      "opacity": 0.977
+     },
+     {
+      "translateYEm": 0.019,
+      "opacity": 0.965
+     },
+     {
+      "translateYEm": 0.028,
+      "opacity": 0.948
+     },
+     {
+      "translateYEm": 0.041,
+      "opacity": 0.926
+     },
+     {
+      "translateYEm": 0.057,
+      "opacity": 0.897
+     },
+     {
+      "translateYEm": 0.078,
+      "opacity": 0.858
+     },
+     {
+      "translateYEm": 0.105,
+      "opacity": 0.81
+     },
+     {
+      "translateYEm": 0.138,
+      "opacity": 0.748
+     },
+     {
+      "translateYEm": 0.18,
+      "opacity": 0.672
+     },
+     {
+      "translateYEm": 0.232,
+      "opacity": 0.579
+     },
+     {
+      "translateYEm": 0.294,
+      "opacity": 0.465
+     },
+     {
+      "translateYEm": 0.37,
+      "opacity": 0.328
+     },
+     {
+      "translateYEm": 0.46,
+      "opacity": 0.164
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.12,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": 0.06,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 0.999
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 1.01,
+    "letters": [
+     {
+      "translateYEm": 0.007,
+      "opacity": 0.988
+     },
+     {
+      "translateYEm": 0.01,
+      "opacity": 0.981
+     },
+     {
+      "translateYEm": 0.016,
+      "opacity": 0.971
+     },
+     {
+      "translateYEm": 0.024,
+      "opacity": 0.956
+     },
+     {
+      "translateYEm": 0.035,
+      "opacity": 0.936
+     },
+     {
+      "translateYEm": 0.049,
+      "opacity": 0.91
+     },
+     {
+      "translateYEm": 0.068,
+      "opacity": 0.876
+     },
+     {
+      "translateYEm": 0.092,
+      "opacity": 0.832
+     },
+     {
+      "translateYEm": 0.123,
+      "opacity": 0.776
+     },
+     {
+      "translateYEm": 0.161,
+      "opacity": 0.707
+     },
+     {
+      "translateYEm": 0.208,
+      "opacity": 0.621
+     },
+     {
+      "translateYEm": 0.266,
+      "opacity": 0.517
+     },
+     {
+      "translateYEm": 0.336,
+      "opacity": 0.39
+     },
+     {
+      "translateYEm": 0.419,
+      "opacity": 0.238
+     },
+     {
+      "translateYEm": 0.518,
+      "opacity": 0.057
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     },
+     {
+      "translateYEm": 0.55,
+      "opacity": 0
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.15,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 0.65,
+    "letters": [
+     {
+      "translateYEm": 0.002,
+      "opacity": 0.996
+     },
+     {
+      "translateYEm": 0.004,
+      "opacity": 0.994
+     },
+     {
+      "translateYEm": 0.006,
+      "opacity": 0.989
+     },
+     {
+      "translateYEm": 0.01,
+      "opacity": 0.982
+     },
+     {
+      "translateYEm": 0.015,
+      "opacity": 0.972
+     },
+     {
+      "translateYEm": 0.023,
+      "opacity": 0.958
+     },
+     {
+      "translateYEm": 0.033,
+      "opacity": 0.94
+     },
+     {
+      "translateYEm": 0.047,
+      "opacity": 0.914
+     },
+     {
+      "translateYEm": 0.065,
+      "opacity": 0.881
+     },
+     {
+      "translateYEm": 0.089,
+      "opacity": 0.839
+     },
+     {
+      "translateYEm": 0.118,
+      "opacity": 0.785
+     },
+     {
+      "translateYEm": 0.155,
+      "opacity": 0.718
+     },
+     {
+      "translateYEm": 0.201,
+      "opacity": 0.635
+     },
+     {
+      "translateYEm": 0.257,
+      "opacity": 0.533
+     },
+     {
+      "translateYEm": 0.325,
+      "opacity": 0.41
+     },
+     {
+      "translateYEm": 0.406,
+      "opacity": 0.261
+     },
+     {
+      "translateYEm": 0.503,
+      "opacity": 0.085
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.2,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 0.26,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.998
+     },
+     {
+      "translateYEm": 0.003,
+      "opacity": 0.995
+     },
+     {
+      "translateYEm": 0.004,
+      "opacity": 0.992
+     },
+     {
+      "translateYEm": 0.007,
+      "opacity": 0.986
+     },
+     {
+      "translateYEm": 0.012,
+      "opacity": 0.978
+     },
+     {
+      "translateYEm": 0.018,
+      "opacity": 0.967
+     },
+     {
+      "translateYEm": 0.027,
+      "opacity": 0.951
+     },
+     {
+      "translateYEm": 0.039,
+      "opacity": 0.93
+     },
+     {
+      "translateYEm": 0.054,
+      "opacity": 0.901
+     },
+     {
+      "translateYEm": 0.075,
+      "opacity": 0.864
+     },
+     {
+      "translateYEm": 0.1,
+      "opacity": 0.817
+     },
+     {
+      "translateYEm": 0.133,
+      "opacity": 0.758
+     },
+     {
+      "translateYEm": 0.174,
+      "opacity": 0.684
+     },
+     {
+      "translateYEm": 0.224,
+      "opacity": 0.593
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.24,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 0.09,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.997
+     },
+     {
+      "translateYEm": 0.003,
+      "opacity": 0.995
+     },
+     {
+      "translateYEm": 0.005,
+      "opacity": 0.991
+     },
+     {
+      "translateYEm": 0.008,
+      "opacity": 0.985
+     },
+     {
+      "translateYEm": 0.013,
+      "opacity": 0.977
+     },
+     {
+      "translateYEm": 0.019,
+      "opacity": 0.965
+     },
+     {
+      "translateYEm": 0.028,
+      "opacity": 0.948
+     },
+     {
+      "translateYEm": 0.041,
+      "opacity": 0.926
+     },
+     {
+      "translateYEm": 0.057,
+      "opacity": 0.897
+     },
+     {
+      "translateYEm": 0.078,
+      "opacity": 0.858
+     },
+     {
+      "translateYEm": 0.105,
+      "opacity": 0.81
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.62,
+    "opacity": 0,
+    "blurPx": 5
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.25,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": 0.07,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.998
+     },
+     {
+      "translateYEm": 0.002,
+      "opacity": 0.997
+     },
+     {
+      "translateYEm": 0.003,
+      "opacity": 0.994
+     },
+     {
+      "translateYEm": 0.006,
+      "opacity": 0.99
+     },
+     {
+      "translateYEm": 0.009,
+      "opacity": 0.983
+     },
+     {
+      "translateYEm": 0.014,
+      "opacity": 0.974
+     },
+     {
+      "translateYEm": 0.022,
+      "opacity": 0.961
+     },
+     {
+      "translateYEm": 0.032,
+      "opacity": 0.943
+     },
+     {
+      "translateYEm": 0.045,
+      "opacity": 0.918
+     },
+     {
+      "translateYEm": 0.062,
+      "opacity": 0.887
+     },
+     {
+      "translateYEm": 0.085,
+      "opacity": 0.846
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.589,
+    "opacity": 0.064,
+    "blurPx": 4.68
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.3,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.998
+     },
+     {
+      "translateYEm": 0.002,
+      "opacity": 0.996
+     },
+     {
+      "translateYEm": 0.004,
+      "opacity": 0.992
+     },
+     {
+      "translateYEm": 0.007,
+      "opacity": 0.987
+     },
+     {
+      "translateYEm": 0.011,
+      "opacity": 0.98
+     },
+     {
+      "translateYEm": 0.017,
+      "opacity": 0.969
+     },
+     {
+      "translateYEm": 0.026,
+      "opacity": 0.954
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.456,
+    "opacity": 0.342,
+    "blurPx": 3.29
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.35,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     },
+     {
+      "translateYEm": 0.002,
+      "opacity": 0.997
+     },
+     {
+      "translateYEm": 0.003,
+      "opacity": 0.995
+     },
+     {
+      "translateYEm": 0.005,
+      "opacity": 0.99
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.351,
+    "opacity": 0.56,
+    "blurPx": 2.2
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.4,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0.001,
+      "opacity": 0.999
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.273,
+    "opacity": 0.723,
+    "blurPx": 1.39
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.42,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.248,
+    "opacity": 0.774,
+    "blurPx": 1.13
+   },
+   "rule": {
+    "scaleX": 0
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.45,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.217,
+    "opacity": 0.839,
+    "blurPx": 0.8
+   },
+   "rule": {
+    "scaleX": 0.0023
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.5,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.179,
+    "opacity": 0.918,
+    "blurPx": 0.41
+   },
+   "rule": {
+    "scaleX": 0.0439
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.55,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.157,
+    "opacity": 0.965,
+    "blurPx": 0.17
+   },
+   "rule": {
+    "scaleX": 0.1884
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.58,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.149,
+    "opacity": 0.982,
+    "blurPx": 0.09
+   },
+   "rule": {
+    "scaleX": 0.3512
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.6,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.145,
+    "opacity": 0.99,
+    "blurPx": 0.05
+   },
+   "rule": {
+    "scaleX": 0.5
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.65,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.141,
+    "opacity": 0.999,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 0.8116
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.7,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 0.9561
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.75,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 0.9977
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.8,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.85,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.9,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 1.95,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "veilR": {
+    "translatePct": 0,
+    "featherPct": 100
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 1
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": 0,
+    "scale": 1,
+    "opacity": 1
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -0.098,
+    "featherPct": 95.31
+   },
+   "veilR": {
+    "translatePct": 0.098,
+    "featherPct": 95.31
+   },
+   "seam": {
+    "opacity": 0.125
+   },
+   "vignette": {
+    "opacity": 0.999
+   },
+   "grain": {
+    "opacity": 0.05
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -0.05,
+    "scale": 0.9999,
+    "opacity": 0.998
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.05,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -0.781,
+    "featherPct": 94.63
+   },
+   "veilR": {
+    "translatePct": 0.781,
+    "featherPct": 94.63
+   },
+   "seam": {
+    "opacity": 0.29
+   },
+   "vignette": {
+    "opacity": 0.992
+   },
+   "grain": {
+    "opacity": 0.0496
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -0.44,
+    "scale": 0.999,
+    "opacity": 0.983
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.1,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -2.637,
+    "featherPct": 93.94
+   },
+   "veilR": {
+    "translatePct": 2.637,
+    "featherPct": 93.94
+   },
+   "seam": {
+    "opacity": 0.46
+   },
+   "vignette": {
+    "opacity": 0.974
+   },
+   "grain": {
+    "opacity": 0.0487
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -1.47,
+    "scale": 0.9966,
+    "opacity": 0.943
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.15,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -6.25,
+    "featherPct": 93.25
+   },
+   "veilR": {
+    "translatePct": 6.25,
+    "featherPct": 93.25
+   },
+   "seam": {
+    "opacity": 0.617
+   },
+   "vignette": {
+    "opacity": 0.938
+   },
+   "grain": {
+    "opacity": 0.0469
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -3.48,
+    "scale": 0.9919,
+    "opacity": 0.866
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.2,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -12.207,
+    "featherPct": 92.56
+   },
+   "veilR": {
+    "translatePct": 12.207,
+    "featherPct": 92.56
+   },
+   "seam": {
+    "opacity": 0.748
+   },
+   "vignette": {
+    "opacity": 0.878
+   },
+   "grain": {
+    "opacity": 0.0439
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -6.8,
+    "scale": 0.9843,
+    "opacity": 0.738
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.25,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -21.094,
+    "featherPct": 91.88
+   },
+   "veilR": {
+    "translatePct": 21.094,
+    "featherPct": 91.88
+   },
+   "seam": {
+    "opacity": 0.843
+   },
+   "vignette": {
+    "opacity": 0.789
+   },
+   "grain": {
+    "opacity": 0.0395
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -11.75,
+    "scale": 0.9728,
+    "opacity": 0.547
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.3,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -33.496,
+    "featherPct": 91.19
+   },
+   "veilR": {
+    "translatePct": 33.496,
+    "featherPct": 91.19
+   },
+   "seam": {
+    "opacity": 0.893
+   },
+   "vignette": {
+    "opacity": 0.665
+   },
+   "grain": {
+    "opacity": 0.0333
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -17.36,
+    "scale": 0.9598,
+    "opacity": 0.33
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.35,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -50,
+    "featherPct": 90.5
+   },
+   "veilR": {
+    "translatePct": 50,
+    "featherPct": 90.5
+   },
+   "seam": {
+    "opacity": 0.895
+   },
+   "vignette": {
+    "opacity": 0.5
+   },
+   "grain": {
+    "opacity": 0.025
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -21.29,
+    "scale": 0.9507,
+    "opacity": 0.179
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.4,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -66.504,
+    "featherPct": 89.81
+   },
+   "veilR": {
+    "translatePct": 66.504,
+    "featherPct": 89.81
+   },
+   "seam": {
+    "opacity": 0.849
+   },
+   "vignette": {
+    "opacity": 0.335
+   },
+   "grain": {
+    "opacity": 0.0167
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -23.78,
+    "scale": 0.9449,
+    "opacity": 0.082
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.45,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -78.906,
+    "featherPct": 89.13
+   },
+   "veilR": {
+    "translatePct": 78.906,
+    "featherPct": 89.13
+   },
+   "seam": {
+    "opacity": 0.759
+   },
+   "vignette": {
+    "opacity": 0.211
+   },
+   "grain": {
+    "opacity": 0.0105
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.17,
+    "scale": 0.9417,
+    "opacity": 0.029
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.5,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -87.793,
+    "featherPct": 88.44
+   },
+   "veilR": {
+    "translatePct": 87.793,
+    "featherPct": 88.44
+   },
+   "seam": {
+    "opacity": 0.631
+   },
+   "vignette": {
+    "opacity": 0.122
+   },
+   "grain": {
+    "opacity": 0.0061
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.77,
+    "scale": 0.9403,
+    "opacity": 0.006
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.55,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -93.75,
+    "featherPct": 87.75
+   },
+   "veilR": {
+    "translatePct": 93.75,
+    "featherPct": 87.75
+   },
+   "seam": {
+    "opacity": 0.476
+   },
+   "vignette": {
+    "opacity": 0.063
+   },
+   "grain": {
+    "opacity": 0.0031
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.57,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -95.444,
+    "featherPct": 87.47
+   },
+   "veilR": {
+    "translatePct": 95.444,
+    "featherPct": 87.47
+   },
+   "seam": {
+    "opacity": 0.409
+   },
+   "vignette": {
+    "opacity": 0.046
+   },
+   "grain": {
+    "opacity": 0.0023
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.6,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -97.363,
+    "featherPct": 87.06
+   },
+   "veilR": {
+    "translatePct": 97.363,
+    "featherPct": 87.06
+   },
+   "seam": {
+    "opacity": 0.306
+   },
+   "vignette": {
+    "opacity": 0.026
+   },
+   "grain": {
+    "opacity": 0.0013
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.65,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -99.219,
+    "featherPct": 86.38
+   },
+   "veilR": {
+    "translatePct": 99.219,
+    "featherPct": 86.38
+   },
+   "seam": {
+    "opacity": 0.14
+   },
+   "vignette": {
+    "opacity": 0.008
+   },
+   "grain": {
+    "opacity": 0.0004
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.7,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -99.902,
+    "featherPct": 85.69
+   },
+   "veilR": {
+    "translatePct": 99.902,
+    "featherPct": 85.69
+   },
+   "seam": {
+    "opacity": 0.007
+   },
+   "vignette": {
+    "opacity": 0.001
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.75,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -100,
+    "featherPct": 85
+   },
+   "veilR": {
+    "translatePct": 100,
+    "featherPct": 85
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 0
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.8,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -100,
+    "featherPct": 85
+   },
+   "veilR": {
+    "translatePct": 100,
+    "featherPct": 85
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 0
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.85,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -100,
+    "featherPct": 85
+   },
+   "veilR": {
+    "translatePct": 100,
+    "featherPct": 85
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 0
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.9,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -100,
+    "featherPct": 85
+   },
+   "veilR": {
+    "translatePct": 100,
+    "featherPct": 85
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 0
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "t": 2.95,
+   "icon": {
+    "scale": 1,
+    "rotationDeg": 0,
+    "opacity": 1
+   },
+   "iconGlow": {
+    "opacity": 0.16
+   },
+   "w1": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "w2": {
+    "blurPx": null,
+    "letters": [
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     },
+     {
+      "translateYEm": 0,
+      "opacity": 1
+     }
+    ]
+   },
+   "sub": {
+    "letterSpacingEm": 0.14,
+    "opacity": 1,
+    "blurPx": null
+   },
+   "rule": {
+    "scaleX": 1
+   },
+   "veilL": {
+    "translatePct": -100,
+    "featherPct": 85
+   },
+   "veilR": {
+    "translatePct": 100,
+    "featherPct": 85
+   },
+   "seam": {
+    "opacity": 0
+   },
+   "vignette": {
+    "opacity": 0
+   },
+   "grain": {
+    "opacity": 0
+   },
+   "lockup": {
+    "translateXPx": 0,
+    "translateYPx": -25.92,
+    "scale": 0.94,
+    "opacity": 0
+   },
+   "shake": {
+    "x": 0,
+    "y": 0
+   }
+  }
+ ]
+}

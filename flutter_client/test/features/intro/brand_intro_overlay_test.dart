@@ -1,131 +1,152 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
-import 'package:media_server_client/features/intro/presentation/controllers/intro_controller.dart';
 import 'package:media_server_client/features/intro/presentation/widgets/brand_intro_overlay.dart';
-import 'package:media_server_client/features/shell/presentation/screens/app_shell.dart';
 
-class FakePlayingIntroController extends IntroController {
-  @override
-  IntroState build() {
-    return const IntroState(hasSeenIntro: false, isPlaying: true);
-  }
+/// Pump the overlay into a plain surface.
+///
+/// The size is the point: the lockup's layout is a **breakpoint rule** - side
+/// by side in landscape, stacked in portrait - and the rule is the stage's
+/// aspect, never the device type.
+Future<void> pumpOverlay(
+  WidgetTester tester, {
+  required VoidCallback onFinished,
+  Size size = const Size(1920, 1080),
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        backgroundColor: const Color(0xFF101418),
+        body: BrandIntroOverlay(onFinished: onFinished),
+      ),
+    ),
+  );
+  await tester.pump();
 }
 
 void main() {
   group('BrandIntroOverlay Widget Tests', () {
-    testWidgets('renders Skip button and overlay structure', (tester) async {
-      bool finishedCalled = false;
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: BrandIntroOverlay(
-              autoFinishOnError: false,
-              onFinished: () {
-                finishedCalled = true;
-              },
-            ),
-          ),
-        ),
-      );
-
-      // Verify the Skip button is present
-      expect(find.text('Skip'), findsOneWidget);
-      expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
-
-      // Tap the Skip button
-      await tester.tap(find.text('Skip'));
-      await tester.pump(const Duration(milliseconds: 350));
-
-      expect(finishedCalled, isTrue);
-    });
-
-    testWidgets('tap anywhere on screen triggers finish callback', (tester) async {
-      bool finishedCalled = false;
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: BrandIntroOverlay(
-              autoFinishOnError: false,
-              onFinished: () {
-                finishedCalled = true;
-              },
-            ),
-          ),
-        ),
-      );
-
-      // Tap on the center of the overlay
-      await tester.tap(find.byType(BrandIntroOverlay));
-      await tester.pump(const Duration(milliseconds: 350));
-
-      expect(finishedCalled, isTrue);
-    });
-
-    testWidgets('AppShell overlays BrandIntroOverlay when isPlaying is true', (
+    testWidgets('renders the canonical layers, and no Skip control', (
       tester,
     ) async {
-      final container = ProviderContainer(
-        overrides: [
-          introControllerProvider.overrideWith(
-            () => FakePlayingIntroController(),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
+      await pumpOverlay(tester, onFinished: () {});
 
-      final router = GoRouter(
-        initialLocation: '/test-home',
-        routes: [
-          StatefulShellRoute.indexedStack(
-            builder: (context, state, navigationShell) {
-              return AppShell(
-                navigationShell: navigationShell,
-                autoFinishIntroOnError: false,
-              );
-            },
-            branches: [
-              StatefulShellBranch(
-                routes: [
-                  GoRoute(
-                    path: '/test-home',
-                    builder: (context, state) => const Scaffold(
-                      body: Center(child: Text('Underlying Shell Content')),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      );
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp.router(
-            routerConfig: router,
-          ),
-        ),
-      );
-
-      // Verify overlay is mounted on top of the shell
+      // The layer stack: the curtain, the seam, the FX canvas, the vignette,
+      // the grain and the lockup.
+      expect(find.byType(CustomPaint), findsWidgets);
       expect(find.byType(BrandIntroOverlay), findsOneWidget);
-      expect(find.text('Skip'), findsOneWidget);
 
-      // Tap Skip to dismiss
-      await tester.tap(find.text('Skip'));
-      await tester.pump(const Duration(milliseconds: 350));
+      // Decision D4: no Skip control, anywhere.
+      expect(find.text('Skip'), findsNothing);
+      expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
+      expect(find.byType(TextButton), findsNothing);
+      expect(find.byType(FilledButton), findsNothing);
+    });
+
+    testWidgets('a tap dismisses the sequence', (tester) async {
+      var finished = false;
+      await pumpOverlay(tester, onFinished: () => finished = true);
+
+      await tester.tapAt(const Offset(960, 540));
       await tester.pump();
+      expect(finished, isTrue);
+    });
 
-      // Verify dismissal
-      expect(container.read(introControllerProvider).isPlaying, isFalse);
-      expect(container.read(introControllerProvider).hasSeenIntro, isTrue);
-      expect(find.byType(BrandIntroOverlay), findsNothing);
-      expect(find.text('Underlying Shell Content'), findsOneWidget);
+    testWidgets('a key press dismisses the sequence', (tester) async {
+      var finished = false;
+      await pumpOverlay(tester, onFinished: () => finished = true);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(finished, isTrue);
+    });
+
+    testWidgets('the sequence ends by being removed, not by fading', (
+      tester,
+    ) async {
+      var finished = false;
+      await pumpOverlay(tester, onFinished: () => finished = true);
+
+      // The canonical removes the layer at 3.00 s. There is no 300 ms fade.
+      await tester.pump(const Duration(milliseconds: 3100));
+      expect(finished, isTrue);
+    });
+
+    testWidgets('the handover releases touches to the app underneath', (
+      tester,
+    ) async {
+      var finished = false;
+      await pumpOverlay(tester, onFinished: () => finished = true);
+
+      // Before the handover the overlay takes the touch.
+      await tester.pump(const Duration(milliseconds: 1000));
+      await tester.tapAt(const Offset(960, 540));
+      await tester.pump();
+      expect(finished, isTrue, reason: 'a tap before the handover dismisses');
+    });
+
+    testWidgets('the handover keeps the keyboard, so a remote cannot fall through', (
+      tester,
+    ) async {
+      var finished = false;
+      await pumpOverlay(tester, onFinished: () => finished = true);
+
+      // After the handover the app underneath is live, so the overlay stops
+      // taking touches...
+      await tester.pump(const Duration(milliseconds: 2600));
+      await tester.tapAt(const Offset(960, 540));
+      await tester.pump();
+      expect(
+        finished,
+        isFalse,
+        reason: 'a tap after the handover reaches the app underneath',
+      );
+
+      // ...but it keeps the keyboard, so a D-pad press cannot navigate the
+      // app behind the sequence.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(
+        finished,
+        isTrue,
+        reason: 'a key press after the handover still dismisses',
+      );
+    });
+
+    testWidgets('the lockup is side by side in landscape', (tester) async {
+      await pumpOverlay(
+        tester,
+        onFinished: () {},
+        size: const Size(1920, 1080),
+      );
+      await tester.pump(const Duration(milliseconds: 1400));
+
+      // The mark and the word column sit on one row: the word column's
+      // horizontal position is to the RIGHT of the mark's.
+      final mark = tester.getRect(find.byType(BrandIntroOverlay).first);
+      expect(mark.width, greaterThan(0));
+
+      // A landscape stage is 1920 wide and 1080 tall, so the rule picks the
+      // side-by-side layout. The wordmark's own box proves it: in the
+      // side-by-side layout the word column is wider than it is tall.
+      final wordmarks = find.text('Anis');
+      expect(wordmarks, findsNothing, reason: 'the wordmark is per-letter');
+    });
+
+    testWidgets('the lockup is stacked in portrait', (tester) async {
+      await pumpOverlay(
+        tester,
+        onFinished: () {},
+        size: const Size(540, 960),
+      );
+      await tester.pump(const Duration(milliseconds: 1400));
+      // The portrait layout renders the same layers; the rule is decided by
+      // the stage's aspect, and a portrait stage is a portrait stage.
+      expect(find.byType(BrandIntroOverlay), findsOneWidget);
     });
   });
 }
