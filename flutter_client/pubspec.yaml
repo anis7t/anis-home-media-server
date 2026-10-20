@@ -83,6 +83,15 @@ flutter:
     # byte for byte. It REPLACES `assets/videos/intro-demo-portrait.mp4`,
     # which was declared here, never played, and cost 2.4 MB in every APK.
     - assets/audio/intro-theme.wav
+    # The television's pre-rendered brand opening sequence. It is rendered
+    # from the canonical (the shipped web application) by
+    # `scripts/capture-intro-video.mjs`, and verified against the canonical's
+    # reference frames by `scripts/verify-intro-video.mjs`.
+    #
+    # The television's GPU cannot paint the sequence at an interactive frame
+    # rate - it compiles each new draw program at runtime, and it has no
+    # Vulkan for Impeller - so the television plays the sequence instead.
+    - assets/intro/intro-tv-1080p.mp4
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

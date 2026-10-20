@@ -96,3 +96,8 @@ _launch*.png
 _launch*.mp4
 _tv_now.png
 _installed.apk
+
+# the capture scripts' working directory: the extracted reference frames and the
+# comparison encodes live here. It is scratch, never an artifact - the shipped
+# video is flutter_client/assets/intro/intro-tv-1080p.mp4.
+/build/

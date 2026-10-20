@@ -199,13 +199,18 @@ The current project includes:
      raster takes **1.09 seconds**, and the three-second sequence gets **five frames**. Two
      remedies were tried and **rejected by the measurement** (a `ShaderWarmUp`, and moving the
      clock's origin); both are recorded in the plan so they are not attempted again.
-   **What is left is Slice 11.7**, which is **proposed and awaiting the owner's approval**: the
-   television plays a **pre-rendered video** of the sequence, rendered from the shipped web
-   application, with the score left as a separate byte-for-byte canonical WAV anchored to the
-   video's position; the phone keeps the live sequence. Slice **11.8** is a one-line fix for the
-   yellow underlines the phone showed, which came from the wordmarks inheriting the ambient text
-   style's decoration — a thing the oracle cannot see, because a test's ambient style never carries
-   one. See
+   **Slices 11.7 and 11.8 are DONE (2026-10-21).** The television plays a **pre-rendered video**
+   of the sequence, rendered from the shipped web application (the canonical) by
+   `scripts/capture-intro-video.mjs` and verified against the canonical's reference frames by
+   `scripts/verify-intro-video.mjs` — the worst mean error over the 58 closed-curtain frames is
+   **5.33/255**, and it is all in the grain, which is the one thing a codec cannot carry. The
+   score stays a separate byte-for-byte canonical WAV, anchored to the **video's** position, and
+   the phone keeps the live sequence. The four divergences this creates are in the ledger as
+   **L19–L22**. Slice 11.8 is the one-line fix for the yellow underlines the phone showed, which
+   came from the wordmarks inheriting the ambient text style's decoration — a thing the oracle
+   cannot see, because a test's ambient style never carries one.
+   **What is left is the device check**: the video has to be seen on the television, and the
+   sequence's audio with it. See
    [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    **One open finding** from 11.3a: the web's score renders about **6 dB quieter** than the archived
    original's Web Audio, and the cause is not yet isolated (spec section 7.9 lists everything that

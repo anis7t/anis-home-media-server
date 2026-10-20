@@ -74,7 +74,7 @@ void main() {
       expect(Directory('assets/videos').existsSync(), isFalse);
     });
 
-    test('declares exactly one asset', () {
+    test('declares the score and the television\'s sequence', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       final assets = pubspec
           .split('assets:')
@@ -83,16 +83,42 @@ void main() {
           .where((l) => l.trim().startsWith('- '))
           .map((l) => l.trim().substring(2).trim())
           .toList();
-      expect(assets, ['assets/audio/intro-theme.wav']);
+      expect(assets, [
+        'assets/audio/intro-theme.wav',
+        'assets/intro/intro-tv-1080p.mp4',
+      ]);
     });
 
-    test('carries nothing but the score', () {
+    test('carries nothing but the score and the television\'s sequence', () {
       final files = Directory('assets')
           .listSync(recursive: true)
           .whereType<File>()
           .map((f) => f.path.replaceAll('\\', '/'))
           .toList();
-      expect(files, ['assets/audio/intro-theme.wav']);
+      expect(files, [
+        'assets/audio/intro-theme.wav',
+        'assets/intro/intro-tv-1080p.mp4',
+      ]);
+    });
+  });
+
+  group('the television\'s sequence', () {
+    test('is shipped, and it is an H.264 MP4', () {
+      final video = File('assets/intro/intro-tv-1080p.mp4');
+      expect(video.existsSync(), isTrue, reason: 'the video is not shipped');
+      expect(
+        video.lengthSync(),
+        greaterThan(100 * 1024),
+        reason: 'the video is too small to be three seconds of 1080p',
+      );
+
+      // An MP4 starts with an "ftyp" box, and the brand's file is H.264 -
+      // which is the only profile every Android device decodes, and the
+      // television's decoder is nine years old.
+      final head = video.readAsBytesSync().sublist(0, 64);
+      expect(String.fromCharCodes(head.sublist(4, 8)), 'ftyp');
+      final brand = String.fromCharCodes(head);
+      expect(brand, contains('avc1'), reason: 'the video is not H.264');
     });
   });
 }

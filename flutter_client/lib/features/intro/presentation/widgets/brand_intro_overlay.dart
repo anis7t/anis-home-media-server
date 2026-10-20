@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../domain/intro_frame.dart';
 import '../../domain/intro_score.dart';
 import '../../domain/intro_timeline.dart';
+import '../../infrastructure/intro_video_player.dart';
 import '../controllers/intro_score_controller.dart';
 import '../painters/intro_fx_painter.dart';
 import '../painters/intro_veil_painter.dart';
@@ -40,6 +43,7 @@ class BrandIntroOverlay extends StatefulWidget {
     required this.onFinished,
     this.score = const SilentIntroScore(),
     this.autoFinishOnError = true,
+    this.videoAssetPath,
   });
 
   /// Called once, when the sequence has finished.
@@ -54,6 +58,19 @@ class BrandIntroOverlay extends StatefulWidget {
 
   /// Retained for API compatibility.
   final bool autoFinishOnError;
+
+  /// The asset to play the sequence from, instead of painting it.
+  ///
+  /// When it is null the sequence is **painted** - the canonical's renderer,
+  /// ported to Flutter, which is what the phone does. When it is set the
+  /// sequence is **played** from a pre-rendered video, which is what the
+  /// television does: its GPU cannot paint the sequence at an interactive
+  /// frame rate, because it compiles each new draw program at runtime and has
+  /// no Vulkan for Impeller.
+  ///
+  /// The video is rendered from the canonical itself, so the picture is the
+  /// canonical's either way. See [IntroVideoPlayer].
+  final String? videoAssetPath;
 
   @override
   State<BrandIntroOverlay> createState() => BrandIntroOverlayState();
@@ -102,6 +119,26 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
       duration: const Duration(milliseconds: 3000),
     );
     _ctrl.addListener(_onTick);
+
+    final videoPath = widget.videoAssetPath;
+    if (videoPath != null) {
+      // The VIDEO rendering. The sequence is played, not painted, and the
+      // clock is the video's own playback position - so the score is anchored
+      // to the picture exactly as it is in the painted rendering.
+      final video = _openVideo(videoPath);
+      if (video != null) {
+        _video = video;
+        _score = IntroScoreController(
+          score: widget.score,
+          elapsedAt: () => _video?.position ?? Duration.zero,
+          duration: const Duration(milliseconds: 3000),
+        );
+        return;
+      }
+      // The video could not be created: fall through to the painted sequence,
+      // which is slower on a television but is better than a black screen.
+    }
+
     _score = IntroScoreController(
       score: widget.score,
       elapsedAt: () => Duration(milliseconds: (_ctrl.value * kIntroDuration * 1000).round()),
@@ -131,6 +168,61 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     });
   }
 
+  /// The video rendering's player.
+  IntroVideoPlayer? _video;
+
+  /// Creates the player and starts the video.
+  ///
+  /// It returns null when the video cannot be created or played, and the
+  /// caller then falls back to the painted sequence - a television that cannot
+  /// play the video is slow, but a black screen is worse.
+  IntroVideoPlayer? _openVideo(String assetPath) {
+    try {
+      final video = IntroVideoPlayer();
+      unawaited(_startVideo(video, assetPath));
+      return video;
+    } catch (e) {
+      debugPrint('[intro] the video could not be created: $e');
+      return null;
+    }
+  }
+
+  /// Starts the video, and the score beside it.
+  Future<void> _startVideo(IntroVideoPlayer video, String assetPath) async {
+    try {
+      await video.open(assetPath);
+    } catch (e) {
+      // A television that cannot play the video must still finish the
+      // sequence rather than hang on a black screen.
+      debugPrint('[intro] the video could not be played: $e');
+      if (mounted) _finish();
+      return;
+    }
+    if (!mounted) return;
+    // The score starts with the video, and is anchored to the video's own
+    // position - so the sound and the picture agree about where the sequence
+    // is.
+    _scoreStarted = true;
+    _score.start();
+    final player = video.videoController.player;
+    _videoSubscription = player.stream.completed.listen((_) {
+      if (mounted) _finish();
+    });
+    // The handover is the canonical's: from 2.57 s the application underneath
+    // is live. The video's own position is the clock, so the handover is
+    // driven from it rather than from a timer.
+    _positionSubscription = player.stream.position.listen((position) {
+      if (!mounted || _handover) return;
+      final handoverAt = Duration(milliseconds: (kIntroHandoverAt * 1000).round());
+      if (position >= handoverAt) {
+        setState(() => _handover = true);
+      }
+    });
+  }
+
+  StreamSubscription<bool>? _videoSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+
   void _onTick() {
     final t = _ctrl.value * kIntroDuration;
     if (!_scoreStarted) {
@@ -159,6 +251,9 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     // The overlay can be removed without ever finishing - the app can be
     // torn down mid-sequence - and the score must not outlive it.
     _score.stop();
+    _videoSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _video?.dispose();
     _ctrl
       ..removeListener(_onTick)
       ..dispose();
@@ -239,6 +334,15 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     // layout, and a television in portrait would get the stacked one.
     final portrait = size.height > size.width;
 
+    final video = _video;
+    if (video != null) {
+      return _IntroVideoStage(
+        controller: video.videoController,
+        handover: _handover,
+        onDismiss: _finish,
+      );
+    }
+
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, _) {
@@ -265,6 +369,69 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
           onDismiss: _finish,
         );
       },
+    );
+  }
+}
+
+/// The stage of the **video** rendering.
+///
+/// The video carries the whole sequence - the curtain, the effects and the
+/// lockup - so the stage is the video itself, and the only thing this widget
+/// adds is the behaviour the canonical's own overlay has: a tap dismisses,
+/// the keyboard is absorbed for the whole sequence, and from the handover the
+/// application underneath takes the touches.
+class _IntroVideoStage extends StatelessWidget {
+  const _IntroVideoStage({
+    required this.controller,
+    required this.handover,
+    required this.onDismiss,
+  });
+
+  final VideoController controller;
+  final bool handover;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        // The keyboard is absorbed for the WHOLE sequence, even after the
+        // handover: a D-pad press must not navigate the app behind the
+        // sequence. (The web releases both at 2.57 s; on a television that
+        // would let the remote drive the app while the sequence is still on
+        // screen. See the canonical specification, Part I section 3.1.)
+        if (event is KeyDownEvent) {
+          onDismiss();
+        }
+        return KeyEventResult.handled;
+      },
+      child: IgnorePointer(
+        // From the handover the app underneath is live, so the overlay stops
+        // taking touches. `IgnorePointer` - rather than a null `onTap` - is
+        // what actually stops the touches.
+        ignoring: handover,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onDismiss,
+          child: SizedBox.expand(
+            child: Video(
+              controller: controller,
+              fit: BoxFit.cover,
+              // The sequence's own aspect is the television's; the video is
+              // 1920x1080 and the stage is whatever the device is.
+              alignment: Alignment.center,
+              // The curtain's own colour, so the frame before the first
+              // decoded one is the colour the sequence opens on.
+              fill: const Color(0xFF05060A),
+              // The player controls are the PLAYER's, and this is the
+              // sequence: there are no controls, and the canonical exposes
+              // no Skip and no Replay anywhere.
+              controls: NoVideoControls,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -882,12 +1049,22 @@ class _IntroWordmark extends StatelessWidget {
     // canonical's font stack puts the platform's UI font first, and a test
     // that renders the wordmarks in Ahem (solid squares) measures a layout
     // that no device ever has.
+    //
+    // The DECORATION is not inherited, and it is set to `none` on purpose: a
+    // merged style takes the ambient style's decoration with it, and the
+    // ambient style is whatever surrounds the sequence. On the phone it
+    // carried one, and the sequence showed **double yellow underlines under
+    // every wordmark** - which the canonical does not have, in either aspect.
+    //
+    // The picture oracle cannot see that class of fault: a test's ambient
+    // style never carries a decoration, so only a real device shows it.
     return DefaultTextStyle.merge(
       style: TextStyle(
         fontSize: fontSize,
         fontWeight: FontWeight.w800,
         letterSpacing: -0.022 * fontSize,
         height: 1.02,
+        decoration: TextDecoration.none,
       ),
       child: row,
     );
@@ -973,6 +1150,9 @@ class _IntroSubtitle extends StatelessWidget {
         fontWeight: FontWeight.w800,
         letterSpacing: frame.subLetterSpacingEm * fontSize,
         color: const Color(0xFF94A3B8),
+        // The sequence's own typography is not the ambient style's to decide:
+        // see the note on the wordmark's merged style.
+        decoration: TextDecoration.none,
       ),
     );
     if (blur != null && blur > 0) {

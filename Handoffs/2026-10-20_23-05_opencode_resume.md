@@ -2,6 +2,24 @@ docs(intro): the Fire TV's white screen, and what the choppiness actually is
 
 Two device findings, both measured on the television rather than reasoned about.
 
+## THE PHONE IS CORRECT
+
+It shows the canonical design exactly, in portrait: the mark, "Anis'", "Home
+Media Server", the rule, "PLAY - ORGANIZE - ENJOY", the radial glow, the
+grain, and the curtain parting down the middle. A `screencap` at one second
+reads R=5 G=6 B=10 (the curtain) and at three seconds reads R=201 G=211
+B=223 (the wordmark's `#cbd5e1` gradient stop).
+
+**One fault the oracle cannot see**: the phone showed **double yellow
+underlines under every wordmark**, which the canonical does not have in
+either aspect. It is not in the client - there is no `TextDecoration` and no
+yellow anywhere in the code, and the *same code* rendered by the oracle is
+clean. The cause is in the wordmark widget: it paints with
+`DefaultTextStyle.merge`, so it inherits the ambient style's **decoration**,
+and on the phone the ambient style carries one. A test's ambient style never
+does, which is exactly why the picture oracle could not see it. Slice 11.8
+sets `decoration: TextDecoration.none` on the sequence's own typography.
+
 ## WHAT THE OWNER'S CAMERA FILM SHOWED
 
 `E:\MediaServer\test screenshots screenrecordings files etc\video_20261020_221735.mp4` -

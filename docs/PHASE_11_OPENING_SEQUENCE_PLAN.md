@@ -554,7 +554,7 @@ was failing with `ECONNREFUSED`. There is now **one origin**, and the dev server
 **3/3** · `flutter analyze` clean · the Flutter suite adds no new failures, and the pre-existing
 three (Issue 11) are unchanged and named · the responsive sweep's five aspects pass.
 
-### Slice 11.7 — The television's pre-rendered sequence 📋 **PROPOSED (2026-10-21)**
+### Slice 11.7 — The television's pre-rendered sequence ✅ **DONE (2026-10-21)**
 
 #### 11.7.0 Why this slice exists: the measurement
 
@@ -668,7 +668,31 @@ so nothing is compiled at all.
 - **D26 — the score stays a separate WAV**, muxed into the video would re-encode the canonical's
   own render, and the score is the one asset the client holds byte for byte.
 
-### Slice 11.8 — The wordmarks must not inherit the ambient text style 📋 **PROPOSED (2026-10-21)**
+#### 11.7.6 What was built
+
+- **`scripts/capture-intro-video.mjs`** renders the video from the harness — the same page the
+  picture oracle uses, which mounts the real `BrandIntroOverlay` — at 1920 × 1080, 60 fps, 3.000
+  seconds, and encodes it to H.264 in yuv420p with no audio track. It drives the overlay's own
+  `renderAt` handle over 180 instants, in ascending order, because the canonical measures the
+  mark's *live* rectangle.
+- **`scripts/verify-intro-video.mjs`** is the oracle for it. The video is at 60 fps and the
+  reference frames at 30, and both start at t = 0, so the reference frame at index `i` and the
+  video's frame at index `2i` are the **same instant** and the comparison needs no interpolation
+  and no allowance for motion. **Measured over the 58 closed-curtain frames: the worst mean error
+  5.33/255, the mean of the means 2.34/255, and at most 2.89 % of pixels differing by more than
+  32/255** — all of it in the grain, which is the one thing a codec cannot carry (L21).
+- The video's backdrop is the application's own background colour (`#090b10`), so the curtain parts
+  onto the colour the television's application is painted in, and the client cross-fades the video
+  out over the last quarter-second to bring the application in (L22).
+- **The client**: `BrandIntroOverlay` gained a `videoAssetPath`, and a second rendering — the
+  video, full-screen, with the same behaviour the painted stage has (a tap dismisses, the keyboard
+  is absorbed for the whole sequence, and the handover at 2.57 s is driven by the **video's own
+  position**). The score is anchored to that position too, so the sound and the picture agree about
+  where the sequence is. If the video cannot be created or played, the overlay **falls back to the
+  painted sequence** rather than showing a black screen.
+- The video is **1.19 MB**, and the APK grows by that much.
+
+### Slice 11.8 — The wordmarks must not inherit the ambient text style ✅ **DONE (2026-10-21)**
 
 The phone's sequence showed **double yellow underlines under every wordmark**, which the canonical
 does not have, in either aspect. It is not in the client's code: the app contains no
