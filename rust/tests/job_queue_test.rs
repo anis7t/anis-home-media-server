@@ -6,7 +6,6 @@
 //! real catalog row.
 
 use media_server_api::{
-    config::AppConfig,
     db,
     models::job::{EnqueueJobRequest, JobStatus},
     services::job_service::JobService,
@@ -36,7 +35,7 @@ const JOB_TEST_LOCK_PORT: u16 = 47311;
 /// it. The tests are serialized by [`acquire_global_lock`], so the small
 /// per-test connection cost is not a problem.
 async fn pool() -> PgPool {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     db::create_test_pool(&config.database_url)
         .await
         .expect("failed to create pool")

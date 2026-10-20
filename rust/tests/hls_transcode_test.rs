@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app, db,
     models::transcode::TranscodeStatusResponse,
     services::{hls_service::HlsService, system_service::SystemService},
@@ -41,7 +40,7 @@ async fn setup_hls_test() -> TestHlsHarness {
     fs::create_dir_all(&media_dir).expect("Failed to create media directory");
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");

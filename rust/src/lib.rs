@@ -5,6 +5,7 @@ pub mod models;
 pub mod routes;
 pub mod scanner;
 pub mod services;
+pub mod test_support;
 
 use axum::{routing::get, Router};
 use sqlx::PgPool;

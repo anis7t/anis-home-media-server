@@ -9,28 +9,36 @@ use axum::{
     http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{config::AppConfig, create_app, services::system_service::SystemService};
+use media_server_api::{create_app, services::system_service::SystemService};
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
 use tower::ServiceExt;
 
 struct Harness {
     app: axum::Router,
+    pool: sqlx::PgPool,
+    media_roots: Vec<std::path::PathBuf>,
+    /// The harness cache directory. This is a temporary directory, never the
+    /// production cache: the suite must not read (or appear to write to) the
+    /// live HLS cache.
+    cache_dir: std::path::PathBuf,
 }
 
 async fn harness() -> Harness {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = media_server_api::db::create_test_pool(&config.database_url)
         .await
         .expect("pool");
     Harness {
         app: create_app(
-            pool,
+            pool.clone(),
             SystemService::new(),
-            config.media_roots,
-            config.cache_dir,
+            config.media_roots.clone(),
+            config.cache_dir.clone(),
         ),
+        pool,
+        media_roots: config.media_roots,
+        cache_dir: config.cache_dir,
     }
 }
 
@@ -56,9 +64,22 @@ async fn get_with_headers(app: &axum::Router, uri: &str, headers: Vec<(&'static 
 
 /// First library entry, discovered through the API so the test does not
 /// hardcode a filename that may be renamed or removed later.
-async fn first_movie() -> String {
-    let (_, body) = get(&harness().await.app, "/api/movies").await;
+///
+/// The isolated test database starts empty, so the harness seeds a catalog
+/// row for a real, probeable media file first. The file comes from the
+/// read-only production media roots - `ffprobe` has to return real container
+/// and stream values, and only the metadata is written.
+async fn first_movie(h: &Harness) -> String {
+    media_server_api::test_support::seed_real_media_row(&h.pool, &h.media_roots)
+        .await
+        .expect("the library must offer a probeable media file for this contract");
+    let (_, body) = get(&h.app, "/api/movies").await;
     body["movies"][0]["filename"].as_str().unwrap().to_string()
+}
+
+/// Remove the seeded catalog row, so the test database holds no residue.
+async fn cleanup_seeded_movie(h: &Harness, filename: &str) {
+    media_server_api::test_support::remove_seeded_media_row(&h.pool, filename).await;
 }
 
 fn encode(path: &str) -> String {
@@ -80,7 +101,7 @@ fn encode(path: &str) -> String {
 #[tokio::test]
 async fn test_media_info_returns_every_documented_field() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let (status, body) = get(&h.app, &format!("/api/media-info/{}", encode(&movie))).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -97,12 +118,13 @@ async fn test_media_info_returns_every_documented_field() {
             body
         );
     }
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 #[tokio::test]
 async fn test_media_info_reports_real_probe_values() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let (_, body) = get(&h.app, &format!("/api/media-info/{}", encode(&movie))).await;
 
     assert!(
@@ -120,12 +142,13 @@ async fn test_media_info_reports_real_probe_values() {
     );
     assert!(body["width"].as_i64().unwrap_or(0) > 0);
     assert!(body["height"].as_i64().unwrap_or(0) > 0);
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 #[tokio::test]
 async fn test_direct_play_and_transcode_flags_are_mutually_sensible() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let (_, body) = get(&h.app, &format!("/api/media-info/{}", encode(&movie))).await;
 
     let direct = body["direct_play"].as_bool().unwrap();
@@ -135,6 +158,7 @@ async fn test_direct_play_and_transcode_flags_are_mutually_sensible() {
     assert_eq!(direct, !needs, "direct_play and needs_transcode are complements");
     assert_eq!(body["is_transcode_ready"].as_bool(), Some(true),
         "a direct-play title needs no transcode and is therefore always ready");
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 #[tokio::test]
@@ -164,7 +188,7 @@ async fn test_missing_and_nonvideo_are_404_but_traversal_is_403() {
 #[tokio::test]
 async fn test_head_returns_headers_without_body_and_options_ok() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let uri = format!("/api/media-info/{}", encode(&movie));
 
     let res = h
@@ -198,6 +222,7 @@ async fn test_head_returns_headers_without_body_and_options_ok() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(res.headers()["access-control-allow-origin"], "*");
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 /// The completeness check must stay a predicate. This test is the reason:
@@ -206,6 +231,11 @@ async fn test_head_returns_headers_without_body_and_options_ok() {
 #[tokio::test]
 async fn test_reading_status_never_writes_to_the_playlist() {
     let h = harness().await;
+    // Seed a catalog row so there is at least one title to inspect. The
+    // isolated test database starts empty.
+    let seeded = media_server_api::test_support::seed_real_media_row(&h.pool, &h.media_roots)
+        .await
+        .expect("the library must offer a probeable media file for this contract");
     let movies = get(&h.app, "/api/movies").await.1;
     let list = movies["movies"].as_array().cloned().unwrap_or_default();
 
@@ -227,9 +257,10 @@ async fn test_reading_status_never_writes_to_the_playlist() {
     // After all those reads, no playlist anywhere may have gained ENDLIST
     // from this code path. Compare against the on-disk set before/after by
     // re-reading every playlist and confirming none is newer than the run.
-    let cache = std::env::var("MEDIA_SERVER_CACHE_DIR")
-        .unwrap_or_else(|_| "E:\\MediaServer\\cache".to_string());
-    let hls = PathBuf::from(cache).join("hls");
+    //
+    // The harness cache directory, not the production one: the isolated test
+    // run must not read (or appear to write to) the live HLS cache.
+    let hls = h.cache_dir.join("hls");
     if hls.is_dir() {
         for entry in fs::read_dir(&hls).unwrap().flatten() {
             let pl = entry.path().join("playlist.m3u8");
@@ -245,12 +276,14 @@ async fn test_reading_status_never_writes_to_the_playlist() {
             }
         }
     }
+
+    cleanup_seeded_movie(&h, &seeded).await;
 }
 
 #[tokio::test]
 async fn test_repeated_requests_are_served_from_the_probe_cache() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let uri = format!("/api/media-info/{}", encode(&movie));
 
     let t0 = std::time::Instant::now();
@@ -273,12 +306,13 @@ async fn test_repeated_requests_are_served_from_the_probe_cache() {
             cold.as_millis()
         );
     }
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 #[tokio::test]
 async fn test_media_info_quality_ladder_structure_and_no_upscaling() {
     let h = harness().await;
-    let movie = first_movie().await;
+    let movie = first_movie(&h).await;
     let uri = format!("/api/media-info/{}", encode(&movie));
     let (status, body) = get(&h.app, &uri).await;
 
@@ -321,6 +355,7 @@ async fn test_media_info_quality_ladder_structure_and_no_upscaling() {
             "target bitrate must be positive"
         );
     }
+    cleanup_seeded_movie(&h, &movie).await;
 }
 
 #[tokio::test]

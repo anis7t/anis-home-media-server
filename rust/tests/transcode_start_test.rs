@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app_full, db,
     services::system_service::SystemService,
 };
@@ -18,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 async fn setup_test_app_with_temp_media() -> (PgPool, axum::Router, PathBuf) {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_test_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");
@@ -201,7 +200,7 @@ async fn test_transcode_start_quality_specific_enqueues_quality_job() {
 #[tokio::test]
 async fn test_transcode_start_and_status_when_quality_already_complete() {
     let (pool, _app, temp_dir) = setup_test_app_with_temp_media().await;
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
 
     let count = COUNTER.fetch_add(1, Ordering::SeqCst);
     let temp_cache = std::env::temp_dir().join(format!("rust_test_cache_{}_{}", std::process::id(), count));

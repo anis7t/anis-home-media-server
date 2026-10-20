@@ -1,5 +1,4 @@
 use media_server_api::{
-    config::AppConfig,
     db,
     services::scan_service::ScanService,
     services::storage_service::StorageService,
@@ -10,7 +9,7 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_scan_service_daemon_lifecycle_and_shutdown() {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");
@@ -44,7 +43,7 @@ async fn test_scan_service_daemon_lifecycle_and_shutdown() {
 
 #[tokio::test]
 async fn test_storage_service_daemon_lifecycle_and_shutdown() {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");

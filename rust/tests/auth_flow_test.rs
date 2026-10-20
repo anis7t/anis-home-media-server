@@ -5,23 +5,33 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig, create_app_full, db, services::system_service::SystemService,
+    create_app_full, db, services::system_service::SystemService,
 };
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use tower::ServiceExt;
 
+/// Rows this suite owns. They are removed during setup (so a previous run
+/// that failed before its teardown cannot poison this one) and again during
+/// teardown (so the test database holds no residue).
+const TEST_USER_SUB: &str = "sub_phone_user";
+const TEST_SESSION_ID: &str = "sess_phone_device_12345";
+
 struct TestContext {
     app: axum::Router,
     pool: sqlx::PgPool,
     temp_dir: PathBuf,
+    /// The `admin_pin` setting as it was before this context touched it, so
+    /// teardown can put it back exactly as it found it. `None` means the key
+    /// was absent, and must be deleted again rather than restored.
+    original_admin_pin: Option<String>,
 }
 
 impl TestContext {
     async fn new() -> Self {
         dotenvy::dotenv().ok();
-        let config = AppConfig::from_env();
+        let config = media_server_api::test_support::test_config().await;
         let pool = db::create_pool(&config.database_url)
             .await
             .expect("Failed to connect to test db");
@@ -34,6 +44,21 @@ impl TestContext {
         let cache_dir = temp_dir.join("cache");
         fs::create_dir_all(&media_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+
+        // Setup-time cleanup. A previous run that failed before its teardown
+        // leaves these rows behind, and a plain INSERT would then fail with
+        // `23505 duplicate key value violates unique constraint`. The QR
+        // flow test was exactly that failure, and it was not idempotent: it
+        // passed once and then failed on every subsequent run.
+        Self::purge_test_rows(&pool).await;
+
+        // Remember the admin PIN before overwriting it, so teardown can put
+        // it back rather than assuming a value.
+        let original_admin_pin: Option<String> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
 
         // Ensure admin PIN is configured for test context
         sqlx::query(
@@ -57,6 +82,54 @@ impl TestContext {
             app,
             pool,
             temp_dir,
+            original_admin_pin,
+        }
+    }
+
+    /// Remove every row this suite owns.
+    async fn purge_test_rows(pool: &sqlx::PgPool) {
+        // The session references the user, so it goes first.
+        let _ = sqlx::query("DELETE FROM sessions WHERE id = $1")
+            .bind(TEST_SESSION_ID)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM users WHERE google_sub = $1")
+            .bind(TEST_USER_SUB)
+            .execute(pool)
+            .await;
+        // Pairing rows left behind by an earlier run that failed before its
+        // teardown. Only *expired* sessions are removed: a live pairing
+        // session belongs to whichever test is running right now, and the
+        // Rust harness runs the tests in this binary in parallel.
+        let _ = sqlx::query("DELETE FROM device_pair_sessions WHERE expires_at < CURRENT_TIMESTAMP")
+            .execute(pool)
+            .await;
+    }
+
+    /// Explicit teardown hook (AGENTS.md s9: a suite that writes rows must
+    /// delete them and leave no phantom records behind).
+    ///
+    /// The `Drop` impl cannot do this: it is synchronous and the database
+    /// calls are async. Takes `&self` so a caller can assert on the
+    /// database state *after* the teardown has run.
+    async fn teardown(&self) {
+        Self::purge_test_rows(&self.pool).await;
+
+        // Put the admin PIN back exactly as it was found.
+        match self.original_admin_pin.as_deref() {
+            Some(value) => {
+                let _ = sqlx::query(
+                    "INSERT INTO settings (key, value) VALUES ('admin_pin', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+                )
+                .bind(value)
+                .execute(&self.pool)
+                .await;
+            }
+            None => {
+                let _ = sqlx::query("DELETE FROM settings WHERE key = 'admin_pin'")
+                    .execute(&self.pool)
+                    .await;
+            }
         }
     }
 }
@@ -331,6 +404,14 @@ async fn test_pairing_device_lifecycle() {
         .and_then(|v| v.to_str().ok())
         .unwrap();
     assert!(clear_cookie.contains("Max-Age=0"));
+
+    // Teardown: the user row and everything that cascades from it (the
+    // minted device token and the exchanged session) must not survive.
+    let _ = sqlx::query("DELETE FROM users WHERE google_sub = 'sub-pair-test'")
+        .execute(&ctx.pool)
+        .await;
+
+    ctx.teardown().await;
 }
 
 #[tokio::test]
@@ -338,22 +419,32 @@ async fn qr_device_auth_flow_test() {
     let ctx = TestContext::new().await;
 
     // 1. Create a user and an active session for the phone
+    //
+    // Idempotent on purpose: a plain INSERT made this test fail with
+    // `23505 duplicate key value violates unique constraint
+    // "users_google_sub_key"` on every run after the first, because the
+    // previous run's row was never removed. The setup-time purge in
+    // `TestContext::new()` prevents that too, but the statement should not
+    // depend on it.
     let user_id: i64 = sqlx::query_scalar(
         r#"
         INSERT INTO users (google_sub, email, name, role)
-        VALUES ('sub_phone_user', 'phone@example.com', 'Phone User', 'viewer')
+        VALUES ($1, 'phone@example.com', 'Phone User', 'viewer')
+        ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email
         RETURNING id
         "#,
     )
+    .bind(TEST_USER_SUB)
     .fetch_one(&ctx.pool)
     .await
     .unwrap();
 
-    let phone_session_token = "sess_phone_device_12345";
+    let phone_session_token = TEST_SESSION_ID;
     sqlx::query(
         r#"
         INSERT INTO sessions (id, user_id, email, role, expires_at)
         VALUES ($1, $2, 'phone@example.com', 'viewer', CURRENT_TIMESTAMP + INTERVAL '1 day')
+        ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id
         "#,
     )
     .bind(phone_session_token)
@@ -482,4 +573,23 @@ async fn qr_device_auth_flow_test() {
     assert_eq!(body_tv_me["authenticated"], true);
     assert_eq!(body_tv_me["email"], "phone@example.com");
     assert_eq!(body_tv_me["name"], "Phone User");
+
+    // 9. Teardown: the suite must leave no phantom rows behind (AGENTS.md s9).
+    // Assert it, rather than trusting the teardown hook.
+    ctx.teardown().await;
+
+    let residue: i64 = sqlx::query_scalar(
+        r#"
+        SELECT (SELECT count(*) FROM users WHERE google_sub = $1)
+             + (SELECT count(*) FROM sessions WHERE id = $2 OR email = 'phone@example.com')
+             + (SELECT count(*) FROM device_pair_sessions WHERE id = $3)
+        "#,
+    )
+    .bind(TEST_USER_SUB)
+    .bind(TEST_SESSION_ID)
+    .bind(qr_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert_eq!(residue, 0, "the test must leave no phantom rows behind");
 }

@@ -12,7 +12,6 @@
 use axum::{body::Body, http::{header, Method, Request, StatusCode}, routing::get, Router};
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app,
     services::{system_service::SystemService, tmdb_artwork::TmdbArtworkService},
 };
@@ -156,7 +155,7 @@ async fn fixture() -> Fixture {
     fs::create_dir_all(&cache_dir).unwrap();
     fs::create_dir_all(&media_root).unwrap();
 
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = media_server_api::db::create_test_pool(&config.database_url)
         .await
         .expect("pool");

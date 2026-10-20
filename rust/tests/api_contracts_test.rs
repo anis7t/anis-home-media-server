@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app, db,
     models::movie::{MovieDetailsResponse, MovieListResponse},
     models::system::SystemTelemetryResponse,
@@ -12,18 +11,47 @@ use media_server_api::{
 };
 use tower::ServiceExt;
 
-async fn setup_test_app() -> axum::Router {
-    let config = AppConfig::from_env();
+struct TestApp {
+    app: axum::Router,
+    pool: sqlx::PgPool,
+    media_roots: Vec<std::path::PathBuf>,
+}
+
+async fn setup_test_app() -> TestApp {
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");
     let system_service = SystemService::new();
-    create_app(pool, system_service, config.media_roots, config.cache_dir)
+    let app = create_app(
+        pool.clone(),
+        system_service,
+        config.media_roots.clone(),
+        config.cache_dir,
+    );
+    TestApp {
+        app,
+        pool,
+        media_roots: config.media_roots,
+    }
+}
+
+/// Seed a catalog row for a real, probeable media file and return it.
+///
+/// The isolated test database starts empty, and these two contracts are only
+/// meaningful against a genuine video file: `ffprobe` has to return real
+/// container and stream values. The file comes from the read-only production
+/// media roots; only the metadata is written, and only to the test database.
+async fn seed_real_movie(pool: &sqlx::PgPool, media_roots: &[std::path::PathBuf]) -> String {
+    media_server_api::test_support::seed_real_media_row(pool, media_roots)
+        .await
+        .expect("the library must offer a probeable media file for this contract")
 }
 
 #[tokio::test]
 async fn test_health_endpoints() {
-    let app = setup_test_app().await;
+    let t = setup_test_app().await;
+    let app = t.app;
 
     // Test /health
     let req = Request::builder()
@@ -51,7 +79,8 @@ async fn test_health_endpoints() {
 
 #[tokio::test]
 async fn test_system_status_endpoint() {
-    let app = setup_test_app().await;
+    let t = setup_test_app().await;
+    let app = t.app;
 
     let req = Request::builder()
         .uri("/api/system-status")
@@ -73,7 +102,9 @@ async fn test_system_status_endpoint() {
 
 #[tokio::test]
 async fn test_movies_list_endpoint() {
-    let app = setup_test_app().await;
+    let t = setup_test_app().await;
+    let seeded = seed_real_movie(&t.pool, &t.media_roots).await;
+    let app = t.app;
 
     let req = Request::builder()
         .uri("/api/movies")
@@ -90,6 +121,10 @@ async fn test_movies_list_endpoint() {
 
     assert_eq!(list.movies.len(), list.total);
     assert!(list.total > 0, "Expected movies in database");
+    assert!(
+        list.movies.iter().any(|m| m.filename == seeded),
+        "the seeded catalog row must appear in the list"
+    );
 
     // Assert that each movie has required fields
     for m in &list.movies {
@@ -97,29 +132,19 @@ async fn test_movies_list_endpoint() {
         assert!(!m.title.is_empty());
         assert!(m.percent >= 0.0 && m.percent <= 100.0);
     }
+
+    // Teardown: leave no phantom catalog row behind.
+    media_server_api::test_support::remove_seeded_media_row(&t.pool, &seeded).await;
 }
 
 #[tokio::test]
 async fn test_movie_details_endpoint() {
-    let app = setup_test_app().await;
+    let t = setup_test_app().await;
+    let seeded = seed_real_movie(&t.pool, &t.media_roots).await;
+    let app = t.app;
 
-    // First retrieve list to get a valid filename
-    let req_list = Request::builder()
-        .uri("/api/movies")
-        .body(Body::empty())
-        .unwrap();
-
-    let res_list = app.clone().oneshot(req_list).await.unwrap();
-    let bytes_list = res_list.into_body().collect().await.unwrap().to_bytes();
-    let list: MovieListResponse = serde_json::from_slice(&bytes_list).unwrap();
-    let sample = list
-        .movies
-        .iter()
-        .find(|m| !m.filename.contains('/') && !m.filename.contains('\\'))
-        .unwrap_or(&list.movies[0]);
-
-    // Query details for this sample movie (encoding spaces for URI)
-    let encoded_filename = sample.filename.replace(' ', "%20");
+    // Query details for the seeded real movie (encoding spaces for URI)
+    let encoded_filename = seeded.replace(' ', "%20");
     let req_details = Request::builder()
         .uri(format!("/api/movie/{}", encoded_filename))
         .body(Body::empty())
@@ -132,9 +157,12 @@ async fn test_movie_details_endpoint() {
     let details: MovieDetailsResponse = serde_json::from_slice(&bytes_details)
         .expect("Response does not conform to MovieDetailsResponse schema");
 
-    assert_eq!(details.movie.filename, sample.filename);
+    assert_eq!(details.movie.filename, seeded);
     assert!(!details.movie.title.is_empty());
-    assert!(details.specs.container.is_some());
+    assert!(
+        details.specs.container.is_some(),
+        "the real media file must be probed, so the container is known"
+    );
 
     // Query non-existent movie -> expect 404
     let req_not_found = Request::builder()
@@ -144,4 +172,7 @@ async fn test_movie_details_endpoint() {
 
     let res_not_found = app.oneshot(req_not_found).await.unwrap();
     assert_eq!(res_not_found.status(), StatusCode::NOT_FOUND);
+
+    // Teardown: leave no phantom catalog row behind.
+    media_server_api::test_support::remove_seeded_media_row(&t.pool, &seeded).await;
 }

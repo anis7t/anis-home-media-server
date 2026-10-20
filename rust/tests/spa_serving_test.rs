@@ -4,12 +4,12 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig, create_app_with_static, db, services::system_service::SystemService,
+    create_app_with_static, db, services::system_service::SystemService,
 };
 use tower::ServiceExt;
 
 async fn setup_test_app() -> axum::Router {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");
@@ -115,7 +115,7 @@ async fn test_static_asset_serving_with_immutable_cache() {
     let app = setup_test_app().await;
 
     // Discover an actual compiled asset from web/dist/assets
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let assets_dir = config.static_dir.join("assets");
     if let Ok(entries) = std::fs::read_dir(&assets_dir) {
         for entry in entries.flatten() {

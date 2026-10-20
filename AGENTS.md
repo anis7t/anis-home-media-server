@@ -150,6 +150,34 @@ the Cloudflare tunnel. Treat them as the most destructive surface in the applica
   destructive route returns 403.
 - **Do not weaken auth to make a test pass.**
 
+### QR Device Sign-In invariants (`rust/src/routes/qr_auth.rs` & `rust/src/services/auth_service.rs`)
+
+The QR sign-in flow is reachable from the public internet, so its secrets are load-bearing.
+
+- **Every security token comes from the OS CSPRNG.** `getrandom` (BCryptGenRandom on Windows),
+  never a clock-derived seed. This covers the pair code, the `qr_id`, the `sess_` session tokens,
+  the `ms_` device tokens, the OAuth `state`/`nonce` and the PKCE `verifier`.
+  - The failure mode that motivated this: `generate_pair_code()` walked one 64-bit LCG and took
+    `seed % 32` per step. The LCG's multiplier and increment are both odd, so the low 5 bits of
+    every step depend only on the low 5 bits of the first one — the whole code collapsed to **32
+    possible values** instead of 32^5. Measured live: 40 sessions produced 15 distinct codes.
+    `POST /api/auth/qr/lookup` resolves a code to a live session, so 5 bits is a guessable code.
+  - `generate_random_token()` hashed `nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`. A token
+    minted at a known moment is a token an attacker can search for. `qr_id` was one of them, and
+    `qr_id` is the *only* key to the unauthenticated `/api/auth/qr/{id}/finalize` endpoint.
+- **Draw each character independently.** A shared state word whose low bits drive several output
+  characters is the whole bug. `test_pair_code_has_real_entropy` requires >= 5,000 distinct codes
+  from 10,000 draws; the collapsed generator produced 32.
+- **Fail closed, never mint a weak secret.** If the random source is unavailable, the request errors
+  rather than falling back to a guessable value. Same posture as an unset Admin PIN.
+- **Never log a pair code or a full `qr_id`.** `finalize` is unauthenticated, so either one in a
+  log is an account-takeover handout. The log carries a 12-hex-character reference only.
+- **`byte % 32` is unbiased here and only here.** The charset is 32 characters and 256 is a
+  multiple of 32, so no rejection sampling is needed. A different charset length needs it.
+- **Do not trust `Host` or `X-Forwarded-Proto` for the QR URL.** `get_base_url` reads them
+  directly, so the emitted `qr_url` is host-header-injectable and defaults to `https` even on a
+  plain-HTTP origin. Pinning a public base URL is still open.
+
 ## 5. Platform/dependency rules
 
 ### Windows
@@ -750,6 +778,10 @@ Rules:
   The backend is 100% native Rust Axum. All proxy bridges and interim delegations to the legacy Flask backend have been completely decommissioned. All features (e.g. gzip decompression via `flate2`, HTTP queries via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`) execute 100% natively in Rust.
 - **Database Test Isolation & Teardown Guardrail:**
   Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL) or `media.db` (SQLite) MUST clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`), implement an explicit teardown hook (`harness.teardown().await` or fixture cleanup) deleting test rows, and guarantee zero phantom test movies remain in development or production databases.
+  - **The Rust integration suite must not touch the production database at all.** `AppConfig::from_env()` falls back to `postgresql://postgres:postgres@127.0.0.1:5432/media_server` when `MEDIA_SERVER_DATABASE_URL` is unset, which it is on this host — so a test built on `from_env()` writes to the live catalog. Use `media_server_api::test_support::test_config().await` instead: it provisions a dedicated `media_server_test` database (override with `MEDIA_SERVER_TEST_DATABASE_URL`), redirects `cache_dir` to a temp path, and leaves `media_roots` alone so file-based contracts still work. `media_server_api::test_support::seed_real_media_row()` seeds a catalog row for a real, probeable file when a test needs one, and `remove_seeded_media_row()` removes it again.
+  - **A test that inserts rows must be idempotent and must clean up on the way out.** A plain `INSERT` of a fixed key passes once and then fails forever with `23505 duplicate key value violates unique constraint`. Use `ON CONFLICT ... DO UPDATE` for the insert *and* a setup-time purge *and* an explicit teardown.
+  - **`Drop` cannot clean a database.** It is synchronous; the database calls are async. A teardown hook has to be an `async fn` the test calls, and the test should then assert the residue count is zero rather than trusting the hook.
+  - **Do not assert against production data.** A test that hardcodes a library title breaks when that title is removed. The `scanner_engine` reconciliation test used to assert that `Oculus.2013.1080p.BluRay.x264.YIFY.mp4` survived; it now owns its fixture.
 - **Axum Wildcard Routing & Internal Prefix Dispatcher:**
   Axum's radix router strictly forbids overlapping wildcard parameters under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`). Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
 - **Recursive Media Path Resolution Fallback:**

@@ -42,3 +42,50 @@ Object.defineProperty(window, 'scrollTo', {
   configurable: true,
   value: vi.fn(),
 });
+
+/*
+ * jsdom implements neither the `EventSource` constructor nor its event API.
+ *
+ * The QR device sign-in panel subscribes to the server's SSE stream, so
+ * without this stub every test that renders the account page throws
+ * `ReferenceError: EventSource is not defined` from inside an effect. React
+ * treats an error thrown in an effect as fatal for that subtree, which tears
+ * the whole page down - so a missing `EventSource` did not fail one
+ * assertion, it failed every assertion in the file.
+ *
+ * The stub exposes the surface the hook actually uses, so the hook's real
+ * code path runs rather than being skipped.
+ */
+class MockEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+
+  readonly url: string;
+  readonly withCredentials = false;
+  readyState: number = MockEventSource.CONNECTING;
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(url: string | URL) {
+    this.url = String(url);
+  }
+
+  addEventListener(): void {}
+  removeEventListener(): void {}
+  dispatchEvent(): boolean {
+    return true;
+  }
+
+  close(): void {
+    this.readyState = MockEventSource.CLOSED;
+  }
+}
+
+Object.defineProperty(globalThis, 'EventSource', {
+  configurable: true,
+  writable: true,
+  value: MockEventSource,
+});

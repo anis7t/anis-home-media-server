@@ -29,6 +29,17 @@ export function useQrSession(): UseQrSessionResult {
 
   const esRef = useRef<EventSource | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * Mirror of `secondsLeft`.
+   *
+   * The countdown interval reads this to decide when the session has
+   * expired. The previous implementation did the expiry check *inside* a
+   * `setSecondsLeft` updater and called `fetchSession()` from there. A
+   * state updater must be pure, and React's StrictMode deliberately
+   * double-invokes updaters in development - so every expiry created two
+   * pair sessions on the server instead of one.
+   */
+  const secondsLeftRef = useRef(secondsLeft);
 
   const cleanup = useCallback(() => {
     if (esRef.current) {
@@ -49,10 +60,12 @@ export function useQrSession(): UseQrSessionResult {
       setSession(data);
       // Calculate actual seconds left based on server-issued expires_at
       const secs = Math.max(0, data.expires_at - Math.floor(Date.now() / 1000));
+      secondsLeftRef.current = secs;
       setSecondsLeft(secs);
     } catch {
       // Silently retry — the TV page will show old QR until next refresh
-      setSecondsLeft(10); // retry sooner
+      secondsLeftRef.current = 10; // retry sooner
+      setSecondsLeft(10);
     } finally {
       setLoading(false);
     }
@@ -62,17 +75,25 @@ export function useQrSession(): UseQrSessionResult {
   const startCountdown = useCallback(
     (initialSecs: number) => {
       if (timerRef.current !== null) clearInterval(timerRef.current);
+      secondsLeftRef.current = initialSecs;
       setSecondsLeft(initialSecs);
 
       timerRef.current = setInterval(() => {
-        setSecondsLeft((s) => {
-          if (s <= 1) {
-            // Refresh the session; fetchSession will restart countdown
-            void fetchSession();
-            return 0;
+        const next = Math.max(0, secondsLeftRef.current - 1);
+        secondsLeftRef.current = next;
+        setSecondsLeft(next);
+
+        // The expiry check lives here, in the interval callback, not inside a
+        // state updater. An interval callback is an ordinary effect callback
+        // and may have side effects; an updater may not.
+        if (next === 0) {
+          if (timerRef.current !== null) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
           }
-          return s - 1;
-        });
+          // Refresh the session; fetchSession will restart the countdown
+          void fetchSession();
+        }
       }, 1000);
     },
     [fetchSession],

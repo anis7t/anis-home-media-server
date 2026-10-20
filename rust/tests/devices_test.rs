@@ -10,7 +10,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app,
     services::{device_service::DeviceService, system_service::SystemService},
 };
@@ -29,7 +28,7 @@ const UA_WINDOWS: &str =
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn harness() -> (axum::Router, PgPool) {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = media_server_api::db::create_test_pool(&config.database_url)
         .await
         .expect("pool");

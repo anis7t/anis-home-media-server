@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app_full, db,
     services::system_service::SystemService,
 };
@@ -14,7 +13,7 @@ use tower::ServiceExt;
 static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn setup_test_pool() -> (PgPool, axum::Router) {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_test_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");

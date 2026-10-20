@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app, db,
     services::system_service::SystemService,
 };
@@ -51,7 +50,7 @@ async fn setup_media_test() -> TestMediaHarness {
     fs::write(nested_dir.join("nested_movie.mp4"), &nested_data)
         .expect("Failed to write nested_movie.mp4");
 
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");

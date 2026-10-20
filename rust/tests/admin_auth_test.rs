@@ -5,7 +5,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig, create_app_full, db, services::system_service::SystemService,
+    create_app_full, db, services::system_service::SystemService,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -21,7 +21,7 @@ struct TestContext {
 impl TestContext {
     async fn new() -> Self {
         dotenvy::dotenv().ok();
-        let config = AppConfig::from_env();
+        let config = media_server_api::test_support::test_config().await;
         let pool = db::create_pool(&config.database_url)
             .await
             .expect("Failed to connect to test db");

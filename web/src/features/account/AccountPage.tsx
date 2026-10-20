@@ -173,8 +173,16 @@ export function AccountPage() {
         </div>
       </section>
 
-      {/* QR Device Sign-In Panel */}
-      {!authenticated && (
+      {/* QR Device Sign-In Panel
+       *
+       * Gated on `!authLoading` as well as `!authenticated`. Before the
+       * auth state resolves, `authenticated` is false for *everyone*, so
+       * without the loading gate the panel mounted for signed-in users too:
+       * it flashed a "Sign in" card at someone who was already signed in,
+       * and it fired `POST /api/auth/qr` - creating a pair session on the
+       * server - for every account-page visit by an authenticated user.
+       */}
+      {!authLoading && !authenticated && (
         <section aria-label="QR Device Sign-In" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl">
           <div className="mb-6">
             <h2 className="text-xl font-bold text-white">Sign In to Anis&apos; Home Media Server</h2>

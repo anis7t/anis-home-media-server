@@ -9,13 +9,10 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
-
-static ENTROPY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct ResolvedIdentity {
@@ -32,17 +29,26 @@ pub struct AuthService;
 impl AuthService {
     // --- Helper Token Generation ---
 
-    pub fn generate_random_token() -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let count = ENTROPY_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let pid = std::process::id();
-        let sig = format!("auth:{}:{}:{}:{}", nanos, count, pid, rand_pseudo());
-        let mut hasher = Sha256::new();
-        hasher.update(sig.as_bytes());
-        hex::encode(hasher.finalize())
+    /// Mint a 256-bit random token from the OS CSPRNG.
+    ///
+    /// The previous implementation hashed a clock-derived seed
+    /// (`nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`). That seed is
+    /// guessable to anyone who can narrow the creation time to roughly a
+    /// second, and these tokens are session credentials: `sess_` session
+    /// tokens, the `ms_` device tokens, the OAuth `state` and `nonce`, the
+    /// PKCE `verifier`, and the `qr_id` that is the *only* key to the
+    /// unauthenticated `/api/auth/qr/{id}/finalize` endpoint. A predictable
+    /// one is an account takeover.
+    ///
+    /// Fails closed. If the OS random source is unavailable the caller gets an
+    /// error rather than a guessable secret - the same posture the Admin PIN
+    /// takes when it is unset.
+    pub fn generate_random_token() -> Result<String, AppError> {
+        let mut buf = [0u8; 32];
+        getrandom::getrandom(&mut buf).map_err(|e| {
+            AppError::Internal(format!("Secure random source unavailable: {}", e))
+        })?;
+        Ok(hex::encode(buf))
     }
 
     pub fn hash_token(token: &str) -> String {
@@ -494,7 +500,7 @@ impl AuthService {
             ));
         }
 
-        let plaintext = format!("ms_{}", Self::generate_random_token());
+        let plaintext = format!("ms_{}", Self::generate_random_token()?);
         let hash = Self::hash_token(&plaintext);
 
         let expires_at = validity_days
@@ -616,7 +622,7 @@ impl AuthService {
         let email: String = user_row.get("email");
         let role: String = user_row.get("role");
 
-        let session_token = format!("sess_{}", Self::generate_random_token());
+        let session_token = format!("sess_{}", Self::generate_random_token()?);
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
@@ -687,9 +693,9 @@ impl AuthService {
             ));
         }
 
-        let state = Self::generate_random_token();
-        let nonce = Self::generate_random_token();
-        let verifier = Self::generate_random_token();
+        let state = Self::generate_random_token()?;
+        let nonce = Self::generate_random_token()?;
+        let verifier = Self::generate_random_token()?;
 
         let mut hasher = Sha256::new();
         hasher.update(verifier.as_bytes());
@@ -899,7 +905,7 @@ impl AuthService {
         let role: String = user_row.get("role");
 
         // Mint session
-        let session_token = format!("sess_{}", Self::generate_random_token());
+        let session_token = format!("sess_{}", Self::generate_random_token()?);
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
@@ -949,7 +955,7 @@ impl AuthService {
         let email: String = r.get("email");
         let role: String = r.get("role");
 
-        let session_token = format!("sess_{}", Self::generate_random_token());
+        let session_token = format!("sess_{}", Self::generate_random_token()?);
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
@@ -975,22 +981,34 @@ impl AuthService {
 
     /// Generate a 5-char uppercase alphanumeric pair code using an unambiguous charset.
     /// Avoids 0/O, 1/I lookalikes for easier manual entry.
-    pub fn generate_pair_code() -> String {
+    ///
+    /// Each of the five characters is drawn independently from the OS CSPRNG.
+    ///
+    /// The previous implementation walked a single 64-bit LCG and took
+    /// `seed % 32` per step. Because the LCG's multiplier and increment are
+    /// both odd, the low 5 bits of every step depend only on the low 5 bits of
+    /// the first one - so the whole code collapsed to **32 possible values**
+    /// (5 bits) instead of the intended 32^5 (25 bits). Measured on the
+    /// running server: 40 sessions produced 15 distinct codes. Since
+    /// `POST /api/auth/qr/lookup` resolves a code to a live pairing session,
+    /// any signed-in account could try all 32 and hijack another user's
+    /// active TV pairing.
+    ///
+    /// `byte % 32` is exactly uniform here: the charset is 32 characters and
+    /// 256 is a multiple of 32, so there is no modulo bias and no rejection
+    /// sampling is needed.
+    ///
+    /// Fails closed, for the same reason as `generate_random_token`.
+    pub fn generate_pair_code() -> Result<String, AppError> {
         const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let count = ENTROPY_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let mut seed = (nanos as u64) ^ count ^ rand_pseudo();
-        let mut code = String::with_capacity(5);
-        for _ in 0..5 {
-            code.push(CHARS[(seed as usize) % CHARS.len()] as char);
-            seed = seed
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-        }
-        code
+        let mut buf = [0u8; 5];
+        getrandom::getrandom(&mut buf).map_err(|e| {
+            AppError::Internal(format!("Secure random source unavailable: {}", e))
+        })?;
+        Ok(buf
+            .iter()
+            .map(|b| CHARS[(*b as usize) % CHARS.len()] as char)
+            .collect())
     }
 
     /// HMAC-SHA256 of `"{qr_id}:{code}"` using `MEDIA_SERVER_SECRET` env var.
@@ -1009,8 +1027,8 @@ impl AuthService {
         // Sweep any sessions older than 5 minutes while we're here
         let _ = Self::sweep_expired_pair_sessions(pool).await;
 
-        let qr_id = format!("qr_{}", Self::generate_random_token());
-        let code = Self::generate_pair_code();
+        let qr_id = format!("qr_{}", Self::generate_random_token()?);
+        let code = Self::generate_pair_code()?;
         let sig = Self::hmac_pair_code(&qr_id, &code);
         let code_hash = Self::hash_token(&code);
         let expires_at = Utc::now() + Duration::minutes(2);
@@ -1030,8 +1048,23 @@ impl AuthService {
         .await
         .map_err(|e| AppError::Internal(format!("Failed to create pair session: {}", e)))?;
 
-        info!("QR: created pair session qr_id={} code={}", qr_id, code);
+        // The pair code is NEVER logged. `GET /api/auth/qr/{id}/finalize` is
+        // unauthenticated and keyed only on `qr_id`, so a log line carrying
+        // either secret is an account-takeover handout for anyone who can
+        // read the log. A short non-secret prefix is enough to correlate
+        // sessions operationally.
+        info!(
+            "QR: created pair session ref={} ttl=120s",
+            Self::redacted_pair_ref(&qr_id)
+        );
         Ok((qr_id, code, sig, expires_at.timestamp()))
+    }
+
+    /// A short, non-secret reference for a pair session id, safe to write to
+    /// the log. 12 hex characters of a 256-bit id is not enough to reconstruct
+    /// the id, so a log reader cannot complete a pairing.
+    pub fn redacted_pair_ref(qr_id: &str) -> String {
+        qr_id.chars().take(15).collect()
     }
 
     /// Check the status of a pair session for the waiting TV/browser.
@@ -1131,7 +1164,7 @@ impl AuthService {
         }
 
         // Mint a 30-day session for the waiting TV/browser
-        let session_token = format!("sess_{}", Self::generate_random_token());
+        let session_token = format!("sess_{}", Self::generate_random_token()?);
         let sess_expires_at = Utc::now() + Duration::days(30);
 
         // Fetch user email + role for the session
@@ -1216,13 +1249,6 @@ impl AuthService {
     }
 }
 
-fn rand_pseudo() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    now.as_nanos() as u64 ^ 0x517cc1b727220a95
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1236,5 +1262,92 @@ mod tests {
         let challenge = AuthService::base64url_encode(&hasher.finalize());
         assert_eq!(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
         assert_eq!(challenge.len(), 43);
+    }
+
+    /// The pair code is the secret that gates a TV pairing: `lookup` resolves
+    /// a code to a live session, so a guessable code lets any signed-in
+    /// account hijack someone else's active pairing.
+    ///
+    /// This test is the one that would have caught the original defect. The
+    /// previous generator walked a single 64-bit LCG and took `seed % 32` per
+    /// step; because the LCG multiplier and increment are both odd, the low
+    /// 5 bits of every step depend only on the low 5 bits of the first one,
+    /// so the whole code collapsed to 32 possible values. 10,000 draws
+    /// produced 32 distinct codes; the assertion below demands thousands.
+    #[test]
+    fn test_pair_code_has_real_entropy() {
+        const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        const DRAWS: usize = 10_000;
+
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..DRAWS {
+            let code = AuthService::generate_pair_code().expect("CSPRNG available");
+            assert_eq!(code.chars().count(), 5, "pair code must be 5 characters");
+            assert!(
+                code.chars().all(|c| CHARS.contains(&(c as u8))),
+                "pair code '{}' must use the unambiguous charset",
+                code
+            );
+            seen.insert(code);
+        }
+
+        // 32^5 = 33,554,432 possible codes. 10,000 draws should collide only
+        // about 1.5 times by the birthday bound, so a healthy generator lands
+        // near 9,998 distinct values. The collapsed generator produced 32.
+        assert!(
+            seen.len() >= 5_000,
+            "pair code generator is not random enough: {} distinct codes from {} draws (expected >= 5000)",
+            seen.len(),
+            DRAWS
+        );
+    }
+
+    /// The characters of a pair code must be drawn independently. If the
+    /// generator ever reintroduces a shared seed whose low bits drive every
+    /// character, the distinct-code count collapses again - this checks the
+    /// first and last character are not correlated through one state word.
+    #[test]
+    fn test_pair_code_characters_are_not_correlated() {
+        const DRAWS: usize = 2_000;
+        let mut first_chars = std::collections::HashSet::new();
+        let mut last_chars = std::collections::HashSet::new();
+        for _ in 0..DRAWS {
+            let code = AuthService::generate_pair_code().expect("CSPRNG available");
+            let chars: Vec<char> = code.chars().collect();
+            first_chars.insert(chars[0]);
+            last_chars.insert(chars[4]);
+        }
+        // Each position should reach the full 32-character charset.
+        assert_eq!(first_chars.len(), 32, "first character never varied enough");
+        assert_eq!(last_chars.len(), 32, "last character never varied enough");
+    }
+
+    /// `generate_random_token` mints session tokens, OAuth state/nonce, the
+    /// PKCE verifier and the `qr_id` that gates the unauthenticated finalize
+    /// endpoint. It must be 256 bits of OS randomness, not a clock-derived
+    /// seed.
+    #[test]
+    fn test_random_token_is_256_bits_of_unique_material() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1_000 {
+            let token = AuthService::generate_random_token().expect("CSPRNG available");
+            assert_eq!(token.len(), 64, "token must be 32 bytes of hex");
+            assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+            seen.insert(token);
+        }
+        assert_eq!(seen.len(), 1_000, "tokens must not repeat");
+    }
+
+    /// The redacted reference is what reaches the log. It must not be the
+    /// full id, and it must not carry the pair code.
+    #[test]
+    fn test_redacted_pair_ref_is_not_the_secret() {
+        let qr_id = format!("qr_{}", AuthService::generate_random_token().unwrap());
+        let code = AuthService::generate_pair_code().unwrap();
+        let redacted = AuthService::redacted_pair_ref(&qr_id);
+
+        assert_ne!(redacted, qr_id, "the full id must never be logged");
+        assert!(qr_id.starts_with(&redacted), "the ref must stay a prefix");
+        assert!(!redacted.contains(&code), "the ref must not carry the code");
     }
 }

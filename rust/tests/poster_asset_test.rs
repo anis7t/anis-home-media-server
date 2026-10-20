@@ -9,7 +9,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app,
     services::system_service::SystemService,
 };
@@ -56,7 +55,7 @@ async fn fixture(tag: &str) -> Fixture {
     fs::write(media_root.join("notes.txt"), b"not artwork").unwrap();
     fs::write(media_root.join("clip.mkv"), b"not artwork either").unwrap();
 
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = media_server_api::db::create_test_pool(&config.database_url)
         .await
         .expect("test pool");

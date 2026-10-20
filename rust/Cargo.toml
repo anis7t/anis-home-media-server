@@ -23,6 +23,19 @@ mime_guess = "2.0"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
+# OS CSPRNG (BCryptGenRandom on Windows, getrandom(2)/urandom elsewhere).
+# Every security token this service mints - session tokens, the OAuth
+# state/nonce, the PKCE verifier, the QR pair code and the `qr_id` that gates
+# the unauthenticated /finalize endpoint - must come from here rather than
+# from a clock-derived seed.
+#
+# Already in Cargo.lock at 0.2.17 (pulled in by rand_core and ring), so
+# adding it as a direct dependency costs no additional compilation.
+getrandom = "0.2"
+# Already in Cargo.lock at 2.5.8 (sqlx-core and tower-http depend on it), so
+# adding it as a direct dependency costs no additional compilation. Used by
+# the test-support module to parse the PostgreSQL connection URL.
+url = "2"
 urlencoding = "2.1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 regex = "1.10"

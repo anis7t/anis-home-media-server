@@ -4,7 +4,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    config::AppConfig,
     create_app, db,
     models::progress::ProgressResponse,
     services::system_service::SystemService,
@@ -12,7 +11,7 @@ use media_server_api::{
 use tower::ServiceExt;
 
 async fn setup_test_app() -> (axum::Router, sqlx::PgPool) {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to test database");

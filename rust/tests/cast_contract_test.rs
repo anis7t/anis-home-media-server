@@ -10,12 +10,12 @@ use axum::{
     http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{config::AppConfig, create_app, services::system_service::SystemService};
+use media_server_api::{create_app, services::system_service::SystemService};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
 async fn app() -> axum::Router {
-    let config = AppConfig::from_env();
+    let config = media_server_api::test_support::test_config().await;
     let pool = media_server_api::db::create_test_pool(&config.database_url)
         .await
         .expect("pool");

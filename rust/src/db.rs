@@ -210,9 +210,165 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // `POST /api/auth/qr/lookup` resolves a pair code to a live session, so
+    // this column is read on every manual code entry. The table holds only
+    // unexpired sessions, but the index is free and makes the lookup a
+    // single index probe instead of a sequential scan.
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_device_pair_code ON device_pair_sessions(code)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // The library tables.
+    //
+    // These were created by the SQLite -> PostgreSQL migration script, not by
+    // `ensure_schema`, which meant a fresh database was only half-formed: the
+    // server booted, created its own tables, and then failed on the first
+    // query that touched the catalog. The dedicated test database made that
+    // visible immediately - the suite could not seed a single movie row.
+    //
+    // The DDL below matches the migrated production tables exactly, so
+    // `CREATE TABLE IF NOT EXISTS` is a no-op against the live database.
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS movies (
+            filename              TEXT PRIMARY KEY,
+            title                 TEXT,
+            year                  INTEGER,
+            tmdb_id               INTEGER,
+            overview              TEXT,
+            poster_path           TEXT,
+            backdrop_path         TEXT,
+            runtime               INTEGER,
+            genres                TEXT,
+            vote_average          REAL,
+            updated_at            BIGINT,
+            release_date          TEXT,
+            added_at              BIGINT,
+            details_json          TEXT,
+            last_metadata_refresh BIGINT
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_movies_tmdb
+            ON movies (tmdb_id) WHERE tmdb_id IS NOT NULL
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS progress (
+            filename   TEXT PRIMARY KEY,
+            "position" REAL        NOT NULL DEFAULT 0,
+            duration   REAL        NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_progress_updated
+            ON progress (updated_at DESC)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS devices (
+            device_id       TEXT PRIMARY KEY,
+            custom_name     TEXT,
+            device_name     TEXT,
+            device_type     TEXT,
+            device_os       TEXT,
+            browser         TEXT,
+            user_agent      TEXT,
+            connection_type TEXT,
+            client_ip       TEXT,
+            public_ip       TEXT,
+            mac_address     TEXT,
+            isp             TEXT,
+            city            TEXT,
+            country         TEXT,
+            first_seen      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            device_model    TEXT
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_devices_last_seen
+            ON devices (last_seen DESC)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS device_watch_history (
+            id           BIGSERIAL PRIMARY KEY,
+            device_id    TEXT        NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+            filename     TEXT        NOT NULL,
+            "position"   REAL        NOT NULL DEFAULT 0,
+            duration     REAL        NOT NULL DEFAULT 0,
+            completed    SMALLINT    NOT NULL DEFAULT 0,
+            last_watched TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_device_watch_history UNIQUE (device_id, filename)
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_dwh_device
+            ON device_watch_history (device_id, last_watched DESC)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS ip_cache (
+            ip         TEXT PRIMARY KEY,
+            isp        TEXT,
+            org        TEXT,
+            city       TEXT,
+            country    TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
-    tracing::info!("Rust schema ensured (transcode_jobs, users, auth_tokens, sessions, device_pair_sessions)");
+    tracing::info!(
+        "Rust schema ensured (transcode_jobs, users, auth_tokens, sessions, \
+         device_pair_sessions, movies, progress, devices, device_watch_history, ip_cache)"
+    );
     Ok(())
 }
 
