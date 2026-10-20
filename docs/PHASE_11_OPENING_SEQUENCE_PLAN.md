@@ -428,9 +428,20 @@ from the canonical's.
 canonical's SVG `feTurbulence`, so it uses a seeded white-noise texture of the same tile size and
 colour matrix — the same *kind* of texture, not the same pixels) and the **handover** (D16).
 
-**Verified:** `flutter analyze` clean across the whole client · the Flutter suite **+294 ~8 -3**,
+
+**Verified:** `flutter analyze` clean across the whole client · the Flutter suite **+296 ~8 -3**,
 against a baseline of **+275 ~8 -3** — the same three pre-existing `libmpv` failures (Issue 11),
-unchanged and named, and **+19 passes** from the new intro tests.
+unchanged and named, and **+21 passes** from the new intro tests.
+
+**The on-device check is deliberately outstanding, and is batched to the end of the phase.** The
+exit criterion says "the phone and TV both show the canonical design", and that is the one thing
+this slice cannot prove on the host: `adb devices` is empty, and `app_shell_test.dart` — the file
+that would cover the AppShell-level integration — is one of the three that cannot run here
+(Issue 11). The device check is therefore **not** attempted piecemeal: it is one session, at the
+end, on the real hardware, with the owner's remote-control protocol observed. What it needs: the
+APK built and installed on the Fire TV Stick 4K and the phone, the intro triggered by a cold launch
+(it plays on **every** launch, by design), a screenshot of each, and the two compared against the
+archived frames.
 ### Slice 11.5 — Flutter: the score
 
 - Add the audio dependency and ship `intro-theme.wav` (D8).
