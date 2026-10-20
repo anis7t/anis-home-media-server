@@ -69,6 +69,14 @@ Settled 2026-10-20. Each is a **decision**, not a default to be re-litigated in 
 | **D15** | The gating: the specification says "Android: every launch", and the code did that **accidentally**. How should it be made deliberate? | **Keep "every launch", and say so.** The dead `hasSeenIntro` flag — written when the sequence finished, never persisted, never read — is gone, and the controller now states the behaviour. The alternative was to persist it (`shared_preferences` is already a dependency) and play **once per install**; that is a visible change to the product, and the specification does not ask for it. |
 | **D16** | The handover at 2.57 s: the web releases **both** touches and keys, but on a television a D-pad press must not navigate the app behind the sequence. | **The Flutter client releases touches at 2.57 s and keeps the keyboard for the whole three seconds.** A remote cannot drive the app while the sequence is still on screen. This is a deliberate divergence from the web, and it is recorded as **L17**. |
 
+### 2.1c The three decisions taken with the Slice 11.5 plan (2026-10-20)
+
+| # | Question | Answer |
+|---|---|---|
+| **D17** | Which player plays the score on the phone and the TV? | **`audioplayers` 6.8.1** — a pure-Dart wrapper over Android's `MediaPlayer`. It is small, and its platform interface makes the host tests a fake, so the suite never touches a real player. `just_audio` is built for streaming and long-form playback; `soundpool` is for rapid-fire game sound effects; and `media_kit`, though already a dependency, is a **video** engine whose **host** backend is the libmpv that Issue 11 is about. |
+| **D18** | Should `m` mute the score on the Flutter client, as it does on the web? | **No — any key dismisses, as the Flutter client does today.** The web's `m` is a mute that does not dismiss (D14, §7.6); the Flutter client treats **every** key as a dismissal, and keeping that is the smaller change. The consequence is that **the Flutter client has no `m` mute**, and the score is silenced by the device's own volume. That is a divergence from the web, and it is recorded as **L18**. |
+| **D19** | The intro plays on every launch (D15), so the score will make a sound on every cold launch. | **Yes — the canonical behaviour.** The score is part of the sequence on every target, and the web makes the same sound whenever its context is allowed to play. |
+
 ### 2.2 D4 and D6 read together
 
 The web original's HUD — the skip / replay / mute chrome — is **hidden by default**
@@ -337,12 +345,31 @@ the same signal** — which is what makes §13.2's reproducibility oracle possib
 | Target | Score source | Notes |
 |---|---|---|
 | **Web** | **Live Web Audio synthesis** (D8) | The original's own approach. Zero asset bytes. Built in Slice 11.3a. |
-| **Android phone** | `docs/opening-sequence/assets/intro-theme.wav` | 3.070 s, 44.1 kHz stereo, **peak −2.98 dBFS, RMS −19.00 dBFS**. The offline render of the same composition. 529 KB. |
+| **Android phone** | `docs/opening-sequence/assets/intro-theme.wav` | 3.070 s, 44.1 kHz stereo, **peak −2.98 dBFS, RMS −19.00 dBFS**. The offline render of the same composition. 541,592 bytes. **Shipped, byte for byte, since Slice 11.5.** |
 | **Android TV** | the same WAV | Identical bytes to the phone. |
 
 > **Correction.** This table previously said the WAV peaks at **−1.01 dBFS**. It does not: the
 > measured peak is **−2.98 dBFS** (`20·log₁₀(0.7093)`), and the RMS is **−19.00 dBFS**
 > (`20·log₁₀(0.1121)`). The −1.01 figure was wrong, and no code depended on it.
+
+### 7.9 The Flutter client's score — the web's contract, on the phone
+
+The phone and the TV play the canonical's **offline render**, because Flutter has no Web Audio and
+the composition has to be the same music either way. The *contract* is the web's (§7.4), with the
+platform's differences taken into account.
+
+| Situation | What happens |
+|---|---|
+| The player is ready when the sequence starts | The score starts at the sequence's t = 0 ✓ |
+| The player is **not** ready — Android's preparation took 80 ms | The score starts when it is ready, **anchored to the sequence's position at that moment** ✓ — the same anchoring as the web ✓ |
+| The sequence is over by then | **The score is dropped** ✓ — a sound out of nowhere is worse than no sound ✓ |
+| The sequence is dismissed | The score stops ✓, and it cannot outlive the overlay ✓ |
+| Always | **The animation never waits for the audio** ✓ — the score is prepared before the first frame, in the application's entry point, and nothing awaits it ✓ |
+
+> **The one thing the two do not share is the unlocking gesture.** The web's score waits for a user
+> gesture, because a browser will not play audio without one (D12). **Android has no such
+> policy**, so the Flutter client's score starts on its own — and the intro makes a sound on every
+> cold launch, which is D19. That is **L18**.
 
 ### 7.9 The open level finding
 
@@ -394,6 +421,10 @@ releases **touches** at the handover (2.57 s) so the app underneath is live, but
 **keyboard** for the whole three seconds, so a D-pad press dismisses the sequence rather than
 navigating the app behind it. The web releases both, because a browser's key events and pointer
 events are the same kind of thing; on a television they are not. **L17** in §12.
+
+**The Flutter client has neither of the two web exceptions.** It has **no `m` mute** — any key
+dismisses, as it always has (D18, **L18**) — and it has **no unlocking gesture**, because Android
+has no autoplay policy and the score starts on its own (§7.9).
 
 > **The original's click-to-skip does not work, and the port's does.** The source tests
 > `e.target === el.stage` (`source: 888`), but the FX canvas (z-index 4) and the curtain halves
@@ -493,17 +524,18 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 | **L4** | Lockup layout | side by side in landscape, stacked in portrait | built (11.2) | **CLOSED in 11.4** — the layout is now the canonical **breakpoint rule**, decided by the **stage's aspect** (`H > W`) and never by the device type. It was a `Column`, stacked unconditionally: right for the phone, wrong for the TV. | 11.2, **11.4** |
 | **L5** | Skip affordance | **none** | none (by design) | **CLOSED in 11.4** — the visible Skip pill is gone. Dismissal is implicit: a tap anywhere, or any key. | **11.4** |
 | **L6** | Replay affordance | **none** (D4) | none (by design) | [CLOSED in 11.1a (2026-10-20)] - the Settings "Replay Brand Intro" item and the `BRAND & EXPERIENCE` section that contained it are gone, as are `IntroController.replay()` and its test. The docs that advertised it are updated. | **11.1a - done** |
-| **L7** | Score | web: live synthesis · Android: the WAV | **built (11.3a)** — the port of the original's Web Audio, in `web/src/lib/intro/audio.ts`, with the score anchored to the animation's clock, the unlocking gesture consumed by the audio (D12), the `m` mute, and the drop rule (§7.4-§7.7) | **absent** | 11.3a (web) **done**, 11.5 (Flutter) |
+| **L7** | Score | web: live synthesis · Android: the WAV | **built (11.3a)** — the port of the original's Web Audio, in `web/src/lib/intro/audio.ts`, with the score anchored to the animation's clock, the unlocking gesture consumed by the audio (D12), the `m` mute, and the drop rule (§7.4-§7.7) | **CLOSED in 11.5 (2026-10-20)** — the phone and the TV play the canonical's offline render, **byte for byte**, anchored to the sequence when it starts, dropped if the sequence is over, and never waited for (§7.9). The asset is `assets/audio/intro-theme.wav`, and the score's SHA-256 is asserted against the canonical's in the test suite. | **11.3a, 11.5 - done** |
 | **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | built (11.2) | **CLOSED in 11.4** — the halves **translate** ±100 % of their own width, they overlap by 1 px, their inner edges feather only once they part, and they carry **one** continuous image (the same stage-wide gradient, offset by half a stage to the left and to the right). They used to **shrink to zero width** with hard edges, each with its own centred gradient. | 11.2, **11.4** |
 | **L9** | Ambient drift | **none** (D10 — dropped) | none (D10) | none | — closed by D10 |
 | **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | built (11.2) | **CLOSED in 11.4** — the same deterministic hash, so the two targets shake identically. It was absent. | 11.2, **11.4** |
 | **L11** | Reduced motion | honoured on all three (D11) | the lifecycle is 11.3 | **CLOSED in 11.4** — `MediaQuery.disableAnimationsOf` is honoured, and it suppresses **exactly** the four things: the impact burst, the camera shake, the icon's rotation and the icon's scale. It was honoured by nothing. | 11.3, **11.4** |
 | **L12** | Outro | layer **removed** at 3.00 s | built (11.2) | **CLOSED in 11.4** — the layer is removed at 3.00 s. It used to fade to zero over 300 ms, and carry a 3.5 s safety timeout. | 11.2, **11.4** |
 | **L13** | Gating semantics | documented, deliberate | the lifecycle is 11.3 | **CLOSED in 11.4** — "every launch" is now **stated**, and the dead `hasSeenIntro` flag is gone. It was set when the sequence finished and never persisted and never read, so the behaviour was accidental rather than designed. | 11.3, **11.4** |
-| **L14** | Dead asset | — | — | `assets/videos/intro-demo-portrait.mp4` is declared in `pubspec.yaml` and **never played** — 2.43 MB in every APK | 11.5 |
+| **L14** | Dead asset | — | — | **CLOSED in 11.5 (2026-10-20)** — `assets/videos/intro-demo-portrait.mp4` was declared in `pubspec.yaml`, **never played**, and cost **2.43 MB** in every APK. It is gone from the pubspec and from the tree, and the asset section now names exactly one file: the score. The APK's assets shrink by about **1.9 MB**. | **11.5 - done** |
 | **L15** | AGENTS.md's Flutter invariant | — | — | claims the intro is *"hardware-accelerated portrait video"*, claims `IntroController` provides session gating, and lists the Replay action — **all three wrong** | 11.1 (closed by this document) |
 | **L16** | The mark | the canonical SVG, path for path | the shared `BrandMark` | **CLOSED in 11.4** — the mark is now the canonical artwork. The Flutter client's re-implementation had the **wrong specular highlight** (`v 19.4 … L23.2 18.0` where the canonical is `v8.5 l14.2-1.4 L12 9.2z`, so the highlight covered roughly twice its area) and a hard `drawShadow` at six units where the canonical has a soft `feDropShadow dy=2 stdDeviation=3`. | 11.2, **11.4** |
 | **L17** | The handover | the app underneath is interactive from 2.57 s | the layer releases `pointer-events` at 2.57 s | **CLOSED in 11.4, with one recorded divergence** — the Flutter client releases **touches** at 2.57 s and keeps the **keyboard** for the whole three seconds, so a D-pad press cannot navigate the app behind the sequence. The web releases both. §8. | 11.2, **11.4** |
+| **L18** | The score's **start** and the **`m` key** | the web waits for a gesture, and `m` mutes without dismissing | the unlocking gesture is consumed by the audio (D12); `m` mutes and does not dismiss (D14) | **RECORDED in 11.5 (2026-10-20)** — the Flutter client has **no unlocking gesture** (Android has no autoplay policy, so the score starts on its own, and the intro makes a sound on every cold launch — D19) and **no `m` mute** (any key dismisses, as the Flutter client always has — D18). The score is silenced by the device's own volume. | 11.5 |
 
 ## 13. The oracle — how a later slice proves it matches
 

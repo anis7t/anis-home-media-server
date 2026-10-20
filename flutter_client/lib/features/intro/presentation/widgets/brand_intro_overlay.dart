@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/intro_frame.dart';
+import '../../domain/intro_score.dart';
 import '../../domain/intro_timeline.dart';
+import '../controllers/intro_score_controller.dart';
 import '../painters/intro_fx_painter.dart';
 import '../painters/intro_veil_painter.dart';
 import 'brand_mark.dart';
@@ -35,11 +37,19 @@ class BrandIntroOverlay extends StatefulWidget {
   const BrandIntroOverlay({
     super.key,
     required this.onFinished,
+    this.score = const SilentIntroScore(),
     this.autoFinishOnError = true,
   });
 
   /// Called once, when the sequence has finished.
   final VoidCallback onFinished;
+
+  /// The score.
+  ///
+  /// It is a parameter rather than something the overlay looks up, so that the
+  /// widget's tests can hand it a fake and never touch an audio platform. The
+  /// default is silent, which is also what a device with no audio gets.
+  final IntroScore score;
 
   /// Retained for API compatibility.
   final bool autoFinishOnError;
@@ -62,6 +72,8 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
   /// A frame held for the comparison oracle, if one has been requested.
   double? _manualTime;
 
+  late final IntroScoreController _score;
+
   final GlobalKey _stageKey = GlobalKey();
   final GlobalKey _iconKey = GlobalKey();
   final GlobalKey _lockupKey = GlobalKey();
@@ -82,6 +94,14 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
       duration: const Duration(milliseconds: 3000),
     );
     _ctrl.addListener(_onTick);
+    _score = IntroScoreController(
+      score: widget.score,
+      elapsedAt: () => Duration(milliseconds: (_ctrl.value * kIntroDuration * 1000).round()),
+      duration: const Duration(milliseconds: 3000),
+    );
+    // The score starts with the sequence, and NOTHING waits for it: the
+    // animation is already running.
+    _score.start();
     _ctrl.forward();
   }
 
@@ -100,6 +120,9 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
 
   @override
   void dispose() {
+    // The overlay can be removed without ever finishing - the app can be
+    // torn down mid-sequence - and the score must not outlive it.
+    _score.stop();
     _ctrl
       ..removeListener(_onTick)
       ..dispose();
@@ -122,6 +145,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     if (_finished) return;
     _finished = true;
     _ctrl.stop();
+    _score.stop();
     widget.onFinished();
   }
 

@@ -1,7 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:media_server_client/features/intro/domain/intro_score.dart';
 import 'package:media_server_client/features/intro/presentation/widgets/brand_intro_overlay.dart';
+
+/// A score that records what it was asked to do.
+class _FakeScore implements IntroScore {
+  final List<String> calls = [];
+  final List<Duration> playedFrom = [];
+
+  @override
+  Future<void> prepare() async => calls.add('prepare');
+
+  @override
+  Future<void> get ready async {}
+
+  @override
+  Future<void> playFrom(Duration elapsed) async {
+    calls.add('playFrom');
+    playedFrom.add(elapsed);
+  }
+
+  @override
+  Future<void> stop() async => calls.add('stop');
+
+  @override
+  Future<void> dispose() async => calls.add('dispose');
+}
 
 /// Pump the overlay into a plain surface.
 ///
@@ -12,6 +37,7 @@ Future<void> pumpOverlay(
   WidgetTester tester, {
   required VoidCallback onFinished,
   Size size = const Size(1920, 1080),
+  IntroScore score = const SilentIntroScore(),
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -21,7 +47,10 @@ Future<void> pumpOverlay(
     MaterialApp(
       home: Scaffold(
         backgroundColor: const Color(0xFF101418),
-        body: BrandIntroOverlay(onFinished: onFinished),
+        body: BrandIntroOverlay(
+          score: score,
+          onFinished: onFinished,
+        ),
       ),
     ),
   );
@@ -115,6 +144,46 @@ void main() {
         isTrue,
         reason: 'a key press after the handover still dismisses',
       );
+    });
+
+    testWidgets('the score starts with the sequence and stops with it', (
+      tester,
+    ) async {
+      final score = _FakeScore();
+      var finished = false;
+      await pumpOverlay(
+        tester,
+        onFinished: () => finished = true,
+        score: score,
+      );
+      await tester.pump();
+
+      // The score starts with the sequence, and the animation did not wait
+      // for it.
+      expect(score.calls, contains('playFrom'));
+      expect(score.playedFrom, isNotEmpty);
+
+      // And it stops when the sequence is dismissed.
+      await tester.tapAt(const Offset(960, 540));
+      await tester.pump();
+      expect(finished, isTrue);
+      expect(score.calls, contains('stop'));
+    });
+
+    testWidgets('the score does not outlive the overlay', (tester) async {
+      final score = _FakeScore();
+      await pumpOverlay(
+        tester,
+        onFinished: () {},
+        score: score,
+      );
+      await tester.pump();
+
+      // The app can be torn down mid-sequence, and the score must not outlive
+      // the overlay.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pump();
+      expect(score.calls, contains('stop'));
     });
 
     testWidgets('the lockup is side by side in landscape', (tester) async {

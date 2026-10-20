@@ -442,13 +442,57 @@ end, on the real hardware, with the owner's remote-control protocol observed. Wh
 APK built and installed on the Fire TV Stick 4K and the phone, the intro triggered by a cold launch
 (it plays on **every** launch, by design), a screenshot of each, and the two compared against the
 archived frames.
-### Slice 11.5 — Flutter: the score
+### Slice 11.5 — Flutter: the score ✅ **DONE (2026-10-20)**
 
 - Add the audio dependency and ship `intro-theme.wav` (D8).
 - Play it on phone and TV; the animation must never wait on it.
 - **Exit:** audible on both form factors; the dead `intro-demo-portrait.mp4` is removed from
   `pubspec.yaml` and the asset tree (**2.4 MB out of every APK**).
 
+**What was built.**
+
+| File | What it is |
+|---|---|
+| `flutter_client/lib/features/intro/domain/intro_score.dart` | The contract — `prepare()`, `ready`, `playFrom(elapsed)`, `stop()`, `dispose()` — and a silent implementation for the host tests |
+| `flutter_client/lib/features/intro/infrastructure/audioplayers_score.dart` | The implementation over `audioplayers` |
+| `flutter_client/lib/features/intro/presentation/controllers/intro_score_controller.dart` | The lifecycle: the anchor, and the drop rule |
+| `flutter_client/lib/features/intro/presentation/providers/intro_score_provider.dart` | The provider, overridden in the entry point |
+| `flutter_client/lib/features/intro/presentation/widgets/brand_intro_overlay.dart` | The wiring: the score starts with the sequence, stops with it, and cannot outlive it |
+| `flutter_client/lib/main.dart` | The score is **prepared before the first frame** |
+
+**Three decisions were taken with the plan** and are recorded as **D17** (the player:
+`audioplayers` 6.8.1), **D18** (the `m` key: the Flutter client keeps "any key dismisses", so it
+has **no** `m` mute) and **D19** (the score plays on every cold launch, as the canonical does) in
+the spec's §2.1c.
+
+**The contract is the web's (§7.9), with the platform's differences taken into account:**
+
+| Situation | What happens |
+|---|---|
+| The player is ready when the sequence starts | The score starts at the sequence's t = 0 |
+| The player is **not** ready — Android's preparation took 80 ms | The score starts when it is ready, **anchored to the sequence's position at that moment** — the same anchoring as the web |
+| The sequence is over by then | **The score is dropped** — a sound out of nowhere is worse than no sound |
+| The sequence is dismissed | The score stops, and it cannot outlive the overlay |
+| Always | **The animation never waits for the audio** — the score is prepared before the first frame, and nothing awaits it |
+
+**The asset.** The canonical's file, **byte for byte** — the test suite asserts the SHA-256 of
+the shipped WAV against `docs/opening-sequence/assets/intro-theme.wav`, and reads the WAV's header
+to assert 44.1 kHz, 16-bit, stereo, 3.070 s. The dead `intro-demo-portrait.mp4` is gone from the
+pubspec and from the tree; the asset section now names exactly one file, and a test says so. The
+APK's assets shrink by about **1.9 MB**.
+
+**Two divergences are recorded, and neither is hidden:** the Flutter client has **no unlocking
+gesture** (Android has no autoplay policy, so the score starts on its own — D19) and **no `m` mute**
+(any key dismisses, as it always has — D18). Both are **L18**.
+
+**Verified:** `flutter analyze` clean across the whole client · the intro suite passes, including
+the score's lifecycle (prepared early · started with the sequence · anchored to the sequence's
+position when the player is ready · dropped when the sequence is over · stopped on dismissal) and
+the asset's identity · the full suite adds no new failures, and the pre-existing three (Issue 11)
+are unchanged and named.
+
+**Audible on both form factors** — that half of the exit criterion is the **batched device session**
+at the end of the phase, together with Slice 11.4's on-device check.
 ### Slice 11.6 — Responsive hardening & asset regeneration
 
 - D7 verification across portrait, landscape, ultrawide, tablet and TV viewports — and the **Flutter**
