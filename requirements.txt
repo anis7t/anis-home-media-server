@@ -30,19 +30,12 @@
 #   websockets docs/opening-sequence/scripts/cdp_local.py (and the three
 #              scripts that import it)
 #
-# The packages below the "untracked local trees" heading are used by
-# .agents/ and Hermes-agent-android-PC-companion-app/, which are NOT tracked
-# by git. They are listed here so a fresh environment can still run them.
+# Note on the removed trees: the untracked `.agents/` skill tree and the
+# untracked `Hermes-agent-android-PC-companion-app/` were deleted on
+# 2026-10-20. They were the only consumers of playwright, pillow, pynacl,
+# pystray, pytest, qrcode and zeroconf, so those pins went with them. The
+# project skill at `.opencode/skills/media-server-verify/` is unaffected.
 
 # --- Browser-driven verification -------------------------------------------------
 selenium>=4.0,<5
 websockets>=12.0,<16
-
-# --- Used by the untracked local trees (not part of the git repository) ----------
-playwright>=1.40,<2
-pillow>=10.0,<12
-pynacl>=1.5,<2
-pystray>=0.19,<1
-pytest>=8.0,<9
-qrcode>=7.4,<9
-zeroconf>=0.132,<1

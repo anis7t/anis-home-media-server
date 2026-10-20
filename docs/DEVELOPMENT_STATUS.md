@@ -15,9 +15,10 @@ Active Working branch: `feat/flutter-production-player` (the branch bullets unde
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
 - **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
 - **Integrated GPU:** AMD Radeon Vega 8 Graphics — Task Manager GPU 1 / FFmpeg `dx11:0`
-- **Python:** 3.14.3 (`E:\MediaServer\venv`)
+- **Python:** 3.14.3 — **tooling only.** The venv (`E:\MediaServer\venv`) exists for the probe and
+  release scripts; the server itself is native Rust and needs no Python. See `requirements.txt`.
 - **FFmpeg:** 9.0.1 essentials build with AMF & D3D11va
-- **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
+- **Caddy:** `E:\MediaServer\bin\caddy_custom.exe` (Cloudflare DNS module) — the public ingress
 - **Flutter:** 3.47.6 stable (`D:\src\flutter`), bundling **Dart 3.13.5**
 - **Android SDK:** `D:\platform-tools-latest-windows` (see the misnomer note below); platform-tools 37.0.1, build-tools 36.0.0, platforms android-35/36, NDK 28.2.13676358, emulator 37.2.12
 - **Node:** v25.7.0 · **npm:** 11.10.1 · **opencode:** 2.0.11

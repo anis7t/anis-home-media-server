@@ -19,8 +19,8 @@ reviewable by a verification model).
 | `postgres` | MCP (local, `uvx postgresql-mcp`) | connected, 15 tools; targets the portable dev cluster (see below) |
 | `serena` | MCP (local, `uvx` + git) | connected, 3 language servers, dashboard on :24282 |
 | `chrome-devtools` | MCP | pre-existing, global config |
-| `cloudflare` | skill | `.agents/skills/cloudflare` |
-| `webapp-testing` | skill | `.agents/skills/webapp-testing` |
+| `cloudflare` | skill | **removed 2026-10-20** — was `.agents/skills/cloudflare` |
+| `webapp-testing` | skill | **removed 2026-10-20** — was `.agents/skills/webapp-testing` |
 | `media-server-verify` | skill | `.opencode/skills/media-server-verify` (authored here) |
 | `shell_strategy.md` | instruction | loaded from the JRedeker repo (remote URL) |
 | `@tarquinen/opencode-dcp` | plugin | configured |
@@ -439,10 +439,15 @@ diagnosing.
 - npm globals: `%APPDATA%\npm` (`pyright`, `chrome-devtools-mcp`, `@opencode/cli`)
 - Python MCP servers: cached by `uvx` under
   `%LOCALAPPDATA%\uv\cache` - no install step, resolved on first launch
-- Skills: `.agents/skills/` (third-party, `skills-lock.json` tracks them) and
-  `.opencode/skills/` (project-authored)
+- Skills: `.opencode/skills/` (project-authored)
 
-`cloudflare` and `webapp-testing` were installed with shallow sparse git clones
+**Removed 2026-10-20.** The untracked `.agents/` skill tree — which held the third-party
+`cloudflare`, `webapp-testing`, `chrome-extensions` and `modern-web-guidance` skills — and the
+untracked `Hermes-agent-android-PC-companion-app/` were deleted. Neither was tracked by git, so
+nothing was lost that git could recover; the skills can be re-installed with `npx skills add`
+if they are wanted again.
+
+`cloudflare` and `webapp-testing` were originally installed with shallow sparse git clones
 rather than `npx skills add`, because the npm wrapper was repeatedly killed
 mid-extraction by server restarts and left a half-written skill directory. They
 are functionally identical, but they are **not** recorded in `skills-lock.json`;
