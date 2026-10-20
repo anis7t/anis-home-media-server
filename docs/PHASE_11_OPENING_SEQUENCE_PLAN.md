@@ -711,6 +711,17 @@ do not move, and the phone's underlines go.
 **Verified by:** the picture oracle unchanged (the same numbers), and the phone's capture showing no
 underlines.
 
+**And it now has a test that can see it**, which the oracle never could.
+`flutter_client/test/features/intro/intro_typography_test.dart` pumps the overlay under a
+`DefaultTextStyle` carrying the worst ambient style available — underlined, yellow (`0xFFFF00`),
+double, 14 px — in both aspects, reads every painted span's **resolved** style
+(`RichText.text.style`, which is what the glyphs are painted with, after `Text` has merged the
+ambient style in) and requires `TextDecoration.none` on all of them. The subtitle is checked
+separately for its own colour (`#94A3B8`), its own size, and the same `none`. It was **proven to
+bite**: with the two rule lines deleted from `brand_intro_overlay.dart`, all three cases fail with
+`Expected: TextDecoration.none / Actual: TextDecoration.underline` on the span `"A"` — the phone's
+fault exactly — and the rule was then restored with `git status -- flutter_client/lib` empty.
+
 ## 5. Phase exit criteria
 
 1. The sequence plays on the web, on the Android phone and on the Android TV, and all three look
