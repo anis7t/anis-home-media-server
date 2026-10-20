@@ -553,6 +553,140 @@ was failing with `ECONNREFUSED`. There is now **one origin**, and the dev server
 **Verified:** the web's oracle **12/12** (five aspects, pixel-exact) · the web's audio oracle
 **3/3** · `flutter analyze` clean · the Flutter suite adds no new failures, and the pre-existing
 three (Issue 11) are unchanged and named · the responsive sweep's five aspects pass.
+
+### Slice 11.7 — The television's pre-rendered sequence 📋 **PROPOSED (2026-10-21)**
+
+#### 11.7.0 Why this slice exists: the measurement
+
+The Fire TV could not play the sequence, and the reason was measured rather than guessed. A profile
+build on the television reported the engine's own frame timings, and the three-second sequence got
+**five frames**:
+
+| | build | raster |
+|---|---|---|
+| the first frame | 14 µs | **1,092,067 µs** |
+| the frames after it | 8–25 ms | 70–370 ms |
+
+The build thread is never the problem. **The GPU is.** The television's GPU is a **PowerVR Rogue
+GE8300** (2015) with OpenGL ES 3.2 and **no Vulkan**, so:
+
+- **Impeller is unavailable.** Impeller compiles every pipeline into the engine at build time and
+  removes shader compilation jank by design, but on Android it requires Vulkan. The engine's
+  deprecation notice about the Impeller opt-out on this device is the engine saying it fell back;
+  there is no opt-out in this client.
+- **Skia on OpenGL ES compiles at runtime**, the first time it sees a given combination of draw
+  operations, and the compilation happens *inside the frame that needs it*. That is the 1.09-second
+  first frame.
+
+The "rushed" opening is a **consequence** of that, not a separate fault: the ticker's elapsed time
+is measured from its first tick, the engine does not begin a new frame until the previous one has
+been rastered, and so the second frame's tick carries the whole first frame's second in one step.
+The sequence's position jumps from 0.000 to 1.435 and the first second and a half of it is never
+seen.
+
+Two remedies were implemented and **rejected by the measurement**, and are recorded here so they are
+not attempted again:
+
+| Attempt | Result |
+|---|---|
+| A `ShaderWarmUp` covering every paint the sequence uses | it compiled (341 ms of it) and the first frame still took **1.09 s**: Skia's GL program cache is keyed **per render target**, so programs compiled into a 100 × 100 offscreen image are not reused by the screen |
+| Starting the sequence's clock at the first presented frame | implemented and kept, but it is not the fix: the *slow raster* is what skips the content, not the clock's origin |
+
+This is the same answer the streaming apps get for free, and the reason they are smooth: Android's
+HWUI has a persistent on-device shader cache (`libs/hwui/pipeline/skia/ShaderCache.cpp`) and
+precompiles its static shaders at build time, and their openings are usually **pre-rendered video**,
+so nothing is compiled at all.
+
+#### 11.7.1 Scope
+
+**The television plays a pre-rendered video of the sequence instead of the live canvas.**
+
+- The video is rendered from the **shipped web application** in its `?intro=capture` mode — the
+  same source the picture oracle already compares against the archived frames, so the video *is* the
+  canonical by construction, and it is the implementation the owner has already seen.
+- It is **1920 × 1080, 60 fps, 3.000 seconds**, H.264 in yuv420p, with **no audio track**.
+- The **score stays a separate, byte-for-byte canonical WAV**, played by `audioplayers` exactly as
+  it is now, and **anchored to the video's playback position** rather than to a clock. The canonical's
+  "the score is anchored, not orphaned" rule is preserved: the sound and the picture agree about
+  where the sequence is, because the anchor *is* the picture's position.
+- The **phone keeps the live sequence**. The Flutter client's renderer stays the phone's
+  implementation, and the difference is recorded as a divergence.
+
+**What this slice deliberately does not do:**
+
+- It does **not** change the canonical design, the web, the phone's sequence, the score, the
+  dismissal, the gating, or the handover.
+- It does **not** introduce a portrait video: the phone keeps the live sequence, so one asset is
+  enough.
+- It does **not** replace the Flutter client's live renderer with the video everywhere. The
+  television's constraint is a device constraint, and the phone is not that device.
+
+#### 11.7.2 The steps
+
+1. **Capture.** A Playwright script drives the shipped app's `__INTRO__.renderAt(t)` over 180
+   instants (t = k/60) at 1920 × 1080, screenshots each, and the frames are encoded to an MP4.
+   The mechanism is the oracle's own (`web/e2e/intro-frame.spec.ts` already drives that handle), so
+   the capture is the same measurement the oracle makes.
+2. **Verify the video.** A new oracle compares the video's frames, at the 58 sample instants, with
+   the archived frames. Because the video's frames are at multiples of 1/60 s and the samples are
+   not, the comparison allows the motion of **at most 1/120 s** — and the tolerance is stated, not
+   assumed.
+3. **Play it on the television.** `media_kit` is already a dependency and already owns the
+   television's playback path, including the `mediacodec-copy` configuration the platform rules
+   require. The overlay plays the video instead of painting the canvas, and reads the video's
+   position for the score's anchor.
+4. **Keep the contract.** The dismissal still works (a tap stops the video and the score), the
+   handover at 2.57 s still releases the app's input while the video plays, and the sequence still
+   ends at 3.0 s.
+
+#### 11.7.3 Exit criteria
+
+- The television plays the video, and **the sequence is smooth** — the owner's judgement, on the
+  device, which is the only instrument that has ever measured this correctly.
+- The video's frames match the archived frames within the stated tolerance, at every sample
+  instant.
+- The score starts in step with the video, and the handover and dismissal behave as they do now.
+- The phone is unchanged, except for Slice 11.8 below.
+- The Flutter suite and the web's oracles pass, and the APK's size increase is stated.
+
+#### 11.7.4 Risks
+
+| Risk | How it would be caught |
+|---|---|
+| The video's first frame is not available immediately, so a flash of the launch window shows through | the launch window is the sequence's own colour, so the worst case is a longer obsidian wait and no wrong colour; the owner would see it on the device |
+| The video's typeface is the rendering machine's system font, not the device's | the canonical's own font stack is `'Inter', system-ui, …` and Inter is not installed here, so the video carries the canonical's *fallback* — the same rendering the oracle compares. It is recorded as a divergence |
+| `media_kit`'s video path on the television has its own driver hazards | the platform rules already cover this path (`mediacodec-copy`, the software fallback), and the sequence is three seconds of a still frame — a far milder case than the player |
+| The APK grows by the video's size | the size is measured and stated; the video is ~1–3 MB for three seconds of a nearly-black 1080p frame |
+| The video's grain is baked in, so it cannot animate | the canonical's grain *is* static within a frame and the web's is an SVG turbulence that is rasterised per frame; the baked version is a divergence, and it is recorded |
+
+#### 11.7.5 Decisions taken with this slice
+
+- **D24 — the television plays a pre-rendered video; the phone keeps the live sequence.**
+- **D25 — under `prefers-reduced-motion` the television keeps the live sequence**, because the
+  canonical suppresses four effects and a video has them baked in. The contract holds, and the
+  television's normal case is the video.
+- **D26 — the score stays a separate WAV**, muxed into the video would re-encode the canonical's
+  own render, and the score is the one asset the client holds byte for byte.
+
+### Slice 11.8 — The wordmarks must not inherit the ambient text style 📋 **PROPOSED (2026-10-21)**
+
+The phone's sequence showed **double yellow underlines under every wordmark**, which the canonical
+does not have, in either aspect. It is not in the client's code: the app contains no
+`TextDecoration` and no yellow, and the *same code* rendered by the oracle is clean.
+
+The cause is in the wordmark widget: it paints its letters with `DefaultTextStyle.merge`, so that
+the canonical's font stack (the platform's UI font first) is inherited rather than hard-coded. A
+merged style also inherits the ambient **decoration**, and on the phone the ambient style carries
+one. The oracle cannot see this, because a test's ambient style never does.
+
+**The fix is one line**: the merged style sets `decoration: TextDecoration.none` explicitly, so the
+sequence's own typography cannot be changed by whatever surrounds it. The host's render is
+unchanged — a test's ambient style has no decoration to override — so the picture oracle's numbers
+do not move, and the phone's underlines go.
+
+**Verified by:** the picture oracle unchanged (the same numbers), and the phone's capture showing no
+underlines.
+
 ## 5. Phase exit criteria
 
 1. The sequence plays on the web, on the Android phone and on the Android TV, and all three look

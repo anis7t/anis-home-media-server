@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../domain/intro_frame.dart';
 import '../../domain/intro_score.dart';
 import '../../domain/intro_timeline.dart';
+import '../intro_frame_probe.dart';
 import '../controllers/intro_score_controller.dart';
 import '../painters/intro_fx_painter.dart';
 import '../painters/intro_veil_painter.dart';
@@ -132,6 +133,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
   }
 
   void _onTick() {
+    IntroFrameProbe.instance.onTick();
     final t = _ctrl.value * kIntroDuration;
     if (!_scoreStarted) {
       _scoreStarted = true;
@@ -182,6 +184,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     _finished = true;
     _ctrl.stop();
     _score.stop();
+    IntroFrameProbe.instance.report();
     widget.onFinished();
   }
 

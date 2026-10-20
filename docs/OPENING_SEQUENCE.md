@@ -77,6 +77,15 @@ Settled 2026-10-20. Each is a **decision**, not a default to be re-litigated in 
 | **D18** | Should `m` mute the score on the Flutter client, as it does on the web? | **No — any key dismisses, as the Flutter client does today.** The web's `m` is a mute that does not dismiss (D14, §7.6); the Flutter client treats **every** key as a dismissal, and keeping that is the smaller change. The consequence is that **the Flutter client has no `m` mute**, and the score is silenced by the device's own volume. That is a divergence from the web, and it is recorded as **L18**. |
 | **D19** | The intro plays on every launch (D15), so the score will make a sound on every cold launch. | **Yes — the canonical behaviour.** The score is part of the sequence on every target, and the web makes the same sound whenever its context is allowed to play. |
 
+### 2.1d The decisions taken with the Slice 11.7 plan (2026-10-21)
+
+| # | Question | Answer |
+|---|---|---|
+| **D24** | The Fire TV's 2015 GPU cannot render the sequence at 60 fps: its first frame alone costs 1.09 seconds, because Skia on OpenGL ES compiles each new draw program at runtime and the television has no Vulkan for Impeller. How does the television show the sequence? | **The television plays a pre-rendered video of it.** The video is rendered from the shipped web application — the canonical — so the picture is the canonical's by construction, and the GPU only decodes frames, which is exactly how the streaming apps get their smoothness. The phone keeps the live sequence, because the phone is not that device. |
+| **D25** | The canonical suppresses four effects under `prefers-reduced-motion`, and a video has them baked in. | **Under reduced motion the television keeps the live sequence.** The contract holds where it is observable, and the video is used for the normal case. |
+| **D26** | Should the score be muxed into the video? | **No — it stays a separate WAV**, played by `audioplayers` and anchored to the **video's playback position**. Muxing would re-encode the canonical's own render, and the score is the one asset the client holds byte for byte. Anchoring to the video's position is also the canonical's own rule (§7): the sound and the picture agree about where the sequence is, because the anchor *is* the picture's position. |
+| **D27** | The wordmarks paint with `DefaultTextStyle.merge`, so the ambient style's **decoration** is inherited too — and on the phone the ambient style carries one, so the sequence showed yellow underlines the canonical does not have. | **The sequence's typography is not the ambient style's to decide.** The merged style sets `decoration: TextDecoration.none` explicitly. The canonical's font stack is still inherited — that inheritance is deliberate, because the canonical puts the platform's UI font first — but the decoration is not. |
+
 ### 2.2 D4 and D6 read together
 
 The web original's HUD — the skip / replay / mute chrome — is **hidden by default**
