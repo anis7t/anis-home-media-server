@@ -682,8 +682,14 @@ so nothing is compiled at all.
   5.33/255, the mean of the means 2.34/255, and at most 2.89 % of pixels differing by more than
   32/255** — all of it in the grain, which is the one thing a codec cannot carry (L21).
 - The video's backdrop is the application's own background colour (`#090b10`), so the curtain parts
-  onto the colour the television's application is painted in, and the client cross-fades the video
-  out over the last quarter-second to bring the application in (L22).
+  onto the colour the television's application is painted in. **There is no fade.** At 3.00 s the
+  client **removes** the layer, which is the canonical's own outro rule ("a removal at 3.00 s, not a
+  fade", L12), so the cut is from the video's last frame straight onto the live application.
+  Measured: the encode stores that backdrop as **R=8 G=8 B=16** (`#090b10` after yuv420p's rounding)
+  against `AppColors.background` **9,11,16** — a **1/3/0 jump in near-black**. An earlier version of
+  this section, of L22 and of the capture script's own header said the client cross-faded the video
+  out over the last quarter-second; it never did, and adding one would have been a **new** divergence
+  from the canonical rather than a fidelity fix (L22, corrected 2026-10-21).
 - **The client**: `BrandIntroOverlay` gained a `videoAssetPath`, and a second rendering — the
   video, full-screen, with the same behaviour the painted stage has (a tap dismisses, the keyboard
   is absorbed for the whole sequence, and the handover at 2.57 s is driven by the **video's own

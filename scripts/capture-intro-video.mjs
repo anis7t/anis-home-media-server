@@ -25,8 +25,16 @@
  * archived original was a standalone document. The video needs something else:
  * the television's application is a **dark** app, and the curtain parts onto
  * whatever is behind it, so the video's backdrop is the application's own
- * background colour (#090b10) and the app fades in behind the video's last
- * quarter-second.
+ * background colour (#090b10).
+ *
+ * There is no fade at the end. The client **removes** the layer at 3.00 s,
+ * which is the canonical's own outro rule ("a removal at 3.00 s, not a fade"),
+ * so the video's last frame has to *be* the colour the application is painted
+ * in. Measured: the encode stores the backdrop as R=8 G=8 B=16 (#090b10 after
+ * yuv420p's rounding) against AppColors.background 9,11,16 - a 1/3/0 jump in
+ * near-black. An earlier version of this comment said "the app fades in behind
+ * the video's last quarter-second"; nothing ever faded (L22, corrected
+ * 2026-10-21).
  *
  * The wordmark's typeface is whatever the capture machine's system font is.
  * The television's Flutter client uses the platform font, and the two are

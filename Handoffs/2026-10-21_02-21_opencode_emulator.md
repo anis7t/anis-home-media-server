@@ -161,6 +161,11 @@ visible seam, but not a match either. L22's *divergence* stands (an opaque
 video cannot reveal live content, so content appears rather than emerging);
 its *mechanism* is what is false.
 
-Whether to make the ledger true (a 0.25 s fade is invisible against matching
-colours and costs one `Opacity`) or make it honest (record the hard cut) is
-the owner's call, not a default to pick here.
+**The owner's decision: correct the ledger, do not add a fade.** The
+canonical's own outro is *"a removal at 3.00 s, not a fade"* (L12), so a fade
+would be a **new** divergence rather than a fidelity fix - and it would have to
+be replicated on the phone for the two targets to keep agreeing. Corrected in
+all three places that carried the same false claim: L22 in
+`docs/OPENING_SEQUENCE.md`, section 11.7.6 of the plan, and
+`scripts/capture-intro-video.mjs`'s own header comment, which said "the app
+fades in behind the video's last quarter-second".
