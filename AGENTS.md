@@ -187,9 +187,26 @@ The current project includes:
    app** is compared against the same harness (`web/e2e/intro-frame.spec.ts`). The score is live Web
    Audio on the web (`web/src/lib/intro/audio.ts`) and the canonical's WAV on the phone and the TV.
    The Flutter client is a **port of the canonical renderer**, and its score is the canonical's file
-   byte for byte. **What is left is the on-device check** - the phone and the TV must be seen to show
-   the canonical design, and the score must be **audible on both form factors** - which is **one
-   session, batched at the end**, with the owner's remote-control protocol observed.
+   byte for byte. **The on-device session happened on 2026-10-21 and it changed the picture:**
+   * the **phone is verified** — it shows the canonical design exactly, in portrait, and it plays
+     the score;
+   * the **launch window was white** on both devices, and it is **fixed and verified by pixel**:
+     the `drawable-v21` variant of the launch background is the one Android picks on API 21+, and
+     it said `?android:colorBackground`, which is white under the Light theme. It now carries the
+     curtain's `#05060a`, and a `screencap` taken during a cold launch reads `R=5 G=6 B=10`;
+   * the **Fire TV cannot render the sequence**: its 2015 PowerVR Rogue GE8300 has no Vulkan, so
+     Impeller is unavailable and Skia compiles each new draw program at runtime — the first frame's
+     raster takes **1.09 seconds**, and the three-second sequence gets **five frames**. Two
+     remedies were tried and **rejected by the measurement** (a `ShaderWarmUp`, and moving the
+     clock's origin); both are recorded in the plan so they are not attempted again.
+   **What is left is Slice 11.7**, which is **proposed and awaiting the owner's approval**: the
+   television plays a **pre-rendered video** of the sequence, rendered from the shipped web
+   application, with the score left as a separate byte-for-byte canonical WAV anchored to the
+   video's position; the phone keeps the live sequence. Slice **11.8** is a one-line fix for the
+   yellow underlines the phone showed, which came from the wordmarks inheriting the ambient text
+   style's decoration — a thing the oracle cannot see, because a test's ambient style never carries
+   one. See
+   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    **One open finding** from 11.3a: the web's score renders about **6 dB quieter** than the archived
    original's Web Audio, and the cause is not yet isolated (spec section 7.9 lists everything that
    was measured and ruled out).
