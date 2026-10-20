@@ -9,6 +9,10 @@ sign-in feature and the migration cutover. **Two are open:**
 - **Issue 12** — three loose ends from the Flask/Waitress era: the `media-db` MCP server still
   serves the retired SQLite database, the stopped `MediaServer` service is still registered, and
   the dev server's proxy origins are stale.
+- **Issue 13** — the AMD graphics stack is chronically unstable and the **AMF transcode pipeline
+  provokes GPU TDRs**; a hard system reset on 2026-10-20 was triggered by headless-Chromium GPU
+  compositing. The Playwright harness now runs with the GPU disabled. The driver decision is the
+  owner's.
 
 ---
 
@@ -262,3 +266,50 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   confidently wrong architecture survived in the first place. The fix applied here is local; the
   *tracked* record of the correction is this entry and AGENTS.md item 7. **Any other machine needs
   the same sweep.**
+
+---
+
+### Issue 13: The AMD Graphics Stack Is Chronically Unstable, And The AMF Pipeline Provokes It (2026-10-20)
+
+- **Reported:** *(from the post-mortem of the 2026-10-20 15:01 hard system reset, which happened
+  during Phase 11 Slice 11.2)* — full forensics in
+  [`Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md`](../Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md).
+- **What happened:** at **15:01:28** on 2026-10-20 the machine took a **hard reset** — no bugcheck,
+  no WHEA, no minidump, no thermal event, no memory-exhaustion event and **no `User32/1074`**, so
+  Windows did not initiate it. The trigger that day was **headless-Chromium GPU compositing**,
+  during the brand-intro pixel oracle. **The media server was idle** (`scanned=33, queued=0,
+  errors=0`; no `ffmpeg`; no cache writes 13:00–15:05) — it did not cause the reset.
+- **The underlying fault is chronic, not a one-off.** The WER queue holds **42 kernel "Hardware
+  error" reports** spanning **September 2025 → 18 October 2026**: 22× GPU TDR (`141`), 4× AMD
+  driver hang, and 2 real bugchecks (`0xD1`, `0xA`).
+- **And the AMF transcode pipeline is itself a TDR trigger** — proven to the second against
+  `rust_api.log`, which shows `Worker … failed job #1077` within **11–27 s** of each of the four
+  18 Oct GPU hang dumps. This is the highest-value part of the finding, because it is a
+  **project-level** risk, not merely a workstation annoyance: the pipeline that produces the
+  hardware-accelerated HLS the whole product depends on is the same thing that hangs the GPU.
+- **Mitigations applied here, effective immediately:**
+  - `web/playwright.config.ts` now launches every browser with **`--disable-gpu`**. Software
+    rasterisation is deterministic — which is what a pixel oracle needs anyway, since it compares
+    two renders of the same page in the same browser — so the comparison stays exact. **The
+    brand-intro oracle was re-verified with the GPU disabled: still 5/5.**
+  - AGENTS.md §7 now carries the rule: **run the Playwright harness with the GPU disabled, and
+    never alongside a transcode.** Both are GPU-heavy, and that is how a TDR becomes a hard reset.
+- **Open, and the owner's decisions:**
+  1. **The GPU driver.** A newer WHQL driver exists — **AMD Adrenalin 26.5.2 (2026-05-21)** — but
+     it is a *critical-fix-only legacy release*, and installing generic AMD drivers on this Acer
+     hybrid is known to misidentify the Vega 8 as a "Vega 11". It needs the owner's decision and an
+     AMF re-validation. **Do not install it with DDU without a recovery path** — a black screen on a
+     laptop whose only display is its own panel, on a machine that already hard-resets
+     unpredictably, is a bad place to be.
+  2. **The pagefile is now a fixed, reserved 2 GB on `C:`** (applied; inert until the next
+     reboot). Do not re-enable a system-managed or large pagefile to "fix" memory pressure.
+  3. **The 149 GB HLS cache stays on `E:`** (no space on `C:`, `D:` is an HDD) but must **not** be
+     pruned before the GPU fix — pruning means re-transcoding, which means more AMF.
+  4. **The acceptance test** is a **2160p AMF transcode** (3 workers across both GPUs) that
+     produces **no new** `C:\Windows\LiveKernelReports` dumps and **no** `Worker … failed job`.
+     That is also the proof of the AMF→TDR mechanism: a 2160p AMF job is the most reliable TDR
+     stress available on this box.
+- **Why it is in this file:** the GPU hang timeline is *measurement*, and the transcode
+  correctness document's subject. It is also a constraint on the pipeline itself, so it belongs
+  next to the `vpp_amf` / `h264_amf` rules in AGENTS.md §6 as well. See also
+  `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`.

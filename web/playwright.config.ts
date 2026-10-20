@@ -20,6 +20,26 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
+    /*
+     * The GPU is disabled for every browser this config launches.
+     *
+     * This host's AMD graphics driver is chronically unstable - 42 queued WER
+     * kernel reports from September 2025 to October 2026, including 22 GPU
+     * TDRs - and on 2026-10-20 15:01 a hard system reset was triggered by
+     * headless-Chromium GPU compositing during the brand-intro pixel oracle.
+     * The full post-mortem is in
+     * Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md.
+     *
+     * Software rasterisation is deterministic - which is what the pixel oracle
+     * needs anyway, since it compares two renders of the same page in the
+     * same browser - so the comparison stays exact and the GPU load goes away.
+     *
+     * Also: do not run a transcode and this harness concurrently. Both are
+     * GPU-heavy, and running them together is how a TDR becomes a hard reset.
+     */
+    launchOptions: {
+      args: ['--disable-gpu'],
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
