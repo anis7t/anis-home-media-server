@@ -310,23 +310,18 @@ class _IntroStage extends StatelessWidget {
           ),
         ),
 
-        // z5 - the vignette.
+        // z5 - the vignette, and z6 - the grain. Both take their alpha as a
+        // PARAMETER rather than through an `Opacity`, because an `Opacity` is a
+        // `saveLayer` with a blend mode - and these two cover the whole stage,
+        // so each one is a full-screen offscreen buffer, every frame.
         Positioned.fill(
           child: IgnorePointer(
-            child: Opacity(
-              opacity: frame.vignetteOpacity,
-              child: const _IntroVignette(),
-            ),
+            child: _IntroVignette(opacity: frame.vignetteOpacity),
           ),
         ),
-
-        // z6 - the grain.
         Positioned.fill(
           child: IgnorePointer(
-            child: Opacity(
-              opacity: frame.grainOpacity,
-              child: const _IntroGrain(),
-            ),
+            child: _IntroGrain(opacity: frame.grainOpacity),
           ),
         ),
 
@@ -436,7 +431,22 @@ class _IntroCurtain extends StatelessWidget {
                 half,
             0,
           ),
-          child: ShaderMask(
+          // The mask is a no-op until the curtain starts parting - the
+          // feather is zero before that - and a `ShaderMask` is a `saveLayer`
+          // with a blend mode, so applying one to each half of a full-screen
+          // curtain for the whole build-up is two offscreen buffers per frame
+          // for nothing.
+          child: feather <= 0
+              ? CustomPaint(
+                  painter: IntroVeilPainter(
+                    isLeft: isLeft,
+                    stageWidth: stageWidth,
+                    stageHeight: size.height,
+                    imageLeft: imageLeft,
+                  ),
+                  size: Size(half, size.height),
+                )
+              : ShaderMask(
             blendMode: BlendMode.dstIn,
             shaderCallback: (bounds) => LinearGradient(
               begin: isLeft ? Alignment.centerLeft : Alignment.centerRight,
@@ -519,15 +529,27 @@ class _SeamPainter extends CustomPainter {
 
 /// The vignette: the radial darkening at the edges.
 class _IntroVignette extends StatelessWidget {
-  const _IntroVignette();
+  const _IntroVignette({required this.opacity});
+
+  /// The vignette's alpha, applied to the gradient's colours rather than
+  /// through an `Opacity` - see the note at the call site.
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _VignettePainter(), size: Size.infinite);
+    return CustomPaint(
+      painter: _VignettePainter(opacity: opacity),
+      size: Size.infinite,
+    );
   }
 }
 
 class _VignettePainter extends CustomPainter {
+  const _VignettePainter({required this.opacity});
+
+  /// The vignette's alpha, scaled into the gradient's colours.
+  final double opacity;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rx = size.width * 0.78;
@@ -535,6 +557,7 @@ class _VignettePainter extends CustomPainter {
     final centre = Offset(size.width * 0.5, size.height * 0.5);
     final radius = (rx + ry) / 2;
     if (radius <= 0) return;
+    final a = opacity.clamp(0.0, 1.0);
     canvas.save();
     canvas.translate(centre.dx, centre.dy);
     canvas.scale(rx / radius, ry / radius);
@@ -550,7 +573,7 @@ class _VignettePainter extends CustomPainter {
             Color(0x00000000),
             Color(0x8C000000),
             Color(0xD9000000),
-          ],
+          ].map((c) => c.withValues(alpha: c.a * a)).toList(),
           const [0.0, 0.42, 0.82, 1.0],
         ),
     );
@@ -569,15 +592,27 @@ class _VignettePainter extends CustomPainter {
 /// the alpha taken from the noise), so it reads as grain. It is a recorded
 /// divergence: the two are the same *kind* of texture, not the same pixels.
 class _IntroGrain extends StatelessWidget {
-  const _IntroGrain();
+  const _IntroGrain({required this.opacity});
+
+  /// The grain's alpha, applied through a colour filter rather than through an
+  /// `Opacity` - see the note at the call site.
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _GrainPainter(), size: Size.infinite);
+    return CustomPaint(
+      painter: _GrainPainter(opacity: opacity),
+      size: Size.infinite,
+    );
   }
 }
 
 class _GrainPainter extends CustomPainter {
+  const _GrainPainter({required this.opacity});
+
+  /// The grain's alpha, applied to the tile with a colour filter.
+  final double opacity;
+
   static ui.Image? _tile;
 
   /// The source's tile is 180x180 (the CSS `background-size`).
@@ -609,12 +644,19 @@ class _GrainPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final image = _getTile();
+    final a = opacity.clamp(0.0, 1.0);
     final paint = Paint()
       ..shader = ui.ImageShader(
         image,
         TileMode.repeated,
         TileMode.repeated,
         Matrix4.identity().storage,
+      )
+      // The tile is white with a varying alpha, so scaling the colour scales
+      // the alpha - which is what the canonical's 5 % grain does.
+      ..colorFilter = ColorFilter.mode(
+        Color.fromRGBO(255, 255, 255, a),
+        BlendMode.modulate,
       );
     canvas.drawRect(Offset.zero & size, paint);
   }
@@ -844,23 +886,33 @@ class _IntroLetter extends StatelessWidget {
     // picture: the canonical's gradient is vertical, so each letter's slice of
     // it depends only on the letter's height, which is the same for every
     // letter of a word.
-    return Opacity(
-      opacity: state.opacity.clamp(0.0, 1.0),
-      child: Transform.translate(
-        offset: Offset(0, state.translateYEm * fontSize),
-        child: Text(
-          letter,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.w800,
-            height: 1.02,
-            foreground: Paint()
-              ..shader = ui.Gradient.linear(
-                Offset.zero,
-                Offset(0, fontSize * 1.02),
-                colors,
-              ),
-          ),
+    // The letter's alpha is baked into the gradient's colours rather than
+    // applied with an `Opacity`. An `Opacity` is a `saveLayer` with a blend
+    // mode - one offscreen buffer per letter, and there are twenty-one letters,
+    // every frame. Scaling the gradient's alpha is the same picture: the
+    // canonical's letter is a gradient fill with the element's opacity over
+    // it, and the gradient is fully opaque.
+    final alpha = state.opacity.clamp(0.0, 1.0);
+    final faded = [
+      for (final c in colors)
+        c.withValues(
+          alpha: (c.a * alpha).clamp(0.0, 1.0),
+        ),
+    ];
+    return Transform.translate(
+      offset: Offset(0, state.translateYEm * fontSize),
+      child: Text(
+        letter,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          height: 1.02,
+          foreground: Paint()
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              Offset(0, fontSize * 1.02),
+              faded,
+            ),
         ),
       ),
     );
