@@ -79,7 +79,17 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(|(_, v)| v.trim().to_string())
 }
 
+/// The origin the QR URL and the login URL are built from.
+///
+/// A configured public origin (`MEDIA_SERVER_PUBLIC_BASE_URL`) wins over the
+/// request headers. The headers are attacker-influenced - a client can send
+/// any `Host` it likes - and this value is what the phone is told to open, so
+/// a forged `Host` would otherwise point the pairing flow at a host of the
+/// attacker's choosing.
 fn get_base_url(headers: &HeaderMap) -> String {
+    if let Some(origin) = crate::config::public_base_url() {
+        return origin;
+    }
     let host = headers
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
@@ -341,10 +351,7 @@ pub async fn qr_finalize_handler(
         }
     }
 
-    let cookie_val = format!(
-        "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
-        session_id
-    );
+    let cookie_val = AuthService::session_cookie(&session_id, &headers);
 
     let mut res = axum::response::Redirect::temporary("/").into_response();
     if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {

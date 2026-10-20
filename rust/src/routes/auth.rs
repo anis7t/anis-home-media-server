@@ -45,6 +45,13 @@ pub struct PairPayload {
 }
 
 fn get_host_url(headers: &HeaderMap) -> String {
+    // A configured public origin wins over the request headers. The `Host`
+    // header is attacker-controlled, and this value becomes the Google OAuth
+    // redirect URI - a forged one would send the authorization code to a
+    // host of the attacker's choosing.
+    if let Some(origin) = crate::config::public_base_url() {
+        return origin;
+    }
     let host = headers
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
@@ -331,6 +338,7 @@ pub async fn delete_token_handler(
 /// `POST /api/auth/login-pin`
 pub async fn login_pin_handler(
     State(state): State<AuthState>,
+    headers: HeaderMap,
     body: Option<Json<crate::models::auth::LoginPinPayload>>,
 ) -> Result<Response, AppError> {
     let pin = body
@@ -341,10 +349,7 @@ pub async fn login_pin_handler(
 
     let (session_token, user_id, email) = AuthService::login_with_pin(&state.pool, &pin).await?;
 
-    let cookie_val = format!(
-        "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
-        session_token
-    );
+    let cookie_val = AuthService::session_cookie(&session_token, &headers);
 
     let body = serde_json::json!({
         "success": true,
@@ -382,6 +387,7 @@ pub async fn google_start_handler(
 pub async fn google_callback_handler(
     State(state): State<AuthState>,
     Query(query): Query<OAuthCallbackQuery>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     if let Some(err) = query.error {
         return Err(AppError::BadRequest(format!("Google returned an error: {}", err)));
@@ -401,10 +407,7 @@ pub async fn google_callback_handler(
         dest = "/".to_string();
     }
 
-    let cookie_val = format!(
-        "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
-        session_token
-    );
+    let cookie_val = AuthService::session_cookie(&session_token, &headers);
 
     let mut res = Redirect::temporary(&dest).into_response();
     if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {
@@ -421,9 +424,9 @@ pub async fn logout_handler(
 ) -> Result<Response, AppError> {
     let _ = AuthService::logout_session(&state.pool, &headers).await;
 
-    let clear_cookie = "session_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    let clear_cookie = AuthService::clear_session_cookie(&headers);
     let mut res = Redirect::temporary("/").into_response();
-    if let Ok(hdr_val) = header::HeaderValue::from_str(clear_cookie) {
+    if let Ok(hdr_val) = header::HeaderValue::from_str(&clear_cookie) {
         res.headers_mut().insert(header::SET_COOKIE, hdr_val);
     }
 
@@ -452,6 +455,7 @@ f.appendChild(i);f.submit();}
 /// `POST /auth/pair`
 pub async fn pair_submit_handler(
     State(state): State<AuthState>,
+    headers: HeaderMap,
     axum::extract::Form(form): axum::extract::Form<PairPayload>,
 ) -> Result<Response, AppError> {
     let token = form.token.unwrap_or_default().trim().to_string();
@@ -463,10 +467,7 @@ pub async fn pair_submit_handler(
 
     let session_token = AuthService::pair_token(&state.pool, &token).await?;
 
-    let cookie_val = format!(
-        "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
-        session_token
-    );
+    let cookie_val = AuthService::session_cookie(&session_token, &headers);
 
     let mut res = Redirect::temporary("/").into_response();
     if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {

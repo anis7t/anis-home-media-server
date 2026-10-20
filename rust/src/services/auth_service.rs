@@ -9,6 +9,7 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
@@ -55,6 +56,56 @@ impl AuthService {
         let mut hasher = Sha256::new();
         hasher.update(token.trim().as_bytes());
         hex::encode(hasher.finalize())
+    }
+
+    // --- Session Cookie ---
+
+    /// Whether the request that produced this response arrived over TLS.
+    ///
+    /// The origin is always plain HTTP behind Caddy, so the only signal
+    /// available is `X-Forwarded-Proto`, which Caddy sets - and overwrites -
+    /// on every request it proxies. A client cannot use a forged value to
+    /// make anything *less* safe: the worst it can do is choose the `Secure`
+    /// flag for its own cookie.
+    fn request_is_secure(headers: &HeaderMap) -> bool {
+        headers
+            .get("X-Forwarded-Proto")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.trim().eq_ignore_ascii_case("https"))
+            .unwrap_or(false)
+    }
+
+    /// Build the `session_token` cookie for a response.
+    ///
+    /// `Secure` is added **only when the request arrived over TLS**, and that
+    /// conditional is deliberate. The LAN path is plain HTTP
+    /// (`http://192.168.1.16:8000`), and a browser refuses to store or send a
+    /// `Secure` cookie over plain HTTP - so an unconditional flag would break
+    /// LAN sign-in entirely. The public path is HTTPS via Caddy, and there the
+    /// flag applies.
+    pub fn session_cookie(token: &str, headers: &HeaderMap) -> String {
+        let mut cookie = format!(
+            "session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000",
+            token
+        );
+        if Self::request_is_secure(headers) {
+            cookie.push_str("; Secure");
+        }
+        cookie
+    }
+
+    /// Build the cookie that clears the session.
+    ///
+    /// The `Secure` attribute is not part of a cookie's identity for
+    /// deletion purposes, but it is included so the attribute set matches the
+    /// cookie that was actually stored.
+    pub fn clear_session_cookie(headers: &HeaderMap) -> String {
+        let mut cookie =
+            "session_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT".to_string();
+        if Self::request_is_secure(headers) {
+            cookie.push_str("; Secure");
+        }
+        cookie
     }
 
     // --- Admin Authorization & Status ---
@@ -1011,13 +1062,51 @@ impl AuthService {
             .collect())
     }
 
-    /// HMAC-SHA256 of `"{qr_id}:{code}"` using `MEDIA_SERVER_SECRET` env var.
-    /// This makes the QR URL tamper-proof without encrypting the human-readable code.
+    /// The HMAC key used to sign a QR pairing URL.
+    ///
+    /// `MEDIA_SERVER_SECRET` is the canonical name. `MEDIA_SERVER_SECRET_KEY`
+    /// is accepted as an alias because that is the name the deployment's
+    /// `.env` already uses.
+    ///
+    /// If neither is set, a **random process-local key** is generated. The
+    /// previous behaviour was to fall back to a constant that is published in
+    /// this source file, which meant the signature was keyed by a publicly
+    /// known value and provided no tamper-resistance at all. A random key is
+    /// not as good as a configured one - a restart invalidates outstanding
+    /// signatures - but it is unforgeable, which is the property that matters.
+    fn pair_hmac_key() -> &'static str {
+        static KEY: OnceLock<String> = OnceLock::new();
+        KEY.get_or_init(|| {
+            let configured = std::env::var("MEDIA_SERVER_SECRET")
+                .ok()
+                .or_else(|| std::env::var("MEDIA_SERVER_SECRET_KEY").ok())
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty());
+            match configured {
+                Some(v) => v,
+                None => {
+                    warn!(
+                        "Neither MEDIA_SERVER_SECRET nor MEDIA_SERVER_SECRET_KEY is set; \
+                         using a random process-local key for QR pairing signatures. \
+                         Set MEDIA_SERVER_SECRET to a stable secret."
+                    );
+                    let mut buf = [0u8; 32];
+                    getrandom::getrandom(&mut buf)
+                        .expect("a random key is better than a published constant");
+                    hex::encode(buf)
+                }
+            }
+        })
+    }
+
+    /// HMAC-SHA256 of `"{qr_id}:{code}"` using the configured server secret.
+    ///
+    /// This makes the QR URL tamper-evident without encrypting the
+    /// human-readable code. It is a convenience and an integrity check - the
+    /// code itself remains the credential.
     pub fn hmac_pair_code(qr_id: &str, code: &str) -> String {
-        let secret = std::env::var("MEDIA_SERVER_SECRET")
-            .unwrap_or_else(|_| "changeme-set-MEDIA_SERVER_SECRET-in-env".to_string());
-        let mut mac =
-            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+        let mut mac = HmacSha256::new_from_slice(Self::pair_hmac_key().as_bytes())
+            .expect("HMAC accepts any key length");
         mac.update(format!("{}:{}", qr_id, code).as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }
@@ -1349,5 +1438,106 @@ mod tests {
         assert_ne!(redacted, qr_id, "the full id must never be logged");
         assert!(qr_id.starts_with(&redacted), "the ref must stay a prefix");
         assert!(!redacted.contains(&code), "the ref must not carry the code");
+    }
+
+    fn headers_with_forwarded_proto(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Forwarded-Proto",
+            value.parse().expect("a valid header value"),
+        );
+        headers
+    }
+
+    /// A session cookie issued over TLS must carry `Secure`, so the browser
+    /// will not send it over a plain-HTTP request.
+    #[test]
+    fn test_session_cookie_is_secure_over_https() {
+        let headers = headers_with_forwarded_proto("https");
+        let cookie = AuthService::session_cookie("sess_abc", &headers);
+
+        assert!(cookie.starts_with("session_token=sess_abc;"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Lax"));
+        assert!(cookie.contains("Max-Age=2592000"));
+        assert!(
+            cookie.contains("; Secure"),
+            "a cookie issued over HTTPS must be Secure: {}",
+            cookie
+        );
+    }
+
+    /// Over plain HTTP the flag must be ABSENT. The LAN path is
+    /// `http://192.168.1.16:8000`, and a browser refuses to store or send a
+    /// `Secure` cookie over plain HTTP - so setting it unconditionally would
+    /// break LAN sign-in entirely.
+    #[test]
+    fn test_session_cookie_omits_secure_over_plain_http() {
+        for proto in ["http", ""] {
+            let headers = if proto.is_empty() {
+                HeaderMap::new()
+            } else {
+                headers_with_forwarded_proto(proto)
+            };
+            let cookie = AuthService::session_cookie("sess_abc", &headers);
+            assert!(
+                !cookie.contains("Secure"),
+                "a cookie issued over plain HTTP must not be Secure: {}",
+                cookie
+            );
+            assert!(cookie.contains("HttpOnly"));
+        }
+    }
+
+    /// The clearing cookie must carry the same attribute set as the cookie
+    /// that was stored, so a browser that stored a `Secure` cookie recognises
+    /// the deletion.
+    #[test]
+    fn test_clear_session_cookie_matches_the_stored_cookie() {
+        let headers = headers_with_forwarded_proto("https");
+        let cookie = AuthService::clear_session_cookie(&headers);
+
+        assert!(cookie.starts_with("session_token=;"));
+        assert!(cookie.contains("Max-Age=0"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Lax"));
+        assert!(cookie.contains("Secure"));
+    }
+
+    /// The pairing signature must not be keyed by the constant that used to
+    /// be published in this source file.
+    ///
+    /// `hmac_pair_code` read `MEDIA_SERVER_SECRET`, but the deployment sets
+    /// `MEDIA_SERVER_SECRET_KEY` - so the signature was being computed with
+    /// the literal fallback string, which anyone reading the repository could
+    /// reproduce. It now reads either name, and falls back to a random
+    /// process-local key rather than a published constant.
+    #[test]
+    fn test_pair_signature_is_not_keyed_by_the_published_constant() {
+        use sha2::Sha256;
+
+        let published_constant = "changeme-set-MEDIA_SERVER_SECRET-in-env";
+        let mut mac = HmacSha256::new_from_slice(published_constant.as_bytes()).unwrap();
+        mac.update(b"qr_test:K7R2P");
+        let published_sig = hex::encode(mac.finalize().into_bytes());
+
+        assert_ne!(
+            AuthService::hmac_pair_code("qr_test", "K7R2P"),
+            published_sig,
+            "the pairing signature must not be keyed by a constant published in the source"
+        );
+    }
+
+    /// The pairing signature is deterministic, and it binds both the session
+    /// id and the code.
+    #[test]
+    fn test_pair_signature_binds_session_and_code() {
+        let sig = AuthService::hmac_pair_code("qr_a", "K7R2P");
+        assert_eq!(sig.len(), 64, "HMAC-SHA256 hex is 64 characters");
+        assert!(sig.chars().all(|c| c.is_ascii_hexdigit()));
+
+        assert_eq!(sig, AuthService::hmac_pair_code("qr_a", "K7R2P"));
+        assert_ne!(sig, AuthService::hmac_pair_code("qr_b", "K7R2P"));
+        assert_ne!(sig, AuthService::hmac_pair_code("qr_a", "K7R3P"));
     }
 }
