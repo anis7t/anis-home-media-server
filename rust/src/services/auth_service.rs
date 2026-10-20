@@ -4,6 +4,7 @@ use crate::models::auth::{
 };
 use axum::http::HeaderMap;
 use chrono::{DateTime, Duration, Utc};
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
@@ -11,6 +12,8 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
+
+type HmacSha256 = Hmac<Sha256>;
 
 static ENTROPY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -966,6 +969,231 @@ impl AuthService {
 
         info!("AUTH: device paired uid={} email={} role={}", user_id, email, role);
         Ok(session_token)
+    }
+
+    // --- QR Device Pair Sessions ---
+
+    /// Generate a 5-char uppercase alphanumeric pair code using an unambiguous charset.
+    /// Avoids 0/O, 1/I lookalikes for easier manual entry.
+    pub fn generate_pair_code() -> String {
+        const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let count = ENTROPY_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let mut seed = (nanos as u64) ^ count ^ rand_pseudo();
+        let mut code = String::with_capacity(5);
+        for _ in 0..5 {
+            code.push(CHARS[(seed as usize) % CHARS.len()] as char);
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+        }
+        code
+    }
+
+    /// HMAC-SHA256 of `"{qr_id}:{code}"` using `MEDIA_SERVER_SECRET` env var.
+    /// This makes the QR URL tamper-proof without encrypting the human-readable code.
+    pub fn hmac_pair_code(qr_id: &str, code: &str) -> String {
+        let secret = std::env::var("MEDIA_SERVER_SECRET")
+            .unwrap_or_else(|_| "changeme-set-MEDIA_SERVER_SECRET-in-env".to_string());
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+        mac.update(format!("{}:{}", qr_id, code).as_bytes());
+        hex::encode(mac.finalize().into_bytes())
+    }
+
+    /// Create a new ephemeral QR pair session. Returns `(qr_id, code, sig, expires_at_unix)`.
+    pub async fn create_pair_session(pool: &PgPool) -> Result<(String, String, String, i64), AppError> {
+        // Sweep any sessions older than 5 minutes while we're here
+        let _ = Self::sweep_expired_pair_sessions(pool).await;
+
+        let qr_id = format!("qr_{}", Self::generate_random_token());
+        let code = Self::generate_pair_code();
+        let sig = Self::hmac_pair_code(&qr_id, &code);
+        let code_hash = Self::hash_token(&code);
+        let expires_at = Utc::now() + Duration::minutes(2);
+
+        sqlx::query(
+            r#"
+            INSERT INTO device_pair_sessions (id, code, code_hash, sig, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&qr_id)
+        .bind(&code)
+        .bind(&code_hash)
+        .bind(&sig)
+        .bind(expires_at)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to create pair session: {}", e)))?;
+
+        info!("QR: created pair session qr_id={} code={}", qr_id, code);
+        Ok((qr_id, code, sig, expires_at.timestamp()))
+    }
+
+    /// Check the status of a pair session for the waiting TV/browser.
+    /// Returns `None` if the session doesn't exist or is expired.
+    /// Returns `Some((confirmed, session_id, device_name))` otherwise.
+    pub async fn get_pair_session_status(
+        pool: &PgPool,
+        qr_id: &str,
+    ) -> Result<Option<(bool, Option<String>, Option<String>)>, AppError> {
+        let row = sqlx::query(
+            r#"
+            SELECT confirmed, session_id, device_name
+            FROM device_pair_sessions
+            WHERE id = $1 AND expires_at > CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(qr_id)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row.map(|r| {
+            let confirmed: bool = r.get("confirmed");
+            let session_id: Option<String> = r.try_get("session_id").ok().flatten();
+            let device_name: Option<String> = r.try_get("device_name").ok().flatten();
+            (confirmed, session_id, device_name)
+        }))
+    }
+
+    /// Look up an active (unexpired, unconfirmed) pair session by its 5-char code.
+    /// Case-insensitive. Returns `Some(qr_id)` if found, `None` if expired or not found.
+    pub async fn find_pair_session_by_code(
+        pool: &PgPool,
+        code: &str,
+    ) -> Result<Option<String>, AppError> {
+        let clean_code = code.trim().to_uppercase();
+        let row = sqlx::query(
+            r#"
+            SELECT id
+            FROM device_pair_sessions
+            WHERE code = $1 AND expires_at > CURRENT_TIMESTAMP AND confirmed = FALSE
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(&clean_code)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row.map(|r| r.get("id")))
+    }
+
+    /// Called by the phone to complete the pairing.
+    /// Validates the submitted code against the session, mints a session for the TV,
+    /// and marks the pair session as confirmed.
+    pub async fn confirm_pair_session(
+        pool: &PgPool,
+        qr_id: &str,
+        submitted_code: &str,
+        submitted_sig: Option<&str>,
+        user_id: i64,
+        device_name: &str,
+    ) -> Result<(), AppError> {
+        let row = sqlx::query(
+            r#"
+            SELECT code, sig, confirmed
+            FROM device_pair_sessions
+            WHERE id = $1 AND expires_at > CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(qr_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let r = row.ok_or_else(|| {
+            AppError::BadRequest("Pair session expired or not found.".to_string())
+        })?;
+
+        let already_confirmed: bool = r.get("confirmed");
+        if already_confirmed {
+            return Err(AppError::BadRequest(
+                "This session has already been confirmed.".to_string(),
+            ));
+        }
+
+        let stored_code: String = r.get("code");
+        let stored_sig: String = r.get("sig");
+
+        // Accept if either the HMAC sig matches OR the raw code matches (case-insensitive)
+        let sig_valid = submitted_sig.map(|s| s == stored_sig).unwrap_or(false);
+        let code_valid = submitted_code.trim().to_uppercase() == stored_code;
+
+        if !sig_valid && !code_valid {
+            return Err(AppError::Unauthorized(
+                "Invalid pairing code. Check the code displayed on your TV and try again."
+                    .to_string(),
+            ));
+        }
+
+        // Mint a 30-day session for the waiting TV/browser
+        let session_token = format!("sess_{}", Self::generate_random_token());
+        let sess_expires_at = Utc::now() + Duration::days(30);
+
+        // Fetch user email + role for the session
+        let user_row = sqlx::query("SELECT email, role FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::Internal("User not found for pairing".to_string()))?;
+
+        let email: String = user_row.get("email");
+        let role: String = user_row.get("role");
+
+        sqlx::query(
+            r#"
+            INSERT INTO sessions (id, user_id, email, role, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&session_token)
+        .bind(user_id)
+        .bind(&email)
+        .bind(&role)
+        .bind(sess_expires_at)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to store paired session: {}", e)))?;
+
+        // Mark pair session confirmed and store the minted session_id + device_name
+        sqlx::query(
+            r#"
+            UPDATE device_pair_sessions
+            SET confirmed = TRUE,
+                user_id = $1,
+                session_id = $2,
+                device_name = $3
+            WHERE id = $4
+            "#,
+        )
+        .bind(user_id)
+        .bind(&session_token)
+        .bind(device_name.trim())
+        .bind(qr_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to mark pair session confirmed: {}", e)))?;
+
+        info!(
+            "QR: pair session confirmed qr_id={} user_id={} device_name={}",
+            qr_id, user_id, device_name
+        );
+        Ok(())
+    }
+
+    /// Delete expired pair sessions older than 5 minutes (2 min TTL + 3 min grace).
+    pub async fn sweep_expired_pair_sessions(pool: &PgPool) -> Result<u64, AppError> {
+        let result = sqlx::query(
+            "DELETE FROM device_pair_sessions WHERE expires_at < (CURRENT_TIMESTAMP - INTERVAL '3 minutes')"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Sweep failed: {}", e)))?;
+        Ok(result.rows_affected())
     }
 
     pub async fn logout_session(pool: &PgPool, headers: &HeaderMap) -> Result<(), AppError> {

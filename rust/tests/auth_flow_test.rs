@@ -332,3 +332,154 @@ async fn test_pairing_device_lifecycle() {
         .unwrap();
     assert!(clear_cookie.contains("Max-Age=0"));
 }
+
+#[tokio::test]
+async fn qr_device_auth_flow_test() {
+    let ctx = TestContext::new().await;
+
+    // 1. Create a user and an active session for the phone
+    let user_id: i64 = sqlx::query_scalar(
+        r#"
+        INSERT INTO users (google_sub, email, name, role)
+        VALUES ('sub_phone_user', 'phone@example.com', 'Phone User', 'viewer')
+        RETURNING id
+        "#,
+    )
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+
+    let phone_session_token = "sess_phone_device_12345";
+    sqlx::query(
+        r#"
+        INSERT INTO sessions (id, user_id, email, role, expires_at)
+        VALUES ($1, $2, 'phone@example.com', 'viewer', CURRENT_TIMESTAMP + INTERVAL '1 day')
+        "#,
+    )
+    .bind(phone_session_token)
+    .bind(user_id)
+    .execute(&ctx.pool)
+    .await
+    .unwrap();
+
+    let phone_cookie = format!("session_token={}", phone_session_token);
+
+    // 2. TV creates QR pair session: POST /api/auth/qr
+    let req_qr_create = Request::builder()
+        .method("POST")
+        .uri("/api/auth/qr")
+        .body(Body::empty())
+        .unwrap();
+    let resp_qr_create = ctx.app.clone().oneshot(req_qr_create).await.unwrap();
+    assert_eq!(resp_qr_create.status(), StatusCode::OK);
+
+    let body_create: Value =
+        serde_json::from_slice(&resp_qr_create.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    let qr_id = body_create["qr_id"].as_str().expect("qr_id must be a string");
+    let code = body_create["code"].as_str().expect("code must be a string");
+    let sig = body_create["sig"].as_str().expect("sig must be a string");
+    assert_eq!(code.len(), 5);
+    assert!(body_create["qr_url"].as_str().unwrap().contains("/remotelogin"));
+
+    // 3. TV checks status: GET /api/auth/qr/{qr_id}/status -> "pending"
+    let req_status_1 = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/status", qr_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp_status_1 = ctx.app.clone().oneshot(req_status_1).await.unwrap();
+    assert_eq!(resp_status_1.status(), StatusCode::OK);
+    let body_status_1: Value =
+        serde_json::from_slice(&resp_status_1.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    assert_eq!(body_status_1["status"], "pending");
+
+    // 4. Phone manual entry flow: POST /api/auth/qr/lookup with the 5-char code
+    let req_lookup_invalid = Request::builder()
+        .method("POST")
+        .uri("/api/auth/qr/lookup")
+        .header(header::COOKIE, &phone_cookie)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "code": "ZZZZZ" }).to_string()))
+        .unwrap();
+    let resp_lookup_invalid = ctx.app.clone().oneshot(req_lookup_invalid).await.unwrap();
+    assert_eq!(resp_lookup_invalid.status(), StatusCode::NOT_FOUND);
+
+    let req_lookup_valid = Request::builder()
+        .method("POST")
+        .uri("/api/auth/qr/lookup")
+        .header(header::COOKIE, &phone_cookie)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "code": code }).to_string()))
+        .unwrap();
+    let resp_lookup_valid = ctx.app.clone().oneshot(req_lookup_valid).await.unwrap();
+    assert_eq!(resp_lookup_valid.status(), StatusCode::OK);
+    let body_lookup: Value =
+        serde_json::from_slice(&resp_lookup_valid.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    assert_eq!(body_lookup["qr_id"], qr_id);
+
+    // 5. Phone confirms pairing: POST /api/auth/qr/{qr_id}/confirm
+    let req_confirm = Request::builder()
+        .method("POST")
+        .uri(format!("/api/auth/qr/{}/confirm", qr_id))
+        .header(header::COOKIE, &phone_cookie)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({
+                "code": code,
+                "sig": sig,
+                "device_name": "Living Room TV"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let resp_confirm = ctx.app.clone().oneshot(req_confirm).await.unwrap();
+    assert_eq!(resp_confirm.status(), StatusCode::OK);
+
+    // 6. TV status is now "confirmed"
+    let req_status_2 = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/status", qr_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp_status_2 = ctx.app.clone().oneshot(req_status_2).await.unwrap();
+    assert_eq!(resp_status_2.status(), StatusCode::OK);
+    let body_status_2: Value =
+        serde_json::from_slice(&resp_status_2.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    assert_eq!(body_status_2["status"], "confirmed");
+
+    // 7. TV finalizes: GET /api/auth/qr/{qr_id}/finalize
+    let req_finalize = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/finalize", qr_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp_finalize = ctx.app.clone().oneshot(req_finalize).await.unwrap();
+    assert_eq!(resp_finalize.status(), StatusCode::TEMPORARY_REDIRECT);
+
+    let tv_cookie_header = resp_finalize
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("Finalize must set session_token cookie");
+    assert!(tv_cookie_header.contains("session_token=sess_"));
+    let tv_cookie_val = tv_cookie_header.split(';').next().unwrap();
+
+    // 8. TV uses session cookie to access /api/auth/me
+    let req_tv_me = Request::builder()
+        .method("GET")
+        .uri("/api/auth/me")
+        .header(header::COOKIE, tv_cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let resp_tv_me = ctx.app.clone().oneshot(req_tv_me).await.unwrap();
+    assert_eq!(resp_tv_me.status(), StatusCode::OK);
+    let body_tv_me: Value =
+        serde_json::from_slice(&resp_tv_me.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(body_tv_me["authenticated"], true);
+    assert_eq!(body_tv_me["email"], "phone@example.com");
+    assert_eq!(body_tv_me["name"], "Phone User");
+}

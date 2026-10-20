@@ -89,6 +89,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
 
+  if (location.pathname === '/remotelogin') {
+    return <main className="min-h-screen w-full">{children}</main>;
+  }
+
   return (
     <div className="min-h-screen">
       {/* Sticky Obsidian Header */}

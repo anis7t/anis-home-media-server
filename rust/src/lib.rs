@@ -476,6 +476,38 @@ pub fn create_app_full(
         )
         .with_state(auth_state);
 
+    // QR Device Sign-In (TV & browser remote login flow)
+    let qr_auth_state = routes::qr_auth::QrAuthState {
+        pool: Arc::new(pool.clone()),
+    };
+
+    let qr_auth_routes = Router::new()
+        .route(
+            "/api/auth/qr",
+            axum::routing::post(routes::qr_auth::create_pair_session_handler),
+        )
+        .route(
+            "/api/auth/qr/lookup",
+            axum::routing::post(routes::qr_auth::qr_lookup_handler),
+        )
+        .route(
+            "/api/auth/qr/{id}/wait",
+            get(routes::qr_auth::qr_wait_handler),
+        )
+        .route(
+            "/api/auth/qr/{id}/status",
+            get(routes::qr_auth::qr_status_handler),
+        )
+        .route(
+            "/api/auth/qr/{id}/confirm",
+            axum::routing::post(routes::qr_auth::qr_confirm_handler),
+        )
+        .route(
+            "/api/auth/qr/{id}/finalize",
+            get(routes::qr_auth::qr_finalize_handler),
+        )
+        .with_state(qr_auth_state);
+
     let app_dist_state = routes::app_dist::AppDistState {
         base_dir: base_dir_arc.clone(),
     };
@@ -509,6 +541,7 @@ pub fn create_app_full(
         .merge(storage_routes)
         .merge(admin_routes)
         .merge(auth_routes)
+        .merge(qr_auth_routes)
         .merge(app_dist_routes);
 
     let dist_path = static_dir.unwrap_or_else(|| {

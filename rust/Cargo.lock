@@ -1080,6 +1080,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
+ "hmac",
  "http-body-util",
  "if-addrs",
  "mime_guess",

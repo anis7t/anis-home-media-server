@@ -12,6 +12,7 @@ import ManagePage from './features/manage/ManagePage';
 import ManualPage from './features/manual/ManualPage';
 import MovieDetailsPage from './features/media-details/MovieDetailsPage';
 import PlayerPage from './features/playback/PlayerPage';
+import RemoteLoginPage from './features/remote-login/RemoteLoginPage';
 import TranscodeDashboardPage from './features/transcodes/TranscodeDashboardPage';
 import './index.css';
 
@@ -34,6 +35,7 @@ createRoot(container).render(
             <Route path="/movie/*" element={<MovieDetailsPage />} />
             <Route path="/watch/*" element={<PlayerPage />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/remotelogin" element={<RemoteLoginPage />} />
             <Route path="/manage" element={<ManagePage />} />
             <Route path="/library-manage" element={<ManagePage />} />
             <Route path="/transcodes" element={<TranscodeDashboardPage />} />

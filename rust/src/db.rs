@@ -180,9 +180,39 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // QR Device Pairing Sessions (remote login flow)
+    // Each row represents a pending sign-in initiated by a TV/browser showing a QR code.
+    // Expires after 2 minutes; confirmed=true once the phone completes the handshake.
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS device_pair_sessions (
+            id          TEXT PRIMARY KEY,
+            code        TEXT NOT NULL,
+            code_hash   TEXT NOT NULL,
+            sig         TEXT NOT NULL,
+            user_id     BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            session_id  TEXT,
+            device_name TEXT,
+            confirmed   BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at  TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '2 minutes')
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_device_pair_expires ON device_pair_sessions(expires_at)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
-    tracing::info!("Rust schema ensured (transcode_jobs, users, auth_tokens, sessions)");
+    tracing::info!("Rust schema ensured (transcode_jobs, users, auth_tokens, sessions, device_pair_sessions)");
     Ok(())
 }
 

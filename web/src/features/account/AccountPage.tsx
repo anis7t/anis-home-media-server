@@ -11,6 +11,7 @@ import {
   type TokenRecord,
 } from '../../lib/api/account';
 import { MintedTokenPanel } from '../../components/PairingQr';
+import { QrSignInPanel } from '../../components/QrSignInPanel';
 
 function formatDate(seconds: number | null): string {
   if (!seconds) return '—';
@@ -160,7 +161,7 @@ export function AccountPage() {
             </div>
           </div>
 
-          {authenticated ? (
+          {authenticated && (
             <button
               type="button"
               onClick={signOut}
@@ -168,28 +169,26 @@ export function AccountPage() {
             >
               Sign out
             </button>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={openPinSignIn}
-                className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95"
-              >
-                Sign in with Admin PIN
-              </button>
-              {oauthConfigured && (
-                <button
-                  type="button"
-                  onClick={signIn}
-                  className="card-ring brand-gradient brand-glow-sm rounded-full px-5 py-2 text-xs font-semibold text-white shadow-md transition hover:scale-105 active:scale-95"
-                >
-                  Sign in with Google →
-                </button>
-              )}
-            </div>
           )}
         </div>
       </section>
+
+      {/* QR Device Sign-In Panel */}
+      {!authenticated && (
+        <section aria-label="QR Device Sign-In" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-white">Sign In to Anis&apos; Home Media Server</h2>
+            <p className="mt-1 text-xs text-white/50">
+              Scan with your phone to pair this device, or sign in directly below.
+            </p>
+          </div>
+          <QrSignInPanel
+            onGoogleSignIn={signIn}
+            onPinSignIn={openPinSignIn}
+            oauthConfigured={oauthConfigured}
+          />
+        </section>
+      )}
 
       {/* Connected Devices Section */}
       <section aria-labelledby="tokens-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">

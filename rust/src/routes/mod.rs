@@ -9,6 +9,7 @@ pub mod media_info;
 pub mod movies;
 pub mod preview;
 pub mod progress;
+pub mod qr_auth;
 pub mod subtitles;
 pub mod system;
 pub mod spa;

@@ -29,6 +29,17 @@ export interface MintedToken {
   readonly warning: string;
 }
 
+export interface QrSession {
+  readonly qr_id: string;
+  readonly code: string;
+  readonly sig: string;
+  readonly expires_at: number;
+  /** Full URL to embed in the QR code (includes code + sig params) */
+  readonly qr_url: string;
+  /** Human-readable URL for the TV display text */
+  readonly login_url: string;
+}
+
 export function fetchMe(): Promise<AccountResponse> {
   return accountRequest<AccountResponse>('/api/auth/me');
 }
@@ -53,6 +64,43 @@ export function mintToken(label: string): Promise<MintedToken> {
 
 export function revokeToken(id: number): Promise<{ revoked: number }> {
   return accountRequest<{ revoked: number }>(`/api/auth/tokens/${id}`, { method: 'DELETE' });
+}
+
+/** Create a new QR pair session. Called by the TV/browser when showing the sign-in panel. */
+export function createQrSession(): Promise<QrSession> {
+  return accountRequest<QrSession>('/api/auth/qr', { method: 'POST' });
+}
+
+/**
+ * Confirm a QR pair session from the phone side.
+ * The caller must already be signed in (session cookie present).
+ */
+export function confirmQrSession(
+  qrId: string,
+  deviceName: string,
+  opts: { code?: string; sig?: string },
+): Promise<{ success: boolean; message: string }> {
+  return accountRequest<{ success: boolean; message: string }>(
+    `/api/auth/qr/${encodeURIComponent(qrId)}/confirm`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        code: opts.code ?? '',
+        sig: opts.sig,
+        device_name: deviceName,
+      }),
+    },
+  );
+}
+
+/**
+ * Resolve a manually typed 5-char code on the phone to an active `qr_id`.
+ */
+export function lookupQrCode(code: string): Promise<{ qr_id: string; code: string }> {
+  return accountRequest<{ qr_id: string; code: string }>('/api/auth/qr/lookup', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
 }
 
 export function listAllowlist(): Promise<{
