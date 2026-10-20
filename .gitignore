@@ -86,3 +86,6 @@ pgdata/
 # Test artifacts
 tests/screenshots/
 
+
+# the on-device session's diagnostic captures (the audio dumps are kept; the screenshots are not)
+docs/opening-sequence/device/
