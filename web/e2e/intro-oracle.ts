@@ -4,6 +4,47 @@ import { createHash } from 'node:crypto';
 import type { Page } from '@playwright/test';
 
 import { shakeDraws } from '../src/lib/intro/timeline';
+import { T, seg } from '../src/lib/intro/timeline';
+
+/**
+ * The band of the page that the curtain does not fully hide, at time `t`.
+ *
+ * While the curtain is closed this band is empty (the halves overlap by a
+ * pixel) and the whole page is the curtain's. As the curtain parts, two
+ * things let the page beneath show through:
+ *
+ *  - **the gap** between the halves, and
+ *  - **the feathered inner edges**, which the source gives a mask whose
+ *    transparent band is `4 + 11 * progress` percent of each half's width.
+ *
+ * The band is therefore contiguous: from the left half's inner edge minus its
+ * feather, to the right half's inner edge plus its own.
+ *
+ * The vignette and the grain are drawn OVER this band, and they are identical
+ * in both documents, so they do not widen it.
+ */
+export const curtainRevealBand = async (page: Page, t: number) => {
+  const geometry = await page.evaluate(() => {
+    const read = (selector: string) => {
+      const el = document.querySelector(selector);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, width: r.width };
+    };
+    return { left: read('.intro-veil-l'), right: read('.intro-veil-r') };
+  });
+
+  const pk = seg(t, T.curtain, T.curtainEnd);
+  const feather = pk <= 0 ? 0 : 4 + 11 * pk;
+  const leftFeather = (feather / 100) * (geometry.left?.width ?? 0);
+  const rightFeather = (feather / 100) * (geometry.right?.width ?? 0);
+  // A pixel of margin: the feather's edge falls between two pixels, and the
+  // pixel that straddles it differs by one unit of 255.
+  const MARGIN = 2;
+  const from = (geometry.left?.right ?? 0) - leftFeather - MARGIN;
+  const to = (geometry.right?.left ?? 0) + rightFeather + MARGIN;
+  return { x: from, y: 0, width: Math.max(0, to - from), height: 1920 };
+};
 
 /**
  * The frame-for-frame oracle.
@@ -168,28 +209,6 @@ export const ARCHIVED_CANVAS = '#fx';
 /** The port's canvas selector. */
 export const PORT_CANVAS = 'canvas.intro-fx';
 
-export interface LayerState {
-  /** The element's inline style, parsed into properties so the comparison does
-   *  not depend on the order the properties happen to be serialised in. */
-  style: Record<string, string>;
-  /** The element's rendered box. */
-  rect: { x: number; y: number; width: number; height: number };
-}
-
-const readLayer = (el: Element | null): LayerState | null => {
-  if (!el) return null;
-  const style: Record<string, string> = {};
-  for (let i = 0; i < el.style.length; i++) {
-    const prop = el.style.item(i);
-    style[prop] = el.style.getPropertyValue(prop);
-  }
-  const r = el.getBoundingClientRect();
-  return {
-    style,
-    rect: { x: r.x, y: r.y, width: r.width, height: r.height },
-  };
-};
-
 /**
  * A snapshot of the DOM layers' state, for comparison.
  *
@@ -222,8 +241,6 @@ export const readState = (page: Page, selectors: Record<string, string>) =>
     }
     return out;
   }, selectors);
-
-export { readLayer };
 
 /**
  * Compare two PNG buffers pixel by pixel.

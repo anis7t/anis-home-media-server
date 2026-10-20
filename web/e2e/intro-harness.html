@@ -37,7 +37,7 @@
       const ref = { current: null };
 
       createRoot(document.getElementById('intro-harness-root')).render(
-        createElement(BrandIntroOverlay, { ref, autoPlay: false }),
+        createElement(BrandIntroOverlay, { ref, mode: 'capture' }),
       );
 
       window.__intro = {

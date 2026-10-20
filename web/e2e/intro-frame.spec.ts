@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   ARCHIVED_CANVAS,
+  HARNESS_URL,
   PORT_CANVAS,
   SAMPLE_TIMES,
   canvasHash,
@@ -10,6 +11,7 @@ import {
   openArchived,
   openPort,
   readState,
+  curtainRevealBand,
 } from './intro-oracle';
 
 /**
@@ -156,6 +158,69 @@ test.describe('brand intro - frame for frame against the archived original', () 
     } finally {
       await archived.close();
       await port.close();
+    }
+  });
+
+  /*
+   * The shipped app, not the harness.
+   *
+   * Everything above compares the archived original against the test-only
+   * harness page. This compares the harness against the REAL application, in
+   * its `?intro=capture` mode, driven through the same `window.__INTRO__` handle.
+   *
+   * It is what makes the verified thing the thing that ships.
+   *
+   * While the curtain is closed the comparison is total: the curtain is
+   * opaque, so the app's library page, its header and its scrollbar are
+   * invisible to it. Once the curtain PARTS, the gap between the halves is
+   * the one place the page beneath can show through - so the differing pixels
+   * are required to fall inside that gap, and nowhere else. The gap is read
+   * from the harness's own curtain halves.
+   */
+  test('the shipped app in capture mode renders the overlay identically', async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    const viewport = { width: 1920, height: 1080 };
+    const app = await browser.newPage({ deviceScaleFactor: 1 });
+    const harness = await browser.newPage({ deviceScaleFactor: 1 });
+    try {
+      await app.setViewportSize(viewport);
+      await app.goto('/?intro=capture');
+      await app.waitForFunction(
+        () => typeof (window as any).__INTRO__?.renderAt === 'function',
+        null,
+        { timeout: 30_000 },
+      );
+
+      await harness.setViewportSize(viewport);
+      await harness.goto(HARNESS_URL);
+      await harness.waitForFunction(() => (window as any).__introReady === true);
+
+      for (const t of SAMPLE_TIMES) {
+        await app.evaluate((time) => (window as any).__INTRO__.renderAt(time), t);
+        await harness.evaluate((time) => (window as any).__intro.renderAt(time), t);
+
+        const a = await app.screenshot();
+        const b = await harness.screenshot();
+        if (a.equals(b)) continue;
+
+        // The one band of the page the curtain does not fully hide: the gap
+        // between the halves plus the feathered inner edges.
+        const band = await curtainRevealBand(harness, t);
+
+        const diff = await diffPngs(app, a, b, [band]);
+        expect(
+          diff.outside,
+          `the shipped app's overlay differs from the harness outside the curtain's ` +
+            `reveal band at t=${t}: ${diff.outside} pixels, max channel delta ` +
+            `${diff.maxOutsideDelta}, bbox ${JSON.stringify(diff.bbox)}, band ` +
+            `${JSON.stringify(band)}`,
+        ).toBe(0);
+      }
+    } finally {
+      await app.close();
+      await harness.close();
     }
   });
 });

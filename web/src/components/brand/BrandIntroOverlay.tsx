@@ -14,7 +14,8 @@ import { computeFrame, splitLetters, WORDMARK_1, WORDMARK_2 } from '../../lib/in
 import { drawFX } from '../../lib/intro/fx';
 import { stageGeometry } from '../../lib/intro/geometry';
 import type { StageGeometry } from '../../lib/intro/geometry';
-import { DURATION, HANDOVER_AT, clamp } from '../../lib/intro/timeline';
+import type { IntroMode } from '../../lib/intro/mode';
+import { DURATION, HANDOVER_AT, T, clamp } from '../../lib/intro/timeline';
 import BrandMark from '../BrandMark';
 import './brand-intro.css';
 
@@ -64,10 +65,12 @@ export interface BrandIntroOverlayHandle {
 }
 
 export interface BrandIntroOverlayProps {
+  /** The mode. See `web/src/lib/intro/mode.ts`. */
+  mode: IntroMode;
+  /** Called once, when the sequence actually starts. */
+  onStarted?: () => void;
   /** Called once, when the sequence has finished. */
   onFinished?: () => void;
-  /** Set false to hold the sequence on its first frame. */
-  autoPlay?: boolean;
 }
 
 /** Write a style only when it has actually changed (source 335). */
@@ -88,8 +91,18 @@ const writeStyle = (node: HTMLElement | null, key: string, value: string): void 
   (node.style as unknown as Record<string, string>)[key] = value;
 };
 
+/**
+ * The phases the overlay can be in.
+ *
+ * - `gate` - the manual-testing card is up. Nothing is playing.
+ * - `playing` - the sequence is running.
+ * - `idle` - the capture mode: present and static, driven from outside.
+ * - `done` - finished; the layer has been removed.
+ */
+type Phase = 'gate' | 'playing' | 'idle' | 'done';
+
 const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayProps>(
-  function BrandIntroOverlay({ onFinished, autoPlay = true }, ref) {
+  function BrandIntroOverlay({ mode, onStarted, onFinished }, ref) {
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fxRef = useRef<HTMLCanvasElement | null>(null);
     const iconRef = useRef<HTMLSpanElement | null>(null);
@@ -108,8 +121,20 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
 
     const rafRef = useRef(0);
     const finishedRef = useRef(false);
+    const startedRef = useRef(false);
+    const onStartedRef = useRef(onStarted);
     const onFinishedRef = useRef(onFinished);
+    onStartedRef.current = onStarted;
     onFinishedRef.current = onFinished;
+
+    const [phase, setPhase] = useState<Phase>(() => {
+      if (mode === 'gate') return 'gate';
+      if (mode === 'capture') return 'idle';
+      return 'playing';
+    });
+    const [gateClosing, setGateClosing] = useState(false);
+    const [gateGone, setGateGone] = useState(false);
+    const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const [geo, setGeo] = useState<StageGeometry>(() =>
       stageGeometry(
@@ -249,23 +274,25 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
       [geo, reduced],
     );
 
-    const finish = useCallback(() => {
-      if (finishedRef.current) return;
-      finishedRef.current = true;
-      const stage = stageRef.current;
-      if (stage) {
-        writeStyle(stage, 'display', 'none');
-        stage.classList.remove('intro-handover');
-      }
-      onFinishedRef.current?.();
-    }, []);
-
     const stopLoop = useCallback(() => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = 0;
       }
     }, []);
+
+    const finish = useCallback(() => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      stopLoop();
+      const stage = stageRef.current;
+      if (stage) {
+        writeStyle(stage, 'display', 'none');
+        stage.classList.remove('intro-handover');
+      }
+      setPhase('done');
+      onFinishedRef.current?.();
+    }, [stopLoop]);
 
     useImperativeHandle(
       ref,
@@ -282,8 +309,25 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
       [applyFrame, finish, stopLoop],
     );
 
+    /*
+     * The first frame is painted at mount, in every mode, so that nothing
+     * flashes before playback starts (source 964-965). In the capture mode
+     * this is the ONLY frame the overlay paints on its own.
+     */
     useEffect(() => {
-      if (!autoPlay) return;
+      applyFrame(0);
+    }, [applyFrame]);
+
+    /* The sequence starts. Reported once, so the container can record it. */
+    useEffect(() => {
+      if (phase !== 'playing' || startedRef.current) return;
+      startedRef.current = true;
+      onStartedRef.current?.();
+    }, [phase]);
+
+    /* The playback loop. */
+    useEffect(() => {
+      if (phase !== 'playing') return;
       // The source starts the clock 120 ms in the future, so the first frame
       // is a real frame rather than a half-drawn one (source 849).
       const t0 = performance.now() + 120;
@@ -298,74 +342,172 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
       };
       rafRef.current = requestAnimationFrame(loop);
       return stopLoop;
-    }, [applyFrame, autoPlay, finish, stopLoop]);
+    }, [applyFrame, finish, phase, stopLoop]);
 
-    if (typeof document === 'undefined') return null;
+    /*
+     * Dismissal. The canonical specification says a click, a tap, the space
+     * key or ANY key dismisses the sequence (spec Part I section 8).
+     *
+     * The original's own check was `e.target === el.stage`, which never fired:
+     * the FX canvas (z-index 4) and the curtain halves (z-index 2) have no
+     * `pointer-events: none`, so a click always landed on one of them and
+     * never on the stage. The port listens on the stage itself and lets the
+     * event bubble, so a click anywhere on the overlay dismisses - which is
+     * also what the Flutter client does.
+     *
+     * After the handover the stage releases the pointer (source 190), so the
+     * app underneath becomes clickable and a click there does NOT dismiss.
+     */
+    useEffect(() => {
+      if (phase !== 'playing') return;
+      const stage = stageRef.current;
+      if (!stage) return;
+      const onPointerDown = () => finish();
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Tab') return;
+        finish();
+      };
+      stage.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('keydown', onKeyDown);
+      return () => {
+        stage.removeEventListener('pointerdown', onPointerDown);
+        window.removeEventListener('keydown', onKeyDown);
+      };
+    }, [finish, phase]);
+
+    /*
+     * The capture mode's handle.
+     *
+     * It is exposed ONLY in `?intro=capture` - a verification surface - and
+     * under an underscore-prefixed name to mark it internal. The shape is the
+     * original's, so the existing capture tooling needs only a one-line
+     * change to drive the port instead of the archived overlay.
+     */
+    useEffect(() => {
+      if (mode !== 'capture' || typeof window === 'undefined') return;
+      const api = {
+        renderAt: (t: number) => {
+          stopLoop();
+          applyFrame(t);
+        },
+        timeline: T,
+        duration: DURATION,
+        pageMode: () => mode,
+      };
+      (window as unknown as Record<string, unknown>).__INTRO__ = api;
+      return () => {
+        delete (window as unknown as Record<string, unknown>).__INTRO__;
+      };
+    }, [applyFrame, mode, stopLoop]);
+
+    /* The gate's exit: the card fades, then goes (source 851-853). */
+    const startFromGate = useCallback(() => {
+      setGateClosing(true);
+      gateTimerRef.current = setTimeout(() => setGateGone(true), 320);
+      setPhase('playing');
+    }, []);
+
+    useEffect(
+      () => () => {
+        if (gateTimerRef.current) clearTimeout(gateTimerRef.current);
+      },
+      [],
+    );
+
+    if (typeof document === 'undefined' || mode === 'off') return null;
+
+    const stageClass = [
+      'intro-stage',
+      mode === 'capture' ? 'intro-capture' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     return createPortal(
-      <div className="intro-stage" ref={stageRef}>
-        {/* the curtain: two halves of one backdrop */}
-        <div className="intro-veil intro-veil-l" ref={veilLRef}>
-          <div className="intro-veil-inner" />
-        </div>
-        <div className="intro-veil intro-veil-r" ref={veilRRef}>
-          <div className="intro-veil-inner" />
-        </div>
-        <div className="intro-seam" ref={seamRef} />
-
-        <canvas className="intro-fx" ref={fxRef} aria-hidden="true" />
-
-        <div className="intro-vignette" ref={vignetteRef} />
-        <div className="intro-grain" ref={grainRef} />
-
-        {/* the brand lockup, dismissed gently as the curtain opens */}
-        <div
-          className={portrait ? 'intro-lockup intro-lockup-portrait' : 'intro-lockup'}
-          ref={lockupRef}
-          aria-hidden="true"
-        >
-          <div className="intro-icon-wrap">
-            <div className="intro-icon-glow" ref={iconGlowRef} />
-            <span className="intro-icon" ref={iconRef}>
-              {/* No class: the mark must take its size and its baseline
-                  alignment from the browser, exactly as the original's does. */}
-              <BrandMark className="" />
-            </span>
+      <>
+        <div className={stageClass} ref={stageRef}>
+          {/* the curtain: two halves of one backdrop */}
+          <div className="intro-veil intro-veil-l" ref={veilLRef}>
+            <div className="intro-veil-inner" />
           </div>
-          <div className="intro-word-col">
-            <div className="intro-word intro-w1" ref={w1Ref}>
-              {L1.map((ch, i) => (
-                <span
-                  key={`w1-${i}`}
-                  className="intro-lt"
-                  ref={(el) => {
-                    letterRefs.current[i] = el;
-                  }}
-                >
-                  {ch}
-                </span>
-              ))}
+          <div className="intro-veil intro-veil-r" ref={veilRRef}>
+            <div className="intro-veil-inner" />
+          </div>
+          <div className="intro-seam" ref={seamRef} />
+
+          <canvas className="intro-fx" ref={fxRef} aria-hidden="true" />
+
+          <div className="intro-vignette" ref={vignetteRef} />
+          <div className="intro-grain" ref={grainRef} />
+
+          {/* the brand lockup, dismissed gently as the curtain opens */}
+          <div
+            className={portrait ? 'intro-lockup intro-lockup-portrait' : 'intro-lockup'}
+            ref={lockupRef}
+            aria-hidden="true"
+          >
+            <div className="intro-icon-wrap">
+              <div className="intro-icon-glow" ref={iconGlowRef} />
+              <span className="intro-icon" ref={iconRef}>
+                {/* No class: the mark must take its size and its baseline
+                    alignment from the browser, exactly as the original's does. */}
+                <BrandMark className="" />
+              </span>
             </div>
-            <div className="intro-word intro-w2" ref={w2Ref}>
-              {L2.map((ch, i) => (
-                <span
-                  key={`w2-${i}`}
-                  className="intro-lt"
-                  ref={(el) => {
-                    letterRefs.current[L1.length + i] = el;
-                  }}
-                >
-                  {ch}
-                </span>
-              ))}
+            <div className="intro-word-col">
+              <div className="intro-word intro-w1" ref={w1Ref}>
+                {L1.map((ch, i) => (
+                  <span
+                    key={`w1-${i}`}
+                    className="intro-lt"
+                    ref={(el) => {
+                      letterRefs.current[i] = el;
+                    }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </div>
+              <div className="intro-word intro-w2" ref={w2Ref}>
+                {L2.map((ch, i) => (
+                  <span
+                    key={`w2-${i}`}
+                    className="intro-lt"
+                    ref={(el) => {
+                      letterRefs.current[L1.length + i] = el;
+                    }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </div>
+              <div className="intro-sub" ref={subRef}>
+                PLAY • ORGANIZE • ENJOY
+              </div>
+              <div className="intro-rule" ref={ruleRef} />
             </div>
-            <div className="intro-sub" ref={subRef}>
-              PLAY • ORGANIZE • ENJOY
-            </div>
-            <div className="intro-rule" ref={ruleRef} />
           </div>
         </div>
-      </div>,
+
+        {/* The gate: the manual-testing card. Never the product behaviour. */}
+        {phase === 'gate' && !gateGone ? (
+          <div className={`intro-gate${gateClosing ? ' intro-gate-closing' : ''}`}>
+            <div className="intro-gate-card">
+              <BrandMark className="intro-gate-mark" />
+              <h1>
+                Anis' <b>Home Media Server</b>
+              </h1>
+              <p className="intro-gate-sub">Opening sequence · 3 seconds</p>
+              <button type="button" className="intro-gate-play" onClick={startFromGate}>
+                ▶ Play
+              </button>
+              <p className="intro-gate-hint">
+                The original brand sting. Press play to begin — <kbd>any key</kbd> skips.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </>,
       document.body,
     );
   },

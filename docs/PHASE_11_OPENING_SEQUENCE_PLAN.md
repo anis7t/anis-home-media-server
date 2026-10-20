@@ -261,20 +261,68 @@ mechanics that are normalised, and why.
 **Exit:** met. The renderer matches the archived original frame for frame; the pure function is
 unit-tested against golden values taken from the source's own algorithm.
 
-### Slice 11.3 — Web: lifecycle, gating, modes, audio ⏭️ **NEXT**
+### Slice 11.3 - Web: lifecycle, gating, modes ✅ **COMPLETE (2026-10-20)**
 
-- `web/src/hooks/useIntroSequence.ts`: `?intro=` modes (`auto` / `gate` / `capture` / `off`), the
-  **container-owned** session gate, dismissal, `prefers-reduced-motion` (D11), the Web Audio score
-  with the non-blocking discipline, and the login-screen case (D5).
-- Mount in `web/src/app/AppShell.tsx`; the overlay is portaled to `document.body`, `z-index` above
-  the `z-20` sticky header. **The container writes `sessionStorage.introSeen`; the overlay must not.**
-- `/remotelogin` is **excluded** — `AppShell` early-returns a bare `<main>` for that route and the
-  phone flow must stay a focused single-purpose screen.
-- No visible Skip, no Replay (D4).
-- **Exit:** plays once per browser session; a reload does not replay; `?intro=off` bypasses it;
-  `?intro=gate` shows the card; the animation is provably not blocked by a suspended audio context.
+The renderer gets a life. **The Web Audio score is deliberately not in this slice** — it is Slice 11.3a.
 
-### Slice 11.4 — Flutter: align to the canonical design
+**What was built:**
+
+| File | What it is |
+|---|---|
+| `web/src/lib/intro/mode.ts` | **Pure.** Parses `?intro=` → `auto` \| `gate` \| `capture` \| `off`; anything unrecognised falls back to `auto`. |
+| `web/src/hooks/useIntroSequence.ts` | The **container-owned** hook: the mode, the session gate, and the capture handle. |
+| `web/src/components/brand/BrandIntroOverlay.tsx` | Gains the `mode` prop, the gate card, the dismissal listeners, the capture behaviour, and the `window.__INTRO__` handle. |
+| `web/src/components/brand/brand-intro.css` | The gate card's styles, ported from the source. |
+| `web/src/app/AppShell.tsx` | Mounts the overlay as a sibling of `<main>`, so it plays over the login screen (D5). |
+
+**The four modes:** `auto` (the default; once per browser session) · `gate` (the manual-testing card;
+never the product behaviour) · `capture` (a still page, driven from outside) · `off` (nothing is
+mounted at all — the component is never in the tree).
+
+**The gate's ownership.** The container reads `sessionStorage.introSeen` **during render**, decides
+whether to mount, and records that the intro has started. **The overlay never touches
+`sessionStorage`** — asserted against the component's own source, not just at runtime, because a
+runtime spy would only prove it for the paths a test happens to exercise.
+
+**Five findings, all from reading the source rather than the plan:**
+
+| # | Finding |
+|---|---|
+| **F13** | **The original's click-to-skip is dead.** It tests `e.target === el.stage` (source 888), but the FX canvas (z-index 4) and the curtain halves (z-index 2) have no `pointer-events: none` — so a click always lands on one of them and never on the stage. The canonical spec requires click/tap to dismiss, and the Flutter client dismisses on a tap anywhere, so **the port follows the spec**. |
+| **F14** | The original's auto mode has an escape hatch: `intro=(auto\|replay\|force)` plays the intro **even when it has been seen** (source 976). That is a Replay mechanism, so **D4 removes it** — the session gate is unconditional. `?intro=gate` remains the manual way to watch it. |
+| **F15** | The original's `gate` mode does **not** consult the session gate. The port matches that, and additionally records the intro as seen when a gate view starts, so a manual view does not leave the intro pending. The `capture` mode deliberately does **not** record it: a verification run must not consume the user's session. |
+| **F16** | **The curtain does not hide the page until it has fully parted.** The halves' inner edges are **feathered** — the source gives each a mask whose transparent band is `4 + 11 × progress` percent of the half's width. The band of the page the curtain does not fully hide is therefore the gap **plus** those two feather bands, and that is the only place the app's own content can show through. |
+| **F17** | A **conditional hook call**: `useIntroSequence` was placed after the `/remotelogin` early return, which `oxlint`'s rules-of-hooks caught. The hook is now called before the return, and the early return still skips the mount. |
+
+**The oracle grew a sixth test:** the shipped application, in its `?intro=capture` mode, is compared
+against the verified harness — pixel for pixel, at every sampled instant, with the differing pixels
+required to fall inside the curtain's reveal band (F16) and nowhere else. That is what makes the
+verified thing the thing that **ships**.
+
+**Verified:** `tsc -b` clean · `oxlint` exit 0 · vitest **292/292** across 40 files (17 new) ·
+`vite build` succeeds · the Playwright oracle **6/6**.
+
+**Exit:** met. The sequence plays once per browser session, a reload does not replay it, `?intro=off`
+bypasses it, `?intro=gate` shows the card, `/remotelogin` never shows it, the intro plays over the
+login screen, and the shipped app's overlay is pixel-identical to the original's.
+
+### Slice 11.3a - Web: the Web Audio score ⏭️ **NEXT**
+
+The score, and nothing else. D8: **live Web Audio synthesis on the web** — the original's own
+approach, zero asset bytes — with the **non-blocking discipline** that AGENTS.md makes an invariant:
+the animation never waits on the audio, and the `AudioContext` resumes on the first gesture.
+
+- Port the original's audio module (source 572-807, 236 lines) to TypeScript.
+- The gate card's wording changes with it: the button becomes "Play with sound" and the hint
+  describes the keys, exactly as the original's does.
+- **The oracle is a measurement, not a listening test:** the port's synthesis is rendered in an
+  `OfflineAudioContext` and the samples are compared against
+  `docs/opening-sequence/assets/intro-theme.wav` — which is the offline render of that same
+  composition. The score becomes *provably* the same music rather than probably.
+- The animation must remain provably unblocked by a suspended `AudioContext` — a suspended context
+  must not delay a single frame.
+### Slice 11.4 - Flutter: align to the canonical design
+
 
 Makes the shipped app match the canonical design. **This is a visible change to the phone app.**
 Its scope is **larger** than the original three drifts — see §1.1 finding 3.

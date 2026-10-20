@@ -288,3 +288,136 @@
   );
   box-shadow: 0 0 12px rgba(229, 9, 20, 0.55);
 }
+
+/* ── the capture mode ─────────────────────────────────────────────────────── */
+
+/*
+ * In capture mode the overlay is driven from outside, so it must not take any
+ * input: a stray click must not dismiss it, and a keypress must not either.
+ * The source did the same (`body.intro-capture #stage{pointer-events:none}`).
+ */
+.intro-stage.intro-capture {
+  pointer-events: none;
+}
+
+/* ── the gate ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The click-to-start card. It is the MANUAL TESTING surface - reachable only
+ * through `?intro=gate` - and it is never the product behaviour.
+ *
+ * Ported from the source's `#gate` rules (source 140-160), including its
+ * `display: none` / `grid` pairing and the 0.3 s fade on exit.
+ */
+.intro-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  display: grid;
+  place-items: center;
+  background: #05060a;
+  color: #f7f7f8;
+  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: opacity 0.3s ease;
+}
+
+.intro-gate-closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-gate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.intro-gate-mark {
+  width: 76px;
+  height: 76px;
+  border-radius: 26%;
+  filter: drop-shadow(0 4px 24px rgba(229, 9, 20, 0.5));
+}
+
+.intro-gate-card h1 {
+  margin: 0.2rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  background: linear-gradient(135deg, #fff 40%, #cbd5e1);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.intro-gate-card h1 b {
+  color: #ff2a4b;
+  -webkit-text-fill-color: #ff2a4b;
+  font-weight: 800;
+}
+
+.intro-gate-sub {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.intro-gate-play {
+  margin-top: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 52px;
+  padding: 0 1.7rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #ff2a4b 0%, #e50914 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 10px 34px rgba(229, 9, 20, 0.45);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.intro-gate-play:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 40px rgba(229, 9, 20, 0.6);
+}
+
+.intro-gate-play:active {
+  transform: translateY(0);
+}
+
+.intro-gate-play:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.intro-gate-hint {
+  margin: 0.4rem 0 0;
+  color: #64748b;
+  font-size: 0.76rem;
+  max-width: 22rem;
+  line-height: 1.5;
+}
+
+.intro-gate-hint kbd {
+  background: #161f2e;
+  border: 1px solid #2b3545;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}

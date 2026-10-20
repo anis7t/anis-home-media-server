@@ -262,12 +262,20 @@ animation's clock starts at `performance.now() + 120` (`source: 849`) — the sa
 
 | Gesture | Effect | source |
 |---|---|---|
-| Click / tap on the stage | Skip to the end | 887-889 |
+| Click / tap anywhere on the overlay | Skip to the end | 887-889 |
 | `Space` | Skip to the end (or start, from the gate) | 890-897 |
 | Any key / any D-pad press (Flutter) | Skip to the end | `brand_intro_overlay.dart:122-128` |
 
 Skipping renders the final frame and finishes (`source: 857-864`): the layer is removed, the
 audio stops over 0.10 s, and the app underneath is live and interactive.
+
+> **The original's click-to-skip does not work, and the port's does.** The source tests
+> `e.target === el.stage` (`source: 888`), but the FX canvas (z-index 4) and the curtain halves
+> (z-index 2) have no `pointer-events: none` — so a click always lands on one of them and never
+> on the stage, and the check never passes. The port listens on the stage itself and lets the
+> event bubble, so a click anywhere on the overlay dismisses, which is also what the Flutter
+> client does. (After the handover at 2.57 s the stage releases the pointer, so a click on the
+> app underneath does **not** dismiss — the sequence is effectively over by then.)
 
 **The HUD is not a product affordance.** The archived source's skip / replay / mute buttons
 (`source: 228-233`) exist behind `SHOW_HUD=false` (`source: 931`) and are **not** ported. The
@@ -307,6 +315,40 @@ The web's `?intro=` modes (Slice 11.3): `auto` (**the default**), `gate`, `captu
 > **Correction — the default mode is `auto`, not `gate`.** The archived standalone page defaulted to
 > `gate`; the **injected overlay defaults to `auto`** (`source: 914`). `?intro=gate` is reserved
 > strictly for manual testing.
+
+### 10.1 The web's modes, and what each one does
+
+| Mode | Behaviour | Records the intro as seen? |
+|---|---|---|
+| `auto` | **The product behaviour.** Plays automatically, once per browser session. | **Yes**, when the sequence starts |
+| `gate` | The manual-testing card. It waits for the play button. **The session gate does not apply** (`source: 969-971`). | **Yes**, when the sequence starts — so a manual view does not leave the intro pending |
+| `capture` | A still page for reproducible frames. No auto-play, no auto-removal, and a render handle exposed. | **No** — a verification run must not consume the user's session |
+| `off` | **Nothing is mounted.** The component is never in the tree. | n/a |
+
+> **The original's `intro=(auto|replay|force)` escape hatch is removed.** The source's auto mode
+> plays the intro **even when it has been seen**, if the URL carries one of those values
+> (`source: 976`). That is a Replay mechanism, and **D4 forbids one**. The session gate is
+> therefore unconditional, and `?intro=gate` is the manual way to watch the intro again.
+
+### 10.2 Who owns the gate
+
+**The container.** `web/src/hooks/useIntroSequence.ts` reads `sessionStorage.introSeen` **during
+render**, decides whether to mount the overlay, and records that the intro has started. **The
+overlay has no `sessionStorage` reference at all** — which is asserted against the component's own
+source, not merely at runtime, because a runtime spy would only prove it for the paths a test
+happens to exercise.
+
+**The decision is made once, at mount**, in a `useState` initialiser rather than an effect. Under
+`StrictMode` — which the app enables — effects run twice, so an effect-time read would see the
+flag the container had just written itself, decide the intro had already been seen, and never play
+it at all.
+
+### 10.3 The capture handle
+
+In `?intro=capture` the overlay exposes `window.__INTRO__` with the original's shape — `renderAt`,
+`timeline`, `duration`, `pageMode` — so the existing capture tooling needs only a one-line change to
+drive the port instead of the archived overlay. It is exposed **only** in that mode, and its name is
+underscore-prefixed to mark it internal.
 
 ## 11. The per-target status table
 
@@ -352,6 +394,18 @@ It runs at **20 sampled instants** covering every effect in the sequence — the
 converging particles, the impact and its burst, the flash, the shockwave rings, the sheen, the
 wordmarks, the subtitle, the rule, the embers, the curtain parting, the handover and the hold —
 in **landscape (1920×1080) and portrait (1080×1920)**.
+
+**And a sixth test: the shipped application.** The five above compare the archived original against
+the test-only harness page. The sixth compares the **real app**, in its `?intro=capture` mode,
+against the same harness — pixel for pixel, at every sampled instant. That is what makes the
+verified thing the thing that **ships**.
+
+> **The curtain does not hide the page until it has fully parted.** The halves' inner edges are
+> **feathered** — the source gives each a mask whose transparent band is `4 + 11 × progress` percent
+> of the half's width (`source: 552-557`). The band of the page the curtain does not fully hide is
+> therefore the gap **plus** those two feather bands, and it is the only place the app's own
+> content can show through. The shipped-app comparison requires every differing pixel to fall
+> inside that band, and nowhere else.
 
 **Three things are normalised, and each is a rendering mechanic rather than a design element:**
 

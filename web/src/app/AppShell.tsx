@@ -5,8 +5,10 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import Avatar from '../components/Avatar';
+import BrandIntroOverlay from '../components/brand/BrandIntroOverlay';
 import { Icon } from '../components/icons';
 import LoginScreen from '../components/LoginScreen';
+import { useIntroSequence } from '../hooks/useIntroSequence';
 import BrandMark from '../components/BrandMark';
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -70,12 +72,36 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
 
+  /*
+   * The brand opening sequence.
+   *
+   * The hook is called BEFORE the `/remotelogin` early return, because a hook
+   * must be called in the same order on every render.
+   *
+   * The overlay is mounted as a SIBLING of the page content, not a child of
+   * it, so that it plays over the login screen (decision D5) rather than
+   * inside it. The component portals itself to `document.body` and sits above
+   * the `z-20` sticky header.
+   *
+   * The `/remotelogin` route returns below and never renders the overlay -
+   * that page is a focused, single-purpose screen.
+   *
+   * The session gate is the CONTAINER's: `useIntroSequence` decides whether
+   * to mount this at all and records that it has been seen. The overlay
+   * itself never touches `sessionStorage`.
+   */
+  const intro = useIntroSequence();
+
   if (location.pathname === '/remotelogin') {
     return <main className="min-h-screen w-full">{children}</main>;
   }
 
   return (
     <div className="min-h-screen">
+      {intro.shouldMount ? (
+        <BrandIntroOverlay mode={intro.mode} onStarted={intro.onStarted} onFinished={intro.onFinished} />
+      ) : null}
+
       {/* Sticky Obsidian Header */}
       <header className="glass-header app-header sticky top-0 z-20">
         <div className="app-header-surface mx-auto flex max-w-[1600px] items-center gap-3 sm:gap-6 px-3 py-3 transition-[background-color,box-shadow] duration-200 sm:px-6">

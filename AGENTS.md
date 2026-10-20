@@ -164,14 +164,14 @@ The current project includes:
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
    was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
    2026-10-18. The Flutter client still has it. **Phase 11** is in progress: Slices 11.1 (the
-   canonical specification), 11.1a (removing the Flutter Replay action) and **11.2 (the web canvas
-   renderer)** are complete; **11.3 (the web lifecycle, gating, modes and audio)** is next. The
-   roadmap is
+   canonical specification), 11.1a (removing the Flutter Replay action), **11.2 (the web canvas
+   renderer)** and **11.3 (the web lifecycle, gating and modes)** are complete; **11.3a (the web
+   Web Audio score)** is next. The roadmap is
    [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    The renderer is built and is **frame-for-frame identical** to the archived original — the FX
    canvas by the SHA-256 of its pixels, every DOM layer's style and geometry, and the rendered page
-   pixel by pixel, at 20 instants in both orientations
-   (`web/e2e/intro-frame.spec.ts`). The canonical design is
+   pixel by pixel, at 20 instants in both orientations — and the **shipped app** is compared
+   against the same harness (`web/e2e/intro-frame.spec.ts`). The canonical design is
    [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I.
 6. **Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.**
    `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` all
