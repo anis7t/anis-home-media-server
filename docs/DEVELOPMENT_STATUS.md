@@ -147,19 +147,36 @@ Note:          C: is not used by this project.
 - Integrated into YouTube-style seekbar with responsive viewport boundary clamping.
 
 ### Persistent Windows Services
-- Registered `MediaServer` (Waitress WSGI on `127.0.0.1:8000`) as an automatic Windows Service using NSSM with crash auto-recovery and 10 MB log rotation.
-- Registered `Cloudflared` as an automatic Windows Service for named tunnel routing (`media.anisparvez.in`).
+- `MediaServerRust` — the native Rust Axum backend on `0.0.0.0:8000`, serving the React 19 SPA and every `/api/*`, `/media/*`, `/hls/*`, `/subtitles/*`, `/auth/*` route. Automatic Windows Service via NSSM, with crash auto-recovery and log rotation.
+- `MediaServerCaddy` — the reverse proxy and TLS terminator on ports 80/443, fronting `127.0.0.1:8000` with a Let's Encrypt certificate. Automatic Windows Service via NSSM.
+- `MediaServerPG` — PostgreSQL 18.4 on port 5432, running as `NetworkService` with restart-x3 recovery actions. Binaries at `C:\postgres`, data at `E:\pgdata`.
+
+NSSM itself lives at `C:\MediaServer\bin\nssm.exe` and the PostgreSQL binaries at `C:\postgres`, so both survive the `E:` volume being absent — the `E:` glitch of 2026-10-16 took all three services down before that relocation.
+
+The legacy `MediaServer` (Waitress / Flask) and `Cloudflared` services have been **decommissioned and removed**. The backend is 100% native Rust and the frontend is a 100% React SPA.
+
+### QR Device Sign-In (OTT Activation Flow)
+- Six native endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by the `device_pair_sessions` table, plus a `/remotelogin` page for the phone and a `<QrSignInPanel>` on `/account` for the TV or browser.
+- Every security token (the 5-character pair code, the `qr_id`, session tokens, device tokens, the OAuth `state`/`nonce`, the PKCE verifier) is drawn from the operating system's CSPRNG via `getrandom`, and **fails closed** if the random source is unavailable.
+- The pair code carries **25 bits** of entropy (5 characters from a 32-symbol unambiguous charset). The original implementation collapsed to 32 possible codes because all five characters were derived from the low bits of one LCG state word — see [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md) §4.1.
+- The pair code and the full `qr_id` are **never logged**; only a 12-hex-character reference is.
 
 ---
 
 ## 3. Active Next Steps & Immediate Queue
 
-1. **Production Concurrency Tuning & Benchmarking:**
-   - Benchmark Waitress worker and thread pools against remote stream latency and Cloudflare tunnel limits.
-   - Remote streaming capacity is primarily bounded by ISP upload bandwidth and network tunnel latency.
-
-2. **Access Control & Authentication:**
-   - Prepare lightweight authentication before wider public sharing beyond personal devices.
+1. **Close the public `:8000` origin forward:**
+   - The router forwards 443, 80 **and 8000** to the host, so `http://122.163.124.18:8000/health` answers 200 from the internet, bypassing Caddy and TLS entirely. Port 8000 should not be forwarded.
+2. **Add `Secure` to the session cookie:**
+   - Pre-existing and codebase-wide — `auth.rs:345,405,424,467` and `qr_auth.rs:345` are all identical. Do this *after* the forward above, or LAN clients break.
+3. **Pin a public base URL:**
+   - `get_base_url` in `qr_auth.rs` trusts the `Host` and `X-Forwarded-Proto` request headers, so the emitted `qr_url` is host-header-injectable and defaults to `https` even on a plain-HTTP origin. Add `PUBLIC_BASE_URL` to `AppConfig`.
+4. **Bind `/finalize` to the waiting device:**
+   - It is unauthenticated and keyed only on the `qr_id`. A per-session secret issued at create time would close it.
+5. **Rate-limit the QR endpoints and cap concurrent SSE connections:**
+   - `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per connection, with no auth and no cap, on a publicly reachable endpoint.
+6. **Drop the plaintext `code` column** from `device_pair_sessions`; only `code_hash` is needed for lookup. Needs an `ALTER` on the live table.
+7. **Fix the stale `vite.config.ts` dev proxy** — it still points `/api` at the decommissioned Flask `:8000`, so `npm run dev` fails for every API call.
 
 ---
 
@@ -168,12 +185,38 @@ Note:          C: is not used by this project.
 Before committing changes, execute:
 
 ```powershell
-# Compile validation
-python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+# Rust backend: unit + integration tests (26 targets, 108 unit tests)
+cd E:\MediaServer\rust
+cmd /c "e:\MediaServer\scripts\cargo.bat test --no-fail-fast -- --test-threads=1"
 
-# Automated Test Suite (164 tests)
-.\venv\Scripts\python.exe -m pytest tests/
+# React frontend: unit tests, typecheck, production build
+cd E:\MediaServer\web
+npm run test
+npm run typecheck
+npm run build
+
+# Live client contract probe (22 endpoints)
+python scripts\probe_android_api.py
 ```
+
+### Test database isolation — do not skip this
+
+**The Rust integration suite must never touch the production database.**
+`AppConfig::from_env()` falls back to `postgresql://postgres:postgres@127.0.0.1:5432/media_server`
+when `MEDIA_SERVER_DATABASE_URL` is unset, and on this host it *is* unset. A test built on
+`from_env()` therefore writes to the live catalog.
+
+Use `media_server_api::test_support::test_config().await` instead. It provisions a dedicated
+`media_server_test` database (override with `MEDIA_SERVER_TEST_DATABASE_URL`), redirects the cache
+directory to a temp path, and leaves the media roots alone so file-based contracts still work.
+`seed_real_media_row()` / `remove_seeded_media_row()` seed and remove a catalog row for a real,
+probeable media file when a test needs one.
+
+A test that inserts rows must use `ON CONFLICT … DO UPDATE` **and** purge at setup **and** have an
+explicit `async fn teardown()`. `Drop` cannot clean a database — it is synchronous, the database
+calls are async — and the test should assert the residue count is zero rather than trusting the
+hook. Do not assert against production data: a test that hardcodes a library title breaks when
+that title is removed.
 
 Manual verification checklist:
 1. Direct MP4/AAC playback (*Oculus*, *Spider-Man*).
@@ -184,3 +227,5 @@ Manual verification checklist:
 6. Storage Retention & Cache Governance card on `/manage` reports accurate cache and storage telemetry.
 7. Expanded dropdown options display obsidian frosted glass popups with brand red highlights.
 8. No horizontal or vertical layout overflow on desktop or mobile viewports.
+9. **QR sign-in on a camera-less device:** `/account` shows the QR panel when unauthenticated, the code rotates after 2 minutes, and a phone at `/remotelogin` can complete the pairing and name the device.
+10. **Pair-code entropy:** creating 200 pairing sessions must yield ≥ 190 distinct codes, and the service log must contain neither the code nor a full `qr_id`.

@@ -1,6 +1,19 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-18 (13:50 IST)
+> ## Current session handoff — 2026-10-20 (10:55 IST)
+>
+> **OTT QR Device Sign-In is DELIVERED, HARDENED & VERIFIED.**
+> - **Feature**: OTT-style activation for camera-less devices (smart TVs, browsers, consoles) — six native Rust Axum endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by a PostgreSQL `device_pair_sessions` table, a `<QrSignInPanel>` on `/account`, and a standalone `/remotelogin` page for the phone. The phone signs in and names the device; the TV signs itself in.
+> - **P0 security fix — pair-code entropy collapse**: the 5-character code had **5 bits of entropy, not 25**. All five characters were derived from the low bits of one 64-bit LCG state word, so the code collapsed to 32 possible values. Measured live: 40 sessions produced 15 distinct codes. Since `POST /api/auth/qr/lookup` resolves a code to a live pairing session, any signed-in account could try all 32 and hijack another user's active TV pairing. Now drawn character-by-character from the OS CSPRNG. **Verified live: 200 sessions → 200 distinct codes.**
+> - **P0 security fix — predictable tokens**: `generate_random_token()` hashed a clock-derived seed. It mints session tokens, device tokens, the OAuth `state`/`nonce`, the PKCE `verifier`, and the `qr_id` — the only key to the unauthenticated `/finalize` endpoint. Now 256 bits from the CSPRNG, failing closed.
+> - **P0 security fix — plaintext secrets in the log**: the pair code and the full `qr_id` are no longer logged; only a 12-hex-character reference is.
+> - **P0 fix — the frontend suite was broken**: jsdom implements no `EventSource`, and the error thrown from inside an effect is fatal for that subtree in React, so it tore down the whole account page and failed every assertion in its file (5 failures). `web/src/test/setup.ts` now stubs it. The "Sign in with Admin PIN" accessible name was restored.
+> - **Test-database isolation**: the entire Rust integration suite was running against the **production** `media_server` database, because `AppConfig::from_env()` falls back to it when `MEDIA_SERVER_DATABASE_URL` is unset — and on this host it is. The suite now uses a dedicated `media_server_test` database via the new `rust/src/test_support.rs`. `ensure_schema()` was also creating only 7 of the 13 tables, so a fresh database was half-formed.
+> - **Test idempotency**: `qr_device_auth_flow_test` passed once and then failed on *every* subsequent run with a unique-constraint violation, leaving a phantom user and session in the live catalog. It now purges at setup, has an explicit async teardown, uses `ON CONFLICT`, and asserts zero residue.
+> - **Verification Status**: Rust test battery (**108 unit + 26/26 integration targets green, exit code 0**), React Vitest battery (**248/248 passed**, was 222 passed / 5 failed), TypeScript (**0 errors**), production build (**clean**), Android API probe (**22/22 OK**), live pair-code entropy (**200 → 200 distinct**), production database residue (**0**).
+> - Master Walkthrough: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
+>
+> ## Previous handoff — 2026-10-18 (13:50 IST)
 >
 > **Phase 10 (Native Rust Media Scanner Engine) is 100% COMPLETE & VERIFIED.**
 > - **Objective**: Completely eliminate Python from production runtime by porting `scanner.py` to native Rust.

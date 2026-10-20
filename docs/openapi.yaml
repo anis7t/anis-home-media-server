@@ -10,9 +10,9 @@ info:
     and mobile/Fire TV app distribution.
 servers:
   - url: http://127.0.0.1:8000
-    description: Local development / Host NSSM Waitress WSGI
+    description: Local development / direct origin
   - url: https://media.anisparvez.in
-    description: Production Named Cloudflare Tunnel ingress
+    description: Production ingress (Caddy reverse proxy, Let's Encrypt TLS, static IP)
 
 paths:
   /:
@@ -1573,6 +1573,272 @@ paths:
         "404":
           description: APK artifact not found.
 
+  /remotelogin:
+    get:
+      summary: Phone-Side Remote Login Page
+      description: |
+        Standalone mobile-first page that completes a QR device sign-in. It is served outside the
+        application shell, with no navigation header or footer, so it reads as a focused
+        single-purpose screen.
+
+        Two arrival modes:
+
+        - **QR scan** — the URL carries `qr_id`, `code` and `sig` query parameters, the code is
+          auto-filled and the manual lookup is skipped.
+        - **Manual entry** — the visitor opened the URL themselves and types the 5-character code
+          shown on the TV.
+
+        If the visitor is not signed in, a Google sign-in link is offered. The QR parameters are
+        preserved across that redirect, so the flow resumes where it left off.
+      operationId: getRemoteLoginPage
+      parameters:
+        - name: qr_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Pairing session id, present when arriving via QR scan.
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 5-character pair code, present when arriving via QR scan.
+        - name: sig
+          in: query
+          required: false
+          schema:
+            type: string
+          description: HMAC-SHA256 signature over "qr_id:code", present when arriving via QR scan.
+      responses:
+        "200":
+          description: Remote login page (React SPA shell).
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/auth/qr:
+    post:
+      summary: Create a QR Device Pairing Session
+      description: |
+        Creates an ephemeral pairing session and returns everything the waiting TV needs to
+        display: the session id, the 5-character code, an HMAC signature, and the QR URL to encode.
+
+        The session lives for **2 minutes**. It is renewed silently by the client when it expires,
+        and the previous session is swept from the database.
+
+        The 5-character code is drawn from the unambiguous charset
+        `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no `0`, `O`, `1` or `I`) using the operating system's
+        CSPRNG, giving 25 bits of entropy. The `sig` is
+        `HMAC-SHA256(MEDIA_SERVER_SECRET, "qr_id:code")` and lets a phone that scanned the QR
+        confirm without re-typing the code.
+      operationId: createQrPairSession
+      responses:
+        "200":
+          description: Pairing session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QrPairSession'
+        "500":
+          description: The secure random source was unavailable, so no session was created.
+
+  /api/auth/qr/lookup:
+    post:
+      summary: Resolve a Hand-Typed Pair Code
+      description: |
+        Resolves a manually entered 5-character code to the id of a live, unexpired, unconfirmed
+        pairing session, so the phone can then confirm it.
+
+        **Requires the caller to be signed in.** This is the endpoint that makes a guessable pair
+        code exploitable, so the code must carry real entropy and this endpoint must stay behind
+        authentication.
+      operationId: lookupQrPairCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 5
+                  maxLength: 5
+                  example: K7R2P
+              required: [code]
+      responses:
+        "200":
+          description: Code resolved to a live pairing session.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr_id:
+                    type: string
+                  code:
+                    type: string
+                required: [qr_id, code]
+        "400":
+          description: The code was not exactly 5 characters.
+        "401":
+          description: The caller is not signed in.
+        "404":
+          description: No live pairing session matches that code.
+
+  /api/auth/qr/{id}/wait:
+    get:
+      summary: Await Pairing Confirmation (Server-Sent Events)
+      description: |
+        Long-lived event stream the waiting TV subscribes to. The server pushes a frame every
+        three seconds and closes the stream on a terminal state.
+
+        Frame payloads are the bare strings `pending`, `confirmed` and `expired`.
+
+        The stream is unauthenticated by necessity — the TV is not signed in yet — but the session
+        id is a 256-bit secret, so possession of it is the capability. It is never written to the
+        log in full.
+      operationId: waitQrPairConfirmation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Pairing session id.
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: "data: pending\n\n"
+
+  /api/auth/qr/{id}/status:
+    get:
+      summary: Poll Pairing Session Status
+      description: |
+        JSON polling fallback for networks where the event stream is blocked. Returns the same
+        three states the stream reports.
+      operationId: getQrPairStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Pairing session id.
+      responses:
+        "200":
+          description: Current pairing state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, confirmed, expired]
+                required: [status]
+
+  /api/auth/qr/{id}/confirm:
+    post:
+      summary: Confirm a Pairing as the Signed-In Phone
+      description: |
+        The phone authorises the pairing. It mints a 30-day session for the waiting device, binds
+        the friendly device name the user chose, and marks the session confirmed so the waiting
+        TV's event stream fires.
+
+        **Requires the caller to be signed in** — the session is bound to that account, not to the
+        phone.
+
+        The request may carry either the `code` or the `sig` from the QR URL. The signature is
+        preferred because it cannot be mistyped.
+      operationId: confirmQrPairSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Pairing session id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: The 5-character pair code. Required when `sig` is not supplied.
+                sig:
+                  type: string
+                  description: HMAC signature from the QR URL. When valid, the code check is skipped.
+                device_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 60
+                  example: Living room TV
+              required: [device_name]
+      responses:
+        "200":
+          description: Pairing confirmed; the TV will sign in automatically.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                required: [success, message]
+        "400":
+          description: The session expired, was already confirmed, or the device name was invalid.
+        "401":
+          description: The caller is not signed in, or the submitted code or signature did not match.
+
+  /api/auth/qr/{id}/finalize:
+    get:
+      summary: Finalize the Pairing on the Waiting Device
+      description: |
+        Called by the TV after it observes the `confirmed` event. Issues the 30-day session cookie
+        for the paired account, records the friendly device name against the device, and redirects
+        to the library.
+
+        The redirect is a `307`, so the `Set-Cookie` header is honoured and the browser lands on
+        `/` already signed in.
+
+        This endpoint is **unauthenticated and keyed only on the session id**, which is a 256-bit
+        secret. Possession of the id is therefore the capability, and the id is never written to
+        the log in full.
+      operationId: finalizeQrPairSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Pairing session id.
+      responses:
+        "307":
+          description: Redirect to the library with the session cookie set.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              example: session_token=sess_...; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000
+            Location:
+              schema:
+                type: string
+              example: /
+        "400":
+          description: The session was not confirmed yet, or it had already expired.
+
 components:
   parameters:
     XDeviceIdHeader:
@@ -1584,6 +1850,38 @@ components:
       description: Unique client identifier (e.g. dev_a1b2c3d4) scoping watch progress and presence.
 
   schemas:
+    QrPairSession:
+      type: object
+      description: |
+        A newly created QR pairing session. The session lives for 2 minutes.
+      properties:
+        qr_id:
+          type: string
+          description: Pairing session id. A 256-bit secret, and the only key to the finalize endpoint.
+          example: qr_0ab050b365726ee1441b51e1a2809ef3d52b1ed98cf4c62b464c400842119b1d
+        code:
+          type: string
+          minLength: 5
+          maxLength: 5
+          description: |
+            The 5-character pair code, drawn from the unambiguous charset
+            `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` using the OS CSPRNG. 25 bits of entropy.
+          example: K7R2P
+        sig:
+          type: string
+          description: HMAC-SHA256 over "qr_id:code", keyed with MEDIA_SERVER_SECRET.
+        expires_at:
+          type: integer
+          format: int64
+          description: Unix timestamp at which the session expires.
+        qr_url:
+          type: string
+          description: URL to encode in the QR image. Carries the qr_id, code and signature.
+        login_url:
+          type: string
+          description: Human-readable remote login URL, for devices whose camera cannot be used.
+      required: [qr_id, code, sig, expires_at, qr_url, login_url]
+
     PwaManifest:
       type: object
       properties:

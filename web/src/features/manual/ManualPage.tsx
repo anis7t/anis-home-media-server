@@ -341,6 +341,58 @@ export function ManualPage() {
             </NavLink>
           </div>
         </div>
+
+        {/* QR device sign-in — for camera-less devices with no keyboard */}
+        <div className="space-y-4 border-t border-white/10 pt-5">
+          <div>
+            <h3 className="text-sm font-bold text-white">QR Sign-In (TVs &amp; Browsers Without a Keyboard)</h3>
+            <p className="mt-1 text-xs text-white/50 leading-relaxed">
+              The pairing token above is for the Android / Fire TV app. A smart TV's built-in browser, a
+              console or a desktop PC you cannot reach with a keyboard uses the industry-standard
+              activation-code flow instead.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400 font-bold">
+                1
+              </span>
+              <h3 className="font-bold text-sm text-white">Show the Code</h3>
+              <p className="text-white/60 leading-relaxed">
+                Open <strong>Account &amp; Devices</strong> on the TV. A QR image and a 5-character code
+                appear automatically, with a 2-minute countdown.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400 font-bold">
+                2
+              </span>
+              <h3 className="font-bold text-sm text-white">Approve on a Phone</h3>
+              <p className="text-white/60 leading-relaxed">
+                Scan the QR with your phone, or type the code at{' '}
+                <strong>media.anisparvez.in/remotelogin</strong>. Sign in, then name the device.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400 font-bold">
+                3
+              </span>
+              <h3 className="font-bold text-sm text-white">It Signs Itself In</h3>
+              <p className="text-white/60 leading-relaxed">
+                The TV signs in on its own, lands on the library, and adopts the name you chose.
+              </p>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-white/40 leading-relaxed">
+            The code omits lookalike characters (<span className="font-mono">0 O 1 I</span>) so it can
+            be read aloud without ambiguity. If the countdown finishes, the code rotates
+            automatically — just use the new one.
+          </p>
+        </div>
       </section>
 
       {/* 5. Subtitles & Dual-Axis Positioning */}

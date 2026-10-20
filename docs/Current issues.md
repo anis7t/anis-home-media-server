@@ -1,6 +1,9 @@
 # Resolution Log — Current Issues (October 2026)
 
-All 7 architectural, authentication, telemetry, and performance issues recorded in this document have been systematically addressed, tested, and resolved across 4 planned implementation phases.
+All 9 architectural, authentication, telemetry, performance and security issues recorded in this
+document have been systematically addressed, tested, and resolved across 5 phases. Issues 1–7 were
+reported by the user; issues 8 and 9 were found by a verification pass over the QR device sign-in
+feature.
 
 ---
 
@@ -63,3 +66,65 @@ All 7 architectural, authentication, telemetry, and performance issues recorded 
   - **Client Presence Telemetry Privacy Scoping (`app/routes/api.py` & `DevicesPage.tsx`):** `GET /api/devices` filters the device list strictly to the caller's current device (`is_current == True`) when unauthorized as admin, concealing other household IP addresses and active sessions. Displays an informative amber privacy scoping banner with an **"Unlock Fleet Telemetry"** button.
   - **Device Rename / Delete Route Protection:** `POST /api/devices/rename` and `POST /api/devices/delete` reject attempts by non-admins to alter or forget any device other than their own current device (`device_id == current_device_id()`).
   - **Backend Endpoint Hardening:** Added admin authorization requirements to `POST /api/scan`, `POST /upload`, `POST /upload/chunk/init`, and `GET /api/storage/audit`.
+
+---
+
+### Issue 8: OTT QR Device Sign-In — Verification Findings (2026-10-20)
+
+The QR device sign-in feature was implemented, the Rust integration test passed, and the frontend
+bundle compiled cleanly. A verification pass found **four defects and two behavioural bugs** that
+none of those checks could see.
+
+- **Reported:** *(found by review, not by the user)* — the feature's own test suite was green.
+- **Resolution:**
+  - **P0 — The 5-character pair code had 5 bits of entropy, not 25.** All five characters came
+    from the low bits of a single LCG state word, so the whole code collapsed to **32 possible
+    values**. Measured live: 40 sessions produced 15 distinct codes. Because
+    `POST /api/auth/qr/lookup` resolves a code to a live pairing session, any signed-in account
+    could try all 32 and hijack another user's active TV pairing. Now drawn character-by-character
+    from the OS CSPRNG. **Verified live: 200 sessions → 200 distinct codes.**
+  - **P0 — Every security token was seeded from the clock.** `generate_random_token()` hashed
+    `nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`, which is guessable to anyone who can narrow
+    the creation time. It mints session tokens, device tokens, the OAuth `state`/`nonce`, the PKCE
+    `verifier`, and the `qr_id` — the *only* key to the unauthenticated `/finalize` endpoint. Now
+    256 bits from the CSPRNG, failing closed.
+  - **P0 — The pair code and the full `qr_id` were logged in plaintext.** Anyone who could read the
+    service log could claim the paired television's session. The log now carries a 12-hex-character
+    reference only.
+  - **P0 — The frontend suite was broken.** jsdom implements no `EventSource`, and the error thrown
+    from inside an effect is fatal for that subtree in React — so it tore down the whole account
+    page and failed *every* assertion in that file (5 failures). `web/src/test/setup.ts` now stubs
+    it, and the "Sign in with Admin PIN" accessible name was restored.
+  - **The QR panel flashed for signed-in users** and fired `POST /api/auth/qr` on every
+    account-page visit, creating a server-side pair session each time. It was gated on
+    `!authenticated` alone, which is false for everyone while the auth request is in flight. Now
+    gated on `!authLoading && !authenticated`.
+  - **StrictMode created two pair sessions per expiry** — the expiry check lived inside a
+    `setState` updater, which React deliberately double-invokes in development.
+  - **The whole Rust integration suite was writing to the production database.** It now uses a
+    dedicated `media_server_test` database via `rust/src/test_support.rs`. `ensure_schema()` was
+    also creating only 7 of the 13 tables, so a fresh database was half-formed.
+
+Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
+
+---
+
+### Issue 9: The Rust Integration Suite Wrote to the Production Database (2026-10-20)
+
+- **Reported:** *(found by review)* — every test built its config with `AppConfig::from_env()`,
+  which falls back to `postgresql://postgres:postgres@127.0.0.1:5432/media_server` when
+  `MEDIA_SERVER_DATABASE_URL` is unset. On this host it **is** unset.
+- **Resolution:**
+  - **Dedicated test database.** `media_server_api::test_support::test_config()` provisions
+    `media_server_test`, redirects the cache directory to a temp path, and leaves the media roots
+    alone so file-based contracts still work.
+  - **Idempotent, self-cleaning tests.** `qr_device_auth_flow_test` had inserted a user with a
+    plain `INSERT` and never removed it, so it passed once and then failed on **every** subsequent
+    run with `23505 duplicate key value violates unique constraint "users_google_sub_key"`, leaving
+    a phantom user and session in the live catalog. It now purges at setup, has an explicit async
+    teardown, uses `ON CONFLICT`, and asserts the residue count is zero.
+  - **No assertions against production data.** The scanner reconciliation test hardcoded a
+    library title, so it broke if that title was removed. It now owns its fixture.
+  - **The two residue rows** left in the live catalog by an earlier run were removed.
+  - **Verified:** a full suite run leaves the production database byte-identical — 0 residue rows,
+    33 movies unchanged.

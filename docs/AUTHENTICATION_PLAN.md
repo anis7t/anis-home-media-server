@@ -147,6 +147,28 @@ must remain so in the code, i.e. it may scope *data* (watch history) but never g
 - The signature covers the **exact path**, so a token for one title cannot be edited
   into another.
 
+### 3.4 QR Device Sign-In — delivered 2026-10-20
+
+A fourth credential class, added after the three above were in place. It is **not** a new kind of
+credential — it is a *transport* for a class 1 (server session cookie), aimed at the devices that
+can do neither a Google consent screen nor a keyboard.
+
+- The TV or browser asks for a **pairing session** and displays a 5-character code and a QR image.
+- The phone, which *does* have a keyboard, signs in normally and authorises the pairing.
+- The TV is then issued a **30-day server session cookie**, bound to the account that authorised
+  it — not to the phone.
+
+Why it needed its own care: the 5-character code is a bearer credential for the pairing session.
+It is the *only* thing standing between an attacker and a hijacked TV session, because
+`POST /api/auth/qr/lookup` resolves a code to a live pairing session. The delivered implementation
+originally collapsed to 32 possible codes (5 bits) through a flawed LCG, which would have made the
+lookup endpoint an account-takeover oracle for anyone with any signed-in account — including a
+viewer-role one. It now carries **25 bits** from the OS CSPRNG, and the lookup and confirm
+endpoints both require an authenticated caller.
+
+The full design, the defect analysis and the verification record are in
+[`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
+
 ## 4. Schema additions
 
 ```sql

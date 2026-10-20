@@ -12,12 +12,12 @@ This document records the complete Windows development and production environmen
 - **Upload Staging:** `D:\Flicks\.uploads`
 - **Deleted-Source Staging:** `D:\Flicks\.deleted`
 - **Transcode Cache:** `E:\MediaServer\cache\hls` (Storage Pool telemetry aggregates `D:` + `E:`)
-- **SQLite Database:** `E:\MediaServer\media.db`
+- **PostgreSQL Data:** `E:\pgdata` (binaries at `C:\postgres`)
 - **Environment File:** `E:\MediaServer\.env`
-- **Virtual Environment:** `E:\MediaServer\venv`
-- **Python Version:** 3.14.3
+- **Rust Toolchain:** 1.85+ (MSRV 2021 edition)
+- **Node.js:** 20+ (for the `web/` React SPA build)
 - **FFmpeg:** 9.0.1 essentials build with AMD AMF & D3D11va
-- **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
+- **Caddy:** `E:\MediaServer\bin\caddy_custom.exe` (Cloudflare DNS module)
 
 ```powershell
 cd E:\MediaServer
@@ -40,9 +40,9 @@ The Windows host features two AMD graphics processors:
 > ```
 
 ### Dynamic Multi-GPU Transcoding Architecture
-- Managed by `app/services/gpu_service.py` and `app/services/chunk_transcode_service.py`.
+- Managed natively in Rust by `rust/src/transcode/` — `engine.rs`, `planner.rs`, `queue.rs`, `sweeper.rs` — with the AMF VPP filters in `rust/src/services/gpu.rs`.
 - Both GPUs transcode separate, keyframe-aligned segments concurrently.
-- Real-time engine loads for both GPUs are tracked via Windows Performance Counters / PyNVML and displayed on the System Telemetry HUD.
+- Real-time engine loads for both GPUs are tracked via Windows Performance Counters and displayed on the System Telemetry HUD.
 - Polling cadence is set to 1 second for live progress, speed, and ETA calculations.
 
 ---
@@ -90,40 +90,75 @@ Registered via `pg_ctl register` (`scripts\move_pg_to_c.ps1`):
 - **Management Scripts:** `scripts\start_postgres.bat`, `scripts\stop_postgres.bat` (prefer `C:\postgres`, fall back to `E:\postgres`)
 - **Database Backup:** `scripts\backup_postgres.bat` (invokes `scripts\backup_postgres.ps1`, generating timestamped, compressed custom-format dumps in `E:\MediaServer\backups\postgres\` with 7-backup automatic rotation pruning)
 
-### C. Cloudflared (Remote Named Tunnel)
-Runs as an automatic Windows Service pointing to `C:\Users\<USER>\.cloudflared\config.yml`:
-- **Hostname:** `your-media-hostname.example.com`
-- **Origin:** `http://127.0.0.1:8000`
+### C. MediaServerCaddy (Reverse Proxy & TLS Terminator) — Active
+Runs as an automatic Windows Service, fronting the Rust origin with a Let's Encrypt certificate:
+- **Caddy binary:** `E:\MediaServer\bin\caddy_custom.exe` (built with the Cloudflare DNS module for the DNS-01 challenge)
+- **Config:** `E:\MediaServer\Caddyfile` — **untracked / gitignored**, because it contains a live Cloudflare API token
+- **Listener:** ports 80 and 443, TLS 1.3, reverse-proxying to `http://127.0.0.1:8000`
+- **Hostname:** `media.anisparvez.in` → the Airtel Xstream Fiber static IP `122.163.124.18`
+- **Certificate:** Let's Encrypt, issued via an automated DNS-01 challenge, renewed in the background
+- **Streaming:** unbuffered HTTP/2 and HTTP/3, and Server-Sent Events (`text/event-stream`) are proxied without delay — which the QR sign-in wait stream depends on
 
-If DNS retains stale CNAME records from an earlier tunnel, update dynamically using:
-```powershell
-cloudflared.exe tunnel route dns --overwrite-dns <TUNNEL_NAME_OR_UUID> your-media-hostname.example.com
+```text
+media.anisparvez.in {
+    tls {
+        dns cloudflare <API_TOKEN>
+    }
+    reverse_proxy 127.0.0.1:8000
+}
 ```
+
+> **The Cloudflare named tunnel is decommissioned.** The `cloudflared` Windows service has been
+> removed, and the Cloudflare DNS record for `media.anisparvez.in` is DNS-only, pointing straight at
+> the static IP. Cloudflare is still used for **DNS hosting and the DNS-01 challenge only** — it is
+> no longer in the traffic path.
 
 ---
 
 ## 4. UI & Playback Polish
 
-- **Live Seek Hover Previews:** Frame thumbnails are dynamically extracted on-demand via `app/services/preview_service.py` using fast input-seeking (`-ss` before `-i`) and cached in `cache/previews/`.
+- **Live Seek Hover Previews:** Frame thumbnails are dynamically extracted on demand by the native Rust `rust/src/services/preview_service.rs`, using fast input-seeking (`-ss` before `-i`) and cached in `cache/previews/`.
 - **Player Controls:** 36px circular control buttons, prominent 21px SVG icons, 4px vertical breathing room in `.controls-row` preventing top focus truncation.
 - **Native Dark Selects:** `color-scheme: dark !important;` prevents white-on-white dropdown rendering in Windows Chromium.
 - **Hold-to-Speed Removed:** Fast-forward hold gestures removed from pointer listeners and modal cheat-sheet.
 - **Upload Lifecycle:** Abort button hidden immediately upon 100% upload completion; animated cycling card shows background ingestion status (*Probing...*, *TMDb...*, *Posters...*, *Subtitles...*).
+- **QR Device Sign-In Panel:** `/account` shows an OTT-style activation panel (QR image, 5-character code, countdown ring, manual URL) whenever the visitor is not signed in, so a TV or browser can be signed in from a phone. Full context in [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 - **Dual-Disk Tiered Storage Architecture:**
   - `D:\Flicks\.uploads`: Staging area for resumable chunked uploads on secondary high-capacity drive, protecting primary `C:` SSD from 10–20 GB upload exhaustion.
   - `D:\Flicks`: Main raw video storage repository for completed uploads.
   - `D:\Flicks\.archive`: Cold source retention repository on secondary drive (215+ GB free pool), automatically populated when movies reach 100% verified HLS transcoding or via one-click **📦 Archive** action on `/manage`.
   - `D:\Flicks\.deleted`: **Staging area for deleted source files** (via `delete_source` retention policy). When a transcoded movie's source is deleted, it's moved here instead of truncated to 0 bytes, preserving recoverability until manual cleanup.
   - `E:\MediaServer\cache\hls`: Scratch shelter for in-progress transcode chunk generation and high-speed SSD playback of 100% verified HLS segments.
-  - Python `shutil.move()` ensures safe atomic cross-drive file relocation across Windows filesystem boundaries without `[WinError 17]`.
+  - Cross-drive file relocation uses `shutil.move()`-equivalent semantics in Rust with target-collision pre-unlinking, to avoid `[WinError 17]`.
   - Automated orphaned cache purge cleans unreferenced chunks on startup and every 2 hours via background daemon.
 
 ---
 
 ## 5. Active Next Steps & Engineering Tasks
 
-1. **Production Concurrency Tuning & Benchmarks:**
-   Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent multi-device playback.
-2. **Cloudflare Media Delivery Review:**
-   Review Cloudflare service-specific video delivery policies before scaling remote public distribution.
+1. **Close the public `:8000` origin forward.**
+   The router currently forwards 443, 80 **and 8000** to the host. Port 8000 exposes the Rust
+   origin directly over plain HTTP, bypassing Caddy and TLS, so `session_token` can cross the
+   public internet in the clear. Remove the 8000 forward so TLS is mandatory.
+2. **Add `Secure` to the session cookie.**
+   Pre-existing and codebase-wide — `auth.rs:345,405,424,467` and `qr_auth.rs:345` are all
+   identical. Do this *after* item 1, or LAN clients break.
+3. **Pin a public base URL for the QR sign-in flow.**
+   `get_base_url` in `qr_auth.rs` trusts the `Host` and `X-Forwarded-Proto` request headers, so the
+   emitted `qr_url` is host-header-injectable and defaults to `https` even on a plain-HTTP origin.
+   Add `PUBLIC_BASE_URL` to `AppConfig`.
+4. **Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.**
+   It is unauthenticated and keyed only on the `qr_id`. A per-session secret issued at create time
+   would close it.
+5. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
+   `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
+   connection, with no auth and no cap, on a publicly reachable endpoint.
+6. **Drop the plaintext `code` column** from `device_pair_sessions`; only `code_hash` is needed for
+   lookup. Needs an `ALTER` on the live table.
+7. **Rotate and restrict the Cloudflare API token** in `E:\MediaServer\Caddyfile`. It is a live
+   credential with DNS-management rights for the hostname, stored in plaintext on disk. The file is
+   correctly gitignored, but the token should still be scoped and rotated.
+
+> Full context for the QR sign-in feature and its hardening:
+> [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 

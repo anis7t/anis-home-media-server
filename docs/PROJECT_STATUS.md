@@ -15,7 +15,7 @@ Active branch: `feat/rust-react-postgres-migration`
 | Phase | Title | Status |
 |:---:|---|:---:|
 | 0 | Architecture Audit | ✅ COMPLETE — [`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md) |
-| 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
+| 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), contract tests now native Rust: [`rust/tests/api_contracts_test.rs`](../rust/tests/api_contracts_test.rs) (`b007944`; Python suite retired in Slice 7E) |
 | 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 172 Vitest tests passing |
 | 3 | PostgreSQL Migration | ✅ COMPLETE — Automated migration utility (`scripts/migrate_sqlite_to_postgres.py`) with 100% row parity (852/852 rows), dual psycopg 3 adapter with parameter tokenization & ON CONFLICT translation, 26/26 real-PG integration tests, all core suites verified |
 | 4 | Rust API Foundation | ✅ COMPLETE — Modular Rust Axum/Tokio/SQLx crate (`rust/`) with PostgreSQL 18.4 connection pool, health endpoints, movies catalog, system telemetry, and structured tracing |
@@ -92,6 +92,7 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **Automated Integration Test**: Added `qr_device_auth_flow_test` in [`rust/tests/auth_flow_test.rs`](../rust/tests/auth_flow_test.rs) validating end-to-end flow with PostgreSQL (100% pass).
 
 11. **QR Sign-In Security, Test-Isolation & Coverage Hardening** — ✅ **RESOLVED (2026-10-20)**:
+   - **Full walkthrough:** [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md) — the complete feature design, the four defects that shipped with it, the test-database isolation work, and the verification record.
    - **Pair-code entropy collapse (P0, security)**: `generate_pair_code()` derived all five characters from one 64-bit LCG, taking `seed % 32` per step. Because the LCG's multiplier and increment are both odd, the low 5 bits of every step depend only on the low 5 bits of the first one — so the whole code collapsed to **32 possible values (5 bits)** instead of 32^5 (25 bits). Measured on the running server: 40 sessions produced 15 distinct codes. Since `POST /api/auth/qr/lookup` resolves a code to a live pairing session, any signed-in account could try all 32 and hijack another user's active TV pairing. Now drawn character-by-character from the OS CSPRNG (`getrandom`), failing closed if the random source is unavailable. Verified live: **200 sessions → 200 distinct codes**.
    - **Predictable session tokens (P0, security)**: `generate_random_token()` hashed a clock-derived seed (`nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`) — guessable to anyone who could narrow the creation time. It mints `sess_` session tokens, `ms_` device tokens, the OAuth `state`/`nonce`, the PKCE `verifier`, and the `qr_id` that is the only key to the unauthenticated `/finalize` endpoint. Now 256 bits from `getrandom`, failing closed.
    - **Pair code and `qr_id` logged in plaintext (P0, security)**: `info!("QR: created pair session qr_id={} code={}")` handed an account-takeover token to every log reader. The log now carries a 12-hex-character reference that is neither the code nor the full id.
@@ -209,7 +210,7 @@ all 200.
 
 ### 2026-10-14 — Production Concurrency Tuning & Remote Streaming Benchmark (Waitress WSGI & Cloudflare Tunnel)
 
-**1. Cross-Platform Concurrency Benchmark Engine ([`scripts/benchmark_streaming.py`](../scripts/benchmark_streaming.py))**
+**1. Cross-Platform Concurrency Benchmark Engine** *(harness `scripts/benchmark_streaming.py` — retired with the Flask backend in Slice 7E; the measurements live on in [`docs/STREAMING_BENCHMARK_REPORT.md`](STREAMING_BENCHMARK_REPORT.md))*
 - Developed an automated benchmark suite tailored for Windows 11 host architecture and the production Waitress WSGI server (PID 17644) under NSSM.
 - Evaluated 3 distinct workload profiles across concurrency levels 1, 2, 4, 8, 12, 16:
   - **Direct RFC 7233 Byte-Range Streaming:** Simulates full 1080p MP4/AAC playback via staggered 2 MB byte-range chunks across *2001: A Space Odyssey* (2.44 GB).
@@ -235,7 +236,7 @@ all 200.
 
 ### 2026-10-14 — Database Backup, Recovery & Disaster Runbook (Phase 3 Blocker Resolved)
 
-**1. Crash-Safe Online SQLite WAL Backup Engine ([`app/services/backup_service.py`](../app/services/backup_service.py))**
+**1. Crash-Safe Online SQLite WAL Backup Engine** *(SQLite-era engine, retired with the Flask backend in Slice 7E — the current mechanism is [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1))*
 - Implemented zero-lock online SQLite database backup using the native SQLite Online Backup API (`source_conn.backup(dest_conn, pages=100)`). Transfers data page-by-page without blocking concurrent HTTP readers or writers, incorporating all committed WAL frames into a defragmented single-file database.
 - Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, `auth_tokens`, etc.).
 - Integrated configurable retention rotation (`prune_backups()`, default: retain 7 newest) safely pruning older snapshots and matching manifests.
@@ -247,13 +248,13 @@ all 200.
 - Post-validates the restored database with `PRAGMA integrity_check` and ensures `PRAGMA journal_mode=WAL` is active.
 
 **3. CLI Automation & Windows Scheduled Task Batch Script**
-- Created CLI utilities [`scripts/backup_database.py`](../scripts/backup_database.py) and [`scripts/restore_database.py`](../scripts/restore_database.py) with options for target directories, labels, retention counts, JSON output, and interactive confirmation prompts.
-- Created [`scripts/backup_database.bat`](../scripts/backup_database.bat) for one-click backups and Windows Task Scheduler automated daily execution.
-- Added `BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()` to [`app/config.py`](../app/config.py) and added `backups/` to [`.gitignore`](../.gitignore).
+- Created CLI utilities `scripts/backup_database.py` and `scripts/restore_database.py` *(both retired with the SQLite backend in Slice 7E; superseded by [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) and [`scripts/backup_postgres.bat`](../scripts/backup_postgres.bat))* with options for target directories, labels, retention counts, JSON output, and interactive confirmation prompts.
+- Created `scripts/backup_database.bat` *(retired — see above)* for one-click backups and Windows Task Scheduler automated daily execution.
+- Added `BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()` to `app/config.py` *(now `rust/src/config.rs`)* and added `backups/` to [`.gitignore`](../.gitignore).
 
 **4. Comprehensive Master Runbook & Verification Suite**
-- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return).
-- Authored test suite [`tests/test_backup_restore.py`](../tests/test_backup_restore.py) passing 8/8 tests with 100% coverage.
+- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return). *(The runbook documents the retired SQLite engine; the PostgreSQL backup procedure is `scripts/backup_postgres.ps1`.)*
+- Authored test suite `tests/test_backup_restore.py` *(retired with the SQLite backend)* passing 8/8 tests with 100% coverage.
 - Captured live host baseline backup (`E:\MediaServer\backups\media_backup_20261014_160426_pre-migration-baseline.db`, 516,096 bytes, SHA-256 `f5287598106a...`, 852 rows) and successfully verified with an end-to-end recovery drill.
 
 ### 2026-10-14 — Issues 1–7 Resolution & Comprehensive User Manual Overhaul

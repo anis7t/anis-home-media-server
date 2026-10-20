@@ -1,8 +1,8 @@
 # Anis' Home Media Server
 
-A modern, high-performance, self-hosted **personal home media server** built with **Rust (Axum)**, **React 19**, and **PostgreSQL 18** for streaming a private movie library over a local network, with secure, CGNAT-compatible remote access through Cloudflare Named Tunnels.
+A modern, high-performance, self-hosted **personal home media server** built with **Rust (Axum)**, **React 19**, and **PostgreSQL 18** for streaming a private movie library over a local network, with secure remote access over a static public IP behind **Caddy** and Let's Encrypt TLS.
 
-The platform includes 100% native Rust routes, services, background workers, PostgreSQL persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, native subtitle extraction with automatic language detection, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.
+The platform includes 100% native Rust routes, services, background workers, PostgreSQL persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, native subtitle extraction with automatic language detection, OTT-style QR device sign-in for camera-less devices, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.
 
 > **Current status:** Fully modernized and functional home media server. 100% native Rust Axum backend on port 8000 (`MediaServerRust`), React 19 SPA frontend (`web/dist/`), PostgreSQL 18.4 database (`MediaServerPG`), hardware-accelerated transcoding utilizing dual AMD GPUs (Radeon RX 560X + Vega 8), live seek preview thumbnails, and persistent background Windows Services. See [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) for the active engineering status record and [`docs/MANUAL.md`](docs/MANUAL.md) for the comprehensive user manual.
 
@@ -29,6 +29,7 @@ the verified publishing and deployment procedure.
   - [Metadata, Posters & Forensic Resolver](#metadata-and-library)
   - [Resumable Chunked Uploads](#uploads)
   - [Connected Device Telemetry](#connected-devices)
+  - [QR Device Sign-In (TV & Browser)](#qr-device-sign-in)
   - [Dual-Drive Storage Tiering & Cache Retention](#dual-drive-storage-tiering)
   - [Stats for Nerds & Multi-GPU Telemetry](#stats-for-nerds)
 - [Architecture](#architecture)
@@ -38,7 +39,7 @@ the verified publishing and deployment procedure.
   - [Windows 11 Production (NSSM Services)](#windows-hosting)
   - [Linux / Debian / Kali Hosting](#linux--kali--debian-family)
 - [Configuration (.env)](#configuration)
-- [Remote Access via Cloudflare Tunnel](#remote-access)
+- [Remote Access via Static IP & Caddy](#remote-access)
 - [Active Roadmap & Next Steps](#active-roadmap--next-steps)
 - [Testing & Invariants](#testing)
 - [License and Attribution](#license-and-attribution)
@@ -132,7 +133,7 @@ The YouTube-style layered seek bar (`web/src/components/LayeredSeekBar.tsx`) vis
 
 ## Uploads
 
-- **Resumable Chunked Transfers:** Upload multi-gigabyte files reliably over WAN or Cloudflare connections.
+- **Resumable Chunked Transfers:** Upload multi-gigabyte files reliably over WAN or LAN connections.
 - **Smoothed Transfer Telemetry:** Exponential moving average transfer rate calculation with accurate remaining ETA.
 - **Post-Upload Abort Concealment:** Immediately hides the Cancel/Abort button upon 100% upload completion to guard server-side processing.
 - **Dynamic Ingestion Progress Card:** Displays animated cycling status labels (*Probing video stream...*, *Querying TMDb...*, *Caching posters...*, *Synchronizing subtitles...*) while backend workers index the media.
@@ -146,6 +147,26 @@ The `/devices` telemetry dashboard provides full visibility into connected clien
 - Network classification (Local LAN vs Remote WAN, public IP, ISP/ASN organization).
 - Visibility-aware keepalive heartbeats and `sendBeacon` departure telemetry.
 - Friendly device renaming, active/offline filtering, and per-device watch history.
+
+---
+
+## QR Device Sign-In
+
+OTT-style activation for camera-less devices — smart TVs, desktop browsers, consoles — the same
+idea as the Netflix / YouTube TV *"enter this code on your phone"* screen.
+
+- **On the TV or browser:** `/account` shows a QR image, a 5-character code, and a 2-minute
+  countdown ring. No keyboard required.
+- **On the phone:** scan the QR (or type the code at `media.anisparvez.in/remotelogin`), sign in,
+  and name the device — *"Living Room TV"*. The TV signs itself in.
+- **Native implementation:** six Rust Axum endpoints under `/api/auth/qr/*` backed by a
+  PostgreSQL `device_pair_sessions` table, with a Server-Sent-Events push stream and a JSON
+  polling fallback.
+- **Security:** every token — the pair code, the session id, the session cookie, the OAuth
+  state/nonce, the PKCE verifier — is drawn from the operating system's CSPRNG and fails closed if
+  the random source is unavailable. The pair code carries 25 bits of entropy.
+
+Full detail: [`docs/QR_SIGNIN_WALKTHROUGH.md`](docs/QR_SIGNIN_WALKTHROUGH.md).
 
 ---
 
@@ -174,8 +195,8 @@ Technical HUD (`n` / `N` key) reporting:
 Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
                    │
                    ▼
-       Cloudflare Named Tunnel (media.anisparvez.in)
-                   │
+       Caddy Reverse Proxy (80/443, Let's Encrypt TLS) [MediaServerCaddy]
+                   │  (Airtel static IP 122.163.124.18 -> media.anisparvez.in)
                    ▼
        Rust Axum Server (127.0.0.1:8000) [MediaServerRust NSSM Service]
                    │
@@ -184,8 +205,9 @@ Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
  React 19 SPA   API Router                  Transcode Engine
  (web/dist/)    ├─ api.rs (catalog/system)  ├─ planner.rs
                 ├─ auth.rs (pin/session)    ├─ queue.rs
-                ├─ media.rs (RFC 7233)      ├─ engine.rs (dual-GPU)
-                ├─ hls.rs (fMP4/quality)    └─ sweeper.rs
+                ├─ qr_auth.rs (QR sign-in)  ├─ engine.rs (dual-GPU)
+                ├─ media.rs (RFC 7233)      └─ sweeper.rs
+                ├─ hls.rs (fMP4/quality)
                 ├─ subtitles.rs (native)
                 ├─ download.rs (APK stream)
                 └─ manage.rs (storage)
@@ -211,13 +233,14 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 - PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
-- Static Public IP (`106.222.224.208`) with Router Port Forwarding (`8000` -> `192.168.1.16:8000`).
+- Static Public IP (`122.163.124.18`, Airtel Xstream Fiber) with Router Port Forwarding (`443`, `80` → `192.168.1.16`). ⚠️ Port `8000` is currently forwarded too and should be removed — it exposes the origin over plain HTTP, bypassing Caddy and TLS.
 
 ### Persistent Services via NSSM
 The server runs persistently as automatic Windows Services:
 1. **MediaServerRust**: Native Rust Axum binary (`rust\target\release\media-server-api.exe`) listening on `0.0.0.0:8000`.
-2. **MediaServerPG**: PostgreSQL 18.4 server listening on `127.0.0.1:5432`.
-3. **Public Ingress**: Direct WAN routing via Static IP (`106.222.224.208`) and A-record `media.anisparvez.in`.
+2. **MediaServerCaddy**: Reverse proxy and TLS terminator on `80`/`443`, fronting `127.0.0.1:8000` with a Let's Encrypt certificate.
+3. **MediaServerPG**: PostgreSQL 18.4 server listening on `127.0.0.1:5432`.
+4. **Public Ingress**: Direct WAN routing via Static IP (`122.163.124.18`) and A-record `media.anisparvez.in`.
 
 ### Service Control
 - Restart Server: `scripts\restart_rust_service.bat`
@@ -265,12 +288,21 @@ MEDIA_SERVER_ENABLE_AMF=1
 
 # Remote Access
 
-Remote access is powered by a named Cloudflare Tunnel:
+Remote access is powered by a **static public IP** fronted by **Caddy**:
+
 ```text
-Hostname: media.anisparvez.in
+Hostname: media.anisparvez.in  (A-record -> 122.163.124.18, Airtel Xstream Fiber)
+Ingress:  Caddy on 80/443, Let's Encrypt TLS 1.3 (DNS-01 challenge, auto-renewed)
 Origin:   http://127.0.0.1:8000
-Service:  Cloudflared (Automatic Windows Service)
+Service:  MediaServerCaddy (Automatic Windows Service)
 ```
+
+Caddy provides unbuffered HTTP/2 and HTTP/3 streaming and proxies Server-Sent Events
+(`text/event-stream`) without delay — which the QR sign-in wait stream depends on.
+
+> The **Cloudflare named tunnel is decommissioned**. The `cloudflared` service has been removed and
+> the DNS record is DNS-only. Cloudflare is still used for DNS hosting and the DNS-01 challenge
+> only; it is no longer in the traffic path.
 
 ---
 
@@ -279,6 +311,7 @@ Service:  Cloudflared (Automatic Windows Service)
 The architecture is **100% modernized**:
 - **Phase 0–9 + Slice 7E Delivered**: Full native Rust Axum backend, React 19 SPA, PostgreSQL 18.4 persistence, adaptive fMP4 streaming with dynamic quality ladder, client capability probing, and complete decommissioning of legacy Flask/Waitress code.
 - **Client Stability**: Preserved 100% contract compatibility for the universal Android / Fire TV client (`scripts/probe_android_api.py`).
+- **Public Ingress**: Migrated from the Cloudflare named tunnel to a direct static IP with Caddy and Let's Encrypt TLS.
 
 ---
 
@@ -287,12 +320,14 @@ The architecture is **100% modernized**:
 Run the automated test battery:
 
 ```powershell
-# 1. Rust backend unit & integration tests
-cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+# 1. Rust backend unit & integration tests (26 targets, 108 unit tests)
+cd E:\MediaServer\rust
+cmd /c "e:\MediaServer\scripts\cargo.bat test --no-fail-fast -- --test-threads=1"
 
 # 2. React frontend unit tests and production build verification
 cd web
 npm run test
+npm run typecheck
 npm run build
 cd ..
 
@@ -300,6 +335,12 @@ cd ..
 python scripts/probe_android_api.py
 python scripts/probe_phase_8_contracts.py
 ```
+
+> **The Rust integration suite uses a dedicated `media_server_test` database**, never the production
+> one. `AppConfig::from_env()` falls back to the production database when
+> `MEDIA_SERVER_DATABASE_URL` is unset — and on this host it is — so tests must be built on
+> `media_server_api::test_support::test_config()` instead. See
+> [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) §4.
 
 ---
 

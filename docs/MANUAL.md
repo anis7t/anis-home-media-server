@@ -15,7 +15,7 @@ This document serves as the authoritative, end-to-end operator manual and user g
    - [Web Browser (Desktop, Mobile & Tablet)](#web-browser-desktop-mobile--tablet)
    - [Universal Android Client (Phone, Fire TV Stick 4K & Android TV)](#universal-android-client-phone-fire-tv-stick-4k--android-tv)
    - [Local Network Streaming (LAN)](#local-network-streaming-lan)
-   - [Remote Access via Cloudflare Named Tunnel (WAN)](#remote-access-via-cloudflare-named-tunnel-wan)
+   - [Remote Access via Static IP & Caddy (WAN)](#remote-access-via-static-ip--caddy-wan)
    - [Progressive Web App (PWA) Installation](#progressive-web-app-pwa-installation)
 3. [Authentication, Roles & Security Policies](#3-authentication-roles--security-policies)
    - [Guest Mode vs Google Authentication](#guest-mode-vs-google-authentication)
@@ -25,6 +25,7 @@ This document serves as the authoritative, end-to-end operator manual and user g
 4. [Device Pairing, Tokens & Fleet Privacy](#4-device-pairing-tokens--fleet-privacy)
    - [The Passwordless TV Pairing Model](#the-passwordless-tv-pairing-model)
    - [How to Pair a TV or Secondary Device (Step-by-Step)](#how-to-pair-a-tv-or-secondary-device-step-by-step)
+   - [OTT QR Device Sign-In (TV & Browser)](#ott-qr-device-sign-in-tv--browser)
    - [Token Lifespans & Auto-Recovery](#token-lifespans--auto-recovery)
    - [Fleet Presence Privacy Scoping & Admin Unlock](#fleet-presence-privacy-scoping--admin-unlock)
 5. [Watch Progress, Resume Sync & Watch History](#5-watch-progress-resume-sync--watch-history)
@@ -61,7 +62,7 @@ This document serves as the authoritative, end-to-end operator manual and user g
     - [Configurable Retention Policies (`keep`, `archive`, `purge_cache`)](#configurable-retention-policies-keep-archive-purge_cache)
     - [Safe Windows-Resilient Orphan Cache Purging](#safe-windows-resilient-orphan-cache-purging)
 12. [Windows Persistent Services & Operational Runbook](#12-windows-persistent-services--operational-runbook)
-    - [Service Architecture (Waitress + Cloudflared via NSSM)](#service-architecture-waitress--cloudflared-via-nssm)
+    - [Service Architecture (Rust Axum + Caddy + PostgreSQL via NSSM)](#service-architecture-rust-axum--caddy--postgresql-via-nssm)
     - [Service Restart Instructions](#service-restart-instructions)
     - [Logs & Diagnostics](#logs--diagnostics)
 13. [Frequently Asked Questions & Troubleshooting](#13-frequently-asked-questions--troubleshooting)
@@ -76,7 +77,7 @@ The server enforces an explicit hardware tiering model separating high-throughpu
 
 | Storage Tier | Drive & Location | Role & Contents | Performance Characteristics |
 |---|---|---|---|
-| **Primary Fast Tier** | `E:\MediaServer` | Application code, SQLite database (`media.db`), live seek hover thumbnails (`cache\previews`), in-progress transcode scratch, completed HLS stream cache (`cache\hls`). | Fast NVMe/SATA SSD; guarantees instant seek responses, stutter-free HLS delivery, and sub-100ms database reads. |
+| **Primary Fast Tier** | `E:\MediaServer` | Application code, PostgreSQL data directory (`E:\pgdata`), live seek hover thumbnails (`cache\previews`), in-progress transcode scratch, completed HLS stream cache (`cache\hls`). | Fast NVMe/SATA SSD; guarantees instant seek responses, stutter-free HLS delivery, and sub-100ms database reads. |
 | **Secondary Mass Tier** | `D:\Flicks` | Raw video files, cold archives (`D:\Flicks\.archive`), chunk upload staging (`D:\Flicks\.uploads`), deleted-source staging (`D:\Flicks\.deleted`). | High-capacity mechanical HDD or bulk storage; optimized for long-term media preservation without consuming SSD endurance. |
 | **Drive C:** | *Not Used* | **Strict Invariant:** Drive `C:` is strictly isolated and never stores project media, databases, or transcode caches. | Reserved for Windows operating system only. |
 
@@ -86,24 +87,26 @@ The server enforces an explicit hardware tiering model separating high-throughpu
 Browser / Mobile / TV Client
          │
          ├── LAN Ingress: http://192.168.x.x:8000
-         └── WAN Ingress: https://media.anisparvez.in (Cloudflare Named Tunnel)
+         └── WAN Ingress: https://media.anisparvez.in
+                  │  (Airtel static IP 122.163.124.18, Let's Encrypt TLS)
+                  ▼
+         Caddy Reverse Proxy (80/443) [NSSM Service: MediaServerCaddy]
                   │
                   ▼
-         Waitress WSGI Server (127.0.0.1:8000) [NSSM Service: MediaServer]
+         Rust Axum Server (127.0.0.1:8000) [NSSM Service: MediaServerRust]
                   │
-                  ▼
-         Flask Application Factory (app/)
-         ├── Routes: /api/*, /media/*, /subtitles/*, /upload/*, /auth/*
-         ├── Database: SQLite (E:\MediaServer\media.db)
-         ├── Hardware Transcoding Pipeline:
-         │    ├── GPU 1 (Discrete): AMD Radeon RX 560X (dx11:1)
-         │    └── GPU 0 (Integrated): AMD Radeon Vega 8 (dx11:0)
-         ├── Storage Engine:
-         │    ├── Fast Cache: E:\MediaServer\cache\
-         │    └── Raw Media Roots: D:\Flicks, D:\Flicks\.archive
-         └── Casting & Second-Screen Engine:
-              ├── DLNA / UPnP Controller (Samsung Tizen, LG webOS)
-              └── Google Cast Controller (Chromecast, Google TV, Nest Hub)
+                  ├── React 19 SPA (web/dist/) + native API router
+                  │    Routes: /api/*, /media/*, /hls/*, /subtitles/*, /auth/*, /remotelogin
+                  ├── Database: PostgreSQL 18.4 (MediaServerPG, port 5432)
+                  ├── Hardware Transcoding Pipeline:
+                  │    ├── GPU 1 (Discrete): AMD Radeon RX 560X (dx11:1)
+                  │    └── GPU 0 (Integrated): AMD Radeon Vega 8 (dx11:0)
+                  ├── Storage Engine:
+                  │    ├── Fast Cache: E:\MediaServer\cache\
+                  │    └── Raw Media Roots: D:\Flicks, D:\Flicks\.archive
+                  └── Casting & Second-Screen Engine:
+                       ├── DLNA / UPnP Controller (Samsung Tizen, LG webOS)
+                       └── Google Cast Controller (Chromecast, Google TV, Nest Hub)
 ```
 
 ---
@@ -127,10 +130,20 @@ Direct connection over your home Wi-Fi or Ethernet:
 - Allows uncompressed, zero-copy RFC 7233 byte-range playback.
 - Instantaneous seeking and lowest possible latency.
 
-### Remote Access via Cloudflare Named Tunnel (WAN)
-- Uses an outbound TLS tunnel (`cloudflared`) to Cloudflare's global edge network.
-- **No Port Forwarding Required:** Eliminates router port exposure, CGNAT hurdles, and dynamic IP issues.
-- Automatic SSL/TLS encryption via Cloudflare certificates.
+### Remote Access via Static IP & Caddy (WAN)
+- The server sits behind an **Airtel Xstream Fiber static IP** (`122.163.124.18`) — no CGNAT, so no
+  dynamic-IP or tunnel complications.
+- **Caddy** (`MediaServerCaddy`) terminates TLS on ports 80/443 and reverse-proxies to the Rust
+  backend on `127.0.0.1:8000`. Certificates are issued by **Let's Encrypt** (TLS 1.3) via an
+  automated DNS-01 challenge and renew in the background.
+- Caddy provides unbuffered HTTP/2 and HTTP/3 streaming and proxies Server-Sent Events
+  (`text/event-stream`) without delay — which is what the QR sign-in wait stream depends on.
+- The Cloudflare named tunnel is **decommissioned**. The `cloudflared` Windows service has been
+  removed, and the Cloudflare DNS record for `media.anisparvez.in` is DNS-only, pointing straight
+  at the static IP.
+- Router port forwarding is required for 80 and 443. ⚠️ Port `8000` is **also currently forwarded**
+  to the host, which exposes the origin directly over plain HTTP, bypassing Caddy and TLS. Removing
+  that forward is a pending hardening item.
 
 ### Progressive Web App (PWA) Installation
 Install the media server as a standalone application on mobile and desktop:
@@ -235,6 +248,51 @@ Step 4: TV stores Token in secure storage
    - Open the **Anis' Media Server** app on the TV.
    - Enter the 6-character code into the prompt and press **Confirm**.
    - The TV instantly pairs, downloads your library, and adopts the user account's watch history.
+
+### OTT QR Device Sign-In (TV & Browser)
+
+The pairing token above is for the **Android / Fire TV app**. For a *browser* on a camera-less
+device — a smart TV's built-in browser, a console, a desktop PC you cannot reach with a
+keyboard — the server offers the industry-standard **activation code** flow, the same idea as
+Netflix's and YouTube TV's *"enter this code on your phone"* screen.
+
+**On the TV or browser (the device that wants to sign in):**
+
+1. Open **Account & Devices** (`/account`). If you are not signed in, the page shows the
+   **QR Device Sign-In** panel automatically.
+2. The panel displays three things at once:
+   - a **QR code** (rendered as a canvas image),
+   - a **5-character code** in large monospace type, e.g. `K7R2P`,
+   - a **countdown ring** — the code is valid for **2 minutes**, then it silently rotates.
+3. There is also a plain URL (`media.anisparvez.in/remotelogin`) for devices whose camera you
+   cannot use — type the 5-character code on the phone instead.
+4. Leave the page open. The TV waits on a live server-sent-event stream; you do not need to
+   refresh it.
+
+**On your phone (the device that has a keyboard):**
+
+1. Scan the QR code with the camera — it opens `media.anisparvez.in/remotelogin` with the pairing
+   details already attached — or open that URL manually and type the 5-character code.
+2. **Sign in** if you are not already. The QR details survive the sign-in redirect, so the flow
+   resumes exactly where it left off.
+3. **Name the device.** Give it something you will recognise later — *"Living Room TV"*, *"Bedroom
+   Fire Stick"*, *"Office PC"*. There are quick-suggestion chips for the common cases.
+4. Press **Pair device**.
+
+**Back on the TV:** it signs in on its own within a second or two, lands on the library, and the
+friendly name you chose is stored against it — so it shows up as *"Living Room TV"* in the fleet
+list instead of an anonymous browser row.
+
+**Notes**
+
+- The 5-character code deliberately omits lookalike characters (`0`, `O`, `1`, `I`), so it can be
+  read aloud or typed without ambiguity. The unambiguous set is `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+- The pairing session is **ephemeral**. It lives for 2 minutes, and the 30-day session it mints is
+  bound to the account that authorised it, not to the phone.
+- If the SSE stream is blocked by a network, the TV falls back to polling the status endpoint
+  automatically — no user-visible difference.
+- The QR flow is for the **web** interface. The Android / Fire TV app uses the pairing-token
+  flow above, because it can display a prompt and accept typed input natively.
 
 ### Token Lifespans & Auto-Recovery
 
@@ -350,7 +408,8 @@ If a media file has an unconventional filename (e.g., `Inception.2010.REMASTERED
 
 ### Direct Play (Zero-Copy RFC 7233)
 When streaming files encoded in web-native formats (MP4 container with H.264 video and AAC audio):
-- Flask streams the file via RFC 7233 partial byte-range requests (`send_file(conditional=True)`).
+- The Rust backend streams the file via RFC 7233 partial byte-range requests, with zero-copy
+  sendfile on Windows.
 - The Windows operating system kernel uses zero-copy DMA memory transfer directly to the network interface.
 - Result: **0% CPU usage, 0% GPU usage, and instantaneous seeking**.
 
@@ -516,36 +575,58 @@ Manage disk headroom on `/manage` by choosing a post-transcode retention policy:
 
 ## 12. Windows Persistent Services & Operational Runbook
 
-### Service Architecture (Waitress + Cloudflared via NSSM)
+### Service Architecture (Rust Axum + Caddy + PostgreSQL via NSSM)
 
-The server runs as two continuous Windows background services configured via **NSSM (Non-Sucking Service Manager)**:
-1. **`MediaServer` Service:** Runs Python Waitress WSGI on `127.0.0.1:8000`. Starts automatically on Windows boot before user login.
-2. **`Cloudflared` Service:** Maintains the secure outbound tunnel to `media.anisparvez.in`.
+The server runs as three continuous Windows background services configured via **NSSM (Non-Sucking Service Manager)**:
+1. **`MediaServerRust` Service:** Runs the native Rust Axum backend on `0.0.0.0:8000`, serving the
+   React 19 SPA, the API, and the media/HLS streaming routes. Starts automatically on Windows boot
+   before user login.
+2. **`MediaServerCaddy` Service:** The reverse proxy and TLS terminator on ports 80/443, fronting
+   `127.0.0.1:8000` with a Let's Encrypt certificate.
+3. **`MediaServerPG` Service:** PostgreSQL 18.4 on port 5432, running as `NetworkService`.
 
-Both services include automatic crash restart policies and 10 MB rotating log files.
+The legacy `MediaServer` (Waitress / Flask) and `Cloudflared` services have been **decommissioned
+and removed** — the backend is 100% native Rust and the frontend is a 100% React SPA.
+
+All services include automatic crash restart policies and rotating log files. NSSM lives at
+`C:\MediaServer\bin\nssm.exe` and the PostgreSQL binaries at `C:\postgres` (the data directory
+stays on `E:\pgdata`), so both survive the `E:` volume being absent.
 
 ### Service Restart Instructions
 
-Whenever backend Python code (`app/*.py`, `app/routes/*.py`, `app/services/*.py`) is modified, the persistent Windows service must be restarted:
+Whenever native backend code (`rust/src/**/*.rs`) is modified, the persistent Windows service must
+be restarted so the new binary is the one actually running:
 
 **Option 1: Using the Automated Batch Script**
 Double-click or run from terminal:
 ```cmd
-e:\MediaServer\scripts\restart_service.bat
+e:\MediaServer\scripts\restart_rust_service.bat
 ```
-*(Automatically prompts for UAC administrator elevation)*
+*(Automatically prompts for UAC administrator elevation. It stops the service, waits for the
+binary to be released, recompiles the release build, restarts the service, and health-checks it.)*
 
 **Option 2: Using Elevated PowerShell**
 Open PowerShell as Administrator:
 ```powershell
-Restart-Service MediaServer
+Restart-Service MediaServerRust
 ```
+
+> **Verify a deploy by artefact timestamp, never by a health check alone.** A `200` from `/health`
+> proves only that *some* build is running. Compare
+> `Get-Item rust\target\release\media-server-api.exe | Select LastWriteTime` against the commit
+> date. A rebuild that silently failed leaves the previous binary in place while the service
+> still reports healthy.
 
 ### Logs & Diagnostics
 
 Service logs are stored with automatic rotation in:
-- `E:\MediaServer\logs\media_server.log`
-- `E:\MediaServer\logs\media_server_error.log`
+- `E:\MediaServer\logs\rust_api.log` (Rust backend)
+- `E:\MediaServer\logs\rust_api_error.log`
+- `E:\MediaServer\logs\caddy.log` and `caddy_error.log` (reverse proxy)
+
+> The QR sign-in flow logs a **redacted reference** for each pairing session (12 hex characters of
+> the session id). The 5-character pairing code and the full session id are never written to the
+> log, because the finalize endpoint is reachable without authentication.
 
 ---
 
@@ -560,6 +641,20 @@ To protect household privacy, non-administrative sessions only show telemetry an
 ### How do I pair my Fire TV Stick without typing a password?
 Visit `/account` on your phone or PC, enter your TV name, and click **Generate Pairing Token**. Then enter the 6-character code into the prompt on your Fire TV app.
 
+### How do I sign in on a TV or browser that has no keyboard?
+Open `/account` on that device. The **QR Device Sign-In** panel appears automatically when you are
+not signed in: it shows a QR code and a 5-character code that are valid for 2 minutes. On your
+phone, scan the QR (or open `media.anisparvez.in/remotelogin` and type the code), sign in, name
+the device, and the TV signs itself in. See
+[OTT QR Device Sign-In](#ott-qr-device-sign-in-tv--browser).
+
+### The QR code on my TV says "not found" or the code is rejected.
+The pairing session is **ephemeral and lasts 2 minutes**; when the countdown ring completes, the
+code rotates automatically. Make sure you are using the *current* code — and if the phone was
+signed in only after the TV screen loaded, simply start again from the current screen. A rejected
+code is never a wrong-code error you can retry indefinitely: each attempt is checked against the
+single live session.
+
 ### Subtitles are overlapping the player seekbar. How do I fix this?
 Open the Subtitle Settings modal (`⚙` or press <kbd>c</kbd>) and select **Vertical Position: Raised** or **Middle**. The player also features automatic cue elevation when controls are visible.
 
@@ -571,4 +666,5 @@ If you are an administrator, click **Scan Library** in the navigation header or 
 
 ---
 
-*© 2026 Anis' Home Media Server. Engineered with Flask, Waitress, React 19, FFmpeg dual-GPU acceleration, and Cloudflare Named Tunnels.*
+*© 2026 Anis' Home Media Server. Engineered with Rust (Axum), React 19, PostgreSQL 18.4, FFmpeg
+dual-GPU acceleration, and Caddy with Let's Encrypt TLS.*
