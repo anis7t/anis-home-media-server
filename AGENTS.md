@@ -49,9 +49,8 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
   `web/src/components/BrandIntroOverlay.tsx` **has never existed on any branch** — an earlier
   version of this line claimed it was wired into the React SPA, and that claim is what let the
   regression go unnoticed for two days. The **Flutter client still has it** (see the invariant
-  below). The web port is a tracked backlog item:
-  [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) §0 and
-  [`docs/SLICE_7E_WALKTHROUGH.md`](docs/SLICE_7E_WALKTHROUGH.md) §6.
+  below). The web port is **Phase 11**, planned and awaiting slice approval:
+  [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
 
@@ -153,9 +152,10 @@ The current project includes:
    lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
    was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
-   2026-10-18. The Flutter client still has it. The design, the assets (all still in
-   `docs/opening-sequence/`) and the three web invariants are intact, so this is a well-specified
-   port, not a redesign. See [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) §0.
+   2026-10-18. The Flutter client still has it. **Phase 11** is planned and awaiting slice-by-slice
+   approval: [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
+   The design, the assets (all still in `docs/opening-sequence/`) and the three web invariants are
+   intact, so this is a well-specified port, not a redesign.
 
 ### Secondary / parked
 

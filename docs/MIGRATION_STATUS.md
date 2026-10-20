@@ -1,6 +1,32 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff - 2026-10-20 (12:30 IST)
+> ## Current session handoff - 2026-10-20 (13:10 IST)
+>
+> **PHASE 11 IS PLANNED: Opening Sequence Unification (Web + Android Phone + Android TV).**
+> - **Branch:** `feature/phase-11-opening-sequence` (cut from `fb8b5f6`). No implementation has started.
+> - **Scope:** one brand opening sequence, implemented natively for all three targets, from a single
+>   canonical design. The web port does not exist (it was lost in Slice 7E.2); the Flutter
+>   implementation has drifted from the original - stacked lockup, a visible Skip button, and no
+>   score at all.
+> - **Decisions:** the **web original is canonical** (Flutter changes to match); **canvas renderer
+>   with a separate Web Audio score** for the web; **no visible Skip, no Replay** on any target;
+>   **web once per browser session, Android every launch**; the intro **plays over the login
+>   screen**; and it must be **resolution-independent** at every aspect ratio and orientation.
+> - **Six structural slices**, each independently verifiable and individually approved:
+>   11.1 canonical specification (no code) | 11.2 web canvas renderer | 11.3 web lifecycle,
+>   gating, modes and audio | 11.4 Flutter alignment to the canonical design | 11.5 Flutter
+>   score | 11.6 responsive hardening and asset regeneration.
+> - **Research (D1):** Netflix's own intro is authored code, not a media file, and the industry
+>   answer to a web intro *with sound* is a separate audio track - video autoplay with sound is
+>   blocked, so a `<video>` would have to be muted or gesture-gated. The efficient route is to
+>   port `renderAt(t)` as a pure function of time, which is unit-testable and directly comparable
+>   to the reference frames. Lottie/dotLottie is the industry vector tool and its
+>   `preserveAspectRatio` is the standard responsive-motion answer, but it is not recommended
+>   here: the existing design is already vmin-scaled, the original is deterministic code, and it
+>   would add an After-Effects authoring dependency.
+> - **Master plan:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md).
+>
+> ## Previous session handoff - 2026-10-20 (12:30 IST)
 >
 > **A MISSED MIGRATION BACKLOG ITEM: the web brand opening sequence was never ported.**
 > - **What:** the 3-second intro overlay shipped in the Flask era as `templates/intro-overlay.html`,
