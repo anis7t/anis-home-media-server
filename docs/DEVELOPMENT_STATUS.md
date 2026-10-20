@@ -88,8 +88,9 @@ Archive root:  D:\Flicks\.archive (cold source retention on D:)
 Deleted root:  D:\Flicks\.deleted (deleted-source staging on D:)
 Transcode:     E:\MediaServer\cache\hls (fast SSD generation & delivery)
 Previews:      E:\MediaServer\cache\previews (seek thumbnail frame cache)
-Database:      E:\MediaServer\media.db
-Venv:          E:\MediaServer\venv
+Database:      PostgreSQL 18.4 - media_server @ 127.0.0.1:5432 (data E:\pgdata)
+Backups:       E:\MediaServer\backups\postgres (pg_dump -Fc; see docs/BACKUP_AND_RESTORE.md)
+Test database: media_server_test (created by rust/src/test_support.rs - never use production)
 Storage pool:  D: + E: aggregated (per-drive breakdown in /api/system-status)
 Note:          C: is not used by this project.
 ```
@@ -111,7 +112,7 @@ Note:          C: is not used by this project.
 - **Chromium Hls.js Precedence:** Prioritizes `window.Hls && Hls.isSupported()` over native `canPlayType` before falling back, preventing Windows Chromium browsers from attempting native Safari-style playback which cannot demux multi-chunk offsets.
 
 ### Dual-Drive Storage Tiering & Headroom Prioritization
-- **Headroom Optimization:** Preserves the primary fast SSD `E:` (`E:\MediaServer`) for the application and runtime, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache\previews`), and completed multi-GPU HLS caches (`cache\hls`).
+- **Headroom Optimization:** Preserves the primary fast SSD `E:` (`E:\MediaServer`) for the application and runtime, the PostgreSQL data directory (`E:\pgdata`), transcode scratch, seek thumbnails (`cache\previews`), and completed multi-GPU HLS caches (`cache\hls`).
 - **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), cold source archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
 - **Dynamic Multi-Root Discovery:** `config.get_media_roots()` returns all active storage roots. All routing, authorization, and media scanning procedures validate against all configured roots.
 - **Deterministic Cache Continuity:** `hls_cache_dir()` and `preview_dir()` compute relative paths across all active roots, ensuring media files moved or archived between drives retain their deterministic cache keys and active streams.

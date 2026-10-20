@@ -14,7 +14,10 @@ no API keys, passwords, OAuth tokens, or provider credentials.
 
 - Do not reset or delete OpenCode state before making the backups in this document.
 - Preserve unrelated working-tree changes in the repository.
-- The live media database is `E:\MediaServer\media.db`; do not point an MCP server at it.
+- The live media database is **PostgreSQL 18.4** (`media_server` on `127.0.0.1:5432`, data
+  directory `E:\pgdata`); do not point an MCP server at it, and do not run destructive SQL against
+  it. The old SQLite file `E:\MediaServer\media.db` was retired in the Phase 3 migration and no
+  longer exists.
 - The OpenCode background service has a secret in
   `%USERPROFILE%\.config\opencode\service.json`. Back it up securely, but never commit
   or paste its contents.
@@ -69,7 +72,9 @@ Do not put the shell-strategy repository name in `plugins[]`.
 
 ### Permissions and watcher safeguards
 
-- Deny reads and edits of `E:/MediaServer/media.db`.
+- Deny reads and edits of the live PostgreSQL database (`media_server` on `127.0.0.1:5432`).
+  The retired SQLite path `E:/MediaServer/media.db` is included for the case where an old
+  reference to it survives somewhere.
 - Ask before reading `D:/Flicks/**`.
 - Ask before `nssm`, `cloudflared`, `adb`, or `taskkill` shell commands.
 - Allow web fetches.
@@ -226,7 +231,7 @@ Refresh it with:
 powershell -ExecutionPolicy Bypass -File .opencode\db\refresh-snapshot.ps1
 ```
 
-Never substitute `E:\MediaServer\media.db` for the snapshot.
+Never substitute the live PostgreSQL database for the snapshot.
 
 ## Safe backup before reset or reinstall
 

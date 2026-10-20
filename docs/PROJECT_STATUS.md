@@ -253,7 +253,7 @@ all 200.
 - Added `BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()` to `app/config.py` *(now `rust/src/config.rs`)* and added `backups/` to [`.gitignore`](../.gitignore).
 
 **4. Comprehensive Master Runbook & Verification Suite**
-- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return). *(The runbook documents the retired SQLite engine; the PostgreSQL backup procedure is `scripts/backup_postgres.ps1`.)*
+- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return). *(The runbook was **rewritten for PostgreSQL on 2026-10-20** — it now documents `pg_dump -Fc` backups, a verified `pg_restore` procedure, and the current failure modes. The SQLite-era material is retained in its §8 as history.)*
 - Authored test suite `tests/test_backup_restore.py` *(retired with the SQLite backend)* passing 8/8 tests with 100% coverage.
 - Captured live host baseline backup (`E:\MediaServer\backups\media_backup_20261014_160426_pre-migration-baseline.db`, 516,096 bytes, SHA-256 `f5287598106a...`, 852 rows) and successfully verified with an end-to-end recovery drill.
 

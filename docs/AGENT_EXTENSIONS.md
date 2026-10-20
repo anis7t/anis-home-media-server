@@ -342,9 +342,10 @@ restart is the reviewable path.
 
 ## Why the database MCP is pointed at a snapshot
 
-`E:\MediaServer\media.db` is production data, written by a service running as
-`LocalSystem`. The obvious SQLite MCP server (`mcp-server-sqlite`, the one
-published by modelcontextprotocol) exposes a `write_query` tool that runs
+`E:\pgdata` — the PostgreSQL 18.4 data directory for the live `media_server`
+database — is production data, written by a service running as `NetworkService`.
+The obvious SQLite MCP server (`mcp-server-sqlite`, the one published by
+modelcontextprotocol) exposes a `write_query` tool that runs
 `INSERT`/`UPDATE`/`DELETE` and commits. Pointing it at the live database would
 put an unguarded write path on production data.
 

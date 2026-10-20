@@ -265,12 +265,12 @@ Tasks:
 1. Inventory models, tables, indexes, constraints, relationships, JSON fields, IDs, and transaction boundaries.
 2. Identify SQLite-specific behavior, type coercion, autoincrement assumptions, lock/concurrency patterns, and conflict handling if applicable.
 3. Create explicit PostgreSQL schema and versioned migrations.
-4. Back up the source database and demonstrate restoration. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md), [`app/services/backup_service.py`](../app/services/backup_service.py), [`tests/test_backup_restore.py`](../tests/test_backup_restore.py)).
+4. Back up the source database and demonstrate restoration. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) — rewritten for PostgreSQL on 2026-10-20; the SQLite-era engine it originally described was retired with the Flask backend).
 5. Build an idempotent migration/transfer utility.
 6. Reconcile row counts, keys, foreign keys, timestamps, nulls, and representative records.
 7. Test concurrent playback state and background-job updates.
 8. Check query plans and performance for the important library/playback queries.
-9. Document the point of no return, rollback window, and recovery steps. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) §4).
+9. Document the point of no return, rollback window, and recovery steps. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) §3 and §6).
 
 PostgreSQL should become the canonical application data store. If Flask and Rust must coexist during transition, assign write ownership explicitly and prevent split-brain state. Avoid long-running dual writes unless an audited design includes reconciliation and failure recovery.
 

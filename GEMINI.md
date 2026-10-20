@@ -232,7 +232,7 @@
 - **Canonical Cache Directory Resolution**:
   - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
 - **Dual-Drive Storage Tiering & Headroom Prioritization**:
-  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the SQLite database (`E:\MediaServer\media.db`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
+  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the PostgreSQL data directory (`E:\pgdata`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
   - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), cold archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
   - **Drive `C:` is not part of this project's storage.** Do not create, read, or assume project paths on `C:`; historical `C:\Flicks` references in older notes are obsolete.
   - `config.get_media_roots()` returns `[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`. All media discovery, route authorization, and path validation must check all roots returned by `get_media_roots()`.
@@ -420,7 +420,7 @@
   - When implementing or migrating features to the Rust API foundation (port 8001), always build 100% native Rust implementations directly (e.g. native gzip decompression via `flate2`, HTTP requests via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`).
   - Do not create temporary reverse-proxy shims or delegators to the legacy Flask backend unless a specific migration phase explicitly mandates an interim fallback. The architectural goal is full decommission of Flask.
 - **Database Test Isolation & Teardown Guardrail**:
-  - Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL) or `media.db` (SQLite) MUST:
+  - Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL 18.4 - the only production database; the SQLite `media.db` was retired in the Phase 3 migration) MUST:
     1. Clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`).
     2. Implement an explicit teardown hook (`harness.teardown().await` or pytest fixture teardown) that unconditionally deletes test rows upon test completion or failure.
     3. Ensure zero phantom test movies remain in development or production databases.
