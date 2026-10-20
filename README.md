@@ -233,7 +233,7 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 - PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
-- Static Public IP (`122.163.124.18`, Airtel Xstream Fiber) with Router Port Forwarding (`443`, `80` → `192.168.1.16`). ⚠️ Port `8000` is currently forwarded too and should be removed — it exposes the origin over plain HTTP, bypassing Caddy and TLS.
+- Static Public IP (`122.163.124.18`, Airtel Xstream Fiber) with Router Port Forwarding (`443`, `80` → `192.168.1.16`). Port `8000` is **not** forwarded — the origin is reachable only through Caddy and TLS from the internet.
 
 ### Persistent Services via NSSM
 The server runs persistently as automatic Windows Services:

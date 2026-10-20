@@ -377,8 +377,10 @@ These are known and deliberately deferred. See the next-actions list in the hand
 
 | Item | Note |
 |---|---|
-| Plaintext `code` at rest | The table stores both `code` and `code_hash`; only the hash is needed for lookup. Needs an `ALTER` on the live table. |
-| `get_base_url` trusts `Host` | The emitted `qr_url` is host-header-injectable, and the hardcoded `https` default produces a broken URL for direct-origin clients. Needs a `PUBLIC_BASE_URL` config. |
-| `finalize` is unbound | It is unauthenticated and keyed only on `qr_id`. A per-session secret issued at create time would close it. |
-| The QR endpoints are not rate-limited | `/wait` spawns a task plus a PostgreSQL query every 3 s per connection, with no auth and no cap, on a public endpoint. |
-| The session cookie has no `Secure` flag | Pre-existing and codebase-wide — `auth.rs:345,405,424,467` are all identical. |
+| Plaintext `code` at rest | The table stores both `code` and `code_hash`; only the hash is needed for lookup. Needs an `ALTER` on the live table. **Still open.** |
+| `get_base_url` trusts `Host` | **Closed 2026-10-20.** `MEDIA_SERVER_PUBLIC_BASE_URL` now takes precedence over the request headers, so the emitted `qr_url` is no longer host-header-injectable. The same applies to the Google OAuth redirect URI. |
+| `finalize` is unbound | It is unauthenticated and keyed only on `qr_id`. A per-session secret issued at create time would close it. **Still open.** |
+| The QR endpoints are not rate-limited | `/wait` spawns a task plus a PostgreSQL query every 3 s per connection, with no auth and no cap, on a public endpoint. **Still open.** |
+| The session cookie has no `Secure` flag | **Closed 2026-10-20, conditionally.** `AuthService::session_cookie()` adds `Secure` only for requests that arrived over TLS. It cannot be unconditional — the LAN path is plain HTTP, and a browser refuses to send a `Secure` cookie over plain HTTP. |
+| The pairing signature was keyed by a published constant | **Closed 2026-10-20.** `hmac_pair_code` read `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so it was using the literal fallback string published in the source. It now reads either name and falls back to a random process-local key. |
+| The origin was reachable over plain HTTP from the internet | **Closed 2026-10-20.** The router's `8000` port forward was removed; only 443 and 80 reach the host. |

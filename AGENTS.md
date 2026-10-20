@@ -174,9 +174,34 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   log is an account-takeover handout. The log carries a 12-hex-character reference only.
 - **`byte % 32` is unbiased here and only here.** The charset is 32 characters and 256 is a
   multiple of 32, so no rejection sampling is needed. A different charset length needs it.
-- **Do not trust `Host` or `X-Forwarded-Proto` for the QR URL.** `get_base_url` reads them
-  directly, so the emitted `qr_url` is host-header-injectable and defaults to `https` even on a
-  plain-HTTP origin. Pinning a public base URL is still open.
+- **Do not trust `Host` or `X-Forwarded-Proto` for the QR URL.** `get_base_url` read them
+  directly, so the emitted `qr_url` was host-header-injectable. A configured
+  `MEDIA_SERVER_PUBLIC_BASE_URL` now takes precedence — **set it in the NSSM service environment
+  and in `.env`**. The same applies to the Google OAuth redirect URI (`get_host_url`).
+- **The session cookie's `Secure` flag is conditional, and must stay that way.**
+  `AuthService::session_cookie()` adds `Secure` only when the request arrived over TLS
+  (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It **cannot** be unconditional:
+  the LAN path is plain HTTP (`http://192.168.1.16:8000`), and a browser refuses to store or send
+  a `Secure` cookie over plain HTTP — so an unconditional flag breaks LAN sign-in entirely.
+- **The pairing signature must never be keyed by a published constant.** `hmac_pair_code` read
+  `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so it was silently
+  using the literal fallback string published in the source. It now reads either name and falls
+  back to a **random process-local key**, never a known constant.
+
+### Public ingress invariants (Airtel Zyxel AOT5222ZY + Caddy)
+
+- **Only 443 and 80 may be forwarded from the internet.** The origin must not be reachable over
+  plain HTTP — that bypasses TLS, and the `session_token` cookie, entirely. A `8000` forward
+  existed from 2026-10-19 and was removed on 2026-10-20.
+- **The router's `delnum` is ZERO-BASED.** The table displays 1-based row numbers, but
+  `deleteClick(0)` is the *first* rule. Sending the displayed number would delete the wrong rule —
+  on this router, the **HTTPS** rule, taking the public site down. Use
+  `scripts\router_port_forward.ps1`, which identifies a rule by its *content* and only then acts on
+  the index, and which re-reads the table afterwards to confirm the other rules survived.
+- **This router emits malformed HTTP headers** (bare CR). `Invoke-WebRequest` rejects them as a
+  protocol violation; `curl.exe` tolerates them. The router script uses curl.
+- **The router's CGI is undocumented.** Take a config backup before changing it; the tooling in
+  `D:\Airtel xstream fiber` can download and decrypt one.
 
 ## 5. Platform/dependency rules
 

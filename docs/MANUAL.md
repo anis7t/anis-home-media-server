@@ -141,9 +141,10 @@ Direct connection over your home Wi-Fi or Ethernet:
 - The Cloudflare named tunnel is **decommissioned**. The `cloudflared` Windows service has been
   removed, and the Cloudflare DNS record for `media.anisparvez.in` is DNS-only, pointing straight
   at the static IP.
-- Router port forwarding is required for 80 and 443. ⚠️ Port `8000` is **also currently forwarded**
-  to the host, which exposes the origin directly over plain HTTP, bypassing Caddy and TLS. Removing
-  that forward is a pending hardening item.
+- Router port forwarding is required for **80 and 443 only**. Port `8000` is **not** forwarded, so
+  the origin cannot be reached directly over plain HTTP from the internet — every public request
+  goes through Caddy and TLS. On your home network you can still use `http://192.168.1.16:8000`
+  directly.
 
 ### Progressive Web App (PWA) Installation
 Install the media server as a standalone application on mobile and desktop:

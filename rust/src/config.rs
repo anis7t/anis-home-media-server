@@ -1,5 +1,67 @@
 use std::env;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Normalise a configured public origin: trim whitespace and any trailing
+/// slash, and treat an empty value as unset.
+fn normalise_public_base_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+/// The externally visible origin of this server, e.g. `https://media.anisparvez.in`.
+///
+/// Set `MEDIA_SERVER_PUBLIC_BASE_URL` to pin it. **This matters for security,
+/// not just for cosmetics.** The QR sign-in flow builds the URL the phone is
+/// told to open, and the Google OAuth callback builds the redirect URI - and
+/// both used to derive those from the request's `Host` header, which any
+/// client controls. A request with a forged `Host` could therefore point the
+/// phone at an attacker-controlled host, or redirect an OAuth authorization
+/// code to one.
+///
+/// When the variable is unset the request headers are still used, so the
+/// server keeps working without configuration - but the value is then
+/// attacker-influenced, and the deployment should pin it.
+pub fn public_base_url() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            std::env::var("MEDIA_SERVER_PUBLIC_BASE_URL")
+                .ok()
+                .and_then(|v| normalise_public_base_url(&v))
+        })
+        .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalise_public_base_url;
+
+    #[test]
+    fn test_public_base_url_normalisation() {
+        assert_eq!(
+            normalise_public_base_url("https://media.anisparvez.in"),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        // A trailing slash would produce a double slash in every built URL.
+        assert_eq!(
+            normalise_public_base_url("https://media.anisparvez.in/"),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        assert_eq!(
+            normalise_public_base_url("  https://media.anisparvez.in  "),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        // An empty or whitespace-only value is "unset", not an empty origin.
+        assert_eq!(normalise_public_base_url(""), None);
+        assert_eq!(normalise_public_base_url("   "), None);
+        assert_eq!(normalise_public_base_url("/"), None);
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -13,6 +75,8 @@ pub struct AppConfig {
     pub flask_origin: String,
     pub base_dir: PathBuf,
     pub tmdb_api_token: Option<String>,
+    /// The pinned public origin, when `MEDIA_SERVER_PUBLIC_BASE_URL` is set.
+    pub public_base_url: Option<String>,
 }
 
 impl AppConfig {
@@ -131,6 +195,7 @@ impl AppConfig {
             flask_origin,
             base_dir,
             tmdb_api_token,
+            public_base_url: public_base_url(),
         }
     }
 }

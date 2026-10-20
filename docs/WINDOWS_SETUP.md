@@ -98,6 +98,10 @@ Runs as an automatic Windows Service, fronting the Rust origin with a Let's Encr
 - **Config:** `E:\MediaServer\Caddyfile` — **untracked / gitignored**, because it contains a live Cloudflare API token
 - **Listener:** ports 80 and 443, TLS 1.3, reverse-proxying to `http://127.0.0.1:8000`
 - **Hostname:** `media.anisparvez.in` → the Airtel Xstream Fiber static IP `122.163.124.18`
+- **Router Port Forwarding:** only 443 and 80 reach the host. The `MediaServer` forward for 8000 was
+  removed on 2026-10-20 — the origin must not be reachable from the internet over plain HTTP.
+  Managed with [`scripts\router_port_forward.ps1`](../scripts/router_port_forward.ps1)
+  (`-Action List | Remove | Add`).
 - **Certificate:** Let's Encrypt, issued via an automated DNS-01 challenge, renewed in the background
 - **Streaming:** unbuffered HTTP/2 and HTTP/3, and Server-Sent Events (`text/event-stream`) are proxied without delay — which the QR sign-in wait stream depends on
 
@@ -138,25 +142,31 @@ media.anisparvez.in {
 
 ## 5. Active Next Steps & Engineering Tasks
 
-1. **Close the public `:8000` origin forward.**
-   The router currently forwards 443, 80 **and 8000** to the host. Port 8000 exposes the Rust
-   origin directly over plain HTTP, bypassing Caddy and TLS, so `session_token` can cross the
-   public internet in the clear. Remove the 8000 forward so TLS is mandatory.
-2. **Add `Secure` to the session cookie.**
-   Pre-existing and codebase-wide — `auth.rs:345,405,424,467` and `qr_auth.rs:345` are all
-   identical. Do this *after* item 1, or LAN clients break.
-3. **Pin a public base URL for the QR sign-in flow.**
-   `get_base_url` in `qr_auth.rs` trusts the `Host` and `X-Forwarded-Proto` request headers, so the
-   emitted `qr_url` is host-header-injectable and defaults to `https` even on a plain-HTTP origin.
-   Add `PUBLIC_BASE_URL` to `AppConfig`.
+1. **Close the public `:8000` origin forward.** — ✅ **DONE 2026-10-20**
+   The router forwarded 443, 80 **and 8000**, so `http://122.163.124.18:8000/health` answered 200
+   from the internet, bypassing Caddy and TLS entirely. The `MediaServer` rule was removed with
+   [`scripts\router_port_forward.ps1`](../scripts/router_port_forward.ps1). Port 8000 is **no longer
+   forwarded**; only 443 and 80 are. The origin is still reachable on the LAN
+   (`http://192.168.1.16:8000`) and on loopback, which is what Caddy and the LAN clients use.
+2. **Add `Secure` to the session cookie.** — ✅ **DONE 2026-10-20, conditionally**
+   `AuthService::session_cookie()` now appends `Secure` **only when the request arrived over TLS**
+   (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). The flag cannot be unconditional:
+   the LAN path is plain HTTP, and a browser refuses to store or send a `Secure` cookie over plain
+   HTTP, so that would break LAN sign-in entirely. All five cookie sites now go through the shared
+   helper.
+3. **Pin a public base URL for the QR sign-in flow.** — ✅ **DONE 2026-10-20**
+   `MEDIA_SERVER_PUBLIC_BASE_URL` (e.g. `https://media.anisparvez.in`) is set in the NSSM service
+   environment and in `.env`. `get_base_url` and `get_host_url` prefer it over the request headers,
+   so the QR URL the phone is told to open and the Google OAuth redirect URI are no longer
+   derived from a client-controlled `Host` header.
 4. **Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.**
    It is unauthenticated and keyed only on the `qr_id`. A per-session secret issued at create time
-   would close it.
+   would close it. **Still open.**
 5. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
    `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
-   connection, with no auth and no cap, on a publicly reachable endpoint.
+   connection, with no auth and no cap, on a publicly reachable endpoint. **Still open.**
 6. **Drop the plaintext `code` column** from `device_pair_sessions`; only `code_hash` is needed for
-   lookup. Needs an `ALTER` on the live table.
+   lookup. Needs an `ALTER` on the live table. **Still open.**
 7. **Rotate and restrict the Cloudflare API token** in `E:\MediaServer\Caddyfile`. It is a live
    credential with DNS-management rights for the hostname, stored in plaintext on disk. The file is
    correctly gitignored, but the token should still be scoped and rotated.
