@@ -89,3 +89,10 @@ tests/screenshots/
 
 # the on-device session's diagnostic captures (the audio dumps are kept; the screenshots are not)
 docs/opening-sequence/device/
+
+# scratch: the frame captures and device pulls taken while measuring
+_vid/
+_launch*.png
+_launch*.mp4
+_tv_now.png
+_installed.apk

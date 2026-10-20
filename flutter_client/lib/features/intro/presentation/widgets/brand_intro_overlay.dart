@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/intro_frame.dart';
@@ -64,6 +65,13 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
   bool _finished = false;
   bool _handover = false;
 
+  /// Whether the score has been started.
+  ///
+  /// It starts with the controller's first tick, which is the first frame
+  /// after the sequence's first frame has been presented - see the note at the
+  /// start of the sequence.
+  bool _scoreStarted = false;
+
 
   /// The measured geometry the FX are drawn from.
   Offset? _iconOrigin;
@@ -101,12 +109,40 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
     );
     // The score starts with the sequence, and NOTHING waits for it: the
     // animation is already running.
-    _score.start();
-    _ctrl.forward();
+    //
+    // THE SEQUENCE'S CLOCK STARTS WHEN THE SEQUENCE IS ON SCREEN, not when the
+    // widget tree is built.
+    //
+    // A `Ticker` measures its elapsed time from its FIRST TICK, and the first
+    // tick is the first frame after the one that is being built. The engine
+    // does not begin a new frame until the previous one has been rastered, so
+    // on a slow start the first frame is presented long after it was built -
+    // and the SECOND frame's tick then carries that whole gap in one step.
+    // The controller would jump straight to two seconds in, the viewer would
+    // see the sequence start in its middle, and the last second would race
+    // through. That is the "rushed" sequence.
+    //
+    // So the controller is not started until the first frame has been built.
+    // Its first tick is then the first frame after the first presentation, and
+    // the sequence's zero is the frame the viewer sees first.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _ctrl.forward();
+    });
   }
 
   void _onTick() {
     final t = _ctrl.value * kIntroDuration;
+    if (!_scoreStarted) {
+      _scoreStarted = true;
+      // The score starts with the controller's FIRST TICK, and not with the
+      // widget tree: the sound must not be heard before there is anything to
+      // see. The score is anchored to the controller's value at the moment it
+      // starts, so the sound and the picture agree about where the sequence
+      // is - which is the canonical's rule (docs/OPENING_SEQUENCE.md Part I
+      // section 7: "The score is anchored, not orphaned").
+      _score.start();
+    }
     if (t >= kIntroHandoverAt && !_handover) {
       _handover = true;
       // The app underneath is live from here on. The overlay still takes the
