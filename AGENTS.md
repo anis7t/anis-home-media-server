@@ -45,14 +45,20 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
   specification** — the timing table, the layer stack, the compositing / responsive / audio /
   dismissal / reduced-motion contracts, and the divergence ledger. Every Phase 11 slice is written
   from it. Part II is the historical record (the loss, the artifacts, the verification).
-  **Status: the web overlay is NOT implemented.** It was a Jinja2 template
-  (`templates/intro-overlay.html`), deleted with the other legacy templates in Slice 7E.2
-  (`5a2af4f`, 2026-10-18), and no React component was ever written to replace it. The file
-  `web/src/components/BrandIntroOverlay.tsx` **has never existed on any branch** — an earlier
+  **Status: the web overlay IS implemented, and is verified frame-for-frame.** It was a Jinja2
+  template (`templates/intro-overlay.html`), deleted with the other legacy templates in Slice 7E.2
+  (`5a2af4f`, 2026-10-18), and no React component was ever written to replace it — an earlier
   version of this line claimed it was wired into the React SPA, and that claim is what let the
-  regression go unnoticed for two days. The **Flutter client still has it** (see the invariant
-  below). The web port is **Phase 11**; Slice 11.1 (the canonical spec) is complete and 11.1a
-  onward await slice-by-slice approval:
+  regression go unnoticed for two days. **The React port now exists**: the canonical renderer
+  (`web/src/lib/intro/`), the overlay (`web/src/components/brand/BrandIntroOverlay.tsx`), the
+  lifecycle and modes (`web/src/hooks/useIntroSequence.ts`) and the live Web Audio score
+  (`web/src/lib/intro/audio.ts`). It is **pixel-identical to the archived original** at 20 sampled
+  instants in both orientations — `web/e2e/intro-frame.spec.ts` — and the score builds the
+  **same audio graph** as the original — `web/e2e/intro-audio.spec.ts`. The **Flutter client still
+  has its own, divergent, copy** (see the invariant below). The web port is **Phase 11**; Slices
+  11.1 (the canonical spec), 11.1a (the Flutter Replay removal), 11.2 (the web canvas renderer),
+  11.3 (the web lifecycle, gating and modes) and 11.3a (the web Web Audio score) are complete, and
+  11.4 onward await slice-by-slice approval:
   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
@@ -60,13 +66,19 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 > **The canonical design is [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I.** Where
 > this block and that spec disagree, the spec wins. Every Phase 11 slice is written from it.
 >
-> **The three web invariants below are the *specification* for a port that has not been written.**
-> They describe the behaviour the React implementation must reproduce. Do not read them as a
-> description of the current web app — there is no web overlay today. The Flutter invariant, by
-> contrast, describes code that exists and is tested.
+> **The web invariants below now describe code that exists and is tested.** The React port is
+> `web/src/lib/intro/` (the canonical renderer), `web/src/components/brand/BrandIntroOverlay.tsx`
+> (the overlay) and `web/src/hooks/useIntroSequence.ts` (the lifecycle). It is verified
+> frame-for-frame against the archived original by `web/e2e/intro-frame.spec.ts`, and its score is
+> verified against the original's own Web Audio by `web/e2e/intro-audio.spec.ts`. The Flutter
+> invariant, by contrast, still describes code that is **divergent** from the canonical design.
 
 - **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon app load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`. `auto` is the default for the injected overlay; `gate` was the *standalone* page's default and is not the product behaviour.
-- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture. **The audio must never gate the animation** — that single rule is the difference between a prompt-free intro and a broken one.
+- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture. **The audio must never gate the animation** — that single rule is the difference between a prompt-free intro and a broken one. In the React port this is *structural*: `web/src/lib/intro/`'s renderer has no reference to the audio module at all, and the score's `start()` returns `false` rather than throwing when there is no Web Audio.
+- **The Score Is Anchored, Not Orphaned (web):** The score's zero is placed at `ctx.currentTime + RAMP - elapsed`, where `elapsed` is how far the animation has already played — so the score lands on the animation's own beats. A voice whose beat has already passed is **skipped**, not fired late. A context that resumes **after** the animation has ended gets **no score at all**: a three-second score playing out of nowhere is worse than no score. The original's behaviour (schedule the whole score at `ctx.currentTime + RAMP` and let a frozen clock hold it) is **not** ported.
+- **The Unlocking Gesture Is Consumed By The Audio (web):** The first gesture while the `AudioContext` is still suspended resumes it and starts the score in step with the animation, and **the animation continues** — a second gesture dismisses. The cost, stated plainly: **the first click during the intro no longer skips it.** `m` **mutes and does not dismiss**, because the gate's own hint says *"`m` mutes"*.
+- **The Score's Noise Is Seeded (web):** The port draws its reverb impulse response and its noise buffers from a fixed seed, so two renders of the same score are the same signal. The original used `Math.random()` and was never bit-reproducible. The perceptual difference is nil — it is noise either way.
+- **The Web's Reference Is The Original's Web Audio, Not The WAV:** `intro-theme.wav` is the *Python* renderer's output, and the Python sweeps a resonant **low-pass** over its noise beds where the original's Web Audio uses a **band-pass** — the two are not the same synthesis. The WAV is the **Flutter** client's reference; the archived overlay's `window.INTRO.audio` is the **web** port's. A port that "matches the WAV sample for sample" is chasing the wrong target.
 - **Container-Controlled Session Gating:** `intro-overlay` does not set `sessionStorage.setItem('introSeen')` prior to the enclosing component's evaluation.
 - **No Visible Skip and No Replay, Anywhere:** The canonical design exposes **no Skip control and no Replay control on any target**, including the Flutter Settings screen. The archived source's HUD is hidden by default (`SHOW_HUD=false`) and is a demo affordance, not a product surface; dismissal is implicit (click / tap / space / any key). The Flutter "Replay Brand Intro" action was removed in Phase 11 Slice 11.1a.
 - **Reduced Motion Is A Cross-Target Contract:** `prefers-reduced-motion: reduce` suppresses exactly four things — the impact burst particles, the camera shake, and the icon's rotation and scale — on **all three** targets, not the web alone.
@@ -162,17 +174,23 @@ The current project includes:
 4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
    lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
-   was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
-   2026-10-18. The Flutter client still has it. **Phase 11** is in progress: Slices 11.1 (the
-   canonical specification), 11.1a (removing the Flutter Replay action), **11.2 (the web canvas
-   renderer)** and **11.3 (the web lifecycle, gating and modes)** are complete; **11.3a (the web
-   Web Audio score)** is next. The roadmap is
+   was deleted in Slice 7E.2 without a replacement, so the web app had no intro from 2026-10-18
+   until 2026-10-20. **Phase 11** is in progress: Slices 11.1 (the canonical specification), 11.1a
+   (removing the Flutter Replay action), **11.2 (the web canvas renderer)**, **11.3 (the web
+   lifecycle, gating and modes)** and **11.3a (the web Web Audio score)** are complete; **11.4 (the
+   Flutter client: align it to the canonical design)** is next. The roadmap is
    [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    The renderer is built and is **frame-for-frame identical** to the archived original — the FX
    canvas by the SHA-256 of its pixels, every DOM layer's style and geometry, and the rendered page
    pixel by pixel, at 20 instants in both orientations — and the **shipped app** is compared
-   against the same harness (`web/e2e/intro-frame.spec.ts`). The canonical design is
+   against the same harness (`web/e2e/intro-frame.spec.ts`). The score is live Web Audio
+   (`web/src/lib/intro/audio.ts`) and is verified against the **original's own Web Audio**: the
+   port builds the **same audio graph**, node for node
+   (`web/e2e/intro-audio.spec.ts`). The canonical design is
    [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I.
+   **One open finding:** the port's score renders about **6 dB quieter** than the archived
+   original's Web Audio, and the cause is not yet isolated (spec §7.9 lists everything that was
+   measured and ruled out). It does not block 11.4, but it is unresolved.
 6. **Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.**
    `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` all
    fail in `setUpAll` with `Cannot find libmpv-2.dll in your system %PATH%`, because they call

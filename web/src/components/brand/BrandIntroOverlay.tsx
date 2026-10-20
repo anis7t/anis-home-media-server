@@ -14,6 +14,7 @@ import { computeFrame, splitLetters, WORDMARK_1, WORDMARK_2 } from '../../lib/in
 import { drawFX } from '../../lib/intro/fx';
 import { stageGeometry } from '../../lib/intro/geometry';
 import type { StageGeometry } from '../../lib/intro/geometry';
+import { IntroScore } from '../../lib/intro/audio';
 import type { IntroMode } from '../../lib/intro/mode';
 import { DURATION, HANDOVER_AT, T, clamp } from '../../lib/intro/timeline';
 import BrandMark from '../BrandMark';
@@ -122,10 +123,21 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
     const rafRef = useRef(0);
     const finishedRef = useRef(false);
     const startedRef = useRef(false);
+    const t0Ref = useRef(0);
+    const consumedRef = useRef(false);
     const onStartedRef = useRef(onStarted);
     const onFinishedRef = useRef(onFinished);
     onStartedRef.current = onStarted;
     onFinishedRef.current = onFinished;
+
+    /**
+     * The score.
+     *
+     * It is the only thing in the app that touches the audio. The renderer
+     * never sees it, which is what makes the animation provably unblocked by a
+     * suspended `AudioContext`.
+     */
+    const [score] = useState(() => new IntroScore());
 
     const [phase, setPhase] = useState<Phase>(() => {
       if (mode === 'gate') return 'gate';
@@ -329,8 +341,13 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
     useEffect(() => {
       if (phase !== 'playing') return;
       // The source starts the clock 120 ms in the future, so the first frame
-      // is a real frame rather than a half-drawn one (source 849).
+      // is a real frame rather than a half-drawn one (source 849). The score
+      // is anchored to the same instant, which is what `RAMP` is for.
       const t0 = performance.now() + 120;
+      t0Ref.current = t0;
+      // The score may not start at all: a suspended context's clock does not
+      // advance, so the score waits for a gesture instead of being frozen.
+      score.start(0);
       const loop = (now: number) => {
         rafRef.current = requestAnimationFrame(loop);
         const t = (now - t0) / 1000;
@@ -341,39 +358,78 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
         }
       };
       rafRef.current = requestAnimationFrame(loop);
-      return stopLoop;
-    }, [applyFrame, finish, phase, stopLoop]);
+      return () => {
+        stopLoop();
+        score.stop(0.1);
+      };
+    }, [applyFrame, finish, phase, score, stopLoop]);
 
     /*
-     * Dismissal. The canonical specification says a click, a tap, the space
-     * key or ANY key dismisses the sequence (spec Part I section 8).
+     * Dismissal, and the audio unlock.
+     *
+     * The canonical specification says a click, a tap, the space key or ANY
+     * key dismisses the sequence (spec Part I section 8).
      *
      * The original's own check was `e.target === el.stage`, which never fired:
      * the FX canvas (z-index 4) and the curtain halves (z-index 2) have no
      * `pointer-events: none`, so a click always landed on one of them and
-     * never on the stage. The port listens on the stage itself and lets the
-     * event bubble, so a click anywhere on the overlay dismisses - which is
-     * also what the Flutter client does.
+     * never on the stage. The port listens on the window and checks that the
+     * gesture is inside the stage, which is also what the Flutter client does.
      *
-     * After the handover the stage releases the pointer (source 190), so the
-     * app underneath becomes clickable and a click there does NOT dismiss.
+     * After the handover the stage releases the pointer (source 190), so a
+     * click on the app underneath does NOT dismiss.
+     *
+     * The `m` key MUTES and does not dismiss, exactly as the original did
+     * (source 894-896) - and as the gate's own hint says it does.
+     *
+     * And the unlock: a gesture while the audio is still suspended is
+     * CONSUMED by the audio rather than spent on a dismissal. The score
+     * starts in step with the animation and the animation carries on; a
+     * second gesture dismisses. Without that, the one gesture that could
+     * unlock the audio would also throw the animation away.
      */
     useEffect(() => {
       if (phase !== 'playing') return;
       const stage = stageRef.current;
       if (!stage) return;
-      const onPointerDown = () => finish();
-      const onKeyDown = (event: KeyboardEvent) => {
-        if (event.key === 'Tab') return;
+
+      const onGesture = (event: Event) => {
+        if (event instanceof KeyboardEvent) {
+          if (event.key === 'm' || event.key === 'M') {
+            score.toggleMute();
+            return;
+          }
+        } else if (stage && !stage.contains(event.target as Node)) {
+          // A gesture on the page underneath, not on the overlay.
+          return;
+        }
+
+        if (!score.hasStarted && score.state === 'suspended') {
+          // This gesture unlocks the audio. It is spent on that, and the
+          // animation continues.
+          consumedRef.current = true;
+          const elapsed = (performance.now() - t0Ref.current) / 1000;
+          void score.resume().then(() => {
+            // If the animation is over, the score is dropped rather than
+            // orphaned: a three-second score playing out of nowhere is worse
+            // than no score.
+            score.onResumed(elapsed <= DURATION ? elapsed : null);
+          });
+          return;
+        }
+
         finish();
       };
-      stage.addEventListener('pointerdown', onPointerDown);
-      window.addEventListener('keydown', onKeyDown);
+
+      window.addEventListener('pointerdown', onGesture, true);
+      window.addEventListener('keydown', onGesture, true);
+      window.addEventListener('touchstart', onGesture, true);
       return () => {
-        stage.removeEventListener('pointerdown', onPointerDown);
-        window.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('pointerdown', onGesture, true);
+        window.removeEventListener('keydown', onGesture, true);
+        window.removeEventListener('touchstart', onGesture, true);
       };
-    }, [finish, phase]);
+    }, [finish, phase, score]);
 
     /*
      * The capture mode's handle.
@@ -404,8 +460,15 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
     const startFromGate = useCallback(() => {
       setGateClosing(true);
       gateTimerRef.current = setTimeout(() => setGateGone(true), 320);
+      /*
+       * The click that starts the gate is the gesture that unlocks the audio,
+       * and it is called from inside the click handler, so the browser allows
+       * it. This is the whole point of the gate: the score can then be
+       * scheduled in step with the animation.
+       */
+      void score.resume();
       setPhase('playing');
-    }, []);
+    }, [score]);
 
     useEffect(
       () => () => {
@@ -499,10 +562,11 @@ const BrandIntroOverlay = forwardRef<BrandIntroOverlayHandle, BrandIntroOverlayP
               </h1>
               <p className="intro-gate-sub">Opening sequence · 3 seconds</p>
               <button type="button" className="intro-gate-play" onClick={startFromGate}>
-                ▶ Play
+                ▶ Play with sound
               </button>
               <p className="intro-gate-hint">
-                The original brand sting. Press play to begin — <kbd>any key</kbd> skips.
+                Original synthesized theme. Browsers require a click before audio can play, so press
+                play — <kbd>space</kbd> skips, <kbd>m</kbd> mutes.
               </p>
             </div>
           </div>

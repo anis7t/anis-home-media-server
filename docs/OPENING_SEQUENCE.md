@@ -54,6 +54,14 @@ Settled 2026-10-20. Each is a **decision**, not a default to be re-litigated in 
 | **D10** | The 14 s ambient drift on the veil | **Dropped.** It is an infinite CSS animation outside `t` (`source: 39-42, 118`), imperceptible within 3 s (≈1 % scale, ≈1 % brightness), and absent from the capture oracle (capture mode kills all CSS animation, `source: 166`). Keeping it would make the web and the Flutter client differ. |
 | **D11** | `prefers-reduced-motion` | **A canonical contract on all three targets.** The web original honours it (`source: 331-332`); Flutter honours nothing today. |
 
+### 2.1a The three decisions taken with the Slice 11.3a plan (2026-10-20)
+
+| # | Question | Answer |
+|---|---|---|
+| **D12** | The gesture that unlocks the audio is the same gesture that dismisses the intro. How does that resolve? | **The unlocking gesture is consumed by the audio.** The score starts in step with the animation and **the animation continues**; a *second* gesture dismisses. The literal alternative — start the score *and* dismiss — would play a three-second score over an intro that is no longer there, and the score is meant to be heard *with* the visuals. The cost is real and is recorded in §7.5: **the first click during the intro no longer skips it.** |
+| **D13** | Should the port's noise be seeded, like the original's camera shake (D9)? | **Seeded.** The original drew its reverb impulse response and every noise buffer from `Math.random()` (`source: 602, 610`), so its live synthesis was never bit-reproducible. Seeding makes the port's render reproducible, which is what lets the oracle compare renders at all. The perceptual difference is nil — it is noise either way. |
+| **D14** | The gate card's wording | **The original's, verbatim** (`source: 940-944`): the button reads *"▶ Play with sound"* and the hint reads *"Original synthesized theme. Browsers require a click before audio can play, so press play — `space` skips, `m` mutes."* The `m` mute is ported with it, because a hint that says *"`m` mutes"* and a key that also skips would be a lie. |
+
 ### 2.2 D4 and D6 read together
 
 The web original's HUD — the skip / replay / mute chrome — is **hidden by default**
@@ -231,6 +239,13 @@ The score is an original composition, synthesized from scratch — no samples, n
 Master chain: source bus → compressor (`threshold −14 dB`, `knee 10`, `ratio 3.2`, `attack 0.004`,
 `release 0.25`) → destination, with a convolution reverb send (`source: 586-596`).
 
+> **The web's reference is the original's Web Audio, not the WAV.** The source's comment that the
+> Web Audio "mirrors `render_intro_theme.py` 1:1" is about the **composition**, not the samples.
+> The two are different syntheses: the Python renderer sweeps a resonant **low-pass** over its noise
+> beds and the original's Web Audio uses a **band-pass**, and the two filters do not produce the
+> same signal. The WAV is the **Flutter** client's reference (it plays the file); the archived
+> overlay's `window.INTRO.audio` is the **web** port's reference. §13.2 is the oracle that says so.
+
 ### 7.2 The non-blocking rule — **the single most important line in this document**
 
 > **The audio must never gate the animation.**
@@ -243,18 +258,109 @@ restart. The context is resumed on the first user gesture, via transparent one-t
 This is what makes the sequence work in Safari and Chrome without a click-to-start gate, and it is
 the reason D1 chooses a canvas + separate audio over a `<video>` element.
 
+**In the port this is structural, not a promise.** The renderer (`web/src/lib/intro/`) has **no
+reference to the audio module at all** — the score is owned by `web/src/lib/intro/audio.ts` and
+reached only through the overlay. A suspended `AudioContext` cannot reach the render loop, and the
+score's `start()` returns `false` (rather than throwing) when there is no Web Audio at all, which
+is the source's own fail-safe (`source: 779`).
+
 ### 7.3 Alignment
 
 The audio starts at `ctx.currentTime + RAMP` where `RAMP = 0.12` (`source: 579, 782`), and the
 animation's clock starts at `performance.now() + 120` (`source: 849`) — the same 120 ms.
 
-### 7.4 Per-target
+**`RAMP` is not a lead-in for the score — it is what makes the two agree.** The score's zero is
+placed at `ctx.currentTime + RAMP - elapsed`, where `elapsed` is how far the animation has already
+played. At `elapsed = 0` that is the source's own expression; at any other value it is the same
+instant as the animation's zero, seen from the audio clock.
+
+### 7.4 The score is anchored, not orphaned
+
+The original schedules the whole score against `ctx.currentTime + RAMP` and nothing else. **A
+suspended context's clock does not advance**, so if the context resumed a minute later the original
+would play the entire three-second score, from the top, out of nowhere.
+
+The port's contract:
+
+| Situation | What happens |
+|---|---|
+| The context is already running when the sequence starts | The score is scheduled at `ctx.currentTime + RAMP` and is in step with the animation. |
+| The context is suspended and the animation is still running when it resumes | The score starts **now**, anchored to the animation's position: the score's zero is placed `elapsed` seconds in the past, so the remaining voices land on their own beats. **A voice whose beat has already passed is skipped**, not fired late. |
+| The context resumes **after** the animation has ended | **The score is dropped.** A three-second score playing out of nowhere is worse than no score. |
+
+The drop is structural: the overlay's unlock listeners live only while the sequence is playing, so
+there is no late resume to react to.
+
+### 7.5 The unlocking gesture (D12)
+
+**The gesture that unlocks the audio is the same gesture that dismisses the intro.** The original's
+own `unlockAudio` listeners fire on `pointerdown` / `keydown` / `touchstart` (`source: 951-962`)
+and the stage's click handler skips the sequence (`source: 887-889`) — so, read literally, the one
+gesture that could start the score would also throw the animation away, and the score would play
+over an intro that is no longer there.
+
+**The port's rule: the unlocking gesture is consumed by the audio.**
+
+| Gesture | Effect |
+|---|---|
+| The **first** gesture while the audio is still suspended | It resumes the context and starts the score **in step with the animation**. The animation **continues**. |
+| Any **later** gesture | It dismisses the sequence, as §8 says. |
+| A gesture when the context was **already running** | It dismisses, as §8 says. There was nothing to unlock. |
+
+**The cost, stated plainly: the first click during the intro no longer skips it.** A user who
+wanted out has to click twice. That is the price of the score being heard *with* the visuals
+rather than after them, and it is D12's answer.
+
+### 7.6 The mute key
+
+`m` **mutes**, and does not dismiss (`source: 894-896`). This is the one exception to §8's "any key
+dismisses", and it exists because the gate's own hint — the original's, restored verbatim by D14 —
+says *"`m` mutes"*. A hint that says a key mutes and a key that also skips would be a lie.
+
+The HUD that the original's mute button lived in is **not** ported (D4/D6); the key is.
+
+### 7.7 The noise is seeded (D13)
+
+The original's reverb impulse response and every noise buffer are drawn from `Math.random()`
+(`source: 602, 610`). The port draws them from a fixed seed, so **two renders of the same score are
+the same signal** — which is what makes §13.2's reproducibility oracle possible at all.
+
+### 7.8 Per-target
 
 | Target | Score source | Notes |
 |---|---|---|
-| **Web** | **Live Web Audio synthesis** (D8) | The original's own approach. Zero asset bytes. |
-| **Android phone** | `docs/opening-sequence/assets/intro-theme.wav` | 3.070 s, 44.1 kHz stereo, peak −1.01 dBFS. The offline render of the same composition. 529 KB. |
+| **Web** | **Live Web Audio synthesis** (D8) | The original's own approach. Zero asset bytes. Built in Slice 11.3a. |
+| **Android phone** | `docs/opening-sequence/assets/intro-theme.wav` | 3.070 s, 44.1 kHz stereo, **peak −2.98 dBFS, RMS −19.00 dBFS**. The offline render of the same composition. 529 KB. |
 | **Android TV** | the same WAV | Identical bytes to the phone. |
+
+> **Correction.** This table previously said the WAV peaks at **−1.01 dBFS**. It does not: the
+> measured peak is **−2.98 dBFS** (`20·log₁₀(0.7093)`), and the RMS is **−19.00 dBFS**
+> (`20·log₁₀(0.1121)`). The −1.01 figure was wrong, and no code depended on it.
+
+### 7.9 The open level finding
+
+The port's score renders **quieter than the archived original's own Web Audio** under an offline
+render: the original measures a peak of 1.213 and an RMS of 0.376, the port a peak of 0.613 and an
+RMS of 0.067 — about **6 dB** apart, and the original's own peak **exceeds full scale**.
+
+What is **not** the cause, all of it measured:
+
+- **Not a doubled score.** The original builds exactly 33 oscillators — the score's oscillator
+  count, once — and the port builds 33.
+- **Not the reverb.** Replacing the original's `ConvolverNode` with a zero gain changes its level
+  by 0.1 %.
+- **Not a different graph.** Every node the original creates, counted by kind, matches the port's
+  exactly — 33 oscillators, 11 noise buffers, 78 gains, 23 filters, 36 panners, 1 convolver,
+  1 compressor, 2 shapers. (That equality is itself the oracle; it is what caught the riser's
+  spurious high-pass.)
+- **Not the noise.** Both draw from the same seeded stream in the same order.
+
+The port's level **does** match the shipped WAV within **1.3 dB in peak** (0.613 against 0.709) and
+its envelope tracks the WAV's within **16 dB** in every 155 ms window. So the port is at the level
+of the audio the Flutter client ships, and the archived original's live Web Audio is the outlier —
+but *why* it is the outlier is **not known**, and it is recorded as an open finding rather than
+papered over. It does not block 11.3a: the oracle in §13.2 proves what 11.3a set out to prove.
+
 
 ## 8. The dismissal contract
 
@@ -265,6 +371,13 @@ animation's clock starts at `performance.now() + 120` (`source: 849`) — the sa
 | Click / tap anywhere on the overlay | Skip to the end | 887-889 |
 | `Space` | Skip to the end (or start, from the gate) | 890-897 |
 | Any key / any D-pad press (Flutter) | Skip to the end | `brand_intro_overlay.dart:122-128` |
+
+**Two exceptions on the web, both deliberate.**
+
+| Gesture | Effect | Why |
+|---|---|---|
+| `m` | **Mutes. It does not dismiss.** | The original's behaviour (`source: 894-896`), and the gate's own hint — the original's wording, restored verbatim (D14) — says *"`m` mutes"*. §7.6. |
+| The **first** gesture while the audio is still suspended | **It is consumed by the audio**, and the animation continues | D12. The one gesture that could unlock the score would otherwise also throw the animation away. §7.5. |
 
 Skipping renders the final frame and finishes (`source: 857-864`): the layer is removed, the
 audio stops over 0.10 s, and the app underneath is live and interactive.
@@ -367,7 +480,7 @@ list for Slices 11.2 – 11.6 and 11.1a.** A row is closed only when its slice's
 | **L4** | Lockup layout | side by side in landscape, stacked in portrait | built (11.2) | **stacked unconditionally** (`:347`) — right for the phone, wrong for the TV | 11.4 |
 | **L5** | Skip affordance | **none** | none (by design) | **visible Skip pill** (`:241-282`) | 11.4 |
 | **L6** | Replay affordance | **none** (D4) | none (by design) | [CLOSED in 11.1a (2026-10-20)] - the Settings "Replay Brand Intro" item and the `BRAND & EXPERIENCE` section that contained it are gone, as are `IntroController.replay()` and its test. The docs that advertised it are updated. | **11.1a - done** |
-| **L7** | Score | web: live synthesis · Android: the WAV | the lifecycle is 11.3 | **absent** | 11.3, 11.5 |
+| **L7** | Score | web: live synthesis · Android: the WAV | **built (11.3a)** — the port of the original's Web Audio, in `web/src/lib/intro/audio.ts`, with the score anchored to the animation's clock, the unlocking gesture consumed by the audio (D12), the `m` mute, and the drop rule (§7.4-§7.7) | **absent** | 11.3a (web) **done**, 11.5 (Flutter) |
 | **L8** | Curtain geometry | translate ±100 % of half-width; 1 px overlap; inner edge feathers only once parting; the two halves carry one continuous gradient | built (11.2) | halves **shrink** to zero width with **hard edges**, each with its own centred gradient (`:151-171`, `:297-320`) | 11.4 |
 | **L9** | Ambient drift | **none** (D10 — dropped) | none (D10) | none | — closed by D10 |
 | **L10** | Camera shake | deterministic, `t`-derived, 9 px peak, `impact → impact + 0.42` (D9) | built (11.2) | **absent** | 11.2, 11.4 |
@@ -424,7 +537,37 @@ verified thing the thing that **ships**.
    rasterises the wordmark's glyphs differently, which is invisible to the eye but was 58 of 255
    on a glyph edge.
 
-### 13.2 The archived asset pipeline (the offline renders)
+### 13.2 The score's oracle (built in Slice 11.3a)
+
+**`web/e2e/intro-audio.spec.ts` puts the archived original's audio and the port's side by side and
+compares them.** Three comparisons, at three levels — plus the composition table, which is pinned
+separately.
+
+| Level | How | Result |
+|---|---|---|
+| **The composition** | `web/src/lib/intro/score-golden.json` — a transcription of the original's `build(t0)` (`source: 698-776`) — against the port's own voice table | **exact** |
+| **The graph** | every node the original's score creates, counted by kind, against the port's | **exact** — 33 oscillators, 11 noise buffers, 78 gains, 23 filters, 36 panners, 1 convolver, 1 compressor, 2 shapers |
+| **The signal** | the port's offline render against `intro-theme.wav`, on the shape of the score over time (20 windows of 155 ms) | within **16 dB** in every window; the peak within **1.3 dB** |
+| **Reproducibility** | two renders of the port's own score | identical to within **1 × 10⁻⁴** |
+
+**The graph comparison is exact, and it is what caught the port's real defect.** The original builds
+the **riser inline** (`source: 709-714`) rather than through `noiseVoice`, so it has **no
+high-pass** and its sweep ends at `t + 0.60` rather than at the generic `dur × 0.9`. The port gave
+the riser a spurious 120 Hz high-pass — one extra filter, and a quieter riser than the original's.
+Counting the nodes by kind found it in one run.
+
+**How the original is rendered offline.** The archived overlay is served from the dev server's own
+origin (its document lives outside `web/`, which Vite will not serve), its `AudioContext` is
+replaced with an `OfflineAudioContext`, and `Math.random` is replaced with the port's own seeded
+PRNG — so the original's noise draws and the port's come from the **same sequence**, and the score's
+noise beds are created in the same order in both.
+
+> **What the graph oracle does *not* settle.** The two renders still differ in level by about
+> **6 dB**, and the cause is not known. §7.9 lists everything that was measured and ruled out. The
+> oracle asserts what it can prove exactly — the graph — and the tolerance it does assert is
+> measured, not guessed.
+
+### 13.3 The archived asset pipeline (the offline renders)
 
 | Tool | What it does |
 |---|---|

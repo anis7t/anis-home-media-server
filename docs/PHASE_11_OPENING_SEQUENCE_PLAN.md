@@ -306,7 +306,7 @@ verified thing the thing that **ships**.
 bypasses it, `?intro=gate` shows the card, `/remotelogin` never shows it, the intro plays over the
 login screen, and the shipped app's overlay is pixel-identical to the original's.
 
-### Slice 11.3a - Web: the Web Audio score ⏭️ **NEXT**
+### Slice 11.3a - Web: the Web Audio score ✅ **DONE (2026-10-20)**
 
 The score, and nothing else. D8: **live Web Audio synthesis on the web** — the original's own
 approach, zero asset bytes — with the **non-blocking discipline** that AGENTS.md makes an invariant:
@@ -321,6 +321,45 @@ the animation never waits on the audio, and the `AudioContext` resumes on the fi
   composition. The score becomes *provably* the same music rather than probably.
 - The animation must remain provably unblocked by a suspended `AudioContext` — a suspended context
   must not delay a single frame.
+
+**What was built.** `web/src/lib/intro/audio.ts` — the score as a **data table** (28 voices, every
+parameter of every voice: its envelope, its filter, its reverb send, its pan), a builder that works
+on a live `AudioContext` and an `OfflineAudioContext` alike, and a live `IntroScore` that owns the
+context. `web/src/lib/intro/score-golden.json` pins the composition. `web/e2e/intro-audio.spec.ts`
+is the oracle.
+
+**Three decisions were taken with the plan** and are recorded as **D12** (the unlocking gesture is
+consumed by the audio), **D13** (the noise is seeded) and **D14** (the gate's wording is the
+original's, verbatim) in the spec's §2.1a.
+
+**The reference is the original's Web Audio, not the WAV.** The Python renderer and the browser's
+`BiquadFilterNode` are not the same synthesis — the Python sweeps a resonant *low-pass* over its
+noise beds and the original's Web Audio uses a *band-pass*. The WAV is the **Flutter** client's
+reference; the archived overlay's `window.INTRO.audio` is the **web** port's. The oracle renders
+the archived original in an `OfflineAudioContext`, with `Math.random` replaced by the port's own
+seeded PRNG, so the two draw the same noise in the same order.
+
+**Two defects the oracle found** — both in the port, both invisible to a listening test:
+
+1. **The oscillators bypassed their envelopes.** The plain oscillators and the saturated sub were
+   connected *directly to the bus* as well as into their envelope gain, so raw full-amplitude
+   sines rode on top of the mix. The port rendered **3.5× too loud** and clipped.
+2. **The riser had a spurious 120 Hz high-pass.** The original builds the riser *inline*
+   (`source: 709-714`) rather than through `noiseVoice`, so it has no high-pass and its sweep ends
+   at `t + 0.60` rather than at the generic `dur × 0.9`. Counting the nodes by kind found it: the
+   port built **24 filters** where the original builds **23**.
+
+**One defect the oracle could not explain**, and which is recorded rather than papered over: the
+port's score renders about **6 dB quieter** than the archived original's own Web Audio, and the
+original's peak **exceeds full scale**. It is not a doubled score (33 oscillators on both sides),
+not the reverb (removing the convolver changes the level by 0.1 %), not a different graph (every
+node kind matches exactly) and not the noise (the same seeded stream, in the same order). The
+port's level *does* match the shipped WAV within **1.3 dB in peak**, and its envelope tracks the
+WAV's within **16 dB**. Spec §7.9 carries the full list of what was ruled out.
+
+**Verified:** `tsc -b` clean · `oxlint` exit 0 · vitest **300/300** across 41 files (8 new) ·
+`vite build` succeeds · the Playwright oracle **9/9** (the six frame oracles plus three audio
+oracles).
 ### Slice 11.4 - Flutter: align to the canonical design
 
 
