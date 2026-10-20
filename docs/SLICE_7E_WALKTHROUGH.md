@@ -138,3 +138,79 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 
 The modernization of **Anis' Home Media Server** is officially **COMPLETE**.
 All 10 roadmap phases (P0–P9, including Slices 7A–7E) are fully implemented, verified, and running in production. Legacy Flask, Waitress, Jinja, and SQLite have been completely replaced with a high-performance, robust, and maintainable Rust, React, and PostgreSQL foundation.
+
+> **Amended 2026-10-20 — see §6.** The *architecture* claim above holds. The *feature parity*
+> claim did not: one web feature was lost in Sub-Slice 7E.2 and never replaced. The modernization
+> was complete in every respect except that one, and the sign-off did not look for it.
+
+---
+
+## 6. Post-Sign-Off Finding — a feature lost in 7E.2 and never replaced
+
+**Found:** 2026-10-20, by review, two days after the cutover.
+**Status:** open — tracked as a missed backlog item from this migration.
+
+### What was lost
+
+The **web brand opening sequence** (the 3-second intro overlay). It shipped in the Flask era as a
+Jinja2 template, `templates/intro-overlay.html`, included at the end of the library page.
+Sub-Slice 7E.2 retired nine legacy templates, that one among them, and **no React component was
+written to replace it**.
+
+```text
+a10e9ef  feat(intro): wire the brand opening sequence into the library page
+107220f  chore: sync latest development
+5a2af4f  refactor(ui): decommission legacy Jinja templates and static assets (Slice 7E.2)   <- deleted
+```
+
+`web/src` contains no overlay component, and a search across **all branches and all of history**
+finds no React component that ever existed. The web app has had no intro since 2026-10-18.
+
+### Why the sign-off missed it
+
+7E.2's verification was: *"Verified React SPA (`web/dist/`) serves all pages directly without
+dependency on server-side Jinja templates."* That is an **architecture** check — and it passed.
+What it did not ask was whether the SPA still had the **features** the templates carried.
+
+The sign-off's own objective 4 was *"Verify that all operational documentation accurately reflects
+the 100% Rust + React + PostgreSQL architecture."* It did — accurately. The problem was that
+`AGENTS.md` and `docs/OPENING_SEQUENCE.md` both asserted the overlay *was* implemented, naming a
+file (`web/src/components/BrandIntroOverlay.tsx`) that **has never existed on any branch**. So the
+documentation verified the architecture and, at the same time, misdescribed the feature — and every
+later reader had a reason to believe nothing was missing.
+
+**This is the generalisable lesson: a decommissioning sign-off must diff *capabilities*, not just
+*mechanisms*.** "The template is gone and the SPA serves the page" is not the same claim as "the
+feature is still there", and only the second one is what a user would notice.
+
+### What was not lost
+
+- **The Flutter client still has it** — `flutter_client/lib/features/intro/`, with its own copy of
+  `intro-demo-portrait.mp4` and two test files. It was never affected.
+- **All the assets are intact** — `docs/opening-sequence/`, 293 MB: both videos, the score, 180
+  captured PNG frames, the stills, and the original source HTML.
+- **The design and the invariants are intact** — `docs/OPENING_SEQUENCE.md` and the AGENTS.md
+  "Brand Opening Sequence (Intro Overlay) Invariants" block.
+
+So the port is a **well-specified piece of work with a working reference implementation**, not a
+redesign.
+
+### The corrective actions taken on 2026-10-20
+
+| Document | Correction |
+|---|---|
+| `AGENTS.md` | The false claim that the overlay is *"wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`"* is removed. The three web invariants are now explicitly labelled **the specification for a port that has not been written**, and the Flutter invariant is labelled **implemented**, with its file paths. |
+| `docs/OPENING_SEQUENCE.md` | New §0 records the loss, the evidence, the timeline and what survives. The status line no longer claims the overlay is wired in. §5's Jinja include is annotated as historical, with the port's requirement stated. |
+| `AGENTS.md` §1 work queue | The web port is now item 5 of the immediate queue. |
+| `docs/Current issues.md` | Recorded as Issue 10. |
+
+### The port, when it is done
+
+- **Rust/Axum:** serve the three runtime media files (~5 MB) from `web/public/`. The 280 MB of
+  captured PNG frames is re-render source material and does not need to ship.
+- **React:** a component that injects the overlay over the running app — *not* a snapshot of it —
+  honours the three web invariants, and gates once per browser session on the **container**, not
+  the overlay.
+- **Regression harness:** `docs/opening-sequence/scripts/serve_with_intro.py` injects the overlay
+  over the running app independently of the app's own code, so the ported component can be
+  compared against the reference rendering frame for frame.

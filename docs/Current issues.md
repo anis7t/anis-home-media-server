@@ -1,9 +1,9 @@
 # Resolution Log — Current Issues (October 2026)
 
-All 9 architectural, authentication, telemetry, performance and security issues recorded in this
-document have been systematically addressed, tested, and resolved across 5 phases. Issues 1–7 were
-reported by the user; issues 8 and 9 were found by a verification pass over the QR device sign-in
-feature.
+All 10 architectural, authentication, telemetry, performance and security issues recorded in this
+document have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
+reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
+sign-in feature and the migration cutover.
 
 ---
 
@@ -128,3 +128,42 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   - **The two residue rows** left in the live catalog by an earlier run were removed.
   - **Verified:** a full suite run leaves the production database byte-identical — 0 residue rows,
     33 movies unchanged.
+
+---
+
+### Issue 10: The Web Brand Opening Sequence Was Lost in the Migration and Never Replaced
+
+- **Reported:** *(found by review, 2026-10-20)* — *"Is the opening sequence ported to Rust/Axum,
+  React?"* The answer is **no**, and it never was.
+- **What happened:**
+  - The intro overlay shipped in the Flask era as a Jinja2 template, `templates/intro-overlay.html`,
+    included at the end of the library page.
+  - **Slice 7E.2** retired nine legacy templates on 2026-10-18 (`5a2af4f`), that one among them.
+  - **No React component was ever written to replace it.** A search across all branches and all
+    of history finds no `BrandIntro`/`IntroOverlay` component. The web app has had no intro since
+    2026-10-18 — two days before this was found.
+- **Why it went unnoticed:**
+  - 7E.2's verification was *"the React SPA serves all pages directly without dependency on
+    server-side Jinja templates"*. That is an **architecture** check and it passed. Nobody asked
+    whether the SPA still had the **features** the templates carried.
+  - `AGENTS.md` stated the overlay *"is wired into the React SPA in
+    `web/src/components/BrandIntroOverlay.tsx`"*. **That file has never existed on any branch.** The
+    invariant was written as though the port were done, so every later reader had a reason to
+    believe the feature was live.
+- **Resolution — documented, and the port is scheduled:**
+  - `AGENTS.md`: the false claim is removed. The three web invariants are now labelled **the
+    specification for a port that has not been written**; the Flutter invariant is labelled
+    **implemented**, with its file paths. The web port is item 5 of the immediate work queue.
+  - `docs/OPENING_SEQUENCE.md`: new **§0** records the loss, the evidence, the timeline, and what
+    survives. The status line no longer claims the overlay is wired in.
+  - `docs/SLICE_7E_WALKTHROUGH.md`: new **§6** records the missed backlog item against the
+    migration that caused it, and the generalisable lesson — *a decommissioning sign-off must
+    diff capabilities, not just mechanisms.*
+  - **Not lost:** the Flutter client still has it (`flutter_client/lib/features/intro/`, with its
+    own copy of the portrait video and two test files); all 293 MB of assets are intact in
+    `docs/opening-sequence/`; the design and the invariants are intact.
+  - **The port is well-specified, not a redesign.** Rust needs only to serve ~5 MB of media from
+    `web/public/`; React needs a component that injects the overlay over the running app and
+    honours the three invariants; and
+    `docs/opening-sequence/scripts/serve_with_intro.py` provides a frame-for-frame regression
+    harness that injects the overlay independently of the app's own code.

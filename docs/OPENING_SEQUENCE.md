@@ -1,10 +1,76 @@
 # Opening Sequence — Brand Sting for Anis' Home Media Server
 
-Last reviewed: 2026-09-30
-Status: **delivered and wired into the application** (template include + per-session gate)
+Last reviewed: 2026-10-20
+Status: **design and artifacts intact; the web implementation is MISSING** (see §0)
 Artifacts: `docs/opening-sequence/` inside this repository — scripts, the score, the videos, the captured
-frames and stills in one bundle. The overlay layer itself lives at `templates/intro-overlay.html` and is
-included by the library page.
+frames and stills in one bundle. The overlay layer **used to** live at `templates/intro-overlay.html` and was
+included by the library page. That template was deleted in Slice 7E.2 on 2026-10-18 and **no React component
+was written to replace it**.
+
+---
+
+## 0. Current State — the web overlay is gone (2026-10-20)
+
+**This is a missed backlog item from the Flask → React migration, not a design change.**
+
+### What happened
+
+The opening sequence shipped in the Flask era as a Jinja2 template, `templates/intro-overlay.html`,
+included at the end of the library page. Its whole life in git:
+
+```text
+a10e9ef  feat(intro): wire the brand opening sequence into the library page
+107220f  chore: sync latest development
+5a2af4f  refactor(ui): decommission legacy Jinja templates and static assets (Slice 7E.2)   ← deleted
+```
+
+Slice 7E.2 retired nine legacy templates, `templates/intro-overlay.html` among them. Its own
+walkthrough recorded the template's removal and verified that *"the React SPA (`web/dist/`) serves all
+pages directly without dependency on server-side Jinja templates"* — which was true, and was the
+wrong question. It asked whether the **architecture** still worked, not whether the **feature**
+survived. No `BrandIntro`/`IntroOverlay` component exists in `web/src`, and a search across
+**all branches and all of history** finds no React component that ever existed.
+
+### What is true today
+
+| | State |
+|---|---|
+| **Web (React/Axum)** | **No intro.** `web/src` contains no overlay component. The only surviving trace is a *type*, `intro?: "auto" \| "gate" \| "off"`, in the generated `web/src/lib/api/schema.ts`, mirroring the old OpenAPI spec. The query parameter is inert: `https://media.anisparvez.in/?intro=off` and `?intro=auto` both return the plain SPA shell. |
+| **Rust/Axum** | Nothing to port. The overlay is a client-side DOM layer injected *over* the running app, so the backend's only involvement is serving the three media files as static assets. `rust/src` correctly contains no intro code. |
+| **Flutter client** | **Still implemented and tested.** `flutter_client/lib/features/intro/presentation/widgets/brand_intro_overlay.dart` and `intro_controller.dart`, with its own copy of `assets/videos/intro-demo-portrait.mp4`, plus `brand_intro_overlay_test.dart` and `intro_controller_test.dart`. |
+| **Assets** | **All intact** in `docs/opening-sequence/` — 293 MB total: `intro-demo.mp4` (2.2 MB), `intro-demo-portrait.mp4` (2.4 MB), `intro-theme.wav` (529 KB), 90 landscape + 90 portrait PNG frames (~280 MB, the source material for re-rendering the video), the stills, and the original `source/intro-overlay.html` and `source/intro.html`. |
+| **Generation tooling** | `docs/opening-sequence/scripts/*.py` — the canvas capture, video encoding, theme rendering and verification scripts. `cdp_local.py` needs `websockets`; the rest are standard library. |
+
+### Why it went unnoticed for two days
+
+`AGENTS.md` asserted that the overlay *"is wired into the React SPA in
+`web/src/components/BrandIntroOverlay.tsx`"*. **That file has never existed on any branch.** The
+invariant was written as though the port had been done, so every later reader — human or agent —
+had a reason to believe the feature was live. The `docs/OPENING_SEQUENCE.md` status line said
+*"delivered and wired into the application"* for the same reason.
+
+Both claims have been corrected. The AGENTS.md web invariants are now explicitly marked as the
+**specification for a port that has not been written**, rather than as a description of the
+current app.
+
+### The port is well-specified, not a redesign
+
+Everything needed is intact:
+
+- The **design**, in this document: the 3.00-second sequence, the "the outro reveals the real
+  page, not a copy of it" decision, the three modes, and the rendering notes.
+- The **invariants**, in `AGENTS.md` §"Brand Opening Sequence (Intro Overlay) Invariants":
+  prompt-free autoplay by default, non-blocking Web Audio that never stalls the animation, and
+  container-controlled session gating.
+- The **assets**, in `docs/opening-sequence/assets/`.
+- A **working reference implementation** of the same visual design, in the Flutter client.
+
+The Rust side needs only to serve the three runtime media files (~5 MB) from `web/public/`; the
+280 MB of PNG frames is re-render source material and does not need to ship.
+
+The one requirement that is easy to get wrong, and that the old template was careful about, is
+recorded in §4 and §8: the overlay must be **injected over the running app**, not a snapshot of
+it.
 
 ---
 
@@ -98,6 +164,11 @@ already run and what the curtain opens onto is a fully initialised page:
 {% include 'intro-overlay.html' %}
 ```
 
+> **This is how it WAS wired.** The template and the include were both deleted in Slice 7E.2
+> (2026-10-18). A React port must reproduce this behaviour — the overlay injected at the very
+> end of the page, over the live app — but with a React component rather than a server-side
+> include. See §0.
+
 It is gated **once per browser session** so it does not play on every load:
 
 ```js
@@ -106,6 +177,10 @@ if (!sessionStorage.getItem('introSeen')) {
   sessionStorage.setItem('introSeen', '1');
 }
 ```
+
+> Note the AGENTS.md invariant *"Container-Controlled Session Gating"*: the `intro-overlay`
+> component must **not** set `sessionStorage.setItem('introSeen')` before the enclosing
+> component's evaluation. The gate belongs to the container, not the overlay.
 
 `window.INTRO` exposes `play()`, `skip()`, `replay()`, `finish()`, `renderAt(t)`, `pageMode()`,
 `playback()`, `audio`, `timeline`, `duration`. The overlay needs no build step, no assets and no
@@ -120,6 +195,10 @@ python docs/opening-sequence/scripts/serve_with_intro.py --port 8001 --app http:
 # http://127.0.0.1:8001/          the app wearing the intro
 # http://127.0.0.1:8001/?intro=off  the app bare, for comparison
 ```
+
+> This proxy is also the **regression harness for the React port**: it injects the overlay over
+> the running app independently of the app's own code, so it can be used to compare the
+> ported component against the reference rendering frame for frame.
 
 ## 6. Re-rendering the videos
 

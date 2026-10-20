@@ -1,6 +1,28 @@
 # Media Server Modernization — Migration Status & Handoff
 
-> ## Current session handoff — 2026-10-20 (10:55 IST)
+> ## Current session handoff - 2026-10-20 (12:30 IST)
+>
+> **A MISSED MIGRATION BACKLOG ITEM: the web brand opening sequence was never ported.**
+> - **What:** the 3-second intro overlay shipped in the Flask era as `templates/intro-overlay.html`,
+>   included at the end of the library page. **Slice 7E.2 retired it on 2026-10-18** (`5a2af4f`) with
+>   the other legacy templates, and **no React component was ever written to replace it** - no
+>   `BrandIntro`/`IntroOverlay` component exists in `web/src` or in any branch's history. The web app
+>   has had no intro since 2026-10-18.
+> - **Why it was missed:** the Slice 7E.2 sign-off verified the *architecture* - *"the React SPA
+>   serves all pages directly without dependency on server-side Jinja templates"* - and that passed.
+>   Nobody diffed *capabilities*. Worse, `AGENTS.md` asserted the overlay *"is wired into the React
+>   SPA in `web/src/components/BrandIntroOverlay.tsx`"*, and **that file has never existed** - so
+>   every later reader had a reason to believe the feature was live.
+> - **Not lost:** the Flutter client still has it (`flutter_client/lib/features/intro/`, with its own
+>   copy of the portrait video and two test files); all 293 MB of assets are intact in
+>   `docs/opening-sequence/`; the design and the three web invariants are intact. The port is
+>   well-specified, not a redesign.
+> - **Status: OPEN** - item 5 of the `AGENTS.md` work queue. Full record:
+>   [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) section 0 and
+>   [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) section 6.
+> - **Lesson recorded:** *a decommissioning sign-off must diff capabilities, not just mechanisms.*
+>
+> ## Previous handoff - 2026-10-20 (10:55 IST)
 >
 > **OTT QR Device Sign-In is DELIVERED, HARDENED & VERIFIED.**
 > - **Feature**: OTT-style activation for camera-less devices (smart TVs, browsers, consoles) — six native Rust Axum endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by a PostgreSQL `device_pair_sessions` table, a `<QrSignInPanel>` on `/account`, and a standalone `/remotelogin` page for the phone. The phone signs in and names the device; the TV signs itself in.

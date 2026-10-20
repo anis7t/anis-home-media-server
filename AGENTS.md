@@ -41,14 +41,29 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 - **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
 - `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in Rust (`rust/src/transcode/` and `rust/src/services/gpu.rs`).
-- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay. It is wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`, gated once per browser session.
+- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay — the design, the
+  artifacts, and the invariants below.
+  **Status: the web overlay is NOT implemented.** It was a Jinja2 template
+  (`templates/intro-overlay.html`), deleted with the other legacy templates in Slice 7E.2
+  (`5a2af4f`, 2026-10-18), and no React component was ever written to replace it. The file
+  `web/src/components/BrandIntroOverlay.tsx` **has never existed on any branch** — an earlier
+  version of this line claimed it was wired into the React SPA, and that claim is what let the
+  regression go unnoticed for two days. The **Flutter client still has it** (see the invariant
+  below). The web port is a tracked backlog item:
+  [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) §0 and
+  [`docs/SLICE_7E_WALKTHROUGH.md`](docs/SLICE_7E_WALKTHROUGH.md) §6.
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
+
+> **The three web invariants below are the *specification* for a port that has not been written.**
+> They describe the behaviour the React implementation must reproduce. Do not read them as a
+> description of the current web app — there is no web overlay today. The Flutter invariant, by
+> contrast, describes code that exists and is tested.
 
 - **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
 - **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
 - **Container-Controlled Session Gating:** `intro-overlay` does not set `sessionStorage.setItem('introSeen')` prior to the enclosing component's evaluation.
-- **Mobile Client Opening Sequence (Flutter):** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated.
+- **Mobile Client Opening Sequence (Flutter) — IMPLEMENTED:** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated. Implementation: `flutter_client/lib/features/intro/`, with `brand_intro_overlay_test.dart` and `intro_controller_test.dart`.
 
 ## 2. Current architecture
 
@@ -136,6 +151,11 @@ The current project includes:
    connection, with no auth and no cap, on a publicly reachable endpoint.
 4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
    lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
+5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
+   was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
+   2026-10-18. The Flutter client still has it. The design, the assets (all still in
+   `docs/opening-sequence/`) and the three web invariants are intact, so this is a well-specified
+   port, not a redesign. See [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) §0.
 
 ### Secondary / parked
 

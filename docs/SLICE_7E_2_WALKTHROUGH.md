@@ -16,7 +16,7 @@ All browser clients and remote tunnel requests are served exclusively by the mod
   - `templates/devices.html` (Connected devices dashboard)
   - `templates/download.html` (Legacy download page)
   - `templates/error.html` (Generic error page)
-  - `templates/intro-overlay.html` (Legacy canvas intro overlay; ported to React `<BrandIntroOverlay>`)
+  - `templates/intro-overlay.html` (Legacy canvas intro overlay — **NOT ported**; see the correction below)
   - `templates/library.html` (Catalog grid)
   - `templates/manage.html` (Storage and library management)
   - `templates/manual.html` (User guide)
@@ -34,6 +34,32 @@ All browser clients and remote tunnel requests are served exclusively by the mod
   - `tmdb_diag.py`
   - `tmdb_details_test.py`
   - `restart_service_for_cast.cmd`
+
+> ## ⚠️ Correction — 2026-10-20: this sub-slice lost a feature
+>
+> **The line above originally read *"templates/intro-overlay.html (Legacy canvas intro overlay;
+> ported to React `<BrandIntroOverlay>`)"*. That claim was false, and it was the claim that let
+> the loss go unnoticed.**
+>
+> The brand opening sequence was **never ported**. `web/src/components/brand/BrandIntroOverlay.tsx`
+> was *planned* in the Phase 0 target architecture
+> ([`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md)) but never built, and no
+> `BrandIntro`/`IntroOverlay` component exists in `web/src` or in any branch's history. This
+> sub-slice deleted the only implementation — the Jinja template — and the web app has had no
+> intro since 2026-10-18.
+>
+> **Why it was missed:** the verification in §3 below is an **architecture** check — that the SPA
+> serves the pages without the Jinja templates. It passed, because it was true. Nobody asked
+> whether the SPA still had the **features** the templates carried. A decommissioning sign-off
+> must diff capabilities, not just mechanisms.
+>
+> **Not lost:** the Flutter client still has it (`flutter_client/lib/features/intro/`, with its own
+> copy of the portrait video and two test files); all 293 MB of assets are intact in
+> `docs/opening-sequence/`; the design and the three web invariants are intact.
+>
+> **Status: OPEN.** The web port is item 5 of the `AGENTS.md` work queue. Full record:
+> [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) §0 and
+> [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) §6.
 
 ---
 
