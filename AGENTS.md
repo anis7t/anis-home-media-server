@@ -164,12 +164,23 @@ The current project includes:
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
    was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
    2026-10-18. The Flutter client still has it. **Phase 11** is in progress: Slice 11.1 (the
-   canonical specification) is **complete** — it lives in
-   [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I — and Slice 11.1a (removing the
-   Flutter Replay action) is next. The roadmap is
+   canonical specification) and Slice 11.1a (removing the Flutter Replay action) are **complete**;
+   **Slice 11.2 (the web canvas renderer)** is next. The roadmap is
    [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    The design, the assets (all still in `docs/opening-sequence/`) and the three web invariants are
    intact, so this is a well-specified port, not a redesign.
+6. **Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.**
+   `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` all
+   fail in `setUpAll` with `Cannot find libmpv-2.dll in your system %PATH%`, because they call
+   `MediaKit.ensureInitialized()` and media_kit's **Windows** native libraries are not installed
+   here. The client targets **Android**, where media_kit does not use libmpv, so the **shipped app
+   is unaffected** — only these host-side Dart-VM tests cannot run.
+   **This gates verification of the Flutter slices in this very phase (11.4, 11.5), because
+   `app_shell_test.dart` is one of the three.** Fix: install the media_kit Windows libs, or drop
+   the `MediaKit.ensureInitialized()` call from the `runtime_player_*` files that do not need
+   native playback. Until then, the Flutter suite is **not** green here — a change is acceptable
+   when it adds **no new failures** and the pre-existing three are unchanged and named.
+   Tracked as Issue 11 in [`docs/Current issues.md`](docs/Current%20issues.md).
 
 ### Secondary / parked
 

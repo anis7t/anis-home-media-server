@@ -3,7 +3,8 @@
 All 10 architectural, authentication, telemetry, performance and security issues recorded in this
 document have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
 reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
-sign-in feature and the migration cutover.
+sign-in feature and the migration cutover. **Issue 11 is open** — three Flutter test files cannot
+run on this host because media_kit's Windows native libraries are absent.
 
 ---
 
@@ -181,3 +182,41 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
     shake), so a frame-for-frame oracle required explicit determinism decisions (D9, D10).
   - **Next:** Slice 11.2 — the web canvas renderer. Slice 11.1a (removing the Flutter Replay
     action) is **complete**. Roadmap: `docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`.
+
+---
+
+### Issue 11: Three Flutter Test Files Cannot Run On This Host — `libmpv-2.dll` Is Missing (2026-10-20)
+
+- **Reported:** *(found while baselining the Flutter suite before Phase 11 Slice 11.1a)* — the
+  suite was already red before any change was made:
+  ```text
+  test/features/player/runtime_player_3a_test.dart: (setUpAll)
+  test/features/player/runtime_player_3b_test.dart: (setUpAll)
+  test/features/shell/app_shell_test.dart: (setUpAll)
+  ```
+- **Cause:** `Exception: Cannot find libmpv-2.dll in your system %PATH%.` All three files call
+  `MediaKit.ensureInitialized()` in `setUpAll`, and media_kit's **Windows** native libraries are
+  not installed on this host. The `media_kit_libs_windows_video-1.0.11` package is present in the
+  pub cache but ships no DLL.
+- **This is environmental, not a code defect.** The Flutter client targets **Android**, where
+  media_kit uses the Android backend rather than libmpv, so the **shipped app is unaffected** —
+  on-device playback, the APK and the release build are all fine. Only these host-side Dart-VM
+  tests cannot run here.
+- **Why it matters:** `app_shell_test.dart` is one of the three. **Any change touching it cannot
+  be verified on this machine**, and a red suite makes it much harder to attribute a failure to
+  the change that caused it. This is why Phase 11 Slice 11.1a baselined the suite *before* making
+  any change — the three failures were pre-existing and the slice's own delta was exactly
+  `+276 ~8 -3` → `+275 ~8 -3`, i.e. the one test it deliberately deleted.
+- **Status:** ⏳ **OPEN — backlogged.** Two candidate fixes, both for the owner to choose:
+  1. **Install the media_kit Windows native libraries** so the full suite is runnable here. This
+     means fetching a binary onto the host, which is a supply-chain decision and is explicitly
+     *not* something to do unattended.
+  2. **Drop the `MediaKit.ensureInitialized()` call** from the two `runtime_player_*` files that do
+     not genuinely need native playback, and re-baseline. `AGENTS.md` already carries the
+     governing rule: *"the rule not to re-add `MediaKit.ensureInitialized()` to tests that do not
+     need native playback, are in `docs/FLUTTER_CLIENT_STATUS.md`."*
+- **Not done in Slice 11.1a:** fixing this is a separate concern from the Replay removal, and it
+  was deliberately left alone so the slice's verification could attribute its own delta cleanly.
+- **Verification bar for now:** the Flutter suite is **not** green on this host. A change is
+  acceptable when it introduces **no new failures** and the count of pre-existing failures is
+  unchanged — and the pre-existing three are named explicitly every time.
