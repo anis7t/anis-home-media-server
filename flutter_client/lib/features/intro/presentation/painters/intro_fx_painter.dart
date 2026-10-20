@@ -183,14 +183,22 @@ class IntroFxPainter extends CustomPainter {
     final q = seg(t, IntroT.impact - 0.05, IntroT.impact + 0.34);
     if (q <= 0 || q >= 1) return;
     final a = (q < 0.09 ? q / 0.09 : math.pow(1 - (q - 0.09) / 0.91, 2.2)) * 0.72;
+    final radius = diag * 0.55;
     final centre = Offset(cx, cy);
+    // The gradient is a circle of `radius`, so the fill is clipped to that
+    // circle's box rather than to the whole stage. Everything outside the
+    // circle is the gradient's last stop - fully transparent - and an ADDITIVE
+    // transparent source contributes nothing, so the picture is IDENTICAL and
+    // the fill is a fraction of the size. On a television's GPU that
+    // matters: a full-screen additive blend is a read-modify-write of the
+    // whole framebuffer.
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
+      Rect.fromCircle(center: centre, radius: radius),
       Paint()
         ..blendMode = BlendMode.plus
         ..shader = ui.Gradient.radial(
           centre,
-          diag * 0.55,
+          radius,
           [
             const Color(0xFFFFFFFF).withValues(alpha: a),
             const Color(0xFFFF8C9B).withValues(alpha: a * 0.55),
@@ -215,13 +223,16 @@ class IntroFxPainter extends CustomPainter {
     if (p <= 0) return;
     final gp = 1 - seg(t, IntroT.curtain, IntroT.curtain + 0.3);
     final a = (0.16 + 0.05 * math.sin(t * 7)) * p * gp;
+    final radius = diag * 0.3;
+    final centre = Offset(cx, cy);
+    // Clipped to its own circle, for the same reason as the flash.
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
+      Rect.fromCircle(center: centre, radius: radius),
       Paint()
         ..blendMode = BlendMode.plus
         ..shader = ui.Gradient.radial(
-          Offset(cx, cy),
-          diag * 0.3,
+          centre,
+          radius,
           [
             const Color(0xFFFF3C50).withValues(alpha: a),
             const Color(0xFFE50914).withValues(alpha: a * 0.42),

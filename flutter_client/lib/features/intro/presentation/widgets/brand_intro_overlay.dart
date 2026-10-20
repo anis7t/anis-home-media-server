@@ -832,25 +832,34 @@ class _IntroLetter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The gradient is painted as the text's **foreground**, not as a mask.
+    //
+    // A `ShaderMask` is a `saveLayer` with a blend mode - one offscreen
+    // buffer per letter, and there are twenty-one letters, so twenty-one
+    // offscreen buffers every frame. On a television's GPU that is the
+    // difference between smooth and not.
+    //
+    // `TextStyle.foreground` paints the gradient through the glyphs' own
+    // shape instead, with no offscreen buffer at all - and it is the SAME
+    // picture: the canonical's gradient is vertical, so each letter's slice of
+    // it depends only on the letter's height, which is the same for every
+    // letter of a word.
     return Opacity(
       opacity: state.opacity.clamp(0.0, 1.0),
       child: Transform.translate(
         offset: Offset(0, state.translateYEm * fontSize),
-        child: ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => ui.Gradient.linear(
-            Offset(bounds.left, bounds.top),
-            Offset(bounds.left, bounds.bottom),
-            colors,
-          ),
-          child: Text(
-            letter,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w800,
-              height: 1.02,
-              color: Colors.white,
-            ),
+        child: Text(
+          letter,
+          style: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w800,
+            height: 1.02,
+            foreground: Paint()
+              ..shader = ui.Gradient.linear(
+                Offset.zero,
+                Offset(0, fontSize * 1.02),
+                colors,
+              ),
           ),
         ),
       ),
