@@ -185,3 +185,27 @@ It was built at **01:19**. The newest source file it has to contain,
 `:1155` the subtitle's). So the artifact on disk **is** the one with the
 underline fix - **nothing needs rebuilding before the device check**, and
 nobody should be surprised by the 138 in the pubspec.
+
+## STATE: THE PHASE WAITS ON THE OWNER'S DEVICES
+
+Asked at 02:29 whether the television was free; the answer was **not yet** -
+the owner is casting a series to it. **Do not touch either device, and do not
+install anything, until the owner says so.**
+
+Everything else in Phase 11 is done and committed:
+
+    ca9a6e3  docs(intro): the APK waiting to be installed is the one with the fix
+    0d65e40  docs(intro): L22 records the hard cut it actually is
+    488bd08  test(intro): the typography cannot inherit an ambient decoration
+    7e60b2b  feat(intro): the television plays a pre-rendered sequence
+
+The remaining work, in order:
+
+  1. install 143 on the television (`192.168.1.70:5555`) and check the
+     sequence's smoothness, the score, dismissal and the 2.57 s handover;
+  2. install 143 on the phone (`192.168.1.6:40557`) and check the underlines
+     are gone, the live sequence runs, and the score plays;
+  3. close Phase 11 - Part II of `docs/OPENING_SEQUENCE.md` and the AGENTS.md
+     work queue;
+  4. the ~6 dB web score-level finding (spec section 7.9) stays open after
+     that; it is the last known item of the phase's own making.
