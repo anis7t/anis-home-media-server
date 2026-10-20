@@ -35,6 +35,17 @@ const OUT = resolve(process.cwd(), 'docs', 'opening-sequence', 'frame-golden.jso
 /** The design unit the fixture is generated for: 1920x1080 -> min/100. */
 const U = 10.8;
 
+/**
+ * The design units the responsive sweep uses.
+ *
+ * The frame's values are aspect-independent - the sequence is a function of
+ * time - with ONE exception: the lockup's vertical travel is `pl * u * 2.4`,
+ * so it scales with the design unit. The fixture therefore carries the travel
+ * for each unit the sweep visits, and the Flutter client is asserted against
+ * the one for its own aspect.
+ */
+const UNITS = [5.4, 10.24, 10.8];
+
 /** The instants: a 0.05 s grid, plus every cue boundary. */
 const CUES = [
   0, 0.12, 0.62, 0.74, 0.8, 0.92, 1.12, 1.24, 1.42, 1.58, 1.95, 2.57, 2.75,
@@ -115,6 +126,18 @@ try {
     { times: instants, u: U },
   );
   const frames = raw.map((f, i) => parse(instants[i], f));
+  // The lockup's travel, for every design unit the sweep visits.
+  const travelByUnit = {};
+  for (const unit of UNITS) {
+    const unitRaw = await page.evaluate(
+      async ({ times, u }) => {
+        const mod = await import('/src/lib/intro/frame.ts');
+        return times.map((t) => mod.computeFrame(t, { u, reduced: false }));
+      },
+      { times: instants, u: unit },
+    );
+    travelByUnit[String(unit)] = unitRaw.map((l) => parse(0, l).lockup.translateYPx);
+  }
   const out = {
     _comment: [
       'The canonical frame, for every sampled instant.',
@@ -126,10 +149,12 @@ try {
       'The Flutter client computes the same frame and is asserted against this file',
       'by flutter_client/test/features/intro/intro_frame_golden_test.dart.',
       '',
-      "`u` is the design unit the fixture was generated for: 1920x1080 -> ${U}.",
-      "Every field except the lockup's vertical travel is independent of it.",
+      'Every value is aspect-independent EXCEPT the lockup`s vertical travel, which',
+      'is `pl * u * 2.4`. `lockupTravelByUnit` carries the travel for each design',
+      'unit the responsive sweep visits.',
     ],
     u: U,
+    lockupTravelByUnit: travelByUnit,
     frames,
   };
   writeFileSync(OUT, JSON.stringify(out, null, 1) + '\n');

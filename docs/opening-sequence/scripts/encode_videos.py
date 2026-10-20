@@ -21,7 +21,10 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-AUDIO = os.path.join(HERE, "intro-theme.wav")
+# The frames, the score master and the encoded videos all live one level up,
+# with the other artefacts - not beside this script.
+ROOT = os.path.join(HERE, "..")
+AUDIO = os.path.join(ROOT, "assets", "intro-theme.wav")
 
 JOBS = {
     "landscape": {"dir": "frames", "size": (1920, 1080), "out": "intro-demo.mp4"},
@@ -45,7 +48,7 @@ def run(cmd):
 
 def normalise(dirname, size):
     """Scale every frame to `size`; returns (count, rescaled, already_ok)."""
-    d = os.path.join(HERE, dirname)
+    d = os.path.join(ROOT, dirname)
     frames = sorted(f for f in os.listdir(d) if f.endswith(".png"))
     if len(frames) != 90:
         raise SystemExit("%s holds %d frames, expected 90" % (dirname, len(frames)))
@@ -67,9 +70,9 @@ def normalise(dirname, size):
 
 
 def encode(dirname, out, size):
-    d = os.path.join(HERE, dirname)
+    d = os.path.join(ROOT, dirname)
     pattern = os.path.join(d, "f_%04d.png")
-    tmp = os.path.join(HERE, out + ".tmp.mp4")
+    tmp = os.path.join(ROOT, "assets", out + ".tmp.mp4")
     run(["ffmpeg", "-v", "error", "-y",
          "-framerate", str(FPS), "-i", pattern,
          "-i", AUDIO,
@@ -79,8 +82,28 @@ def encode(dirname, out, size):
          "-movflags", "+faststart", "-shortest",
          "-vf", "scale=%d:%d:flags=lanczos" % size,
          tmp])
-    os.replace(tmp, os.path.join(HERE, out))
-    return os.path.join(HERE, out)
+    os.replace(tmp, os.path.join(ROOT, "assets", out))
+    return os.path.join(ROOT, "assets", out)
+
+
+def stills(key, dirname):
+    """The keystills, taken from the frames so they can never drift.
+
+    They are the three instants the sequence is usually quoted at: the impact,
+    the lockup, and the curtain fully open.
+    """
+    d = os.path.join(ROOT, dirname)
+    out = os.path.join(ROOT, "assets", "stills")
+    os.makedirs(out, exist_ok=True)
+    written = []
+    for t in (0.70, 1.50, 2.90):
+        index = int(round(t * FPS))
+        name = "still-%s-%.2f.png" % (key, t)
+        run(["ffmpeg", "-v", "error", "-y",
+             "-i", os.path.join(d, "f_%04d.png" % index),
+             os.path.join(out, name)])
+        written.append(name)
+    return written
 
 
 def main():
@@ -93,6 +116,8 @@ def main():
               % (count, rescaled, job["size"][0], job["size"][1], ok))
         path = encode(job["dir"], job["out"], job["size"])
         print("  wrote %s  (%.1f MB)" % (job["out"], os.path.getsize(path) / 1e6))
+        for name in stills(key, job["dir"]):
+            print("  wrote assets/stills/%s" % name)
     return 0
 
 

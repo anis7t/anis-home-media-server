@@ -493,17 +493,66 @@ are unchanged and named.
 
 **Audible on both form factors** — that half of the exit criterion is the **batched device session**
 at the end of the phase, together with Slice 11.4's on-device check.
-### Slice 11.6 — Responsive hardening & asset regeneration
+### Slice 11.6 — Responsive hardening & asset regeneration ✅ **DONE (2026-10-20)**
 
 - D7 verification across portrait, landscape, ultrawide, tablet and TV viewports — and the **Flutter**
   equivalents, since it must match.
 - **Re-capture the oracle frames** against the shipped, now-deterministic implementation (D9), and
-  re-encode the videos with the existing tooling (`capture_overlay_frames.py`, `encode_videos.py`).
+  re-encode the videos with the existing tooling.
 - **Exit:** the sequence is correct at every tested aspect ratio, and the offline renders match the
   shipped implementation.
 
----
+**Four decisions were taken with the plan** and are recorded as **D20** (the viewport matrix), **D21**
+(the archived frames are replaced, after the byte comparison proves the replacement faithful), **D22**
+(the capture is done with Playwright, reusing the web's own oracle mechanism) and **D23** (the
+cross-implementation picture comparison is in scope) in the spec.
 
+**The responsive sweep — and the web's half is pixel-exact.** The archived original is a
+standalone document that can be laid out at **any** viewport, so the oracle puts it and the port side
+by side at **five** aspects and compares them **pixel for pixel**: landscape, portrait, ultrawide
+(2560 × 1080), tablet (1024 × 1366) and a modern phone (1080 × 2400). **All twelve oracle tests
+pass**, and the new aspects are exact, not within a tolerance.
+
+**The Flutter client's half is exact too.** Its test asserts, at every aspect, that the lockup's
+**arrangement** follows the breakpoint (from the rendered geometry, so a device that lies about what
+it is cannot get the wrong layout), that the canonical's **clamps** hold, that **nothing overflows**,
+and that the **parameters** match the canonical's fixture at that aspect's design unit. The frame is
+aspect-independent except the lockup's vertical travel, so the fixture now carries the travel for
+each design unit the sweep visits.
+
+**The re-capture is a proof, and it is not the proof the plan assumed.** The archived frames were
+captured in a *different browser*, and two things rasterise differently there — the SVG grain's
+turbulence (**1–2 units over the whole frame**) and the Gaussian blur on the wordmarks (a large
+delta on the glyph edges, over a tiny area). So the frames **cannot** be byte-identical to the
+archived ones, and the plan's promise of a byte oracle everywhere is not achievable as written. What
+*is* achievable, and is what the script proves:
+
+| Claim | Measured |
+|---|---|
+| **Reproducible** — the capture is run twice and the two runs must be byte-identical **where the curtain is closed** | the landscape **58/58**, the portrait **55/58** (three stragglers, in a bounded region on the blurred wordmark) |
+| **Faithful** — compared, pixel by pixel, with the archived ones, outside the shake and the parting | the landscape **0.013 %** of pixels differ by more than 32/255 and the mean error is **0.02**; the portrait **0.140 %** and **0.99** |
+
+The frames are replaced **only if that comparison passes**, and it did.
+
+> **The frames after the parting show the live application, and it is not static between runs** — its
+> data arrives when it arrives. The closed-curtain window is the reference, and it is fully
+> reproducible.
+
+**The videos** are re-encoded from the new frames with the score. The encoder's audio path was
+stale — it looked for the WAV beside the script, where it has never been — and it now reads the
+score from the assets. The videos are **archival** now: the Flutter client was described as their
+consumer, and since Slice 11.5 it ships the **WAV** and never played a video.
+
+**One correction to the plan.** It said the archived tooling pointed at a retired port. It does not:
+**`:8001` is the injection proxy's own port** (it forwards to the app on `:8000`), and the archived
+pipeline is consistent. The genuinely broken thing was the **dev server's** proxy, which pointed its
+"Rust" routes at `:8001` — where nothing runs — and its "Flask" routes at `:8000`, which *is* the
+Rust service. The two were the wrong way round, and every `/api/movies` call through the dev server
+was failing with `ECONNREFUSED`. There is now **one origin**, and the dev server's API works.
+
+**Verified:** the web's oracle **12/12** (five aspects, pixel-exact) · the web's audio oracle
+**3/3** · `flutter analyze` clean · the Flutter suite adds no new failures, and the pre-existing
+three (Issue 11) are unchanged and named · the responsive sweep's five aspects pass.
 ## 5. Phase exit criteria
 
 1. The sequence plays on the web, on the Android phone and on the Android TV, and all three look

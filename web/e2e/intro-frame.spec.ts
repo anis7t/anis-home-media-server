@@ -32,9 +32,22 @@ import {
  * See `intro-oracle.ts` for what is normalised and why.
  */
 
+/**
+ * The viewports the sweep covers.
+ *
+ * The design is resolution-independent by construction - everything is in the
+ * design unit, `min(w, h) / 100`, with clamps - and the archived original is
+ * a standalone document that can be laid out at ANY viewport. So the
+ * comparison is not a tolerance against a reference that only exists at two
+ * aspects: it is the archived original and the port, side by side, at every
+ * aspect, and they must be the same picture.
+ */
 const VIEWPORTS = [
   { name: 'landscape', width: 1920, height: 1080 },
   { name: 'portrait', width: 1080, height: 1920 },
+  { name: 'ultrawide', width: 2560, height: 1080 },
+  { name: 'tablet', width: 1024, height: 1366 },
+  { name: 'phone-tall', width: 1080, height: 2400 },
 ];
 
 /** The original's layers, by id. */

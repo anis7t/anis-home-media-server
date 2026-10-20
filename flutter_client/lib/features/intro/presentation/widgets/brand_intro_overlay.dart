@@ -75,7 +75,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
   late final IntroScoreController _score;
 
   final GlobalKey _stageKey = GlobalKey();
-  final GlobalKey _iconKey = GlobalKey();
+  final GlobalKey iconKey = GlobalKey();
   final GlobalKey _lockupKey = GlobalKey();
 
   /// The word column's key.
@@ -162,7 +162,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
   /// the FX see the PREVIOUS frame's geometry.
   void _measure() {
     final stageBox = _stageKey.currentContext?.findRenderObject() as RenderBox?;
-    final iconBox = _iconKey.currentContext?.findRenderObject() as RenderBox?;
+    final iconBox = iconKey.currentContext?.findRenderObject() as RenderBox?;
     final lockupBox = _lockupKey.currentContext?.findRenderObject() as RenderBox?;
 
     Rect? toLocal(RenderBox? box) {
@@ -222,7 +222,7 @@ class BrandIntroOverlayState extends State<BrandIntroOverlay>
           portrait: portrait,
           handover: _handover,
           stageKey: _stageKey,
-          iconKey: _iconKey,
+          iconKey: iconKey,
           lockupKey: _lockupKey,
           iconOrigin: _iconOrigin,
           lockupRect: _lockupRect,
@@ -800,7 +800,11 @@ class _IntroWordmark extends StatelessWidget {
       );
     }
 
-    return DefaultTextStyle(
+    // MERGED, so the ambient style is inherited - the family included. The
+    // canonical's font stack puts the platform's UI font first, and a test
+    // that renders the wordmarks in Ahem (solid squares) measures a layout
+    // that no device ever has.
+    return DefaultTextStyle.merge(
       style: TextStyle(
         fontSize: fontSize,
         fontWeight: FontWeight.w800,

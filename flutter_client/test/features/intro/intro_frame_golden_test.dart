@@ -35,6 +35,13 @@ void main() {
   final u = (fixture['u'] as num).toDouble();
   final frames = (fixture['frames'] as List).cast<Map<String, dynamic>>();
 
+  /// The lockup's vertical travel, for every design unit the sweep visits.
+  ///
+  /// It is the ONE value in the frame that depends on the viewport: the
+  /// lockup lifts by `pl * u * 2.4` as the curtain opens.
+  final travelByUnit = (fixture['lockupTravelByUnit'] as Map<String, dynamic>)
+      .map((k, v) => MapEntry(k, (v as List).cast<num>()));
+
   /// Assert that the port's value and the canonical's agree.
   void expectSame(double actual, num expected, String what, double t) {
     final e = expected.toDouble();
@@ -47,10 +54,14 @@ void main() {
     expect(frames.length, greaterThan(60));
   });
 
-  test('the port computes the canonical frame at every sampled instant', () {
-    for (final expected in frames) {
-      final t = (expected['t'] as num).toDouble();
-      final f = computeIntroFrame(t, IntroFrameOptions(u: u, reduced: false));
+  /// Assert that the port's frame at `t` is the canonical's, at [unit].
+  ///
+  /// Every value is aspect-independent except the lockup's vertical travel,
+  /// which is `pl * u * 2.4` - so the travel is compared against the
+  /// canonical's value for that unit.
+  void expectCanonicalFrame(double t, double unit) {
+    final expected = frames.firstWhere((f) => (f['t'] as num).toDouble() == t);
+    final f = computeIntroFrame(t, IntroFrameOptions(u: unit, reduced: false));
 
       final icon = expected['icon'] as Map<String, dynamic>;
       expectSame(f.iconScale, icon['scale'] as num, 'icon scale', t);
@@ -112,13 +123,37 @@ void main() {
 
       final lockup = expected['lockup'] as Map<String, dynamic>;
       expectSame(f.lockupTranslateXPx, lockup['translateXPx'] as num, 'lockup travel x', t);
-      expectSame(f.lockupTranslateYPx, lockup['translateYPx'] as num, 'lockup travel y', t);
+      final travel = travelByUnit[unit.toString()]!;
+      final index = frames.indexOf(expected);
+      expectSame(
+        f.lockupTranslateYPx,
+        travel[index],
+        'lockup travel y (u=$unit)',
+        t,
+      );
       expectSame(f.lockupScale, lockup['scale'] as num, 'lockup scale', t);
       expectSame(f.lockupOpacity, lockup['opacity'] as num, 'lockup opacity', t);
 
       final shake = expected['shake'] as Map<String, dynamic>;
       expectSame(f.shakeXPx, shake['x'] as num, 'shake x', t);
       expectSame(f.shakeYPx, shake['y'] as num, 'shake y', t);
+  }
+
+  test('the port computes the canonical frame at every sampled instant', () {
+    for (final expected in frames) {
+      expectCanonicalFrame((expected['t'] as num).toDouble(), u);
+    }
+  });
+
+  test('the frame is the canonical one at every design unit the sweep visits', () {
+    // The responsive sweep (Slice 11.6) visits three design units: the
+    // phone's, the tablet's and the desktop's. The frame is the same sequence
+    // at all of them - only the lockup's travel scales.
+    for (final unit in travelByUnit.keys) {
+      final value = double.parse(unit);
+      for (final expected in frames) {
+        expectCanonicalFrame((expected['t'] as num).toDouble(), value);
+      }
     }
   });
 

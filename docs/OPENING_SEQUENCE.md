@@ -673,23 +673,67 @@ captured reference — **bit for bit**.
 
 | Tool | What it does |
 |---|---|
-| `docs/opening-sequence/scripts/serve_with_intro.py` | Read-only injection proxy. Injects the archived overlay over the **running app**, independently of the app's own code. |
-| `docs/opening-sequence/scripts/capture_overlay_frames.py` | Drives `INTRO.renderAt(t)` (`capture_overlay_frames.py:77`) over CDP to capture reference frames — 90 landscape, 90 portrait. |
+| `docs/opening-sequence/scripts/serve_with_intro.py` | Read-only injection proxy. Injects the archived overlay over the **running app**, independently of the app's own code. It listens on **:8001** and forwards to the app on **:8000** - the injection proxy's own port, not a retired backend. |
+| `docs/opening-sequence/scripts/cdp_local.py` | headless-Edge CDP driver (launch, attach, evaluate, real clicks, clipped captures) |
+| `docs/opening-sequence/scripts/capture_overlay_frames.py` | Drives `INTRO.renderAt(t)` over CDP to capture reference frames - 90 landscape, 90 portrait. |
 | `docs/opening-sequence/scripts/encode_videos.py` | Re-encodes both MP4s from the captured frames, with the score. |
 | `docs/opening-sequence/scripts/verify_overlay.py` | 12 behavioural checks against the running server. |
-| `docs/opening-sequence/scripts/verify_app_integration.py` | Live-service verifier — drives the real app. |
+| `docs/opening-sequence/scripts/verify_app_integration.py` | Live-service verifier - drives the real app. |
+| `scripts/capture-shipped-frames.mjs` | **Slice 11.6.** Re-captures the frames against the **shipped** implementation, proves the capture is reproducible, and replaces the archived ones. |
 
-The **archived** PNGs were captured with the original's random shake (`source: 541-544`), so they
-are a *visual* reference inside the `0.62 – 1.04 s` window and a byte oracle everywhere else.
-Slice 11.6 re-captures them against the shipped implementation, after which they are a byte
-oracle everywhere.
+#### The re-capture (Slice 11.6)
 
----
+The archived frames were captured from the **archived original** over the running application, in a
+cloud browser, at the time the original drew its camera shake from `Math.random()` (source 541-544).
+Three things have changed since, and the re-capture is what makes the frames a reference again:
 
-# Part II — Historical record
+| | |
+|---|---|
+| **The shake is deterministic** (D9), so the frames inside the shake window (0.62 - 1.04 s) are now reproducible - and they differ from the archived ones, which carried a random shake. |
+| **The application is the React one**, so the frames in the parting window show a different application. |
+| **The browser is a different one**, and two things rasterise differently there: the SVG grain's turbulence (**1-2 units over the whole frame**) and the Gaussian blur on the wordmarks (a large delta on the glyph edges, over a tiny area). |
 
-*Everything in Part II is what happened. It is preserved, not rewritten, because it is the evidence
-for Issue 10 and the reason Phase 11 exists.*
+**So the frames are not, and cannot be, byte-identical to the archived ones.** The re-capture proves
+the two things that *can* be proved:
+
+| Claim | How it is proved | Measured |
+|---|---|---|
+| **Reproducible** | the capture is run twice, and the two runs must be byte-identical **where the curtain is closed** - which is where the frames are a property of the overlay alone | the landscape **58/58**; the portrait **55/58** (the three stragglers differ in a bounded region on the blurred wordmark) |
+| **Faithful** | the new frames are compared, pixel by pixel, with the archived ones, outside the shake and the parting | **0.013 %** of the landscape's pixels differ by more than 32/255, and the mean error is **0.02**; the portrait is **0.140 %** and **0.99** |
+
+The metric is the same one the Flutter client's oracle uses (section 13.3), so the two are comparable.
+The archived frames are replaced only if the comparison passes - which is what makes the replacement
+safe.
+
+> **The frames after the parting show the live application, and it is not static between runs.**
+> The application behind the curtain is a live client - its data arrives when it arrives - so those
+> frames are reproducible only in the sense that they were captured once. The closed-curtain window
+> is the reference, and it is fully reproducible.
+
+#### The videos
+
+`encode_videos.py` re-encodes both MP4s from the frames, with the score. They are **archival
+artefacts** now: the Flutter client used to be described as their consumer, and since Slice 11.5 it
+ships the **WAV** instead and never played a video.
+
+### 13.5 The responsive sweep (Slice 11.6)
+
+Decision **D7** says the sequence is resolution-independent, and the sweep is what proves it.
+
+| Target | How it is proved | Result |
+|---|---|---|
+| **Web** | the archived original is a standalone document that can be laid out at **any** viewport, so the oracle puts it and the port side by side at **five** aspects and compares them **pixel for pixel** | **exact** at every one of them: landscape, portrait, ultrawide (2560 x 1080), tablet (1024 x 1366) and a modern phone (1080 x 2400) |
+| **Flutter** | the lockup's **arrangement** follows the breakpoint, the canonical's **clamps** hold, nothing overflows, and the **parameters** match the canonical's fixture at that aspect's design unit | **exact** at all five aspects |
+
+> **The breakpoint is the stage's aspect, never the device type.** A phone in landscape gets the
+> side-by-side lockup, and a television would get the stacked one if it were ever held in portrait.
+> The Flutter client's test asserts the arrangement from the rendered geometry, so a device that
+> lies about what it is cannot get the wrong layout.
+
+> **The frame is the same sequence at every aspect.** Every value in it is aspect-independent except
+> the lockup's vertical travel, which is `pl * u * 2.4` - so the fixture carries the travel for
+> each design unit the sweep visits, and the Flutter client is asserted against the one for its own
+> aspect.
 
 ## 14. The loss (2026-10-18) — the web overlay is gone
 
@@ -787,12 +831,15 @@ Everything for this work lives inside the repository in `docs/opening-sequence/`
 | `docs/opening-sequence/scripts/convert_to_overlay.py` | asserted, reproducible record of the standalone→overlay conversion |
 | `docs/opening-sequence/source/intro.html` | pre-overlay source, kept as the conversion's input |
 | `docs/opening-sequence/source/intro-overlay.html` | **the canonical source** (973 lines), preserved verbatim |
-| `docs/opening-sequence/assets/intro-theme.wav` | score master — 3.070 s, 44.1 kHz stereo, peak −1.01 dBFS |
+| `docs/opening-sequence/assets/intro-theme.wav` | score master — 3.070 s, 44.1 kHz stereo, peak −2.98 dBFS, RMS -19.00 dBFS |
 | `docs/opening-sequence/assets/intro-demo.mp4` | 1920×1080, 30 fps, 90 frames, 3.000 s, H.264 CRF 17 + AAC 192 kbps |
-| `docs/opening-sequence/assets/intro-demo-portrait.mp4` | 1080×1920, same encoding — for the Flutter client |
+| `docs/opening-sequence/assets/intro-demo-portrait.mp4` | 1080×1920, same encoding — archival; the Flutter client has shipped the WAV since Slice 11.5 and never played a video |
 | `docs/opening-sequence/assets/stills/` | keystills from the encoded videos |
-| `docs/opening-sequence/frames/` | 90 PNGs landscape, captured over the live app (regenerable) |
-| `docs/opening-sequence/frames-portrait/` | 90 PNGs portrait |
+| `docs/opening-sequence/frames/` | 90 PNGs landscape, captured over the live app from the SHIPPED implementation (Slice 11.6), regenerable with `scripts/capture-shipped-frames.mjs` |
+| `docs/opening-sequence/frames-portrait/` | 90 PNGs portrait, likewise |
+| `scripts/capture-shipped-frames.mjs` | re-captures the frames from the shipped implementation and proves the capture reproducible (Slice 11.6) |
+| `scripts/gen-intro-frame-golden.mjs` | generates the canonical frame fixture, with the lockup's travel per design unit |
+| `docs/opening-sequence/frame-golden.json` | the canonical frame, at 69 instants, for the Flutter client to assert against |
 | `docs/opening-sequence/README.md` | full specs, integration notes, capture realities, verification table |
 
 ## 17. Re-rendering the videos
