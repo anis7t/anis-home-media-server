@@ -150,7 +150,7 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
     `web/src/components/BrandIntroOverlay.tsx`"*. **That file has never existed on any branch.** The
     invariant was written as though the port were done, so every later reader had a reason to
     believe the feature was live.
-- **Resolution — documented, and the port is scheduled:**
+- **Resolution — documented, and the port is scheduled and now specified:**
   - `AGENTS.md`: the false claim is removed. The three web invariants are now labelled **the
     specification for a port that has not been written**; the Flutter invariant is labelled
     **implemented**, with its file paths. The web port is item 5 of the immediate work queue.
@@ -167,3 +167,17 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
     honours the three invariants; and
     `docs/opening-sequence/scripts/serve_with_intro.py` provides a frame-for-frame regression
     harness that injects the overlay independently of the app's own code.
+  - **Phase 11, Slice 11.1 (2026-10-20) — the canonical specification is written.**
+    `docs/OPENING_SEQUENCE.md` is now **Part I (the specification)** + **Part II (the historical
+    record)**. Part I carries the 15-cue timing table (every value cited to
+    `docs/opening-sequence/source/intro-overlay.html:<line>`), the layer stack with z-indexes, the
+    compositing / responsive / audio / dismissal / reduced-motion / gating contracts, the
+    decision record (D1–D11) and a **divergence ledger (L1–L15)** naming the closing slice for
+    every difference between the canonical design and what the phone and TV do today.
+  - **The audit found more drift than the original summary recorded.** The Flutter client's **entire
+    FX layer is invisible** — it is painted *beneath* the opaque curtain — and it has **no grain
+    layer**; its lockup rule is a constant rather than the canonical portrait/landscape
+    breakpoint; and `renderAt(t)` in the archived source is **not pure** (a `Math.random()` camera
+    shake), so a frame-for-frame oracle required explicit determinism decisions (D9, D10).
+  - **Next:** Slice 11.1a — remove the Flutter "Replay Brand Intro" action. Then 11.2 (the web
+    canvas renderer). Roadmap: `docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`.

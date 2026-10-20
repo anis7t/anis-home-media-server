@@ -148,7 +148,10 @@ All 10 roadmap phases (P0–P9, including Slices 7A–7E) are fully implemented,
 ## 6. Post-Sign-Off Finding — a feature lost in 7E.2 and never replaced
 
 **Found:** 2026-10-20, by review, two days after the cutover.
-**Status:** open — tracked as a missed backlog item from this migration.
+**Status:** open — tracked as a missed backlog item from this migration, and now **scheduled as
+Phase 11**. The canonical specification was written in Phase 11 Slice 11.1 (2026-10-20) and lives in
+[`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) Part I. The roadmap is
+[`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ### What was lost
 

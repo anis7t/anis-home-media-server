@@ -6,14 +6,21 @@
 > - **Branch:** `feature/phase-11-opening-sequence` (cut from `fb8b5f6`). No implementation has started.
 > - **Scope:** one brand opening sequence, implemented natively for all three targets, from a single
 >   canonical design. The web port does not exist (it was lost in Slice 7E.2); the Flutter
->   implementation has drifted from the original - stacked lockup, a visible Skip button, and no
->   score at all.
+>   implementation has drifted from the original - the whole FX layer is painted *beneath* the
+>   opaque curtain and is therefore invisible, there is no grain layer, the lockup is stacked
+>   unconditionally rather than by breakpoint, there is a visible Skip button, a Settings "Replay
+>   Brand Intro" action, and no score at all.
 > - **Decisions:** the **web original is canonical** (Flutter changes to match); **canvas renderer
->   with a separate Web Audio score** for the web; **no visible Skip, no Replay** on any target;
->   **web once per browser session, Android every launch**; the intro **plays over the login
->   screen**; and it must be **resolution-independent** at every aspect ratio and orientation.
-> - **Six structural slices**, each independently verifiable and individually approved:
->   11.1 canonical specification (no code) | 11.2 web canvas renderer | 11.3 web lifecycle,
+>   with a separate Web Audio score** for the web; **no visible Skip and no Replay action
+>   anywhere**, including the Flutter Settings screen; **web once per browser session, Android
+>   every launch**; the intro **plays over the login screen**; and it must be
+>   **resolution-independent** at every aspect ratio and orientation.
+> - **Canonical specification (Slice 11.1, complete 2026-10-20):** `docs/OPENING_SEQUENCE.md`
+>   Part I - the 15-cue timing table, the layer stack, the compositing / responsive / audio /
+>   dismissal / reduced-motion / gating contracts, and the divergence ledger (L1-L15).
+> - **Seven structural slices**, each independently verifiable and individually approved:
+>   11.1 canonical specification (no code) - **done** | 11.1a remove the Flutter Replay action |
+>   11.2 web canvas renderer | 11.3 web lifecycle,
 >   gating, modes and audio | 11.4 Flutter alignment to the canonical design | 11.5 Flutter
 >   score | 11.6 responsive hardening and asset regeneration.
 > - **Research (D1):** Netflix's own intro is authored code, not a media file, and the industry

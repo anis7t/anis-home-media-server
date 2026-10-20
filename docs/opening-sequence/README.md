@@ -38,7 +38,7 @@ still-*.png             key stills at 0.70 / 1.50 / 2.90 s
 | 1.12 | second note a fifth up, bell layer, pad swells |
 | 1.24 / 1.42 | "PLAY • ORGANIZE • ENJOY" letterspaces in; the red rule draws |
 | 1.95 | **the curtain parts** |
-| 2.26 | halves off-screen; vignette, grain and embers gone |
+| 2.75 | halves off-screen; vignette, grain and embers gone |
 | 2.57 | lockup fully dismissed — **the app is clickable again** |
 | 2.75 – 3.00 | settled hold (frames 2.80–2.97 are byte-identical) |
 

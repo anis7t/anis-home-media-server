@@ -41,28 +41,39 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 - **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
 - `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in Rust (`rust/src/transcode/` and `rust/src/services/gpu.rs`).
-- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay — the design, the
-  artifacts, and the invariants below.
+- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay. **Part I is the canonical
+  specification** — the timing table, the layer stack, the compositing / responsive / audio /
+  dismissal / reduced-motion contracts, and the divergence ledger. Every Phase 11 slice is written
+  from it. Part II is the historical record (the loss, the artifacts, the verification).
   **Status: the web overlay is NOT implemented.** It was a Jinja2 template
   (`templates/intro-overlay.html`), deleted with the other legacy templates in Slice 7E.2
   (`5a2af4f`, 2026-10-18), and no React component was ever written to replace it. The file
   `web/src/components/BrandIntroOverlay.tsx` **has never existed on any branch** — an earlier
   version of this line claimed it was wired into the React SPA, and that claim is what let the
   regression go unnoticed for two days. The **Flutter client still has it** (see the invariant
-  below). The web port is **Phase 11**, planned and awaiting slice approval:
+  below). The web port is **Phase 11**; Slice 11.1 (the canonical spec) is complete and 11.1a
+  onward await slice-by-slice approval:
   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
 
+> **The canonical design is [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I.** Where
+> this block and that spec disagree, the spec wins. Every Phase 11 slice is written from it.
+>
 > **The three web invariants below are the *specification* for a port that has not been written.**
 > They describe the behaviour the React implementation must reproduce. Do not read them as a
 > description of the current web app — there is no web overlay today. The Flutter invariant, by
 > contrast, describes code that exists and is tested.
 
-- **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
-- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
+- **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon app load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`. `auto` is the default for the injected overlay; `gate` was the *standalone* page's default and is not the product behaviour.
+- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture. **The audio must never gate the animation** — that single rule is the difference between a prompt-free intro and a broken one.
 - **Container-Controlled Session Gating:** `intro-overlay` does not set `sessionStorage.setItem('introSeen')` prior to the enclosing component's evaluation.
-- **Mobile Client Opening Sequence (Flutter) — IMPLEMENTED:** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated. Implementation: `flutter_client/lib/features/intro/`, with `brand_intro_overlay_test.dart` and `intro_controller_test.dart`.
+- **No Visible Skip and No Replay, Anywhere:** The canonical design exposes **no Skip control and no Replay control on any target**, including the Flutter Settings screen. The archived source's HUD is hidden by default (`SHOW_HUD=false`) and is a demo affordance, not a product surface; dismissal is implicit (click / tap / space / any key). The Flutter "Replay Brand Intro" action is removed in Phase 11 Slice 11.1a.
+- **Reduced Motion Is A Cross-Target Contract:** `prefers-reduced-motion: reduce` suppresses exactly four things — the impact burst particles, the camera shake, and the icon's rotation and scale — on **all three** targets, not the web alone.
+- **The Curtain Is Opaque And The Outro Is A Reveal:** The stage is **transparent** and carries an **opaque obsidian curtain** (`#05060a` web / `Color(0xFF05060A)` Flutter) over the live app. The app is revealed by the two halves **sliding apart**, never by removing an opaque panel (which would make the outro a flash). At `t >= curtain + 0.62` (2.57 s) the overlay releases `pointer-events`, so the app underneath is interactive for the final **0.43 s**.
+- **Layer Order Is Load-Bearing:** `veilL/veilR (z2) → seam (z3) → FX canvas (z4) → vignette (z5) → grain (z6) → lockup (z7) → HUD (z8, hidden)`. **The FX canvas is ABOVE the curtain.** Putting it below makes the entire `0.12 – 1.95 s` build-up invisible — which is the bug the Flutter client has today.
+- **The Lockup Rule Is A Breakpoint, Not A Constant:** side by side in landscape, **stacked in portrait** (`H > W`). Do not make the Flutter lockup side-by-side unconditionally — the phone is portrait and is already correct; the TV is landscape and is not.
+- **Mobile Client Opening Sequence (Flutter) — IMPLEMENTED, AND DIVERGENT:** Autoplays on cold boot launch in `AppShell` as a `CustomPaint` re-implementation (it is **not** video playback — `assets/videos/intro-demo-portrait.mp4` is declared in `pubspec.yaml` and never played), tap-anywhere or Skip-button dismissal with a 300ms fadeout, and `IntroController` sets `isPlaying: true` unconditionally — so it plays on **every launch**. `hasSeenIntro` is set but **never persisted or consulted**, so that behaviour is *accidental*, not designed. There is a visible **Skip pill** and a Settings **"Replay Brand Intro"** action, both of which the canonical design removes. The FX layer is currently **invisible** (drawn beneath the opaque veils) and there is no grain layer. Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated. Implementation: `flutter_client/lib/features/intro/`, with `brand_intro_overlay_test.dart` and `intro_controller_test.dart`. The full divergence list is the ledger in `docs/OPENING_SEQUENCE.md` Part I §12.
 
 ## 2. Current architecture
 
@@ -152,8 +163,11 @@ The current project includes:
    lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
    was deleted in Slice 7E.2 without a replacement, so the web app has had no intro since
-   2026-10-18. The Flutter client still has it. **Phase 11** is planned and awaiting slice-by-slice
-   approval: [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
+   2026-10-18. The Flutter client still has it. **Phase 11** is in progress: Slice 11.1 (the
+   canonical specification) is **complete** — it lives in
+   [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I — and Slice 11.1a (removing the
+   Flutter Replay action) is next. The roadmap is
+   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
    The design, the assets (all still in `docs/opening-sequence/`) and the three web invariants are
    intact, so this is a well-specified port, not a redesign.
 
