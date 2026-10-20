@@ -127,12 +127,30 @@ The current project includes:
 
 1. **Production Maintenance & Feature Additions:**
    The codebase is 100% modernized on native Rust, React, and PostgreSQL. All new development proceeds natively in Rust (`rust/`) and React (`web/`).
+2. **Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.**
+   It is unauthenticated and keyed only on the `qr_id`. Anyone who learns a `qr_id` — from a
+   log, a URL, a `Referer`, or browser history — can claim the confirmed session's cookie inside
+   the 2-minute window. A per-session secret issued at create time would close it.
+3. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
+   `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
+   connection, with no auth and no cap, on a publicly reachable endpoint.
+4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
+   lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
 
 ### Secondary / parked
 
-4. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-5. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
-6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
+5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
+6. **Authentication/access control:** the stable hostname is not authentication. `media.anisparvez.in`
+   is now served by Caddy on a static IP rather than a Cloudflare tunnel, but that changes the
+   transport, not the posture: anyone on earth with a Google account can sign in. Add access
+   control before wider public sharing.
+7. **Backups are on the same volume as the data.** `E:\pgdata` and `E:\MediaServer\backups` are
+   both on `E:`. A volume failure takes the database *and* the backups together. An off-host copy
+   is the actual fix. The daily scheduled backup itself is in place — see
+   [`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md).
+8. **Rotate and scope the Cloudflare API token** in `E:\MediaServer\Caddyfile`. It is a live
+   credential with DNS-management rights over the hostname, stored in plaintext on disk. The file
+   is correctly gitignored, but the token should still be scoped and rotated.
 
 ### Admin authorisation invariants (`rust/src/middleware/auth.rs` & `rust/src/routes/admin.rs`)
 

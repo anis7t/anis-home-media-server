@@ -312,8 +312,8 @@ Honest list of what this runbook does **not** yet solve.
 2. **Backups live beside the data.** `E:\pgdata` and `E:\MediaServer\backups` are both on `E:`. A
    volume failure takes the database *and* the backups together. Off-host or off-volume copies are
    the actual fix.
-3. **The restore tool is not itself backed up in git history.** It is new as of 2026-10-20; the
-   previous restore path was a Python script that no longer exists.
+3. ~~**The restore tool is not itself backed up in git history.**~~ **CLOSED 2026-10-20.**
+   `scripts/restore_postgres.ps1` is tracked in git.
 4. **No integrity verification of the archive beyond readability.** `pg_restore --list` proves the
    archive parses; it does not prove every row is recoverable. A full restore into a scratch
    database ([§3.4](#34-verifying-a-dump-before-trusting-it)) is the real check.
