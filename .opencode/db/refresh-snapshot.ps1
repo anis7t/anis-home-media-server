@@ -3,13 +3,18 @@
 # WHY THIS EXISTS
 #   The `media-db` MCP server (mcp-server-sqlite) exposes a `write_query` tool that
 #   runs INSERT/UPDATE/DELETE and commits. Pointing it at the live
-#   E:\MediaServer\media.db would let an agent mutate production data while the
-#   Waitress service (running as LocalSystem) is using it.
+#   E:\MediaServer\media.db would let an agent mutate data the service is using.
 #
 #   So the MCP points at .opencode/db/media.snapshot.db instead, which carries the
 #   Windows read-only attribute. SQLite can read it and returns
 #   "attempt to write a readonly database" for any write - an OS-level guarantee,
 #   not a prompt-level one.
+#
+#   NOTE: the source database is the RETIRED SQLite file. PostgreSQL 18.4
+#   (MediaServerPG, data in E:\pgdata) has been the system of record since Phase 3,
+#   so this snapshot is STALE PRE-MIGRATION data. It is kept because the MCP server
+#   is wired to it, not because it reflects production. See Issue 12 in
+#   docs/Current issues.md.
 #
 # USAGE
 #   powershell -ExecutionPolicy Bypass -File .opencode\db\refresh-snapshot.ps1

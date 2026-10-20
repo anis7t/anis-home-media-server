@@ -1,10 +1,14 @@
 # Resolution Log — Current Issues (October 2026)
 
-All 10 architectural, authentication, telemetry, performance and security issues recorded in this
-document have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
+Issues 1–10 have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
 reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
-sign-in feature and the migration cutover. **Issue 11 is open** — three Flutter test files cannot
-run on this host because media_kit's Windows native libraries are absent.
+sign-in feature and the migration cutover. **Two are open:**
+
+- **Issue 11** — three Flutter test files cannot run on this host because media_kit's Windows native
+  libraries are absent.
+- **Issue 12** — three loose ends from the Flask/Waitress era: the `media-db` MCP server still
+  serves the retired SQLite database, the stopped `MediaServer` service is still registered, and
+  the dev server's proxy origins are stale.
 
 ---
 
@@ -220,3 +224,41 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 - **Verification bar for now:** the Flutter suite is **not** green on this host. A change is
   acceptable when it introduces **no new failures** and the count of pre-existing failures is
   unchanged — and the pre-existing three are named explicitly every time.
+
+---
+
+### Issue 12: The Flask/Waitress Era Left Three Live Loose Ends (2026-10-20)
+
+- **Reported:** *(asked directly, while planning Phase 11 Slice 11.2)* — *"are we still using
+  waitress?"* **No.** The answer is unambiguous:
+  - Port 8000 is held by `rust\target\release\media-server-api.exe` — the **native Rust binary**.
+  - `app/`, `templates/` and `static/` **do not exist**.
+  - `requirements.txt` lists only `selenium` and `websockets`; **neither `flask` nor `waitress`
+    is installed**, in the venv or anywhere else.
+  - The `python.exe` processes on the host are the agent harness's own MCP servers
+    (`fastmcp-sqlite`, `postgresql-mcp`, `serena`) — not a web server.
+- **What was wrong:** the *system* had moved on; **the documentation and one shipped UI string had
+  not.** Three loose ends remained, and two of them are now fixed in the same commit as this
+  entry:
+
+| # | Loose end | State |
+|---|---|---|
+| 1 | **The app footer rendered the badge `Waitress WSGI`** — a false statement in the shipped product, on every page. | ✅ **Fixed** — now reads `Rust · Axum API`. |
+| 2 | **The agent-facing memories lied about the architecture.** `.serena/memories/architecture.md` asserted *"Backend — `app/`, Python. Served by Waitress under NSSM"* and *"127.0.0.1:8000 -> Waitress -> Flask -> services"*; `paths-and-drives.md` said *"Production WSGI is Waitress, never Gunicorn"* and pointed at `app.services.transcode_service`, `app.config.CACHE_DIR` and `media.db` as live. An agent that reads those files is confidently misinformed about the whole stack. `.serena/project.yml`'s initial prompt repeated the lie (*"a Flask + Flutter monorepo"*). | ✅ **Fixed** — rewritten against the Rust/PostgreSQL reality, with the Python-era pointers removed rather than translated (guessing at Rust function names would have introduced *new* wrong pointers). **Note: `.serena/` is gitignored**, so these fixes are **local to this machine** — see the note below. |
+| 3 | **The `media-db` MCP server serves retired data.** It is pointed at `.opencode/db/media.snapshot.db`, a snapshot of `E:\MediaServer\media.db` — the **SQLite database retired in Phase 3**. PostgreSQL 18.4 has been the system of record since. The `media-db` tools therefore report **stale pre-migration rows**, and nothing tells the caller. | ⏳ **Open.** The snapshot script's comment now says so, but the MCP server is still wired to the retired file. |
+| 4 | **The `MediaServer` NSSM service is still registered.** `MediaServer` — the old Flask/Waitress service — is `Stopped` / `Manual` and still points at `venv\Scripts\python.exe run_production.py`, a file that **no longer exists**, so it cannot start. Inert, but it is a leftover. | ⏳ **Open — the owner's call.** It is a host-level registration; deleting it is not something to do unattended. |
+| 5 | **The dev server's proxy origins are stale, and inverted relative to reality.** `web/vite.config.ts` sets `RUST_ORIGIN` to `:8001` (**nothing listens there** — Rust runs on `:8000`) and `FLASK_ORIGIN` to `:8000` (**which is actually Rust**). So in `npm run dev` the "Rust" routes point at a dead port and the "Flask" catch-all actually hits Rust. The names and the comments are both wrong. | ⏳ **Open.** A dev-only behaviour change: collapsing the two origins into one needs the "unmigrated" endpoint list confirmed first, so it does not belong in a documentation cleanup. |
+
+- **The lesson, again:** *a decommissioning sign-off must diff **capabilities**, not just
+  mechanisms.* Phase 7E removed the Flask app and verified the architecture; it did not sweep the
+  strings that still named it. The same failure the migration itself was audited for — a
+  documentation claim that a feature was live when it was not — had simply reappeared one layer
+  down, in the footer of every page and in the memories an agent reads first.
+
+- **And a property worth knowing: `.serena/` is gitignored** (`.gitignore:68`). The agent-facing
+  memories and the MCP project's initial prompt are **local to each machine**, not version
+  controlled. Their staleness is therefore invisible to code review, invisible to the migration
+  walkthrough, and invisible to every machine that is not this one — which is exactly how a
+  confidently wrong architecture survived in the first place. The fix applied here is local; the
+  *tracked* record of the correction is this entry and AGENTS.md item 7. **Any other machine needs
+  the same sweep.**

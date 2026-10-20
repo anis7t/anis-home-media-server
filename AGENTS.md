@@ -185,6 +185,15 @@ The current project includes:
    native playback. Until then, the Flutter suite is **not** green here — a change is acceptable
    when it adds **no new failures** and the pre-existing three are unchanged and named.
    Tracked as Issue 11 in [`docs/Current issues.md`](docs/Current%20issues.md).
+7. **The Flask/Waitress era left three loose ends** (the backend is 100 % native Rust — Axum on
+   `:8000`; no `flask` and no `waitress` is installed anywhere). The footer badge and the
+   agent-facing Serena memories are **fixed**; three remain: the `media-db` MCP server still
+   serves a snapshot of the **retired SQLite** database rather than PostgreSQL; the stopped
+   `MediaServer` NSSM service is still registered (inert — its entry point no longer exists) and
+   removing it is the owner's call; and `web/vite.config.ts` still points its "Rust" proxy at
+   `:8001` and its "Flask" proxy at `:8000`, which is actually Rust — a dev-only change that
+   needs the un-migrated endpoint list confirmed first. Tracked as Issue 12 in
+   [`docs/Current issues.md`](docs/Current%20issues.md).
 
 ### Secondary / parked
 

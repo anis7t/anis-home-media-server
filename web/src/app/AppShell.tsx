@@ -360,7 +360,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   Storage Tiering (D: Flicks • E: SSD Engine)
                 </span>
                 <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-emerald-300 font-medium">
-                  Waitress WSGI
+                  Rust · Axum API
                 </span>
               </div>
             </div>
