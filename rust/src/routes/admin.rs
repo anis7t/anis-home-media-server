@@ -47,6 +47,39 @@ pub struct AdminUsersResponse {
     pub users: Vec<AdminUserSummary>,
 }
 
+/// `POST /api/admin/devices/assign` — an explicit human ownership change, and
+/// the one sanctioned exception to "claim once, never reassign".
+///
+/// `user_id` must distinguish three cases: a number (assign), an explicit
+/// `null` (unassign) and a **missing key** (a 400 — the caller did not say what
+/// to do). `Option<i64>` collapses the last two into `None`, so the field uses
+/// the double-option form with the deserializer below.
+#[derive(Debug, Deserialize)]
+pub struct AdminAssignDevicePayload {
+    pub device_id: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_explicit_nullable")]
+    pub user_id: Option<Option<i64>>,
+}
+
+/// Maps a present `null` to `Some(None)`, a present number to `Some(Some(n))`,
+/// and leaves an absent key to `#[serde(default)]` (`None`).
+fn deserialize_explicit_nullable<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<i64>::deserialize(deserializer).map(Some)
+}
+
+/// `POST /api/admin/devices/history/delete`. Naming `filename` deletes exactly
+/// that entry; omitting it clears the device's whole history.
+#[derive(Debug, Deserialize)]
+pub struct AdminDeleteHistoryPayload {
+    pub device_id: Option<String>,
+    pub filename: Option<String>,
+}
+
 fn extract_pin_str(v: Option<&serde_json::Value>) -> Option<String> {
     match v {
         Some(serde_json::Value::String(s)) => Some(s.trim().to_string()),
@@ -182,4 +215,143 @@ pub async fn admin_pin_handler(
     .await?;
 
     Ok((StatusCode::OK, Json(serde_json::json!({ "success": true }))))
+}
+
+/// `POST /api/admin/devices/assign`
+///
+/// Sets or clears `devices.user_id`. Admin-gated (PIN **or** admin session);
+/// a viewer gets a 403 and no state change. The automatic claim in
+/// `DeviceService::claim_device_for_user` remains `WHERE user_id IS NULL` —
+/// this route is the explicit, human exception, and the device's watch history
+/// moves with the device because ownership is what scopes it.
+pub async fn admin_assign_device_handler(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminAssignDevicePayload>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !AuthService::is_admin_authorized(&state.pool, &headers, None).await {
+        return Err(AppError::Forbidden(
+            "Admin authorization required".to_string(),
+        ));
+    }
+
+    let device_id = payload.device_id.unwrap_or_default().trim().to_string();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest("device_id is required".to_string()));
+    }
+
+    let device_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
+            .bind(&device_id)
+            .fetch_one(state.pool.as_ref())
+            .await?;
+    if device_count == 0 {
+        return Err(AppError::NotFound(format!(
+            "Unknown device: {}",
+            device_id
+        )));
+    }
+
+    let target_user = match payload.user_id {
+        None => {
+            return Err(AppError::BadRequest(
+                "user_id is required; send null to unassign".to_string(),
+            ))
+        }
+        Some(id) => id,
+    };
+
+    if let Some(uid) = target_user {
+        let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = $1")
+            .bind(uid)
+            .fetch_one(state.pool.as_ref())
+            .await?;
+        if user_count == 0 {
+            return Err(AppError::NotFound(format!("Unknown user: {}", uid)));
+        }
+    }
+
+    sqlx::query("UPDATE devices SET user_id = $1 WHERE device_id = $2")
+        .bind(target_user)
+        .bind(&device_id)
+        .execute(state.pool.as_ref())
+        .await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "device_id": device_id,
+        "user_id": target_user,
+    })))
+}
+
+/// `POST /api/admin/devices/history/delete`
+///
+/// Deletes one `device_watch_history` row when `filename` is given, or every
+/// row for the device when it is omitted. Only history is touched: no media
+/// file is read, moved or deleted. Clearing an already-empty device succeeds
+/// with `deleted: 0` (idempotent); naming an entry that does not exist is a
+/// 404 so a typo is visible rather than silently successful.
+pub async fn admin_delete_device_history_handler(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminDeleteHistoryPayload>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !AuthService::is_admin_authorized(&state.pool, &headers, None).await {
+        return Err(AppError::Forbidden(
+            "Admin authorization required".to_string(),
+        ));
+    }
+
+    let device_id = payload.device_id.unwrap_or_default().trim().to_string();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest("device_id is required".to_string()));
+    }
+
+    let device_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
+            .bind(&device_id)
+            .fetch_one(state.pool.as_ref())
+            .await?;
+    if device_count == 0 {
+        return Err(AppError::NotFound(format!(
+            "Unknown device: {}",
+            device_id
+        )));
+    }
+
+    let filename = payload
+        .filename
+        .map(|f| f.trim().to_string())
+        .filter(|f| !f.is_empty());
+
+    let deleted = match filename {
+        Some(f) => {
+            let result = sqlx::query(
+                "DELETE FROM device_watch_history WHERE device_id = $1 AND filename = $2",
+            )
+            .bind(&device_id)
+            .bind(&f)
+            .execute(state.pool.as_ref())
+            .await?;
+            if result.rows_affected() == 0 {
+                return Err(AppError::NotFound(
+                    "No watch-history entry matched that device and filename".to_string(),
+                ));
+            }
+            result.rows_affected()
+        }
+        None => {
+            sqlx::query("DELETE FROM device_watch_history WHERE device_id = $1")
+                .bind(&device_id)
+                .execute(state.pool.as_ref())
+                .await?
+                .rows_affected()
+        }
+    };
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "device_id": device_id,
+        "deleted": deleted,
+    })))
 }

@@ -465,6 +465,14 @@ pub fn create_app_full(
         .route("/api/admin/status", get(routes::admin::admin_status_handler))
         .route("/api/admin/users", get(routes::admin::admin_users_handler))
         .route(
+            "/api/admin/devices/assign",
+            axum::routing::post(routes::admin::admin_assign_device_handler),
+        )
+        .route(
+            "/api/admin/devices/history/delete",
+            axum::routing::post(routes::admin::admin_delete_device_history_handler),
+        )
+        .route(
             "/api/admin/verify",
             axum::routing::post(routes::admin::admin_verify_handler),
         )

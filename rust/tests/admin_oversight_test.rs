@@ -105,6 +105,30 @@ async fn call(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
+/// A JSON POST to an admin mutation. The Admin PIN travels in the header, which
+/// is the only channel the web client uses (never a query string).
+fn request_json(
+    uri: &str,
+    body: &str,
+    admin_pin: Option<&str>,
+    cookie: Option<&str>,
+) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(pin) = admin_pin {
+        builder = builder.header("X-Admin-Pin", pin);
+    }
+    if let Some(c) = cookie {
+        builder = builder.header(header::COOKIE, c);
+    }
+    let mut req = builder.body(Body::from(body.to_string())).unwrap();
+    let peer: SocketAddr = "192.168.1.50:51000".parse().unwrap();
+    req.extensions_mut().insert(ConnectInfo(peer));
+    req
+}
+
 /// Create (or reuse) an account and a live session for it.
 async fn make_user(pool: &PgPool, suffix: &str, email: &str, role: &str) -> (i64, String) {
     let sub = format!("{}{}", USER_SUB_PREFIX, suffix);
@@ -169,6 +193,22 @@ async fn insert_history(pool: &PgPool, device_id: &str, filename: &str) {
     .execute(pool)
     .await
     .expect("insert test history");
+}
+
+async fn owner_of(pool: &PgPool, device_id: &str) -> Option<i64> {
+    sqlx::query_scalar::<_, Option<i64>>("SELECT user_id FROM devices WHERE device_id = $1")
+        .bind(device_id)
+        .fetch_one(pool)
+        .await
+        .expect("owner query")
+}
+
+async fn history_count(pool: &PgPool, device_id: &str) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM device_watch_history WHERE device_id = $1")
+        .bind(device_id)
+        .fetch_one(pool)
+        .await
+        .expect("history count")
 }
 
 #[tokio::test]
@@ -384,4 +424,247 @@ async fn test_suite_leaves_no_oversight_residue() {
         (0, 0, 0),
         "the oversight suite must leave no rows behind"
     );
+}
+
+#[tokio::test]
+async fn test_assign_sets_moves_and_clears_device_ownership() {
+    let _guard = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, _) = make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
+    let (bob_id, _) = make_user(&pool, "bob", "oversight.bob@example.test", "admin").await;
+    insert_device(&pool, "dev_oversight_assign", Some(alice_id)).await;
+
+    // Move it to Bob.
+    let body = format!(
+        r#"{{"device_id":"dev_oversight_assign","user_id":{}}}"#,
+        bob_id
+    );
+    let (status, resp) = call(
+        &app,
+        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["user_id"].as_i64(), Some(bob_id));
+    assert_eq!(
+        owner_of(&pool, "dev_oversight_assign").await,
+        Some(bob_id),
+        "the assignment must be written to the row"
+    );
+
+    // An explicit null unassigns it.
+    let (status, resp) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/assign",
+            r#"{"device_id":"dev_oversight_assign","user_id":null}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(resp["user_id"].is_null());
+    assert_eq!(owner_of(&pool, "dev_oversight_assign").await, None);
+
+    // Omitting user_id is a refusal to guess, not "unassign".
+    let (status, _) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/assign",
+            r#"{"device_id":"dev_oversight_assign"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Unknown device and unknown user are both 404 and neither changes state.
+    let body = format!(
+        r#"{{"device_id":"dev_oversight_missing","user_id":{}}}"#,
+        bob_id
+    );
+    let (status, _) = call(
+        &app,
+        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let body = format!(
+        r#"{{"device_id":"dev_oversight_assign","user_id":{}}}"#,
+        9_000_000_001_i64
+    );
+    let (status, _) = call(
+        &app,
+        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        owner_of(&pool, "dev_oversight_assign").await,
+        None,
+        "a refused assignment must not touch the row"
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_history_delete_removes_one_entry_and_clears_a_device() {
+    let _guard = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, _) = make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
+    insert_device(&pool, "dev_oversight_hist", Some(alice_id)).await;
+    insert_history(&pool, "dev_oversight_hist", "oversight_one.mp4").await;
+    insert_history(&pool, "dev_oversight_hist", "oversight_two.mp4").await;
+    assert_eq!(history_count(&pool, "dev_oversight_hist").await, 2);
+
+    // One named entry.
+    let (status, resp) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/history/delete",
+            r#"{"device_id":"dev_oversight_hist","filename":"oversight_one.mp4"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["deleted"].as_u64(), Some(1));
+    assert_eq!(history_count(&pool, "dev_oversight_hist").await, 1);
+
+    // A filename that does not exist is a 404 and deletes nothing.
+    let (status, _) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/history/delete",
+            r#"{"device_id":"dev_oversight_hist","filename":"oversight_missing.mp4"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(history_count(&pool, "dev_oversight_hist").await, 1);
+
+    // No filename clears the device.
+    let (status, resp) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/history/delete",
+            r#"{"device_id":"dev_oversight_hist"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["deleted"].as_u64(), Some(1));
+    assert_eq!(history_count(&pool, "dev_oversight_hist").await, 0);
+
+    // Clearing an empty device is idempotent, not a 404.
+    let (status, resp) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/history/delete",
+            r#"{"device_id":"dev_oversight_hist"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["deleted"].as_u64(), Some(0));
+
+    // Unknown device is a 404.
+    let (status, _) = call(
+        &app,
+        request_json(
+            "/api/admin/devices/history/delete",
+            r#"{"device_id":"dev_oversight_missing"}"#,
+            Some(ADMIN_PIN),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_admin_mutations_refuse_viewer_and_anonymous() {
+    let _guard = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, alice_session) =
+        make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
+    let (bob_id, _) = make_user(&pool, "bob", "oversight.bob@example.test", "admin").await;
+    insert_device(&pool, "dev_oversight_guard", Some(alice_id)).await;
+    insert_history(&pool, "dev_oversight_guard", "oversight_guard.mp4").await;
+
+    let cookie = format!("session_token={}", alice_session);
+    let assign_body = format!(
+        r#"{{"device_id":"dev_oversight_guard","user_id":{}}}"#,
+        bob_id
+    );
+
+    // Both routes, both refusal paths: a viewer session and no credentials.
+    for cookie_value in [Some(cookie.as_str()), None] {
+        let (status, body) = call(
+            &app,
+            request_json(
+                "/api/admin/devices/assign",
+                &assign_body,
+                None,
+                cookie_value,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "assign must refuse a non-admin"
+        );
+        assert!(body["error"].is_string());
+
+        let (status, body) = call(
+            &app,
+            request_json(
+                "/api/admin/devices/history/delete",
+                r#"{"device_id":"dev_oversight_guard"}"#,
+                None,
+                cookie_value,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "history delete must refuse a non-admin"
+        );
+        assert!(body["error"].is_string());
+    }
+
+    // The refusal is real: nothing moved and nothing was deleted.
+    assert_eq!(
+        owner_of(&pool, "dev_oversight_guard").await,
+        Some(alice_id),
+        "a refused assign must not move the device"
+    );
+    assert_eq!(
+        history_count(&pool, "dev_oversight_guard").await,
+        1,
+        "a refused delete must not clear history"
+    );
+
+    cleanup(&pool).await;
 }
