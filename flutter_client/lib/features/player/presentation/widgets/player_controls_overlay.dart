@@ -35,6 +35,8 @@ class PlayerControlsOverlay extends StatefulWidget {
   // Phase 3C enhancements
   final VoidCallback? onRestart;
   final VoidCallback? onOpenSpeedSheet;
+  final VoidCallback? onOpenQualitySheet;
+  final String selectedQualityLabel;
   final VoidCallback? onOpenAudioSheet;
   final VoidCallback? onOpenSubtitleSheet;
   final VoidCallback? onToggleAspectRatio;
@@ -80,6 +82,8 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.previewStateOverride,
     this.onRestart,
     this.onOpenSpeedSheet,
+    this.onOpenQualitySheet,
+    this.selectedQualityLabel = 'HD',
     this.onOpenAudioSheet,
     this.onOpenSubtitleSheet,
     this.onToggleAspectRatio,
@@ -549,10 +553,51 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                                   ),
                                 ),
 
+                              // Quality Selector pill button
+                              if (widget.onOpenQualitySheet != null) ...[
+                                const SizedBox(width: 4),
+                                _buildButtonWrapper(
+                                  index: 4,
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: InkWell(
+                                    onTap: widget.onOpenQualitySheet,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isCompact ? 5 : 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white12,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: widget.selectedQualityLabel != 'HD' &&
+                                                  widget.selectedQualityLabel != 'Auto'
+                                              ? const Color(0xFFFF334B)
+                                              : Colors.white24,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        widget.selectedQualityLabel,
+                                        style: TextStyle(
+                                          color: widget.selectedQualityLabel != 'HD' &&
+                                                  widget.selectedQualityLabel != 'Auto'
+                                              ? const Color(0xFFFF334B)
+                                              : Colors.white,
+                                          fontSize: isCompact ? 10 : 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+
                               // Audio Stream selector button
                               if (widget.onOpenAudioSheet != null)
                                 _buildButtonWrapper(
-                                  index: 4,
+                                  index: 5,
                                   child: IconButton(
                                     tooltip: 'Audio Tracks',
                                     constraints: btnConstraints,
@@ -570,7 +615,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                               // Subtitle selector button
                               if (widget.onOpenSubtitleSheet != null)
                                 _buildButtonWrapper(
-                                  index: 5,
+                                  index: 6,
                                   child: IconButton(
                                     tooltip: 'Subtitles (c)',
                                     constraints: btnConstraints,
@@ -590,7 +635,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                               // Aspect Ratio toggle (on TV, moved into controls row so it's D-pad focusable)
                               if (widget.isTv && widget.onToggleAspectRatio != null)
                                 _buildButtonWrapper(
-                                  index: 6,
+                                  index: 7,
                                   child: IconButton(
                                     tooltip: 'Aspect Ratio',
                                     constraints: btnConstraints,

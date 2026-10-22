@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Brand intro harness</title>
+    <style>
+      /*
+        A TEST-ONLY page. It is never part of the application bundle: it lives
+        under `web/e2e/`, and the only thing that serves it is the Vite dev
+        server during the frame-for-frame oracle.
+
+        It mounts the real `BrandIntroOverlay` with the playback loop off, and
+        exposes an imperative handle so the oracle can drive it to an exact
+        time. The backdrop is deliberately left as the browser default, so it
+        matches the archived source's standalone page pixel for pixel.
+      */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="intro-harness-root"></div>
+    <script type="module">
+      import { createElement } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import BrandIntroOverlay from '/src/components/brand/BrandIntroOverlay.tsx';
+
+      // React assigns the imperative handle to `ref.current`, and it REPLACES
+      // that object whenever the handle's dependencies change. The page must
+      // therefore expose a stable wrapper that always calls the CURRENT
+      // handle, and must not report itself ready until the component has
+      // actually mounted - `createRoot().render()` is asynchronous, so
+      // "ready" set immediately would race the mount.
+      const ref = { current: null };
+
+      createRoot(document.getElementById('intro-harness-root')).render(
+        createElement(BrandIntroOverlay, { ref, mode: 'capture' }),
+      );
+
+      window.__intro = {
+        renderAt: (t) => ref.current?.renderAt(t),
+        finish: () => ref.current?.finish(),
+      };
+
+      const waitForMount = () =>
+        new Promise((resolve) => {
+          const check = () => {
+            if (ref.current && document.querySelector('.intro-stage')) {
+              // The original paints its first frame at load (renderAt(0), source
+              // 965), so that is what the page underneath the overlay is first
+              // revealed against. The harness must do the same, or the two
+              // documents accumulate a different history and the compositor
+              // ends up rasterising the wordmark's glyphs differently.
+              ref.current.renderAt(0);
+              window.__introReady = true;
+              resolve();
+            } else {
+              requestAnimationFrame(check);
+            }
+          };
+          check();
+        });
+
+      await waitForMount();
+    </script>
+  </body>
+</html>

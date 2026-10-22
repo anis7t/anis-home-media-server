@@ -11,13 +11,16 @@ reviewable by a verification model).
 | --- | --- | --- |
 | `pyright` | LSP | installed globally via npm (`pyright@1.1.414`) |
 | `dart` | LSP | provided by the Flutter SDK already on `PATH` |
+| `rust-analyzer` | LSP | installed globally via rustup (`rustc`/`cargo` 1.99.0, host `x86_64-pc-windows-msvc`) |
+| `typescript` | LSP | installed globally via npm (`typescript-language-server@6.0.2`, `typescript@7.0.2`) |
 | `context7` | MCP (remote) | connected |
 | `mobile` | MCP (local, `npx @mobilenext/mobile-mcp`) | connected, 33 tools, no device attached |
 | `media-db` | MCP (local, `uvx fastmcp-sqlite`) | connected, read-only |
+| `postgres` | MCP (local, `uvx postgresql-mcp`) | connected, 15 tools; targets the portable dev cluster (see below) |
 | `serena` | MCP (local, `uvx` + git) | connected, 3 language servers, dashboard on :24282 |
 | `chrome-devtools` | MCP | pre-existing, global config |
-| `cloudflare` | skill | `.agents/skills/cloudflare` |
-| `webapp-testing` | skill | `.agents/skills/webapp-testing` |
+| `cloudflare` | skill | **removed 2026-10-20** — was `.agents/skills/cloudflare` |
+| `webapp-testing` | skill | **removed 2026-10-20** — was `.agents/skills/webapp-testing` |
 | `media-server-verify` | skill | `.opencode/skills/media-server-verify` (authored here) |
 | `shell_strategy.md` | instruction | loaded from the JRedeker repo (remote URL) |
 | `@tarquinen/opencode-dcp` | plugin | configured |
@@ -36,9 +39,163 @@ LSP servers start lazily, when a file of a matching extension is opened. There i
 no status command for them; the cheapest direct check is running the analyzer:
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests/     # Python
-cd flutter_client; dart analyze lib test       # Dart/Flutter
+cd rust; cargo clippy --all-targets      # Rust
+cd web; npx tsc -b --noEmit              # React/TypeScript
+cd flutter_client; dart analyze lib test # Dart/Flutter
 ```
+
+> The Python test suite was decommissioned with the Flask backend in Slice 7E, so
+> `pytest tests/` no longer collects anything. The Rust suite and Vitest are the
+> tests now — see [`docs/DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) §4.
+
+## Rust, React and PostgreSQL dev stack (added 2026-10-10)
+
+### Rust
+
+Installed with `rustup-init.exe -y --profile default --stable` into
+`%USERPROFILE%\.cargo` (user-scoped, **no administrator rights required**).
+`%USERPROFILE%\.cargo\bin` was appended to the **user** `PATH`.
+
+| Item | Version |
+| --- | --- |
+| `rustc` / `cargo` | 1.99.0 (`stable-x86_64-pc-windows-msvc`) |
+| `rustup` | 1.29.1 |
+| components | `clippy`, `rustfmt`, `rust-analyzer`, `rust-docs`, `rust-std` |
+
+**KNOWN BLOCKER - Rust cannot link yet.** Two separate faults, both verified:
+
+1. **Windows SDK is absent.** The VS C++ Build Tools are present
+   (`C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools`, MSVC
+   `14.50.35717`) but `C:\Program Files (x86)\Windows Kits\10` contains only
+   `Catalogs`, `Redist` and `UnionMetadata` - there is **no `Lib` and no
+   `Include`**, so `kernel32.lib` does not exist anywhere on the machine.
+   `vswhere` still *reports* `Microsoft.VisualStudio.Component.Windows11SDK.26100`
+   as installed; **that answer is a false positive** - trust the directory, not
+   `vswhere`. Linking fails with `LNK1181: cannot open input file 'kernel32.lib'`.
+2. **`link.exe` is shadowed on `PATH`.** `C:\msys64\usr\bin` is on the user
+   `PATH`, and MSYS2's GNU coreutils `link` (a hard-link utility, not a linker)
+   wins name resolution. rustc invokes it and gets
+   `link: extra operand '<file>.rcgu.o'`.
+
+Fix 1 requires elevation and must be run by the user:
+
+```powershell
+winget install --id Microsoft.WindowsSDK.10.0.26100 --source winget
+```
+
+Fix 2 is applied by pointing cargo at the real MSVC linker. Add to
+`%USERPROFILE%\.cargo\config.toml` (create it if absent):
+
+```toml
+[target.x86_64-pc-windows-msvc]
+linker = "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe"
+```
+
+That path embeds the MSVC version and must be updated when the Build Tools are
+upgraded. Until **both** fixes land, `cargo build` fails. Editing, rustfmt,
+clippy and the `rust-analyzer` LSP all work regardless - only linking is broken.
+
+### React / TypeScript
+
+Installed **globally** via npm (shims land in `%APPDATA%\npm`):
+
+| Package | Version |
+| --- | --- |
+| `typescript-language-server` | 6.0.2 |
+| `typescript` | 7.0.2 |
+| `prettier` | 3.9.9 |
+
+> **Windows spawn gotcha:** npm creates `foo`, `foo.cmd` and `foo.ps1`. A bare
+> `typescript-language-server` resolves **only** through `cmd /c`; a direct
+> `spawn()` (what an LSP client does) returns `ENOENT`. The `typescript` LSP entry
+> in `opencode.json` therefore names **`typescript-language-server.cmd`**
+> explicitly. Do not "simplify" it back to the extension-less name.
+
+VS Code extensions installed: `rust-lang.rust-analyzer` (note: the publisher is
+`rust-lang`, **not** `rust-analyzer` - the latter ID does not exist),
+`dbaeumer.vscode-eslint`, `esbenp.prettier-vscode`,
+`bradlc.vscode-tailwindcss`. Recommendations are pinned in
+`.vscode/extensions.json`.
+
+### PostgreSQL (portable, no Windows service)
+
+Installed as a **portable, user-scoped** cluster so that no administrator
+rights and no service registration are involved.
+
+| Item | Location |
+| --- | --- |
+| Server binaries | `E:\postgres\pgsql` (PostgreSQL **18.4**, EDB zip build) |
+| Data cluster | `E:\pgdata` |
+| Log | `E:\pgdata\pg.log` |
+| Dev database | `media_dev` (role `postgres`, `scram-sha-256`) |
+| Credentials | `C:\Users\anis7\.config\opencode\postgres-dev.env` (machine-local, **never commit**) |
+
+`E:\postgres\pgsql\bin` was appended to the **user** `PATH`, so `psql`,
+`pg_ctl`, `pg_isready` and `initdb` are on `PATH` in new shells.
+
+Start and stop (always with `pg_ctl`; never run `postgres.exe` directly):
+
+```powershell
+& 'E:\postgres\pgsql\bin\pg_ctl.exe' -D E:\pgdata -l E:\pgdata\pg.log start
+& 'E:\postgres\pgsql\bin\pg_ctl.exe' -D E:\pgdata status
+& 'E:\postgres\pgsql\bin\pg_ctl.exe' -D E:\pgdata stop -m fast
+```
+
+**Gotcha - `pg_ctl start` blocks under this harness.** The postmaster inherits
+the console handles, so the calling shell waits for the server and appears to
+hang. Launch it detached:
+
+```powershell
+Start-Process -FilePath 'E:\postgres\pgsql\bin\pg_ctl.exe' `
+  -ArgumentList @('-D','E:\pgdata','-l','E:\pgdata\pg.log','start') -WindowStyle Hidden -Wait
+```
+
+**Gotcha - slow `fsync` on `E:`.** Startup performs a data-directory sync that
+measured **~33 s**, and an unclean stop forces a full recovery pass on the next
+start. `pg_isready` can report "no response" for over a minute on a cold start.
+Wait for `database system is ready to accept connections` in the log before
+concluding it failed.
+
+**Gotcha - `0xC0000142` false alarm.** An `autovacuum worker ... terminated by
+exception 0xC0000142` (`STATUS_DLL_INIT_FAILED`) followed by
+`terminating any other active server processes / reinitializing` appeared during
+setup and looked like a recurring crash loop. It reproduced twice, then never
+again once the server was started detached with the log preserved. The pattern
+was tied to the harness killing the process tree mid-start, **not** to a real
+defect in the cluster. If it appears in normal use, check
+`Get-WinEvent -LogName Application` first - during setup it produced **no**
+event-log entry, which is what distinguishes the harness artifact from a genuine
+child-process fault.
+
+### The `postgres` MCP server
+
+`postgresql-mcp` **1.1.0** (published 2026-08-03) via `uvx`, consistent with the
+existing `serena` / `fastmcp-sqlite` entries. It was chosen over the npm
+`postgres-mcp` package, whose last release was 2025-04-20, and over
+`@modelcontextprotocol/server-postgres`, which npm marks **deprecated**. It
+supplies 15 tools (query execution, schema exploration, table analysis, `EXPLAIN`
+plans), is read-only by default, and is SQL-injection aware.
+
+Configuration lives in the **committed** `opencode.json`, so the password is
+referenced by substitution and never written to the repository:
+
+```jsonc
+"POSTGRES_PASSWORD": "{env:POSTGRES_PASSWORD}"
+```
+
+`POSTGRES_PASSWORD` is set as a **user environment variable**. Consequences:
+
+- `opencode.json` stays secret-free and reviewable.
+- The OpenCode service inherits the variable only when it **starts after** the
+  variable was defined. After changing it, restart the service (OpenCode UI ->
+  restart, or `opencode service restart` in a separate terminal).
+- Until that restart the server still connects but every query fails with
+  `fe_sendauth: no password supplied`. That is the expected symptom of a stale
+  service process, not of a bad password - verify the password independently with
+  `psql` before suspecting the credential.
+
+`ALLOW_WRITE_OPERATIONS` is set to `true` because `media_dev` is a disposable
+local development database. Set it to `false` to make the server read-only.
 
 ## Plugins and instructions - repo names are not package names
 
@@ -190,9 +347,10 @@ restart is the reviewable path.
 
 ## Why the database MCP is pointed at a snapshot
 
-`E:\MediaServer\media.db` is production data, written by a service running as
-`LocalSystem`. The obvious SQLite MCP server (`mcp-server-sqlite`, the one
-published by modelcontextprotocol) exposes a `write_query` tool that runs
+`E:\pgdata` — the PostgreSQL 18.4 data directory for the live `media_server`
+database — is production data, written by a service running as `NetworkService`.
+The obvious SQLite MCP server (`mcp-server-sqlite`, the one published by
+modelcontextprotocol) exposes a `write_query` tool that runs
 `INSERT`/`UPDATE`/`DELETE` and commits. Pointing it at the live database would
 put an unguarded write path on production data.
 
@@ -281,10 +439,15 @@ diagnosing.
 - npm globals: `%APPDATA%\npm` (`pyright`, `chrome-devtools-mcp`, `@opencode/cli`)
 - Python MCP servers: cached by `uvx` under
   `%LOCALAPPDATA%\uv\cache` - no install step, resolved on first launch
-- Skills: `.agents/skills/` (third-party, `skills-lock.json` tracks them) and
-  `.opencode/skills/` (project-authored)
+- Skills: `.opencode/skills/` (project-authored)
 
-`cloudflare` and `webapp-testing` were installed with shallow sparse git clones
+**Removed 2026-10-20.** The untracked `.agents/` skill tree — which held the third-party
+`cloudflare`, `webapp-testing`, `chrome-extensions` and `modern-web-guidance` skills — and the
+untracked `Hermes-agent-android-PC-companion-app/` were deleted. Neither was tracked by git, so
+nothing was lost that git could recover; the skills can be re-installed with `npx skills add`
+if they are wanted again.
+
+`cloudflare` and `webapp-testing` were originally installed with shallow sparse git clones
 rather than `npx skills add`, because the npm wrapper was repeatedly killed
 mid-extraction by server restarts and left a half-written skill directory. They
 are functionally identical, but they are **not** recorded in `skills-lock.json`;

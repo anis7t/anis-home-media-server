@@ -12,9 +12,9 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Restart-Service -Name MediaServer; Start-Sleep -Seconds 2; Write-Host 'Service Restarted!' -ForegroundColor Green"
+:: Run the PowerShell restarter for MediaServerRust
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0restart_rust_service.ps1"
 echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0service_status.ps1"
 echo.
 pause
-

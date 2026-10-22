@@ -15,10 +15,129 @@ Active branch: `feat/rust-react-postgres-migration`
 | Phase | Title | Status |
 |:---:|---|:---:|
 | 0 | Architecture Audit | ✅ COMPLETE — [`docs/PHASE_0_ARCHITECTURE_AUDIT.md`](PHASE_0_ARCHITECTURE_AUDIT.md) |
-| 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), [`tests/test_api_contracts.py`](../tests/test_api_contracts.py) (`b007944`) |
-| 2 | React Web Frontend | ⏳ PENDING AUTHORIZATION — Vite + React + TS under `web/` |
-| 3 | PostgreSQL Migration | 📋 Planned |
-| 4 | Rust API Foundation | 📋 Planned |
+| 1 | OpenAPI 3.1 Spec & Automated Contract Tests | ✅ COMPLETE — [`docs/openapi.yaml`](openapi.yaml), contract tests now native Rust: [`rust/tests/api_contracts_test.rs`](../rust/tests/api_contracts_test.rs) (`b007944`; Python suite retired in Slice 7E) |
+| 2 | React Web Frontend | ✅ COMPLETE — Vite + React 19 + TS under web/; full 6-phase player parity (Direct/HLS, Subtitles, Controls/Telemetry, Gestures/Ripples, 100% Transcode Gate & Seek Previews, LAN Cast / DLNA) + 172 Vitest tests passing |
+| 3 | PostgreSQL Migration | ✅ COMPLETE — Automated migration utility (`scripts/migrate_sqlite_to_postgres.py`) with 100% row parity (852/852 rows), dual psycopg 3 adapter with parameter tokenization & ON CONFLICT translation, 26/26 real-PG integration tests, all core suites verified |
+| 4 | Rust API Foundation | ✅ COMPLETE — Modular Rust Axum/Tokio/SQLx crate (`rust/`) with PostgreSQL 18.4 connection pool, health endpoints, movies catalog, system telemetry, and structured tracing |
+| 5 | Media Playback & Native Streaming Engine | ✅ COMPLETE — Watch progress upserts, RFC 7233 byte-range Direct Play, 100% native subtitles (embedded container extraction via FFprobe/FFmpeg, OpenSubtitles hash download & gzip decompression via reqwest/flate2, sidecars, and multipart uploads), seek hover frame previews, and dual-GPU transcode telemetry; 61/61 Rust tests passing |
+| 2R | React SPA Direct Integration | ✅ COMPLETE — Direct React SPA hosting on Rust with client-side routing fallback and transparent static asset delivery |
+| 6 | Multi-GPU Worker Cutover & Active Transcodes UI | ✅ COMPLETE — Autonomous dual-GPU chunked transcoding in Rust with AMD AMF VPP filters and live telemetry |
+| 8 | fMP4 Adaptive Streaming & Quality Ladder | ✅ COMPLETE — Fragmented MP4 (`.m4s`) HLS pipeline with `#EXT-X-MAP`, dynamic quality ladder (4K–360p), client-aware direct play, and cross-platform quality selectors |
+| 9 | Client Capability Probing & Pre-Transcoding Architecture | ✅ COMPLETE — W3C Media Capabilities API probe, strict 100% transcode gating, Option 1C native resolution baseline, Option 2A layman warnings, automated sweeper, `/manage` operator tooling |
+| 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
+| 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
+
+---
+
+## Immediate Active Issues & Work Queue (Reported 2026-10-18) — ✅ ALL RESOLVED
+
+All 4 reported issues were grouped into Slices A–D, implemented, thoroughly verified, and committed (Note: there was no Slice E; all issues are resolved):
+
+1. **"Get the app" button does not work (`/download`)** — ✅ **RESOLVED (Slice A)**:
+   - Built native Rust endpoints `GET /api/app/download` (RFC 7233 byte-range streaming) and `GET /api/app/version`.
+   - Created obsidian-glass `<DownloadPage>` at `/download`, `/app`, `/android` with SHA-256 integrity verification.
+   - Committed in `6ba1e3a`; Walkthrough in [`docs/SLICE_A_WALKTHROUGH.md`](SLICE_A_WALKTHROUGH.md).
+2. **Google Sign-in returns 503 Service Unavailable** — ✅ **RESOLVED (Slice B)**:
+   - Added `oauth_configured` probe flag to `/api/auth/me`; redirect unconfigured requests cleanly to `/account?error=oauth_unconfigured`.
+   - Implemented `POST /api/auth/login-pin` with constant-time comparison against `settings.admin_pin` and 30-day session token cookie.
+   - Built portaled `<AdminPinSignInModal>` with setup guidance.
+   - Committed in `e4a423b`; Walkthrough in [`docs/SLICE_B_WALKTHROUGH.md`](SLICE_B_WALKTHROUGH.md).
+3. **Browser playback control's subtitle delay (+ / -) causes subtitle flicker** — ✅ **RESOLVED (Slice C)**:
+   - Idempotent `applySubStyles` prevents redundant `<style>` DOM writes in `document.head`.
+   - Decoupled `useSubtitles` into 3 separate effects (visual CSS, cue layout, timing offset).
+   - Non-destructive `applyCueTiming` shifts `c.startTime` and `c.endTime` dynamically with 0ms cue layout thrashing.
+   - Committed in `8af2022`; Walkthrough in [`docs/SLICE_C_WALKTHROUGH.md`](SLICE_C_WALKTHROUGH.md).
+4. **Utilize Chrome native 4K HEVC / H.265 support** — ✅ **RESOLVED (Slice D)**:
+   - Made `normalizeVideoCodecMime` dimension-aware, targeting `hvc1.1.6.L150.90` (Level 5.0 Main 10) for 4K HEVC.
+   - Query W3C `navigator.mediaCapabilities.decodingInfo()` with real resolution and dual-tag (`hvc1` / `hev1`) fallback.
+   - Passed video dimensions from `PlayerPage.tsx`. Unlocks Direct Play for 4K HEVC MP4 streams on supported platforms.
+   - Committed in `62d4984`; Walkthrough in [`docs/SLICE_D_WALKTHROUGH.md`](SLICE_D_WALKTHROUGH.md).
+
+5. **Static Public IP & Caddy Let's Encrypt HTTPS Migration** — ✅ **RESOLVED (2026-10-19)**:
+   - Migrated from Cloudflare Tunnel to direct public IP (`122.163.124.18`) on Airtel Xstream Fiber with zero CGNAT.
+   - Decommissioned and removed `Cloudflared` persistent Windows Service; set Cloudflare DNS to DNS-only (`media.anisparvez.in` $\rightarrow$ `122.163.124.18`).
+   - Configured automated Port Forwarding on Zyxel router (`AOT5222ZY`): Ports `443` (HTTPS), `80` (HTTP), and `8000` (Direct) $\rightarrow$ `192.168.1.16`.
+   - Deployed Caddy reverse proxy (`E:\MediaServer\bin\caddy_custom.exe`) with Cloudflare DNS module as Windows Service `MediaServerCaddy` via NSSM.
+   - Provisioned Let's Encrypt TLS 1.3 certificate via automated DNS-01 challenge with lifetime background renewal.
+   - Enabled clean URL access (`https://media.anisparvez.in`) without port numbers, and verified 4K HDR fMP4 streaming (*Ghost in the Cell*) over the public internet.
+   - Documented in [`docs/STATIC_IP_MIGRATION_WALKTHROUGH.md`](STATIC_IP_MIGRATION_WALKTHROUGH.md) and [`docs/CADDY_HTTPS_WALKTHROUGH.md`](CADDY_HTTPS_WALKTHROUGH.md).
+
+### Active Roadmap & Recent Completed Deliverables (2026-10-19)
+
+6. **Transcode Dashboard Sign-in Blank Screen Fix & Null Safety** — ✅ **RESOLVED**:
+   - Fixed React Rules of Hooks violation in [`TranscodeDashboardPage.tsx`](../web/src/features/transcodes/TranscodeDashboardPage.tsx) where `activeJobs = useMemo(...)` was declared after the early return `if (!isAdmin)`, which threw `Error: Rendered more hooks than during the previous render` upon user sign-in.
+   - Fixed uncaught runtime error (`TypeError: Cannot read properties of undefined (reading 'primary')`) during auth transitions when `data` is `null` by adding full optional chaining on `summary?.hardware_engine?.primary?.status` and `secondary`.
+   - Added dedicated Obsidian loading skeleton / spinner state (`!data && !error`) and retryable error state (`!data && error`).
+   - Created Vitest test suite [`TranscodeDashboardPage.test.tsx`](../web/src/features/transcodes/TranscodeDashboardPage.test.tsx) verifying unauthenticated gating, smooth auth transitions with loading state, full telemetry rendering, and API error surfacing (4/4 passed).
+
+7. **Media Delete & Purge API (`DELETE /api/media/{*filename}`) & Error Surfacing** — ✅ **RESOLVED**:
+   - Added native Rust endpoint `DELETE /api/media/{*filename}` in [`rust/src/routes/storage.rs`](../rust/src/routes/storage.rs) and [`rust/src/services/storage_service.rs`](../rust/src/services/storage_service.rs), protected by Admin PIN or admin session.
+   - Handles multi-volume physical file deletion across `D:/Flicks`, `E:/MediaServer/cache/hls`, `E:/MediaServer/cache/previews`, and PostgreSQL `movies` table in a single atomic transaction.
+   - Added `error` prop and alert banner in [`DeleteConfirmationModal.tsx`](../web/src/features/manage/components/DeleteConfirmationModal.tsx) and wired `deleteError` state in [`ManagePage.tsx`](../web/src/features/manage/ManagePage.tsx).
+
+8. **Strict Dual-Drive Storage Whitelist & Scan Button Polish** — ✅ **RESOLVED**:
+   - Hardened [`rust/src/services/system_service.rs`](../rust/src/services/system_service.rs) to strictly whitelist Drive D: (`D:\`) and Drive E: (`E:\`) for storage pool telemetry, completely excluding Drive C: per workspace storage invariants.
+   - Cleaned redundant duplicate icons on the Library Scan button in [`web/src/features/library/LibraryPage.tsx`](../web/src/features/library/LibraryPage.tsx).
+
+9. **Dual-GPU Optimal Capacity Optimization (Async Work-Pool & Live Telemetry)** — ✅ **RESOLVED**:
+   - **Asynchronous Chunk Dispatch Work-Pool (`transcode_worker.rs`)**: Replaced synchronous batch barriers (`for batch in pending_chunks { ... task.await }`) with an atomic asynchronous chunk work pool (`Arc<AtomicUsize>`). Eliminates discrete GPU (RX 560X) straggler idle time caused by slower integrated GPU (Vega 8) chunks. Each GPU worker continuously pulls subsequent chunks the instant its active chunk completes, maximizing aggregate dual-GPU throughput to 100% capacity.
+   - **Live Multi-GPU Telemetry Accuracy (`jobs.rs` & `transcodes.ts`)**: Accurately reports both discrete AMD Radeon RX 560X (`dx11:1`) and integrated AMD Radeon Vega 8 (`dx11:0`) as `Active Encoding` whenever transcode jobs are running, reflecting the dynamic 3-worker multi-adapter configuration.
+   - **Queue-Wide Projected ETA (`jobs.rs`)**: Fixed queue ETA underestimation where unstarted queued jobs added 0 seconds. Computes runtime-projected transcoding durations across the entire backlog based on quality preset throughput (1.5x for 4K, 4.0x for 1080p, 6.0x for 720p/480p), presenting realistic total queue completion times in the Transcoding Command Center.
+
+10. **OTT QR Device Sign-In (TV & Browser Remote Login)** — ✅ **RESOLVED (2026-10-20)**:
+   - Built OTT-style QR device sign-in mechanism for camera-less devices (smart TVs, desktop browsers, consoles) inspired by Netflix/YouTube activation flows.
+   - **Rust Backend**: Added `device_pair_sessions` table in [`rust/src/db.rs`](../rust/src/db.rs) with 2-minute ephemeral TTL; added pair code generation (`generate_pair_code`), HMAC-SHA256 signature verification (`hmac_pair_code`), unbuffered Server-Sent Events (SSE) push stream (`GET /api/auth/qr/{id}/wait`), manual 5-digit code lookup (`POST /api/auth/qr/lookup`), phone confirmation (`POST /api/auth/qr/{id}/confirm`), and finalization (`GET /api/auth/qr/{id}/finalize`) issuing 30-day session cookies and persisting friendly device names to `devices.custom_name` in [`rust/src/routes/qr_auth.rs`](../rust/src/routes/qr_auth.rs) and [`rust/src/services/auth_service.rs`](../rust/src/services/auth_service.rs).
+   - **React Frontend**: Built [`QrSignInPanel.tsx`](../web/src/components/QrSignInPanel.tsx) featuring responsive canvas QR code, select-all 5-char code, animated SVG countdown progress ring (120s), manual URL box (`media.anisparvez.in/remotelogin`), and direct Google/PIN sign-in actions; proactively shown on `/account` when unauthenticated in [`AccountPage.tsx`](../web/src/features/account/AccountPage.tsx).
+   - **Mobile Remote Login Page**: Built standalone [`RemoteLoginPage.tsx`](../web/src/features/remote-login/RemoteLoginPage.tsx) at route `/remotelogin` (isolated from AppShell navbar/footer), supporting both QR scan auto-fill and manual 5-digit code entry with auto-advancing inputs, Google sign-in redirect preservation, friendly device naming, and success screen.
+   - **Automated Integration Test**: Added `qr_device_auth_flow_test` in [`rust/tests/auth_flow_test.rs`](../rust/tests/auth_flow_test.rs) validating end-to-end flow with PostgreSQL (100% pass).
+
+11. **QR Sign-In Security, Test-Isolation & Coverage Hardening** — ✅ **RESOLVED (2026-10-20)**:
+   - **Full walkthrough:** [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md) — the complete feature design, the four defects that shipped with it, the test-database isolation work, and the verification record.
+   - **Pair-code entropy collapse (P0, security)**: `generate_pair_code()` derived all five characters from one 64-bit LCG, taking `seed % 32` per step. Because the LCG's multiplier and increment are both odd, the low 5 bits of every step depend only on the low 5 bits of the first one — so the whole code collapsed to **32 possible values (5 bits)** instead of 32^5 (25 bits). Measured on the running server: 40 sessions produced 15 distinct codes. Since `POST /api/auth/qr/lookup` resolves a code to a live pairing session, any signed-in account could try all 32 and hijack another user's active TV pairing. Now drawn character-by-character from the OS CSPRNG (`getrandom`), failing closed if the random source is unavailable. Verified live: **200 sessions → 200 distinct codes**.
+   - **Predictable session tokens (P0, security)**: `generate_random_token()` hashed a clock-derived seed (`nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`) — guessable to anyone who could narrow the creation time. It mints `sess_` session tokens, `ms_` device tokens, the OAuth `state`/`nonce`, the PKCE `verifier`, and the `qr_id` that is the only key to the unauthenticated `/finalize` endpoint. Now 256 bits from `getrandom`, failing closed.
+   - **Pair code and `qr_id` logged in plaintext (P0, security)**: `info!("QR: created pair session qr_id={} code={}")` handed an account-takeover token to every log reader. The log now carries a 12-hex-character reference that is neither the code nor the full id.
+   - **Frontend suite regression (P0)**: `useQrSession` constructed an `EventSource` in an effect and **jsdom implements no `EventSource`**, so `ReferenceError: EventSource is not defined` tore down the whole `AccountPage` tree and failed every assertion in that file. `web/src/test/setup.ts` now stubs it (the established home for such stubs). The `Sign in with Admin PIN` accessible name was also restored.
+   - **QR panel flashed for signed-in users**: the panel was gated on `!authenticated` only, and `authenticated` is `false` for everyone while `/api/auth/me` is in flight — so the panel mounted for signed-in users and fired `POST /api/auth/qr`, creating a pair session server-side on every account-page visit. Now gated on `!authLoading && !authenticated`.
+   - **StrictMode double session creation**: the countdown expiry check lived *inside* a `setSecondsLeft` updater, which React deliberately double-invokes in development — so every expiry created two pair sessions. The expiry check now lives in the interval callback, where side effects belong.
+   - **Test database isolation (AGENTS.md §9)**: every Rust integration test built its config with `AppConfig::from_env()`, which falls back to the **production** `media_server` database when `MEDIA_SERVER_DATABASE_URL` is unset — which it was. A new [`rust/src/test_support.rs`](../rust/src/test_support.rs) provisions a dedicated `media_server_test` database (override with `MEDIA_SERVER_TEST_DATABASE_URL`), redirects the cache directory to a temp path, and provides a helper that seeds a catalog row for a real, probeable media file. The suite no longer writes to production at all.
+   - **Complete schema bootstrap**: `ensure_schema()` created 7 of the 13 tables — `movies`, `progress`, `devices`, `device_watch_history` and `ip_cache` came only from the SQLite→PostgreSQL migration script, so a fresh database was half-formed. Those tables are now created with DDL matching the migrated production tables exactly (idempotent no-ops against the live database).
+   - **Idempotent test teardown**: `qr_device_auth_flow_test` inserted a user with a plain `INSERT` and never removed it, so it passed once and then failed on **every** subsequent run with `23505 duplicate key value violates unique constraint "users_google_sub_key"`, leaving a phantom user and session in the live catalog. It now has setup-time purging, an explicit async teardown hook, idempotent inserts, and a residue assertion. Two residue rows left by the earlier session were removed from production.
+   - **Hermetic live-library tests**: `scanner_engine_test` asserted against a hardcoded production title (`Oculus.2013...`), so it broke if that title was ever removed; it now owns its fixture. The `api/contracts` and `media_info` tests discover a real media file and seed their own row.
+   - **New frontend coverage**: 21 new Vitest tests across [`useQrSession.test.ts`](../web/src/hooks/useQrSession.test.ts), [`QrSignInPanel.test.tsx`](../web/src/components/QrSignInPanel.test.tsx) and [`RemoteLoginPage.test.tsx`](../web/src/features/remote-login/RemoteLoginPage.test.tsx), plus 4 new Rust unit tests that pin the entropy (`>= 5,000` distinct codes from 10,000 draws — the collapsed generator produced 32).
+
+12. **Database Backup & Recovery — PostgreSQL Runbook Rewrite** — ✅ **RESOLVED (2026-10-20)**:
+   - **The runbook documented a retired system.** [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) described `app/services/backup_service.py`, `scripts/backup_database.py` and `scripts/restore_database.py` — all decommissioned with the Flask backend — and `media.db` itself, which was migrated away in Phase 3. An operator following it would have found a runbook for a database that is not in use. It now documents the deployed system: PostgreSQL 18.4, `pg_dump -Fc` custom-format archives, the restore procedure, the SQLite WAL sidecar hazard replaced by the real PostgreSQL hazards, and what `ensure_schema()` does and does *not* repair after a restore. The retired SQLite material is retained in §8 as history.
+   - **A restore tool was missing entirely.** The old restore path was a decommissioned Python script, so the runbook would have had nothing to point at. [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) is new: it verifies the archive is readable *before* touching anything, takes a pre-restore rollback point and **refuses to proceed if it cannot take one**, requires `-Confirm` to act, and reports row counts afterwards.
+   - **Nothing ran the backup automatically.** The `MediaServerBackup` Scheduled Task now runs `pg_dump` daily at 03:00 as `SYSTEM`, logging to `E:\MediaServer\logs\backup_postgres.log`. Install with `scripts\install_backup_task.bat`, remove with `scripts\uninstall_backup_task.ps1`. The task calls a dedicated wrapper because `backup_postgres.bat` ends with a `pause` that would hang a non-interactive run.
+   - **Rotation split.** Scheduled backups and pre-restore rollback points are pruned on separate budgets, so a rollback point can never displace a scheduled backup.
+   - **Verified by a live drill against the production database:** backup → stop the service → restore over the live database → restart. All eight checked tables matched (movies 33, users 3, sessions 13, progress 8, devices 393, settings 3, auth_tokens 21), 13/13 tables restored, health 200 and the public API 200 afterwards. The task was then triggered manually: *Last Result 0*, a valid 73-object archive produced.
+   - **Orphaned bytecode purged.** 168 `.pyc` files whose source modules no longer exist were removed across `app/`, `tests/`, `tests/integration/`, `scripts/` and the repository root; `app/` and `tests/integration/` are now gone entirely. `tests/load/` (7 git-tracked benchmark JSONs) and `tests/screenshots/` (17 verification screenshots) were deliberately kept.
+
+13. **Public Ingress Hardening — TLS-Only Exposure** — ✅ **RESOLVED (2026-10-20)**:
+   - **The origin was reachable over plain HTTP from the internet.** The router forwarded 443, 80 **and 8000**, so `http://122.163.124.18:8000/health` answered 200 from the public internet, bypassing Caddy and TLS entirely — taking the `session_token` cookie and the Admin PIN header with it. The `MediaServer` forward was removed; only 443 and 80 now reach the host. The LAN path (`http://192.168.1.16:8000`) and loopback are unaffected, because LAN traffic never traverses the forward.
+   - **New [`scripts/router_port_forward.ps1`](../scripts/router_port_forward.ps1)** manages the Airtel Zyxel gateway's NAT table (`-Action List | Remove | Add`). The router's `delnum` is **zero-based** while the table displays 1-based row numbers, so a naive delete would have taken down the **HTTPS** rule and with it the public site. The script identifies a rule by its *content* and only then acts on the index, and re-reads the table afterwards to confirm every other rule survived. Both directions were proven by a round-trip on a throwaway port before the real rule was touched.
+   - **Obsolete firewall rule removed.** `Media Server WSGI (Waitress Port 8000)` allowed *any* program on port 8000 under *any* profile — for a service decommissioned in Slice 7E. The program-scoped `MediaServerRust` rule remains.
+   - **Conditional `Secure` cookie flag.** `AuthService::session_cookie()` now appends `Secure` **only when the request arrived over TLS** (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It cannot be unconditional: the LAN path is plain HTTP, and a browser refuses to store or send a `Secure` cookie over plain HTTP, so an unconditional flag would break LAN sign-in. All five cookie sites now use the shared helper.
+   - **`MEDIA_SERVER_PUBLIC_BASE_URL` pins the public origin.** `get_base_url` (the QR URL the phone is told to open) and `get_host_url` (the Google OAuth redirect URI) both derived their value from the client-controlled `Host` header. A configured origin now takes precedence, and it is set in the NSSM service environment and in `.env`.
+   - **The pairing signature was keyed by a published constant.** `hmac_pair_code` read `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so the signature was being computed with the literal fallback string published in the source — anyone reading the repository could reproduce it. It now reads either name and falls back to a **random process-local key**, never a known constant.
+
+14. **Missed Migration Backlog — The Web Brand Opening Sequence** — ⚠️ **OPEN (found 2026-10-20)**:
+   - **The web brand opening sequence was never ported.** It shipped in the Flask era as a Jinja2 template, `templates/intro-overlay.html`, included at the end of the library page. **Slice 7E.2 retired it on 2026-10-18** (`5a2af4f`) with the other legacy templates, and **no React component was ever written to replace it** — a search across all branches and all of history finds no `BrandIntro`/`IntroOverlay` component. The web app has had no intro since 2026-10-18.
+   - **It went unnoticed because the documentation asserted the opposite.** `AGENTS.md` claimed the overlay *"is wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`"* — a file that has never existed on any branch. Slice 7E.2's verification was an **architecture** check (*"the SPA serves the pages without the Jinja templates"*), which passed; nobody diffed **capabilities**.
+   - **The Flutter client still has it** — `flutter_client/lib/features/intro/`, with its own copy of the portrait video and two test files. All **293 MB of assets** remain in `docs/opening-sequence/`, and the design and the three web invariants are intact.
+   - **The port is well-specified, not a redesign:** Rust serves ~5 MB of media from `web/public/`; React needs a component that injects the overlay *over the running app* and honours the three invariants; and `docs/opening-sequence/scripts/serve_with_intro.py` is a frame-for-frame regression harness.
+   - **Full record:** [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) §0 and [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) §6. Tracked as item 5 of the `AGENTS.md` work queue.
+
+15. **Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)** — 📋 **IN PROGRESS (2026-10-20)**:
+   - **The scope:** one brand opening sequence, implemented natively for all three targets — the web React SPA, the Android phone, and the Android TV — from a single canonical design. The web port does not exist (item 14); the Flutter implementation has drifted from the original — its **entire FX layer is painted beneath the opaque curtain and is therefore invisible**, it has no grain layer, its lockup is stacked unconditionally rather than by breakpoint, it shows a visible Skip button, and it has no score at all. (The Settings "Replay Brand Intro" action was removed in Phase 11 Slice 11.1a.)
+   - **Decisions taken:** the **web original is canonical** (the Flutter client changes to match it); the **canvas renderer with a separate Web Audio score** for the web; **no visible Skip button and no Replay action anywhere**, including the Flutter Settings screen; **web once per browser session, Android every launch**; the intro **plays over the login screen**; and the sequence must be **resolution-independent** across every screen size, aspect ratio and orientation.
+   - **Seven structural slices**, each independently verifiable: 11.1 canonical specification (no code) · 11.1a remove the Flutter Replay action · 11.2 web canvas renderer · 11.3 web lifecycle, gating, modes and audio · 11.4 Flutter alignment to the canonical design · 11.5 Flutter score · 11.6 responsive hardening and asset regeneration.
+   - **Slice 11.1 is complete (2026-10-20).** The canonical specification is
+     [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) **Part I** - the 15-cue timing table (every value cited to `docs/opening-sequence/source/intro-overlay.html:<line>`), the layer stack with z-indexes, the compositing / responsive / audio / dismissal / reduced-motion / gating contracts, the decision record D1-D11, and a **divergence ledger (L1-L15)** naming the closing slice for every difference from the canonical design. Part II preserves the historical record.
+   - **Research finding (D1):** Netflix's own intro is authored code rather than a media file, and the industry answer to "a web intro with sound" is a **separate audio track** — video autoplay with sound is blocked, so a `<video>` would have to be muted or gesture-gated. The efficient route is to port `renderAt(t)` as a **pure function of time**, which is unit-testable and directly comparable to the reference frames. Lottie/dotLottie is the industry vector tool and its `preserveAspectRatio` is the standard answer to responsive motion, but it is not recommended here: the existing design is already vmin-scaled, the original is deterministic code, and it would add an After-Effects authoring dependency.
+   - **Master plan:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md). Branch: `feature/phase-11-opening-sequence`. **No implementation has started** — each slice is planned and approved individually.
+
+- **Modernization 100% Complete**: All modernization phases (Phases 0–9, Slices 7A–7E) are 100% delivered, hardened, and signed off. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md). **One feature was lost in the cutover and not replaced — the web brand opening sequence (item 14 above); the architecture claim holds, the feature-parity claim did not.**
 
 ---
 
@@ -44,6 +163,493 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 ---
 
 ## 0. Recent work
+
+> **Session handoffs live in `Handoffs/`** (`YYYY-MM-DD_HH-MM_<agent>.md`, IST). The newest,
+> `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md`, describes the tree at `72c89f1`
+> and carries the paste-ready prompt, the P0-P7 migration phase table, the test coverage,
+> and the traps. Read it first; this log remains the detailed record of *why* each change was made.
+> Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+
+### 2026-10-16 — Catalog Reconciliation & USB-Dropout Service Watchdog
+
+**1. Outage & diagnosis.** `media.anisparvez.in` returned 502 with
+`dial tcp 127.0.0.1:8000: refused` in `C:\Cloudflared\cloudflared.log`:
+`MediaServer` (`:8000`), `MediaServerRust` (`:8001`) and PostgreSQL were
+all Stopped. Structural cause: everything except Cloudflared lives on USB
+`E:` (`nssm.exe`, PG binaries + `pgdata`); E: glitched mid-run (USB
+paging error + volume re-enumeration in System log, PG crash-recovery
+traces) and SCM never restarts Stopped services on volume return — NSSM
+cannot self-heal because `nssm.exe` itself was on the missing volume.
+All three restored (elevated restarts); public site 200.
+
+**2. Catalog reconciliation (PG `media_server` vs SQLite `media.db`).**
+Flask served 36 titles, Rust 39. Full disk audit: SQLite 36/36 valid
+(truth); PG held 6 stale rows — 3 bare keys for files now under
+`subdir/file` layout (28 Days, Hail Mary, Oak Street) fixed by `UPDATE
+filename`, 1 bare-key duplicate (28 Weeks) deleted, 2 fully orphaned rows
+(Odyssey, WALL-E) deleted plus 1 orphaned WALL-E progress row (user
+approved full clean). One transaction, JSON backup of affected rows.
+Result: **36/36 parity, 0 missing on disk**; `cargo test` re-run
+**61/61 green**, zero post-suite artifacts. Full account:
+[`docs/SERVICE_WATCHDOG.md`](SERVICE_WATCHDOG.md).
+
+**3. Watchdog delivered, drill-passed, then removed.** A `MediaServerWatchdog`
+scheduled task was built and proven (stopped Rust → next tick restarted it,
+`:8001` 200), then **unregistered by user decision** once NSSM's own restart
+covered the crash case, because its 5-minute interactive run flashed a
+console window on the desktop. `scripts/service_watchdog.ps1` /
+`install_watchdog.ps1` / `uninstall_watchdog.ps1` were retained at the time, but Slice 7E.1
+(2026-10-18) subsequently removed them as obsolete Flask-era tooling. The task remains
+uninstalled. Three traps recorded in the walkthrough: repo `.ps1` files
+must stay pure ASCII (PS 5.1 mangles UTF-8 dashes into parse errors);
+repetition on AtLogOn triggers never fires (use Once+Repetition); and
+`pg_ctl status` reports a healthy NetworkService cluster as stopped, so PG
+liveness must be probed with a TCP connect to 127.0.0.1:5432.
+
+**Follow-up, same session:** NSSM rehomed to `C:\MediaServer\bin` and
+PostgreSQL binaries to `C:\postgres` (data stays `E:\pgdata`),
+registered as `MediaServerPG` (NetworkService, Automatic, restart-x3
+recovery). Catalog still 36/36 after the move; `:8000`/`:8001`/public
+all 200.
+
+### 2026-10-14 — Frontend Technical Debt Resolution: ManagePage Modularization & Typed API Client (Option C)
+
+**1. Typed Library & Storage Management API Engine ([`web/src/lib/api/manage.ts`](../web/src/lib/api/manage.ts))**
+- Eliminated all bare `fetch()` calls from `ManagePage.tsx`, routing all network traffic through the typed API client with request deadlines (`DEFAULT_TIMEOUT_MS = 20_000`, `MEDIA_PROBE_TIMEOUT_MS = 45_000`).
+- Implemented strongly typed endpoints:
+  - `fetchManageMovies()`: Fetches movie inventory with deadline and error mapping.
+  - `fetchStorageSettings(adminPin)`: Reads post-transcode retention policies with `X-Admin-Pin`.
+  - `fetchStorageAudit(adminPin)`: Evaluates storage pool allocation and HLS cache integrity.
+  - `verifyAdminPin(pin)`: Verifies Admin PIN without triggering false-positive session locks.
+  - `updateStoragePolicy(policy, adminPin)`: Updates retention policy.
+  - `purgeOrphanedCaches(adminPin)`: Purges unreferenced transcode directories.
+  - `triggerLibraryScan(adminPin)`: Triggers library ingestion and metadata synchronization.
+  - `archiveMovieMedia(filename, adminPin)`: Offloads raw MKVs to cold storage (`D:\Flicks\.archive`).
+  - `deleteMovieMedia(filename, adminPin)`: Performs permanent deletion and cache purging.
+- Extended base `RequestOptions` in [`web/src/lib/api/client.ts`](../web/src/lib/api/client.ts) to support `DELETE` and `PUT` methods along with custom `headers`.
+- Authored test suite in [`web/src/lib/api/manage.test.ts`](../web/src/lib/api/manage.test.ts) (11/11 tests passing).
+
+**2. Modular Subcomponent Decomposition (`web/src/features/manage/components/`)**
+- Decomposed monolithic `ManagePage.tsx` (1,284 lines → 430 lines, ~66% code reduction) into 7 single-responsibility, highly reusable presentation components:
+  - `AdminAccessGate.tsx`: Ambient obsidian Access Denied shield, 4 capability overview cards, and PIN unlock action.
+  - `AdminPinModal.tsx`: Portaled modal with auto-focus PIN input, live error alerts, and escape-key dismissal.
+  - `StoragePoolHud.tsx`: Utilization progress bar with aggregate free/total space and drive-by-drive breakdown (`E:` SSD runtime, `D:` raw media).
+  - `RetentionPolicyCard.tsx`: Interactive policy selection cards (*Keep Both*, *Move to Archive*, *Purge After Watch*).
+  - `OrphanedCacheAudit.tsx`: Orphaned directory telemetry, reclaimable space calculator, and one-click cache purge button.
+  - `InventoryToolbar.tsx`: Search input with clear button, category filter chips (All, HLS, Direct, Watched, Unwatched), and sort dropdown.
+  - `InventoryList.tsx`: Responsive media cards with poster thumbnails, stream badges (*Cached HLS*, *Direct Stream*, *On-Demand HLS*), watch progress, and actions (Watch, Details, Archive, Delete).
+  - `DeleteConfirmationModal.tsx`: Portaled destructive deletion confirmation modal with media details, wipe checklist, and inline PIN authorization.
+- Validated with Vitest: all 172 tests passed across 25 test files (up from 161 tests). Production bundle compiled cleanly in 780ms.
+
+### 2026-10-14 — Production Concurrency Tuning & Remote Streaming Benchmark (Waitress WSGI & Cloudflare Tunnel)
+
+**1. Cross-Platform Concurrency Benchmark Engine** *(harness `scripts/benchmark_streaming.py` — retired with the Flask backend in Slice 7E; the measurements live on in [`docs/STREAMING_BENCHMARK_REPORT.md`](STREAMING_BENCHMARK_REPORT.md))*
+- Developed an automated benchmark suite tailored for Windows 11 host architecture and the production Waitress WSGI server (PID 17644) under NSSM.
+- Evaluated 3 distinct workload profiles across concurrency levels 1, 2, 4, 8, 12, 16:
+  - **Direct RFC 7233 Byte-Range Streaming:** Simulates full 1080p MP4/AAC playback via staggered 2 MB byte-range chunks across *2001: A Space Odyssey* (2.44 GB).
+  - **HLS Segment Delivery:** Simulates HLS players polling playlists and streaming consecutive transport segments across *Ghost in the Cell* (4K) and *2001: A Space Odyssey* (1080p).
+  - **Mixed Workload:** 75% video streaming + 25% interactive API queries (`/api/movies`, `/api/system/status`, `/api/devices`, `/api/admin/status`) measuring latency and thread starvation under load.
+- Integrated Windows host hardware and process telemetry via `psutil`: tracks CPU utilization, RAM usage, Waitress RSS memory, Waitress OS thread count, and network throughput.
+- Enforced descriptive Client `User-Agent` (`MediaServerClient/1.0`), preventing Cloudflare WAF bot-mitigation false positives (`403 Forbidden`).
+
+**2. Local Origin Scaling & 448 Mbps Throughput Validation**
+- Validated that the 16-thread Waitress WSGI server effortlessly scales on LAN/Local loopback (`http://127.0.0.1:8000`), achieving **447.88 Mbps** aggregate throughput (~56 MB/s) with 100% request success and zero dropped connections.
+- Direct stream TTFB scaled smoothly from 57ms (2 clients) to 543ms (16 clients), with per-client bandwidth averaging ~30–32 Mbps at 16 concurrent streams—well above the 5–8 Mbps bitrate required for 1080p playback.
+- Waitress RSS memory remained completely flat between **80.6 MB and 94.9 MB**, and OS thread count remained constant at 22–24 threads.
+
+**3. Cloudflare Tunnel Characteristics & Upload Pipe Bottleneck Identification**
+- Characterized the remote streaming capacity through the Cloudflare named tunnel (`https://media.anisparvez.in`):
+  - Remote aggregate throughput capped at **18.43 Mbps** regardless of concurrency, directly matching the host ISP's home broadband WAN upload ceiling (~20 Mbps).
+  - Direct stream TTFB increased from ~2.8s at 1 client to ~15.4s at 16 clients, identifying an optimal operational limit of **3–4 concurrent 1080p remote streams**.
+  - HLS segment streaming exhibited lower and flatter TTFB (~1.2s–1.5s) over the tunnel than raw MP4 byte ranges, confirming HLS's advantage for remote mobile and WAN playback.
+  - Mixed API traffic under full remote video saturation revealed head-of-line tunnel queuing (~15–19s latency), while local origin API requests remained instantaneous (29–115ms), proving the bottleneck is the WAN uplink pipe, not Waitress thread exhaustion.
+
+**4. Comprehensive Master Benchmark Report ([`docs/STREAMING_BENCHMARK_REPORT.md`](STREAMING_BENCHMARK_REPORT.md))**
+- Authored a publication-grade benchmark report comparing current Windows 11 Waitress results (+328% local throughput over Gunicorn) against the September 2026 Linux baseline, complete with full data matrices, operational capacity guidelines, and reproducibility commands.
+
+### 2026-10-14 — Database Backup, Recovery & Disaster Runbook (Phase 3 Blocker Resolved)
+
+**1. Crash-Safe Online SQLite WAL Backup Engine** *(SQLite-era engine, retired with the Flask backend in Slice 7E — the current mechanism is [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1))*
+- Implemented zero-lock online SQLite database backup using the native SQLite Online Backup API (`source_conn.backup(dest_conn, pages=100)`). Transfers data page-by-page without blocking concurrent HTTP readers or writers, incorporating all committed WAL frames into a defragmented single-file database.
+- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, `auth_tokens`, etc.).
+- Integrated configurable retention rotation (`prune_backups()`, default: retain 7 newest) safely pruning older snapshots and matching manifests.
+
+**2. Atomic Database Restoration & Pre-Restore Rollback Points**
+- Engineered safe atomic database restoration (`restore_database()`) with mandatory pre-verification (`verify_backup()`) guarding against corrupt or truncated files.
+- Automatically captures a pre-restore safety rollback point of the active database before overwriting.
+- Implemented Windows SQLite WAL/SHM cleanup: unlinks stale `media.db-wal` and `media.db-shm` sidecars prior to atomic staging swap, eliminating database disk image corruption from mismatched WAL replay.
+- Post-validates the restored database with `PRAGMA integrity_check` and ensures `PRAGMA journal_mode=WAL` is active.
+
+**3. CLI Automation & Windows Scheduled Task Batch Script**
+- Created CLI utilities `scripts/backup_database.py` and `scripts/restore_database.py` *(both retired with the SQLite backend in Slice 7E; superseded by [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) and [`scripts/backup_postgres.bat`](../scripts/backup_postgres.bat))* with options for target directories, labels, retention counts, JSON output, and interactive confirmation prompts.
+- Created `scripts/backup_database.bat` *(retired — see above)* for one-click backups and Windows Task Scheduler automated daily execution.
+- Added `BACKUP_DIR = Path(os.environ.get("MEDIA_SERVER_BACKUP_DIR", BASE_DIR / "backups")).resolve()` to `app/config.py` *(now `rust/src/config.rs`)* and added `backups/` to [`.gitignore`](../.gitignore).
+
+**4. Comprehensive Master Runbook & Verification Suite**
+- Authored master operational guide in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) covering crash-safety architecture, CLI commands, Task Scheduler recipe, emergency disaster recovery, and Phase 3 rollback window ($\le 30$ seconds point of no return). *(The runbook was **rewritten for PostgreSQL on 2026-10-20** — it now documents `pg_dump -Fc` backups, a verified `pg_restore` procedure, and the current failure modes. The SQLite-era material is retained in its §8 as history.)*
+- Authored test suite `tests/test_backup_restore.py` *(retired with the SQLite backend)* passing 8/8 tests with 100% coverage.
+- Captured live host baseline backup (`E:\MediaServer\backups\media_backup_20261014_160426_pre-migration-baseline.db`, 516,096 bytes, SHA-256 `f5287598106a...`, 852 rows) and successfully verified with an end-to-end recovery drill.
+
+### 2026-10-14 — Issues 1–7 Resolution & Comprehensive User Manual Overhaul
+
+**1. Manage Page Performance & Instant Cache Detection (Issue 1)**
+- Implemented `probe_hls_cache_instant()` in `app/services/media_service.py` performing synchronous directory existence probing without invoking FFmpeg or directory walking.
+- Hydrated `/manage` media inventory in `< 100ms`, displaying real-time accurate badges (*Cached HLS* vs *Direct Play* vs *On-Demand HLS*) immediately without 5–20s delay or false optimistic labels.
+- Added animated skeleton loading shimmer placeholders for the Storage Pool HUD and audit cards.
+
+**2. Auth Architecture Clarification & Guest Mode Polish (Issues 2 & 3)**
+- Documented open-door Guest Mode vs enforced `MEDIA_SERVER_AUTH=1` security model.
+- Transferred device pairing from `/devices` to `/account`, reserving `/devices` purely for client presence and network telemetry.
+- Replaced confusing "Signed in as Unknown" with an informative obsidian **Guest Mode** card explaining hardware cookie identification (`ms_device_id`), and replaced the unauthenticated Sign Out button with a prominent **Sign in with Google** button.
+
+**3. Device Token Pairing, Admin PIN Support & Watch History Drawer (Issues 4, 5, 6)**
+- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords.
+- Added user-scoped interactive Watch History Drawer on `/account` with poster thumbnails, timestamps, watch percentages, resume points, and a **Clear All History** action.
+- Permitted non-admin authenticated users (`role: 'viewer'`) to pair devices in their own scope.
+- Added Admin PIN authorization support to token minting, eliminating 403 barriers for administrators.
+
+**4. Admin-Only Gating, Fleet Privacy Scoping & Route Hardening (Issue 7)**
+- Gated `/manage` storage pool settings and audits behind administrator authorization (`role: 'admin'` or verified Admin PIN). Unauthorized visitors are presented with a rich obsidian Access-Denied card with ambient radial lighting, glowing pulse shield, 4 capability overview cards, and a portaled Admin PIN unlock modal.
+- Scoped `GET /api/devices` to the caller's current device only (`is_current == True`) when unauthorized as admin, concealing other household IP addresses and sessions. Added an amber privacy scoping notice and an **"Unlock Fleet Telemetry"** header button.
+- Restricted `POST /api/devices/rename` and `POST /api/devices/delete` to the caller's own `device_id` unless authorized as admin.
+- Hardened `POST /api/scan`, `POST /upload`, `POST /upload/chunk/init`, and `GET /api/storage/audit` to require admin authorization (`403 Forbidden` on non-admin).
+
+**5. Comprehensive Structured Manual & In-App Guide Overhaul**
+- Fully rewrote and structured [`docs/MANUAL.md`](MANUAL.md) into a comprehensive 13-section master operator guide covering dual-drive storage tiering (E: SSD + D: Mass storage; C: strictly unused), authentication & PIN security, TV remote 2-zone navigation, touch gestures, device pairing, dual-GPU chunked transcoding, casting, retention policies, and Windows persistent services.
+- Overhauled [`web/src/features/manual/ManualPage.tsx`](../web/src/features/manual/ManualPage.tsx) with modern web guidance and rich obsidian UI elements: quick-jump category navigation rail, keyboard shortcuts table, gesture grid, 10-foot TV remote focus cards, and pairing workflow cards.
+- Added test coverage in [`web/src/features/manual/ManualPage.test.tsx`](../web/src/features/manual/ManualPage.test.tsx).
+
+### 2026-10-14 — React Modal Portaling, CSS Transform Isolation & Manage Loading Latency Tracking
+
+**1. Modal Dialog Viewport Centering & CSS Transform Isolation (`ManagePage.tsx`, `CastModal.tsx`, `AppShell.tsx`, `index.css`)**
+- *The Issue:* Confirmation and unlock dialogs in `/manage` (Delete & Purge Confirmation, Admin PIN Unlock) were rendered "way off in position... very down", protruding into the bottom edge of the viewport with contents cut off below the screen.
+- *Root Cause:* Under W3C CSS Transforms Module Level 1, any non-`none` value for `transform` (including `translateY(0)` retained by `forwards` on `.animate-fade-in`) turns the container into the containing block for all `position: fixed` descendants. The modal backdrop (`fixed inset-0`) was bound to the multi-thousand-pixel height of `<ManagePage />` rather than the viewport, centering the modal thousands of pixels down the page.
+- *The Fix:*
+  - Portaled all dialogs directly to `document.body` via `createPortal(..., document.body)` in `ManagePage.tsx` (`deleteTarget` and `pinModalOpen`), `CastModal.tsx`, and `AppShell.tsx` (`privacyOpen`).
+  - Updated `@keyframes fadeIn` in `web/src/index.css` to terminate on `to { opacity: 1; transform: none; }`, ensuring container animations do not retain containing block traps indefinitely.
+  - Added `.animate-overlay-fade` and `.animate-scale-in` keyframes.
+  - Added `overflow-y-auto` to the backdrop and `my-auto` to the modal card for responsive centering and safe vertical scrolling without clipping on compact screens.
+  - Added an Escape key listener in `ManagePage.tsx` for accessible dismissal.
+  - Added `testTimeout: 15000` to `vite.config.ts` to prevent worker timeouts during Windows test executions.
+
+**2. Open Issue Tracked: Manage Page Loading Latency & Optimistic Transcode Status Desync (`docs/Current issues.md`)**
+- *Reported Issue:* When loading `/manage`, the page takes ~20 seconds to fetch and process storage audit data with zero loading skeleton or indicator. During this window, media files initially display optimistically as "On-Demand HLS" even when already fully transcoded, before abruptly updating to "Transcoded" once the audit payload completes.
+- *Backlog Action Item:* Add an intermediate loading shimmer/skeleton for the storage pool and media inventory cards, and preserve known transcode states during the audit fetch.
+
+### 2026-10-14 — Cast Remote Control Hardening: Volume Anti-Reset, 3-State Mute, In-Cast Subtitles & Clean Disconnect
+
+**1. Volume Slider Reset & Anti-Jump (`app/services/cast_service.py`, `web/src/features/playback/CastBar.tsx`)**
+- `cast_status()` and `dlna_status()` now query real receiver hardware volume (`volume_level * 100` and `volume_muted` for Cast; `GetVolume` / `GetMute` for DLNA).
+- Added `scrubVolume` state isolation in `CastBar` preventing status poll ticks from overwriting slider position during adjustments.
+- Applied progressive bold red gradient fill (`#e50914`) to `#castVolume` matching the web player slider, with numeric `#castVolumePercent` indicator.
+
+**2. Dynamic 3-State Mute Toggle (`#castMuteBtn`)**
+- Integrated dynamic SVG mute button with 3 states: Muted ($0\%$), Low ($< 50\%$), and High ($\ge 50\%$).
+- Toggling dispatches `action: 'mute'` across Google Cast (`cast.set_volume_muted`) and DLNA (`SetMute`).
+
+**3. In-Cast Subtitle Track Delivery & Live Selector**
+- Google Cast `cast_load()` now attaches sidecar subtitle tracks via `media_info['tracks']` with fully-qualified LAN WebVTT URLs and high-contrast styling (`textTrackStyle`).
+- Added a `CC ⚙` button and obsidian glass popover (`#castSubMenu`) in the remote transport row for live subtitle switching (`action: 'subtitle'`) and turning subtitles Off.
+
+**4. Clean Google Cast Receiver App Quit & Disconnect**
+- Disconnecting from Google Cast now calls `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and cache eviction.
+- The TV terminates the default media receiver cleanly and returns to its ambient/home screen, matching DLNA behavior.
+
+### 2026-10-14 - Request deadlines and retry; two defects caught before commit
+
+**Context.** Committing the previous session's uncommitted work surfaced two defects and one
+real gap. All three are fixed here; the commit of the underlying work is separate.
+
+**1. A hung request was indistinguishable from a slow one (the "stuck page").**
+
+`web/src/lib/api/client.ts` `request()` had no deadline, and neither did `useAsync`. A fetch
+that never settled therefore produced an **indefinite skeleton with no error and no recovery**
+short of a full page reload - which is exactly how the details page presented.
+
+The deadline is measured, not guessed. Against this server:
+
+| Observation | Cost |
+|---|---|
+| Cold `/api/movie/{filename}`, unseen title | 2.5s |
+| Cold control title, first request | 7.79s |
+| Ten simultaneous cold details requests | 3.5s wall |
+| One request during service restart | **>30s (timed out)** |
+
+So `DEFAULT_TIMEOUT_MS = 20_000`, and `MEDIA_PROBE_TIMEOUT_MS = 45_000` for
+`/api/movie/`, `/api/media-info/` and `/api/transcode-status/`, which probe the file
+server-side and would otherwise fail the slowest titles *deterministically* rather than by
+accident. `/api/movies` keeps the 20s default.
+
+Implementation notes worth keeping:
+
+- One `AbortController` covers both reasons to stop (caller cancellation and the deadline),
+  wired **by hand** rather than with `AbortSignal.any()` so no polyfill is carried.
+- `timedOut` is checked **before** rethrowing, so a deadline reports as
+  `ApiTimeoutError` instead of the platform's opaque "The operation was aborted".
+- A caller abort stays an `AbortError`. If it were reported as a timeout, every route
+  change away from a slow page would flash a spurious "server took too long" on the way out.
+- The timer is cleared in `finally`, so a response that already arrived is never
+  retroactively converted into a timeout.
+
+`useAsync` gained `reload()`, and `StateMessage` renders a **Try again** button. The
+failure state is no longer terminal. Verified in a browser, not by inspection: the first
+details request aborted, the alert and button appeared, the button was clicked, the request
+re-issued, the alert cleared and the content rendered - with no page reload.
+Covered by six new tests (hang, no-fire-after-resolve, caller override, socket actually
+released, caller-abort-is-not-a-timeout, probe endpoints get the longer budget).
+
+**2. Hard-coded default Admin PIN - removed (`app/routes/api.py`).**
+
+The uncommitted admin work defaulted to `get_setting('admin_pin', '<hard-coded>')`. On a host
+reachable from the public internet through the Cloudflare tunnel that is equivalent to
+publishing **permanent unauthenticated access** to everything behind `@require_admin`,
+which includes *deleting the library*, purging caches, moving originals into the archive
+and rewriting the retention policy. The default was four digits on a box with a known catalogue.
+
+`get_setting('admin_pin', '')` now, via `_configured_admin_pin()`. Unset means **no PIN
+channel at all**, leaving only a Google admin session to set the first one - which is also
+what `api_admin_status.has_pin` already reported, so the two can no longer disagree.
+Pinned by `test_no_configured_pin_means_no_pin_is_accepted`, which asserts both that
+`/api/admin/verify` returns 401 *and* that the destructive route stays shut, because a
+closed probe with an open door would pass the weaker test.
+
+The PIN is also no longer accepted from `?pin=`. A secret in a query string lands in
+Waitress access logs, Cloudflare's edge logs, browser history and `Referer` headers -
+four more places to leak the one secret guarding media deletion. Header and JSON body only.
+
+**3. ENDLIST written from label arithmetic - reverted (`app/services/transcode_service.py`).**
+
+`_is_hls_truly_complete()` was appending `#EXT-X-ENDLIST` when
+`cumulative / source_duration >= 0.98`. Three separate problems:
+
+- **The measure is the one this project proved untrustworthy.** A cache read 100% by
+  duration while missing 277.2s of frames across 101 chunks; a 99.88% "repair" masked that
+  same loss. Label arithmetic is precisely what the frame-accounting work exists to replace.
+- **It would seal exactly the caches the frame accounting exists to catch** - a cache
+  refused ENDLIST for measured loss would get it back from a duration ratio.
+- **It wrote from a predicate, in a 1Hz progress callback, unserialised and non-atomically**,
+  against the project's `_PLAYLIST_WRITE_LOCK` + `write_text_atomic` rule. A torn playlist
+  read is exactly what `_hls_resume_point` then freezes into both the playlist and its `.bak`.
+
+Reverted; the function is a predicate again, with the reason recorded at the branch.
+Sealing a complete cache remains `scripts/hls_restore_endlist.py`, which re-checks with
+frame counting. The same commit keeps a genuine fix in that file: Matroska track tags are
+locale-suffixed (`DURATION-eng`), so `tags.get('DURATION')` missed them and
+`source_video_duration` fell through to a container duration.
+
+**Standing at this commit.**
+
+| Suite | Result |
+|---|---|
+| Frontend `tsc -b` | clean |
+| Frontend `oxlint` (changed files) | clean |
+| Frontend `vitest` | **91 passed** (11 files) |
+| Python `pytest tests/` | **2 failed, 902 passed, 28 skipped** |
+| Android guardrail `scripts/probe_android_api.py` | **18/18 per contract** |
+
+Progress on the open decision from the previous entry: **38 failed -> 2**. The 36 legacy
+Jinja HTML assertions were ported to assert SPA shell status and real API contracts.
+
+**The two remaining Python failures, honestly:**
+
+1. `test_startup_errors_when_on_without_secret` - pre-existing and documented, unrelated to
+   the migration.
+2. `test_seek_preview_and_playback_advancement` (`test_selenium_seek_playback.py`) - **the
+   last unmigrated casualty**, and not merely "needs a browser". The captured log shows it
+   loading `/`, receiving the SPA shell and then failing `NoSuchElementException` on markup
+   the migration removed. It needs the same porting the other 36 received; it was missed
+   because a Selenium test is easy to read as environmental rather than as a contract
+   failure. That is the one piece of the migration still outstanding.
+
+### 2026-10-13 (later) - Modern & Intuitive React SPA UI/UX Redesign
+
+**Deliverable:** Redesigned the React web application across all core views (`/`, `/watch/*`, `/account`, shell & footer) to deliver a modern, cinematic, and intuitive streaming experience adhering to rich dark-obsidian glass aesthetics and web guidelines.
+
+**1. Atmospheric Obsidian Design System & Styling (`web/src/index.css`).**
+- Implemented ambient red-tinted radial gradient on `body` for depth.
+- Created reusable glassmorphism utilities (`.glass-card`, `.glass-pill`, `.brand-glow`, `.brand-glow-sm`, `.animate-fade-in`) with high-performance CSS backdrop filters and subtle inner borders.
+
+**2. Cinematic Hero Billboard & Interactive Library (`LibraryPage.tsx`, `HeroSpotlight.tsx`, `MovieCard.tsx`).**
+- **Hero Spotlight:** Full-bleed cinematic banner showcasing featured titles with dark vignetted backdrop, release metadata, and instant "▶ Watch Now" & "ℹ Details" triggers.
+- **Instant Search & Genre Filtering:** Added real-time instant search input with clear trigger (`✕`), dynamic genre filter pills extracted from the active catalog ("All Genres", "Sci-Fi", "Action", etc.), and multi-criteria sorting (Recently Added, Title A-Z, Rating, Release Year).
+- **Movie Card Polish:** Added smooth hover lift, image scale zoom (`group-hover:scale-105`), floating rating star badges (⭐), and center circular play ripple overlay.
+
+**3. Streamlined Player, Movie Details & Account Experience (`PlayerPage.tsx`, `MovieDetailsPage.tsx`, `AccountPage.tsx`, `StateMessage.tsx`, `Avatar.tsx`).**
+- **Movie Details Shimmer Skeleton:** Replaced the unstyled and misplaced `"Loading library…"` fallback with a cinema-grade shimmer skeleton (`MovieDetailsSkeleton`) rendering a full-bleed backdrop shimmer, 2:3 poster outline, title/tagline bars, metadata pills, action button skeletons, and cast/specs rail placeholders.
+- **Modern Orbital Loading Indicators:** Replaced plain paragraphs in `StateMessage`, `PlayerPage`, and `AccountPage` with hardware-accelerated dual-ring spinning brand loaders, pulsing glow auras, and smooth `.shimmer` gradient waves.
+- **Player View:** Integrated top navigation bar with "← Back to Movie" button and stream status badge (Direct Play vs HLS Stream), modern glass controls ribbon, and polished transcode ETA/speed progress indicators.
+- **Account View:** Enhanced profile section with large avatar support (`size="lg"`), online status indicator, glass cards for connected devices, and streamlined token minting.
+- **Scroll Restoration on Navigation:** Added automatic scroll-to-top on route changes (`AppShell.tsx` and `MovieDetailsPage.tsx`), preventing detail pages from inheriting the library list's vertical scroll offset when opening titles further down the catalog.
+
+**4. Shell & Telemetry Footer (`AppShell.tsx`).**
+- Added live system status pill ("🟢 ONLINE") to the top navigation bar.
+- Added cinematic dark footer with dual AMD GPU telemetry and navigation links.
+
+**5. Verification & Guardrails:**
+- **Vitest Suite:** **80 passed** (10/10 test files passed).
+- **TypeScript:** `npm run typecheck` clean (0 errors).
+- **Production Build:** `npm run build` compiled clean into `web/dist`.
+- **Android API Probe:** **18/18 endpoints pass** (`python scripts/probe_android_api.py`).
+- **Backend Pytest Suite:** All core app tests passing.
+
+### 2026-10-13 (later) - Legacy test migration (Open Decision §4 resolved: Option A) & SPA catch-all routing isolation
+
+**Deliverable:** Resolved the open decision regarding 36 failing legacy Jinja HTML tests by migrating coverage to verify the React SPA shell delivery alongside real backend API contracts. Fixed a subtle Werkzeug routing leak where a naive catch-all intercepted POST-only API routes.
+
+**1. Werkzeug SPA catch-all isolation (`app/__init__.py`).**
+- *The Issue:* The React SPA catch-all `@app_instance.route("/<path:path>")` matched GET requests for any route. Because Flask/Werkzeug prioritizes matching rules that support the requested HTTP method over raising 405 MethodNotAllowed on non-matching blueprint rules, GET requests to POST-only API endpoints (such as `GET /api/transcode/start/...`) and unknown API routes were intercepted by the catch-all, returning 200 with `index.html` instead of 405 or 404.
+- *The Fix:* Implemented `SpaPathConverter(BaseConverter)` with negative lookahead regex `r'(?!(?:api|auth|media|hls|subtitles|poster|tmdb-poster|tmdb-backdrop|static)/).+'` and registered it as `/<spa_path:path>`. Backend API/media/auth routes are now fully isolated from SPA HTML rewriting without duplicating route rules.
+
+**2. Migration of 36 legacy Jinja HTML tests (Option A).**
+- Rather than deleting coverage, all 36 failing tests were migrated across:
+  - `tests/test_manage.py`: Verified SPA shell on `/manage` and service discovery via `get_managed_media_items()`.
+  - `tests/test_storage_retention.py`: Verified SPA shell on `/manage` and storage telemetry via `GET /api/storage/audit`.
+  - `tests/test_system.py`: Verified SPA shell on `/` and telemetry payload via `GET /api/system-status`.
+  - `tests/test_devices.py` (6 tests): Migrated tests to verify real API endpoints (`/api/devices`, `/api/devices/rename`, `/api/progress`) and SPA shell status.
+  - `tests/test_app.py` (26 tests): Migrated tests to verify SPA shell status (`<div id="root">`) on `/`, `/movie/*`, `/watch/*`, `/manage`, `/devices`, `/manual` and verified corresponding API contracts (`/api/media-info`, `/api/subtitles`, `/api/scan`, `/api/progress`, `/api/movie`, `/api/upload`, `/api/transcode-status`).
+- Obsolete player CSS assertions (`.sub-modal`, `box-shadow`, `#shell` aspect ratio, etc.) were retired in favor of the Vitest component test suite (78 tests).
+
+**Verification:**
+- Full backend pytest suite: **888 passed**, 28 skipped, 1 failed (the documented pre-existing `.env` secret key test). Zero legacy HTML failures remaining.
+- Android guardrail (`scripts/probe_android_api.py`): **18/18 endpoints respond per contract**.
+- Frontend: `tsc -b` clean, **78/78 vitest pass**, `npm run build` compiled clean.
+
+### 2026-10-13 - QR pairing regression from the session fix, two order-dependent tests, and the commit record
+
+**The one that matters: adding `sub` to the session broke QR pairing, and it was caught only at commit time.** `issue_session()` became the single place that mints a session for every credential class, and it read `user["sub"]`. The pairing route (`app/routes/auth.py::pair_device_submit`) was built from a *device token* record, which carries only `user_id` / `email` / `role` - it never sees Google's claims - so the lookup raised `KeyError` and **pairing returned 500**. This is precisely the "a working thing must keep working" rule, and it was broken by my own change.
+
+**Why it nearly shipped unnoticed:** `test_auth_tokens.py` had not been run in isolation at any earlier point in this work, so the "auth suite is green" claim made earlier in this log was measured over a *different file set*. A green subset is not evidence about a file you did not run.
+
+**Fix, in two parts.**
+
+- The pairing route now resolves the full identity row through the new
+  `google_auth.get_user_by_id()`, which is what a caller authenticating a *local*
+  record rather than a Google callback needs. If the token outlived its user row
+  the route refuses with `401` rather than minting a session with no identity
+  behind it.
+- `issue_session()` now reads every field with `.get()` and lets `sub` be absent.
+  With `sub` missing the session is still valid and authorization still works -
+  only the name/avatar lookup degrades. That is the correct severity for an
+  optional field in the one function every credential class routes through: one
+  caller forgetting a key must never turn a working sign-in path into a 500.
+  Note the two fixes are not redundant - the lookup makes pairing *correct*, the
+  `.get()` makes the shared helper *safe*.
+
+**Two tests were order-dependent, not broken.**
+
+- `test_second_sign_in_reuses_the_same_row` counted rows by **e-mail**, so a row seeded
+  by `test_auth_tokens.py` (same `owner@example.com`) made it fail purely on file
+  ordering. The comment above it already claimed to have fixed exactly this class of
+  bug, by scoping to the identity rather than counting globally - but scoping by e-mail
+  is not identity, because e-mail is not the natural key. Now scoped by `google_sub`,
+  which is what `upsert_user()` keys on.
+- `test_callback_succeeds_with_dropped_session_cookie` asserted that `Set-Cookie[0]` is
+  the session cookie. The app-level device-cookie fix means a response now legitimately
+  carries two cookies, and the device cookie comes first. Asserted now that the session
+  cookie is *among* the `Set-Cookie` headers. Header ordering was never a property worth
+  asserting, and pinning it would have turned an unrelated, correct change into a failure.
+
+**Session commits** (branch `feat/react-web-frontend`):
+
+| Commit | Contents |
+|---|---|
+| `96ecc56` | auth identity/profile fixes, device cookie, pairing regression + both test fixes |
+| `1b16f56` | account menu, avatar affordance, details page rebuild, cast rail, icons |
+| `dbec07a` | `AGENTS.md` migration invariant + `scripts/probe_android_api.py` guardrail |
+| `b2af86c` | `docs/HANDOFF_GEMINI_AGENT.md` |
+
+**Standing of the suites at this commit.** Frontend: `tsc -b` clean, `oxlint` clean in
+every changed file, **78/78 vitest**. Auth + API contract subset: **101 passed**.
+Android guardrail: **18/18 endpoints respond per contract**. Full Python suite:
+**38 failed, 852 passed, 28 skipped** - down from 41 as the three auth failures above
+were fixed. The 36 legacy Jinja HTML assertions remain the one **open decision**;
+see `AGENTS.md` for the migration invariant and `docs/HANDOFF_GEMINI_AGENT.md` §4 for
+the options and the recommendation not to bulk-delete them.
+
+### 2026-10-12 - Header account menu, profile avatar name/picture, and account affordance
+
+**Deliverable:** The signed-in user's header control is now a recognisable account button that opens a menu which stays open while you move onto it, and whose avatar shows the Google picture (or a person glyph) rather than a bare letter.
+
+**1. The menu closed as soon as the pointer moved toward it (`web/src/app/AppShell.tsx`).** Clicking the avatar did open the menu, but it vanished the moment the pointer moved down toward an item, so nothing could be selected. This took **two** fixes, and the first one shipped an incomplete repair:
+
+- *First attempt:* the `<div role="menu">` carried `onMouseEnter={stop}`, `onMouseLeave={stop}`, `onFocus={stop}`, `onBlur={stop}` with `stop = useCallback(() => setMenuOpen(false), [])`. Entering the menu fired `onMouseEnter` and set `menuOpen` to `false`. Removing those four handlers fixed the menu's own trigger but **not the symptom** — the same handlers were also still attached to the **trigger button** and the **Sign out** button. Because the menu is positioned *below* the button (`mt-2`), moving the pointer from the button down to the menu necessarily crosses the button's edge, firing its `onMouseLeave` and closing the menu. The reported behaviour therefore survived the first fix.
+- *Actual fix:* **every** `onMouseEnter`/`onMouseLeave`/`onFocus`/`onBlur` handler was removed from the header. A dropdown that closes because the pointer left its trigger is not a menu, it is a tooltip; dismissal is now owned **solely** by the outside-click listener, which ignores a click whose target is inside either the trigger (`buttonRef.current.contains(...)`) or the menu (`menuRef.current.contains(...)`). `stop` survives only as the `onClick` of the account-link row, where closing is the intended result.
+
+**Verified in a real browser, not by inspection.** A Playwright harness serves the built SPA with a signed-in session and drives it (`verify_menu.py`, kept out of the repo). All five behaviours pass: opens on click; **stays open while hovering the menu body and while hovering the "Device tokens & settings" row**; closes on the account link and navigates to `/account`; closes on an outside click; reopens and toggles closed. A green reading here is meaningful because the first fix was verified by reasoning and was wrong — the regression had to be reproduced in the browser to be found.
+
+**2. Profile name/picture always NULL (`app/services/google_auth.py`, `app/routes/auth.py`).** `resolve_identity()` built the identity `subject` from `session.get("email")`, so `/api/auth/me` called `get_user_by_sub(email)` — i.e. `SELECT name, picture_url FROM users WHERE google_sub = ?` with the *e-mail address*. But `google_sub` is Google's stable subject ID (e.g. `1135675135...`), never the e-mail, so the lookup never matched and `name` / `picture_url` were always `None` even though the user was signed in. That is why the header showed a fallback instead of "Anis Parvez". **Fixes:** `issue_session()` now stores `session["sub"]`; `resolve_identity()` uses `subject = session.get("sub") or session.get("email") or "session"`; `/api/auth/me` returns the e-mail from the session instead of `identity.subject`. `upsert_user()`'s UPDATE now uses `COALESCE(?, name)` and `COALESCE(?, picture_url)`, so a later sign-in whose ID token omits the profile claims can no longer erase values already stored.
+
+**3. The avatar reads as an account control, not as a letter (`web/src/components/Avatar.tsx`, `AppShell.tsx`).** A single capital in an unstyled circle does not present itself as a button, so the control did not look like something you click. Precedence is now **Google picture -> person glyph**, with a person silhouette (head + shoulders) as the default rather than an initial: it is the universally understood account affordance and it renders identically regardless of what the profile claims happen to contain. An explicit `fallback` prop still yields an initial for callers that ask for one. The frame carries its own `rounded-full object-cover`, which also fixes the **menu** avatar — it sits outside the header button's `overflow-hidden`, so a picture there was previously square. The trigger gained a real control surface (translucent plate, hover fill/border, `active:scale-95`) and the picture is fetched with `referrerPolicy="no-referrer"`.
+
+**Deployment:** the React build in `web/dist` was rebuilt and is served via the catch-all routes already in `app/__init__.py`; restart with `restart_service.bat`. **Operator action still required:** the live session predates the `sub` fix and the account row still holds NULL name/picture, so **sign out and sign in again** — a fresh sign-in re-saves the profile from Google (`openid email profile` returns `name` and `picture`), after which the header shows the real name and Google picture.
+
+**Verification:** auth suite — 106 passed, 1 failed, the failure being the pre-existing `test_startup_errors_when_on_without_secret` (its "no `SECRET_KEY`" scenario cannot coexist with a `.env` that already has one; it passes in a full-suite run). `tsc -b` clean; `oxlint` reports no new findings. Enforcement remains OFF, so TV and Flutter clients are unaffected.
+
+
+### 2026-10-12 (later) - Movie details page rebuilt: header overlap, richer metadata, modern OTT layout
+
+**Deliverable:** The React details page is rewritten. The reported layout bug (poster top edge sitting under the sticky header) is fixed and *measured*, and the page now surfaces the metadata the legacy Jinja page showed - cast, genres, crew, technical specs - with an icon set and a scrolling cast rail.
+
+**1. The reported overlap (`MovieDetailsPage.tsx`).** The hero sat inside `<main>`'s padding, so its top began below the header, while the poster was pulled up with a negative top margin and landed in the header's band. The fix is structural rather than a nudge: the hero now **breaks out** of `<main>` with `-mx-4 -mt-8 sm:-mx-6` so the backdrop runs edge-to-edge and *under* the sticky glass header, and the inner column restores the padding with `pt-24 sm:pt-28` - comfortably more than the ~61px header. Verified in a real browser by measuring both rects, not by eye: `overlapPx: 0`, `posterTop: 174`, `headerBottom: 61`, at 1440x1000 and 414x900.
+
+**2. Two data bugs found while building it, both silent.**
+
+- *Extended metadata never rendered.* `parseDetails()` accepted only a JSON **string**, but `GET /api/movie/<file>` parses `details_json` server-side and sends `extended` as an **object** (`app/routes/api.py:940`). Every extended field therefore degraded to absent - no tagline, no cast, no directors - with no error anywhere. This was true of the page before this rewrite too, which is why the old React details page looked so much emptier than the legacy one. It now accepts both shapes, and the test asserts on the **object** shape because that is what the server sends.
+- *A 404 per title without artwork.* The page built the backdrop URL from `movie.tmdb_id`, bypassing the `backdrop_tmdb_id` the server deliberately gates on real artwork (`app/routes/api.py:950`). Every title without a backdrop requested an image that does not exist. Now reads `data.backdrop_tmdb_id` and falls back to a brand-gradient panel - the same lesson as the profile lookup in the entry above: **trust the value the server computed as safe.** Caught only because the preview harness surfaces console errors; a page that renders fine while logging a 404 is otherwise invisible.
+
+**3. Content now shown** (all fields verified present in a live API response before being rendered): tagline, certification, rating, year, runtime, genres as chips, Director / Writers / Studios / Release Date, Top Billed Cast with TMDb portraits and a two-letter initials fallback, and Media Information as five spec cards (Video, Audio, Container, Bitrate, Subtitles) including `resolution_badge`, `file_size`, `bitrate`, `aspect_ratio` and subtitle track names. Actions: Play/Resume (Resume only once a position exists), Replay (`?replay=1`), Trailer, IMDb, TMDB. `TechnicalSpecsDrift` was added to `spec-drift.ts` because the generated `TechnicalSpecs` declares 7 of the 10 keys the server sends and spells one `filesize` against the real `file_size`; the OpenAPI spec itself is Phase 1 contract work and is reported, not edited.
+
+**4. Design and guidance.** Built against the `modern-web-guidance` skill. Two scroll-driven features, both **progressive enhancement** behind `@supports`, with no polyfill (the guide is explicit that `scroll-timeline-polyfill` is incomplete):
+
+- The cast rail's edge fades are driven by `animation-timeline: scroll(self inline)`, so each edge appears only at the end of the scroll range where it means something.
+- The header opts into `container-type: scroll-state` (defined in `web/src/index.css`, applied in `AppShell`) and restyles itself when actually stuck, replacing a scroll listener. `overflow-anchor: none` sits on `<main>`, the sticky element's parent, precisely so scroll anchoring cannot oscillate against the height change - the failure mode the guide warns about.
+
+The rail fade is gated on `[data-scrollable="true"]`, set by `CastRail` only after **measuring** real overflow. A CSS scroll-timeline cannot express "is scrollable": with nothing to scroll the timeline is inactive and the base mask would paint a fade promising content that does not exist. A one-member cast correctly shows no fade. `ResizeObserver` is feature-detected.
+
+The trailer is a native `<dialog>` using `showModal()` for top-layer stacking and Escape-to-close, with the **iframe mounted only while open** so the YouTube player is never fetched speculatively. `showModal()` is feature-detected too - a missing method would otherwise throw inside a click handler and leave a state flag set with no dialog. The dialog is rendered *only* when the title actually has a trailer, so there is no dead dialog in the DOM.
+
+**Verification.** Frontend: `tsc -b` clean, `oxlint` reports **no findings in any new or changed file**, **78/78 vitest pass** (10 files; the details file grew 7 -> 14 tests, including regression tests for both bugs above). Visual: rendered against the **live API** through a local reverse-proxy preview and screenshotted at desktop and mobile, plus a deliberately sparse title (no backdrop, no genres, one cast member) to exercise every absence path - `overlapPx: 0` and **no console errors** on both.
+
+**Outstanding, and not caused by this work: the Python suite is red.** Full run: **41 failed, 849 passed, 28 skipped**. Measured against a clean `HEAD` worktree as the baseline (**12 failed, 877 passed**; those 12 were the `google_auth` session bug fixed earlier in this session, now resolved). The ~29 extra failures are **all** tests asserting on legacy Jinja page HTML - `const filename` in the player page, `Total Devices` on `/devices`, `Connected Devices & Telemetry` - which the React SPA migration removed from `pages.py` (202 lines deleted) in favour of the `app/__init__.py` catch-all. They now receive the SPA shell (`<div id="root">`). They assert on markup that no longer exists, not on behaviour that broke. **This needs a decision: update those tests to the SPA, or keep the Jinja pages behind a flag.** It is not fixed here because it is a migration-wide question, not a details-page defect.
+
+One genuine regression *was* fixed here, found by the same baseline comparison: `app/__init__.py` gained the SPA catch-all, so `pages_bp`'s `after_request` no longer ran for `/` and the SPA's HTML responses silently stopped carrying `ms_device_id` - which `device_service.current_device_id()` reads. The stamping moved to the app level so it applies whichever route served the response; `tests/test_api_contracts.py::test_html_and_asset_endpoints_contract` passes again.
+
+### 2026-10-12 (latest, part 1) - Details page: hero space reclaimed, "Synopsis" retired, cast scroll rebuilt
+
+**Three changes, all from review feedback on the previous entry's layout.**
+
+**1. The hero's empty right column now carries soft details.** The backdrop is edge-to-edge, so the area to the right of the title was a large unspent field. The hero became three columns at `lg` - poster, identity block (title / meta / genres / actions), and a glass panel - and the panel holds the **overview prose plus Director / Writers / Studios / Released**.
+
+Those crew facts moved *out* of their own "Cast & Crew" section rather than being copied, which is the whole point: keeping both would have printed "Stanley Kubrick" twice on a wide screen while the hero column stayed empty. The sections that remain are Top Billed Cast and Media Information. Below `lg` the panel simply stacks under the actions, so the overview is still the first thing read on a phone.
+
+**2. The "Synopsis" heading is gone.** It was the only heading on the page doing nothing but naming the paragraph beneath it. The overview is now a single panel with no title, and there is no second copy in the body - one home per fact is what keeps the page from repeating itself.
+
+**3. The native cast scrollbar is gone, replaced by real controls.** It rendered as a heavy grey slab under the portraits - unstyled browser chrome in the middle of a composed page. Suppressed with both `scrollbar-width: none` (Firefox) and `::-webkit-scrollbar` (Chromium/Safari), and replaced with hover-revealed circular arrow controls that scroll by one card plus its gap, so a click always lands on a tile edge.
+
+Nothing was lost by hiding the bar: the rail still scrolls natively (trackpad, touch, keyboard, shift+wheel), and the arrows cover pointer users. The edge fades driven by `animation-timeline` are unchanged. Each arrow is **disabled at its own end**, measured on scroll, so it never offers a scroll that would do nothing - a control that is merely invisible on hover is unreachable by keyboard, so the fade is visual only and focus reveals it too.
+
+**Verification.** `tsc -b` clean, `oxlint` no findings in any new or changed file, **78/78 vitest pass**. Rendered in a real browser against the live API and measured rather than eyeballed: `overlapPx: 0` still holds, no horizontal overflow, both arrows present, and an arrow click moved `scrollLeft` 0 -> 108px (i.e. the control actually scrolls). Screenshot budget includes desktop, mobile and a hovered close-up of the rail.
+
+One tooling bug worth recording because it cost real time and looked like an app bug: the local preview server's SPA fallback was changed to trigger only on paths with an *empty* file extension. Media filenames end in `.mp4`, so every `/movie/<name>.mp4` route 404'd and the app appeared not to render at all. The fallback must key on "is this a real file in the build", never on the absence of an extension.
+
+
+### 2026-10-12 (latest, part 2) - Details page: synopsis into the hero dead space, vertical rhythm tightened, Android guardrail
+
+**1. Synopsis moved into the hero, italic, under the actions.** The band of backdrop below the action buttons was still unspent. The overview now sits exactly there, which is also where Netflix and Apple TV put it, and the right-hand panel keeps only the crew facts. Styling: **italic**, so it reads as the title's own voice rather than as another metadata block, and `text-wrap: pretty` because it is body copy — the guidance is explicit that `text-wrap: balance` is for short headings and must not be put on paragraphs (it can leave visibly empty space inside a box). A long overview is clamped to 3 lines on mobile / 4 at `lg` behind an explicit **More** control, because unbounded prose is what drives a hero tall.
+
+**2. Vertical space tightened without crowding.** `pt-24 sm:pt-28 -> pt-20 sm:pt-24` and `pb-10 sm:pb-12 -> pb-7 sm:pb-9`, with the gaps between genres, actions and synopsis pulled in from `mt-4/6` to `mt-3.5/5` and the rail gap `gap-2.5`. Top padding still clears the ~61px sticky header with real margin, and the hero deliberately stops there: compressing further starts to crowd the poster. Measured after: `deadSpacePx: 36` on a well-tagged title, down from an empty band roughly three times that height.
+
+**3. The Android client cannot break — verified, not assumed.** This was the stated migration constraint, so it was proven rather than reasoned about:
+
+- Enumerated the client's server surface from `flutter_client/lib` (85 Dart files): **17 `/api/*` endpoints plus `/media/`, `/hls/`, `/subtitles/`, `/poster/*`**. The seven `/`-prefixed names that look like pages (`/home`, `/library`, `/player`, `/movie-details`, `/connection`, `/settings`) are **`GoRoute` definitions in a `GoRouter`**, i.e. in-app navigation. There is **no `WebView`** anywhere in `lib/` (zero matches), so the client never requests an HTML page — template work cannot reach it, and `/api/*` must not change shape.
+- `scripts/probe_android_api.py` now calls all 18 endpoints against the live server and exits non-zero on a break. It is committed as the guardrail, not run once and discarded.
+- **Three endpoints first looked broken and all three were the probe's fault, not the app's:** `/api/cast/status` returned `400` because the probe omitted `device_id`; and it still returns `400` when no cast is running, which is the documented idle answer — `CastRepository.status()` catches the `DioException` and returns `null`, so polling while idle is normal. `/api/app/update` and `/api/app/download` return `404` when no manifest or APK is published for the channel — a working route with nothing to serve. The probe now encodes each route's **contract**, not a wish for `200`; the `AGENTS.md` note says so explicitly, because "fixing" those into `200`s would change documented behaviour to satisfy a bad assertion.
+
+Recorded in `AGENTS.md` as a standing invariant so a later migration does not have to rediscover it.
+
+**Consequence for the outstanding test work, now stated plainly:** because the Android app never touched the Jinja pages, retiring them is a **product decision, not a compatibility constraint**. What is *not* optional is the coverage — the ~29 HTML-assertion tests must be migrated to their React equivalents or retired deliberately. That decision is still open.
+
+**Verification.** `tsc -b` clean, `oxlint` no findings in changed files, **78/78 vitest pass**, `scripts/probe_android_api.py` green on 18/18. Rendered against the live API and measured: `overlapPx: 0`, `deadSpacePx: 36`, synopsis `font-style: italic`, More toggle grows the hero 490px -> 539px, no horizontal overflow at 1440 and 414.
 
 ### 2026-10-11 â€” Transcode correctness, throughput and telemetry
 
@@ -1019,7 +1625,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Secondary / parked
 1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-2. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
+2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. What remains is access control before wider public sharing — the Cloudflare hostname alone is not authentication.
 3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
@@ -1114,3 +1720,11 @@ Manual playback & telemetry verification:
     ejection/contact risk and no SMART signal. Worth a deliberate decision.
 8. **Production Concurrency Tuning & Benchmarking:** Benchmark worker and thread pools against remote
     stream latency and Cloudflare tunnel limits.
+9. **Playwright E2E writes to the production `media.db`.** `web/e2e/journey.spec.ts` asserts that a
+    resume point is persisted, which necessarily POSTs `/api/progress` against the live server, so each
+    run leaves a row in `progress` and/or `device_watch_history`. Labelling it with a distinct
+    `X-Device-Id` does **not** isolate it: `register_device_request()` normalises the supplied id into a
+    server-generated `dev_*` value, so the E2E label never reaches the table. Either make the spec
+    self-cleaning (record the rows it creates and delete them in an `afterAll`), or accept the write as
+    realistic coverage and stop treating the database as read-only for E2E. Parked by user decision
+    2026-10-12; raised while building `web/`.

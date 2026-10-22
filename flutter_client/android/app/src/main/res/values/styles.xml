@@ -11,8 +11,16 @@
          Flutter UI initializes, as well as behind your Flutter UI while its
          running.
 
-         This Theme is only used starting with V2 of Flutter's Android embedding. -->
+         This Theme is only used starting with V2 of Flutter's Android embedding.
+
+         The window background is the sequence's curtain colour, NOT
+         ?android:colorBackground. Under Theme.Light that attribute is WHITE,
+         and the engine swaps this theme in as soon as it attaches - which is
+         BEFORE the first Flutter frame is presented. So the cold start showed
+         a white window for as long as the engine took to come up: on the Fire
+         TV, four and a half seconds of white in front of an obsidian
+         curtain. -->
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowBackground">@color/intro_obsidian</item>
     </style>
 </resources>

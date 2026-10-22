@@ -1,0 +1,423 @@
+/*
+ * The brand opening sequence - the layer styles.
+ *
+ * A faithful port of the archived source's stylesheet
+ * (`docs/opening-sequence/source/intro-overlay.html`, source 26-196), with the
+ * ids renamed to classes so the component can be instantiated more than once.
+ *
+ * Two deliberate departures from the source, both recorded in the canonical
+ * specification (`docs/OPENING_SEQUENCE.md` Part I):
+ *
+ *  - The 14 s `ambientDrift` animation on the curtain is GONE (decision D10).
+ *    It was an infinite CSS animation outside the sequence's clock, it is
+ *    imperceptible inside 3 seconds, and the capture oracle kills CSS
+ *    animations, so keeping it would have made the web and the Flutter client
+ *    differ for no visible reason.
+ *
+ *  - The stage carries the source's own font stack rather than inheriting the
+ *    app's. The app's stack leads with Inter; the source's does not. The
+ *    wordmarks are sized and spaced against that stack, so inheriting the
+ *    app's font would change the rendering.
+ */
+
+/* ── the stage ─────────────────────────────────────────────────────────────── */
+
+.intro-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: hidden;
+  background: transparent;
+  color: #f7f7f8;
+  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.intro-stage *,
+.intro-stage *::before,
+.intro-stage *::after {
+  box-sizing: border-box;
+}
+
+/* The app underneath becomes interactive the moment the curtain is fully open. */
+.intro-stage.intro-handover {
+  pointer-events: none;
+}
+
+/* ── the curtain: two halves of one backdrop ───────────────────────────────── */
+
+.intro-veil {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% + 1px);
+  z-index: 2;
+  will-change: transform;
+}
+
+.intro-veil-l {
+  left: 0;
+  transform-origin: 100% 50%;
+}
+
+.intro-veil-r {
+  right: 0;
+  transform-origin: 0 50%;
+}
+
+/*
+ * At rest the two halves' backgrounds line up into a single image
+ * (background-size 200% with opposite positions, plus a 1px overlap at the
+ * centre), so the opening frames are identical to one unbroken veil; the inner
+ * edges only feather once the halves part.
+ */
+.intro-veil-inner {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(229, 9, 20, 0.1) 0%, transparent 68%),
+    radial-gradient(ellipse 55% 45% at 78% 84%, rgba(56, 189, 248, 0.05) 0%, transparent 62%),
+    radial-gradient(ellipse 45% 40% at 16% 18%, rgba(168, 85, 247, 0.045) 0%, transparent 60%),
+    #05060a;
+  background-size: 200% 100%;
+}
+
+.intro-veil-l .intro-veil-inner {
+  background-position: 0 0;
+}
+
+.intro-veil-r .intro-veil-inner {
+  background-position: 100% 0;
+}
+
+/* Warm light spilling through the opening as the halves part. */
+.intro-seam {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  z-index: 3;
+  pointer-events: none;
+  transform: translateX(-50%);
+  opacity: 0;
+  filter: blur(16px);
+  background: radial-gradient(
+    ellipse 46% 78% at 50% 48%,
+    rgba(255, 240, 242, 0.62) 0%,
+    rgba(255, 120, 140, 0.24) 40%,
+    transparent 74%
+  );
+}
+
+/* ── the FX canvas ─────────────────────────────────────────────────────────── */
+
+.intro-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: block;
+}
+
+.intro-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 78% 70% at 50% 50%,
+    transparent 42%,
+    rgba(0, 0, 0, 0.55) 82%,
+    rgba(0, 0, 0, 0.85) 100%
+  );
+}
+
+.intro-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 .6 0 0 0 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+  background-size: 180px 180px;
+}
+
+/* ── the lockup ────────────────────────────────────────────────────────────── */
+
+.intro-lockup {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, calc(var(--u, 1vmin) * 3), 34px);
+  transform: translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Portrait: the lockup stacks and centres, matching the app's mobile header. */
+.intro-lockup.intro-lockup-portrait {
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(9px, calc(var(--u, 1vmin) * 1.5), 20px);
+}
+
+.intro-lockup-portrait .intro-word-col {
+  align-items: center;
+}
+
+.intro-lockup-portrait .intro-word {
+  text-align: center;
+}
+
+.intro-icon-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.intro-icon-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 280%;
+  height: 280%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(255, 42, 75, 0.55) 0%,
+    rgba(229, 9, 20, 0.28) 34%,
+    transparent 70%
+  );
+  filter: blur(10px);
+}
+
+.intro-icon {
+  position: relative;
+  display: block;
+  width: clamp(64px, calc(var(--u, 1vmin) * 10.5), 118px);
+  height: clamp(64px, calc(var(--u, 1vmin) * 10.5), 118px);
+  border-radius: 26%;
+  will-change: transform, opacity;
+}
+
+/*
+ * The mark itself is deliberately NOT styled.
+ *
+ * The original's SVG carries no width and no height, and is left at the UA
+ * default of `display: inline`, so it takes its size from the default sizing
+ * algorithm and is baseline-aligned inside the box. Giving it `display: block`
+ * and an explicit `width: 100%` produces the same rectangle - the geometry
+ * measures identically to the last bit - but the two are not rasterised the
+ * same way, and the mark's edges came out a hair different in the
+ * frame-for-frame comparison.
+ *
+ * So the overlay must not size the mark at all. It must also not lean on a
+ * utility framework for it: the overlay is portaled to `document.body` and
+ * has to render correctly on its own.
+ */
+
+.intro-word-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(3px, calc(var(--u, 1vmin) * 0.7), 7px);
+  min-width: 0;
+}
+
+.intro-word {
+  font-weight: 800;
+  letter-spacing: -0.022em;
+  line-height: 1.02;
+  white-space: nowrap;
+  will-change: transform, opacity, filter;
+}
+
+.intro-w1,
+.intro-w2 {
+  font-size: clamp(30px, calc(var(--u, 1vmin) * 5.7), 66px);
+}
+
+.intro-lt {
+  display: inline-block;
+  will-change: transform, opacity;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.intro-w1 .intro-lt {
+  background-image: linear-gradient(180deg, #ffffff 36%, #cbd5e1 100%);
+}
+
+.intro-w2 .intro-lt {
+  background-image: linear-gradient(180deg, #ff5f70 24%, #e50914 100%);
+}
+
+.intro-sub {
+  font-size: clamp(8.5px, calc(var(--u, 1vmin) * 1.3), 13px);
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #94a3b8;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  will-change: letter-spacing, opacity, filter;
+}
+
+.intro-rule {
+  width: 100%;
+  height: 2px;
+  border-radius: 99px;
+  transform-origin: 50% 50%;
+  transform: scaleX(0);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #ff2a4b 22%,
+    #e50914 50%,
+    #ff2a4b 78%,
+    transparent 100%
+  );
+  box-shadow: 0 0 12px rgba(229, 9, 20, 0.55);
+}
+
+/* ── the capture mode ─────────────────────────────────────────────────────── */
+
+/*
+ * In capture mode the overlay is driven from outside, so it must not take any
+ * input: a stray click must not dismiss it, and a keypress must not either.
+ * The source did the same (`body.intro-capture #stage{pointer-events:none}`).
+ */
+.intro-stage.intro-capture {
+  pointer-events: none;
+}
+
+/* ── the gate ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The click-to-start card. It is the MANUAL TESTING surface - reachable only
+ * through `?intro=gate` - and it is never the product behaviour.
+ *
+ * Ported from the source's `#gate` rules (source 140-160), including its
+ * `display: none` / `grid` pairing and the 0.3 s fade on exit.
+ */
+.intro-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  display: grid;
+  place-items: center;
+  background: #05060a;
+  color: #f7f7f8;
+  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: opacity 0.3s ease;
+}
+
+.intro-gate-closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-gate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.intro-gate-mark {
+  width: 76px;
+  height: 76px;
+  border-radius: 26%;
+  filter: drop-shadow(0 4px 24px rgba(229, 9, 20, 0.5));
+}
+
+.intro-gate-card h1 {
+  margin: 0.2rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  background: linear-gradient(135deg, #fff 40%, #cbd5e1);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.intro-gate-card h1 b {
+  color: #ff2a4b;
+  -webkit-text-fill-color: #ff2a4b;
+  font-weight: 800;
+}
+
+.intro-gate-sub {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.intro-gate-play {
+  margin-top: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 52px;
+  padding: 0 1.7rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #ff2a4b 0%, #e50914 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 10px 34px rgba(229, 9, 20, 0.45);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.intro-gate-play:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 40px rgba(229, 9, 20, 0.6);
+}
+
+.intro-gate-play:active {
+  transform: translateY(0);
+}
+
+.intro-gate-play:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.intro-gate-hint {
+  margin: 0.4rem 0 0;
+  color: #64748b;
+  font-size: 0.76rem;
+  max-width: 22rem;
+  line-height: 1.5;
+}
+
+.intro-gate-hint kbd {
+  background: #161f2e;
+  border: 1px solid #2b3545;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}

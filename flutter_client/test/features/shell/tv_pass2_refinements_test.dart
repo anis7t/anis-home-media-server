@@ -13,7 +13,7 @@ import 'package:media_server_client/features/updater/presentation/widgets/settin
 
 class _MockIntroNotifier extends IntroController {
   @override
-  IntroState build() => const IntroState(hasSeenIntro: true, isPlaying: false);
+  IntroState build() => const IntroState(isPlaying: false);
 }
 
 void main() {

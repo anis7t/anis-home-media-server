@@ -1,5 +1,12 @@
 # Media Server Project Guidelines & Invariants
 
+## 0. Implementation Planning, User Approval & Walkthrough Protocol (Strict Guardrail)
+- **Always Ask Before Drafting a Plan**: ALWAYS explicitly ask the user for confirmation/permission BEFORE drafting an implementation plan. Do not begin writing an implementation plan document until the user has agreed to plan the task.
+- **Implementation Plan Markdown Document**: Once authorized, formulate the implementation plan in a dedicated Markdown (`.md`) file before modifying code, altering databases, or applying system changes.
+- **In-Chat Plan Presentation**: The full content of the implementation plan `.md` file MUST be presented and rendered directly in the conversational chat response as well for user review.
+- **Strict Approval Gate**: Under no circumstances should the agent begin writing production implementation code, modifying files, or executing migration actions without first presenting the implementation plan `.md` file and obtaining explicit user confirmation and sign-off.
+- **Post-Completion Walkthrough Document**: After implementation and verification are completed, the agent MUST present a comprehensive walkthrough Markdown (`.md`) file detailing all deliverables, changes, test outcomes, and verification results, with its full content rendered directly in the chat.
+
 ## 1. Process Safety & Task Management (Strict Guardrail)
 - **Zero Lingering Test Tasks**: Under no circumstances should background automation tasks (Selenium, WebDriver, FFmpeg) be left running indefinitely or orphaned.
 - **Selenium Cleanup**: All browser automation scripts must wrap driver lifecycles in `try ... finally: if driver: driver.quit()`.
@@ -126,6 +133,12 @@
 - **Zero Vertical Scrolling on Mobile Modals**:
   - Mobile modals must be designed with compact vertical footprints (total height \(\le 260\text{px}\)) using `max-height: min(90vh, 90dvh)`, reduced padding (\(\le 1\text{rem}\)), and concise checklist copy (\(\le 3\) items).
   - Modals must fit within compact 375×667 mobile viewports without forcing vertical scrolling.
+- **Modal Dialog Portaling & CSS Transform Isolation**:
+  - All modal dialogs, confirmation popups, backdrops, and full-screen overlays with `position: fixed` MUST be portaled to `document.body` via `createPortal(..., document.body)` (or a dedicated root `#portal-root`).
+  - Never render `position: fixed` modals inline within deep component trees or page layouts, as ancestor `transform`, `filter`, `perspective`, or `contain` properties will trap the modal's containing block.
+  - Keyframes for page-level or container entrance animations using `animation-fill-mode: forwards` (such as `fadeIn`) must terminate on `transform: none;` rather than `transform: translateY(0)` or `transform: translateZ(0)`. Any non-none computed transform permanently traps fixed-position children inside that container.
+  - Modal overlay backdrops must declare `className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"`.
+  - Modal content cards must declare `my-auto` so they center vertically when height permits and scroll naturally without top clipping when the viewport height is smaller than the modal.
 
 ## 10. Upload Telemetry & Post-Upload Ingestion Invariants
 - **Post-Upload Abort Concealment**:
@@ -219,7 +232,7 @@
 - **Canonical Cache Directory Resolution**:
   - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
 - **Dual-Drive Storage Tiering & Headroom Prioritization**:
-  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the SQLite database (`E:\MediaServer\media.db`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
+  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the PostgreSQL data directory (`E:\pgdata`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
   - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), cold archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
   - **Drive `C:` is not part of this project's storage.** Do not create, read, or assume project paths on `C:`; historical `C:\Flicks` references in older notes are obsolete.
   - `config.get_media_roots()` returns `[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`. All media discovery, route authorization, and path validation must check all roots returned by `get_media_roots()`.
@@ -367,3 +380,54 @@
   - Relative seek commands (D-pad Left/Right, Media Rewind/Fast-Forward) accumulate delta in real time (`+10 sec` → `+20 sec` → `+30 sec`) and refresh a 1000ms settle timer in a single unified HUD toast, eliminating timer races and buffer flashes.
 - **Immediate Buffering Dismissal**:
   - Buffering indicators dismiss immediately when `bufferingStream` emits `false`, leaving zero lingering loading spinners on the viewport once video frames resume.
+
+## 27. Google Cast & DLNA Remote Playback Invariants
+- **Google Cast Receiver Lifecycle & App Quit**:
+  - Halting playback via `media_controller.stop()` only pauses/stops the stream; it leaves the Google Cast Default Media Receiver running as an empty black screen on the TV.
+  - To release the TV back to its native dashboard, ambient backdrop, or previous input (matching DLNA behavior), the disconnect sequence MUST invoke `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and evict cached connections from `_cast_connections`.
+- **Receiver Master Volume & Anti-Reset Synchronization**:
+  - Cast receivers manage master volume via `cast.status.volume_level` (float `0.0`–`1.0`) and `cast.status.volume_muted` (boolean).
+  - Backend status endpoints must always populate `volume` (`round(volume_level * 100, 1)`) and `muted`. Omitting them causes UI clients to fall back to `100%`, jerking the volume slider on every status poll tick.
+  - Frontend remote controllers (`CastBar`) must maintain scrub isolation (`scrubVolume` state) and progressive bold red track fills (`#e50914`) matching the primary web player slider.
+- **In-Cast Subtitle Track Delivery & Full LAN Origins**:
+  - Google Cast receivers cannot resolve relative paths like `/subtitles/...`.
+  - When loading media with sidecar subtitles on Cast receivers, construct `media_info['tracks']` with fully-qualified LAN URLs (`http://<lan_ip>:<port>/subtitles/...`), `trackContentType: 'text/vtt'`, and high-contrast `textTrackStyle`.
+  - The in-cast remote HUD must provide a live subtitle selector (`#castSubBtn` and `#castSubMenu`) dispatching `action: 'subtitle'` (`controller.enable_subtitle(id)` / `controller.disable_subtitle()`) without interrupting playback.
+- **Multi-Adapter LAN SSDP & mDNS Discovery Resilience**:
+  - On Windows hosts with multiple network adapters (Ethernet, Wi-Fi, Tailscale, virtual adapters), mDNS multicast packets can be dropped.
+  - Pair SSDP multi-interface search with an ARP cache scan and concurrent HTTP probes against the Google Cast Eureka endpoint (`http://<ip>:8008/setup/eureka_info`), ensuring reliable discovery across all local subnets.
+
+## 28. Native Rust Axum Streaming Engine, Windows Path Resolution & Test Harness Invariants
+- **Windows Verbatim Path Stripping (`\\?\`) for Deterministic Hashing**:
+  - In Rust on Windows, `std::fs::canonicalize()` prefixes verbatim paths with `\\?\`.
+  - When computing deterministic SHA-256 cache signatures for HLS cache directories, preview thumbnails, and transcoded MP4s matching Python (`preview:{path}:{size}:{mtime_ns}` and `hls:{path}:{size}:{mtime_ns}`), always strip `\\?\` prefix via `strip_verbatim()`.
+  - Always bind `path.to_string_lossy()` to a `let` variable before taking a reference (`let path_lossy = path.to_string_lossy(); let path_str = strip_verbatim(&path_lossy);`) to satisfy borrow lifetimes across statements.
+- **Tower-HTTP CORS Wildcard Matching in Contract Tests**:
+  - When `CorsLayer` is configured with `allow_methods(Any)`, Tower-HTTP emits `access-control-allow-methods: *`.
+  - Contract and integration tests asserting allowed HTTP methods must accept either wildcard or explicit lists:
+    ```rust
+    let allow_methods = res.headers().get("access-control-allow-methods").unwrap().to_str().unwrap();
+    assert!(allow_methods == "*" || allow_methods.contains("GET"));
+    ```
+- **Axum Integration Test Harnesses with RAII `Drop`**:
+  - When an integration test harness struct implements `Drop` for filesystem cleanup, calling `harness.app.oneshot(req)` fails with compiler error `E0509: cannot move out of type which implements the Drop trait`.
+  - Always call `harness.app.clone().oneshot(req)`, as Axum's `Router` is cheaply cloneable.
+- **RFC 8216 Target Duration Healing (`honest_target_duration`)**:
+  - Always parse `#EXTINF:<duration>` labels across all playlist segments and elevate `#EXT-X-TARGETDURATION:N` to `ceil(max(durations))` if any segment exceeds the declared duration, preventing player timeline drift and HLS.js sliding window skips.
+
+## 29. Native Rust Subtitle Engine, Database Test Isolation & Routing Guardrails
+- **Native Independence Invariant (Zero Proxy Shims During Migration)**:
+  - When implementing or migrating features to the Rust API foundation (port 8001), always build 100% native Rust implementations directly (e.g. native gzip decompression via `flate2`, HTTP requests via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`).
+  - Do not create temporary reverse-proxy shims or delegators to the legacy Flask backend unless a specific migration phase explicitly mandates an interim fallback. The architectural goal is full decommission of Flask.
+- **Database Test Isolation & Teardown Guardrail**:
+  - Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL 18.4 - the only production database; the SQLite `media.db` was retired in the Phase 3 migration) MUST:
+    1. Clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`).
+    2. Implement an explicit teardown hook (`harness.teardown().await` or pytest fixture teardown) that unconditionally deletes test rows upon test completion or failure.
+    3. Ensure zero phantom test movies remain in development or production databases.
+- **Axum Wildcard Routing & Internal Prefix Dispatcher**:
+  - In Axum routing, never register overlapping wildcard routes under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`), as this triggers a route collision panic at server startup.
+  - Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
+- **Recursive Media Path Resolution Fallback**:
+  - Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, while preserving strict directory traversal (`..`) security defenses.
+
+

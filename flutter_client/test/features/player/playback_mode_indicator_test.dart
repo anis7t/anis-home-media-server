@@ -158,10 +158,10 @@ void main() {
 
       expect(
         controller.openedUrl,
-        '$_origin/hls/The%20Odyssey%202026.mkv/playlist.m3u8',
+        '$_origin/hls/The%20Odyssey%202026.mkv/master.m3u8',
       );
-      expect(find.text('HLS STREAM'), findsOneWidget);
-      expect(_richText('HLS Segmented'), findsOneWidget);
+      expect(find.text('ADAPTIVE STREAM'), findsOneWidget);
+      expect(_richText('Adaptive Segmented'), findsOneWidget);
       expect(find.text('DIRECT PLAY'), findsNothing);
     });
 
@@ -190,6 +190,7 @@ void main() {
           requested.where((u) => u.contains('/api/media-info/')).toList();
       expect(probes, hasLength(1));
       expect(probes.single, contains('$_origin/api/media-info/'));
+      expect(probes.single, contains('client=android'));
       expect(find.text('DIRECT PLAY'), findsOneWidget);
     });
 
@@ -207,11 +208,11 @@ void main() {
       );
       await _bootAndPlay(tester, controller);
 
-      expect(find.text('HLS STREAM'), findsOneWidget);
+      expect(find.text('ADAPTIVE STREAM'), findsOneWidget);
       expect(find.text('DIRECT PLAY'), findsNothing);
       expect(
         controller.openedUrl,
-        '$_origin/hls/The%20Odyssey%202026.mkv/playlist.m3u8',
+        '$_origin/hls/The%20Odyssey%202026.mkv/master.m3u8',
       );
     });
 
@@ -233,7 +234,7 @@ void main() {
       expect(find.text('STREAM'), findsOneWidget);
       expect(_richText('Unknown (server mode unavailable)'), findsOneWidget);
       expect(find.text('DIRECT PLAY'), findsNothing);
-      expect(find.text('HLS STREAM'), findsNothing);
+      expect(find.text('ADAPTIVE STREAM'), findsNothing);
     });
   });
 }

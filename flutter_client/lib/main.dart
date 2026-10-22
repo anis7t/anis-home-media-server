@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -6,6 +8,8 @@ import 'app/routes.dart';
 import 'core/device/domain/device_capabilities.dart';
 import 'core/device/infrastructure/device_capability_service.dart';
 import 'features/devices/presentation/widgets/device_presence_scope.dart';
+import 'features/intro/infrastructure/audioplayers_score.dart';
+import 'features/intro/presentation/providers/intro_score_provider.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,12 +65,21 @@ Future<void> main(List<String> args) async {
     initialRoute = uri.replace(queryParameters: params).toString();
   }
 
+  // The brand opening sequence's score is prepared HERE, before the first
+  // frame, so that the platform's own preparation overlaps the application's
+  // own start-up. The score is anchored to the sequence when it actually
+  // starts, so the sooner it is ready the smaller the anchor - and the
+  // animation never waits for it either way.
+  final introScore = AudioplayersIntroScore();
+  unawaited(introScore.prepare());
+
   runApp(
     ProviderScope(
       overrides: [
         deviceCapabilitiesOverrideProvider.overrideWith(
           () => DeviceCapabilitiesOverrideNotifier(capabilities),
         ),
+        introScoreProvider.overrideWithValue(introScore),
       ],
       child: DevicePresenceScope(
         child: MediaServerApp(

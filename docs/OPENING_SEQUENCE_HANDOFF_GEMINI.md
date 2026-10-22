@@ -70,7 +70,7 @@ pageMode(), playback(), version: '1.2.0' }`. Modes are query-string driven: `/` 
 
 - 3.00 s branded opening: build-up → logo impact (0.62 s) → two-note motif → wordmark raises ("Anis'" then
   "Home Media Server") → PLAY • ORGANIZE • ENJOY letterspaces in with the red rule → curtain parts at 1.95 s →
-  halves off-screen by 2.26 s → lockup fully dismissed at 2.57 s → settled hold to 3.00 s (frames 2.80–2.97 are
+  halves off-screen by 2.75 s → lockup fully dismissed at 2.57 s → settled hold to 3.00 s (frames 2.80–2.97 are
   byte-identical). Original synthesized score, no samples/licensed material, 3.070 s WAV master.
 - The outro reveals the **real app page**, not a snapshot/copy. The layer sits at `z-index:2147483000`,
   `position:fixed; inset:0`, transparent except where it is drawing; the veils are opaque until they part.

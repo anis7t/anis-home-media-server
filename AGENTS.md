@@ -1,64 +1,124 @@
 # Agent Instructions — Anis' Media Server
 
+## 0. Standing working rules
+
+These two rules govern **all** work in this repository. Added 2026-10-16.
+
+### 0.1 Ask before drafting a plan, then plan first and ask for approval
+
+**Always ask the user before drafting an implementation plan.** Do not draft or write an implementation plan document until the user has explicitly requested or approved doing so.
+
+Once approved to draft a plan, before implementing anything non-trivial, **present an implementation plan and explicitly request approval.** Do not begin the work on the strength of having described it.
+
+A plan must state, at minimum:
+
+- **Scope** — what changes and what deliberately does not.
+- **Exit criteria** — how completion is judged, stated as something checkable.
+- **Risks** — what could break, and how it would be caught.
+- **Open decisions** — choices that are the user's to make, not defaults to pick silently.
+
+If the plan is revised mid-implementation, re-present it before continuing.
+
+### 0.2 Flask and Waitress are permanently decommissioned — 100% Rust + React
+
+`app/` (Flask, Waitress) and its Jinja templates are **100% RETIRED AND DECOMMISSIONED** (completed in Phase 7 Slice 7E).
+The production backend is 100% native Rust (`:8000`), the frontend is a 100% React 19 SPA (`web/dist/`), and persistence is 100% PostgreSQL 18.4 (`MediaServerPG`).
+
+- **Do not introduce Python web frameworks.** All new routes, services, APIs, and background workers belong natively in Rust (`rust/`).
+- **All proxy bridges are retired.** There is zero reverse proxying or hybrid hosting. All endpoints (`/api/*`, `/media/*`, `/hls/*`, `/subtitles/*`, `/poster/*`, `/auth/*`, `/manage/*`, `/download`) are served directly by Axum.
+- Keep the Flutter/Fire TV client working throughout; `/api/*` contract shapes must not change underneath it (guarded by `scripts/probe_android_api.py`).
+
 ## 1. Project identity and source of truth
 
 - Repository: `anis7t/media-server`
-- Framework: **Flask**, not Django.
-- The application is modularized under `app/` with routes, services, utilities, configuration, and database layers.
-- Root `app.py` is intentionally a lightweight executable entry point; `app/__init__.py` owns the application factory and compatibility exports.
+- **Stack: 100% Rust/Axum (`:8000`) + React 19 SPA + PostgreSQL 18.4.** Flask, Waitress, SQLite, and Jinja templates are **COMPLETELY RETIRED AND DECOMMISSIONED**.
+- Backend: Modular Rust crate (`rust/`) with Axum 0.8, Tokio, SQLx, and tracing.
+- Frontend: Single Page Application in React 19 + TypeScript + Vite (`web/`), served directly by Axum from `web/dist/`.
+- Database: PostgreSQL 18.4 running as Windows Service `MediaServerPG` on port 5432.
+- **No Python runtime utilities remain.** Library ingestion is native Rust
+  (`rust/src/scanner/` + `rust/src/services/scan_service.rs`); the old `scanner.py` was deleted in
+  `4793fdb` (Phase 10.5).
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
+- **Session handoffs live in `Handoffs/`**, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST.
+- **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
-- `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in `app/services/chunk_transcode_service.py` and `app/services/gpu_service.py`.
-- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay (brand sting, original score, frame-capture pipeline). It is **delivered and wired into the app** via `{% include 'intro-overlay.html' %}` in `templates/library.html`, gated once per browser session; the artifacts live in `docs/opening-sequence/` inside this repository.
+- `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in Rust (`rust/src/transcode/` and `rust/src/services/gpu.rs`).
+- `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay. **Part I is the canonical
+  specification** — the timing table, the layer stack, the compositing / responsive / audio /
+  dismissal / reduced-motion contracts, and the divergence ledger. Every Phase 11 slice is written
+  from it. Part II is the historical record (the loss, the artifacts, the verification).
+  **Status: the web overlay IS implemented, and is verified frame-for-frame.** It was a Jinja2
+  template (`templates/intro-overlay.html`), deleted with the other legacy templates in Slice 7E.2
+  (`5a2af4f`, 2026-10-18), and no React component was ever written to replace it — an earlier
+  version of this line claimed it was wired into the React SPA, and that claim is what let the
+  regression go unnoticed for two days. **The React port now exists**: the canonical renderer
+  (`web/src/lib/intro/`), the overlay (`web/src/components/brand/BrandIntroOverlay.tsx`), the
+  lifecycle and modes (`web/src/hooks/useIntroSequence.ts`) and the live Web Audio score
+  (`web/src/lib/intro/audio.ts`). It is **pixel-identical to the archived original** at 20 sampled
+  instants in both orientations — `web/e2e/intro-frame.spec.ts` — and the score builds the
+  **same audio graph** as the original — `web/e2e/intro-audio.spec.ts`. The **Flutter client still
+  has its own, divergent, copy** (see the invariant below). The web port is **Phase 11**; Slices
+  11.1 (the canonical spec), 11.1a (the Flutter Replay removal), 11.2 (the web canvas renderer),
+  11.3 (the web lifecycle, gating and modes) and 11.3a (the web Web Audio score) are complete, and
+  11.4 onward await slice-by-slice approval:
+  [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ### Brand Opening Sequence (Intro Overlay) Invariants
 
-- **Prompt-Free Autoplay by Default:** The brand intro overlay must auto-start immediately upon library page load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` must have `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`.
-- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API must never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture.
-- **Container-Controlled Session Gating:** `intro-overlay.html` must not set `sessionStorage.setItem('introSeen')` prior to the enclosing template's evaluation. Setting it prematurely causes container checks (e.g. in `library.html`) to falsely identify the current visit as already watched, calling `INTRO.finish()` and destroying the layer on frame 1.
-- **Clean Jinja Query Bypass (`?intro=off`):** Always wrap the overlay include in `{% if request.args.get('intro') != 'off' %}` so that control requests render zero intro DOM nodes (`#stage`, `#gate`), ensuring test proxies and control checks receive clean, untouched HTML responses byte-for-byte.
-- **Mobile Client Opening Sequence (Flutter):** Autoplays on cold boot launch in `AppShell` with hardware-accelerated portrait video (`intro-demo-portrait.mp4`), tap-anywhere or Skip button dismissal with a 300ms fadeout, session gating via `IntroController` (gated once per app launch session), non-blocking test runner safety, and manual "Replay Brand Intro" action in Settings (`SettingsContent`). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated.
+> **The canonical design is [`docs/OPENING_SEQUENCE.md`](docs/OPENING_SEQUENCE.md) Part I.** Where
+> this block and that spec disagree, the spec wins. Every Phase 11 slice is written from it.
+>
+> **The web invariants below now describe code that exists and is tested.** The React port is
+> `web/src/lib/intro/` (the canonical renderer), `web/src/components/brand/BrandIntroOverlay.tsx`
+> (the overlay) and `web/src/hooks/useIntroSequence.ts` (the lifecycle). It is verified
+> frame-for-frame against the archived original by `web/e2e/intro-frame.spec.ts`, and its score is
+> verified against the original's own Web Audio by `web/e2e/intro-audio.spec.ts`. The Flutter
+> invariant, by contrast, still describes code that is **divergent** from the canonical design.
+
+- **Prompt-Free Autoplay by Default:** The brand intro overlay auto-starts immediately upon app load (`mode = 'auto'`) without requiring user interaction or displaying a click-to-start gate prompt (`#gate` has `display: none !important;`). The gate card is reserved strictly for manual testing via `?intro=gate`. `auto` is the default for the injected overlay; `gate` was the *standalone* page's default and is not the product behaviour.
+- **Non-Blocking Web Audio Resiliency:** Browser autoplay restrictions on the Web Audio API never block or delay visual animation playback. The 3.0-second canvas render loop and veil parting run unconditionally; Web Audio attempts immediate playback and attaches transparent, one-time document listeners (`pointerdown`, `keydown`, `touchstart`) to resume `AudioContext` seamlessly upon first user gesture. **The audio must never gate the animation** — that single rule is the difference between a prompt-free intro and a broken one. In the React port this is *structural*: `web/src/lib/intro/`'s renderer has no reference to the audio module at all, and the score's `start()` returns `false` rather than throwing when there is no Web Audio.
+- **The Score Is Anchored, Not Orphaned (web):** The score's zero is placed at `ctx.currentTime + RAMP - elapsed`, where `elapsed` is how far the animation has already played — so the score lands on the animation's own beats. A voice whose beat has already passed is **skipped**, not fired late. A context that resumes **after** the animation has ended gets **no score at all**: a three-second score playing out of nowhere is worse than no score. The original's behaviour (schedule the whole score at `ctx.currentTime + RAMP` and let a frozen clock hold it) is **not** ported.
+- **The Unlocking Gesture Is Consumed By The Audio (web):** The first gesture while the `AudioContext` is still suspended resumes it and starts the score in step with the animation, and **the animation continues** — a second gesture dismisses. The cost, stated plainly: **the first click during the intro no longer skips it.** `m` **mutes and does not dismiss**, because the gate's own hint says *"`m` mutes"*.
+- **The Score's Noise Is Seeded (web):** The port draws its reverb impulse response and its noise buffers from a fixed seed, so two renders of the same score are the same signal. The original used `Math.random()` and was never bit-reproducible. The perceptual difference is nil — it is noise either way.
+- **The Web's Reference Is The Original's Web Audio, Not The WAV:** `intro-theme.wav` is the *Python* renderer's output, and the Python sweeps a resonant **low-pass** over its noise beds where the original's Web Audio uses a **band-pass** — the two are not the same synthesis. The WAV is the **Flutter** client's reference; the archived overlay's `window.INTRO.audio` is the **web** port's. A port that "matches the WAV sample for sample" is chasing the wrong target.
+- **Container-Controlled Session Gating:** `intro-overlay` does not set `sessionStorage.setItem('introSeen')` prior to the enclosing component's evaluation.
+- **No Visible Skip and No Replay, Anywhere:** The canonical design exposes **no Skip control and no Replay control on any target**, including the Flutter Settings screen. The archived source's HUD is hidden by default (`SHOW_HUD=false`) and is a demo affordance, not a product surface; dismissal is implicit (click / tap / space / any key). The Flutter "Replay Brand Intro" action was removed in Phase 11 Slice 11.1a.
+- **Reduced Motion Is A Cross-Target Contract:** `prefers-reduced-motion: reduce` suppresses exactly four things — the impact burst particles, the camera shake, and the icon's rotation and scale — on **all three** targets, not the web alone.
+- **The Curtain Is Opaque And The Outro Is A Reveal:** The stage is **transparent** and carries an **opaque obsidian curtain** (`#05060a` web / `Color(0xFF05060A)` Flutter) over the live app. The app is revealed by the two halves **sliding apart**, never by removing an opaque panel (which would make the outro a flash). At `t >= curtain + 0.62` (2.57 s) the overlay releases `pointer-events`, so the app underneath is interactive for the final **0.43 s**.
+- **Layer Order Is Load-Bearing:** `veilL/veilR (z2) → seam (z3) → FX canvas (z4) → vignette (z5) → grain (z6) → lockup (z7) → HUD (z8, hidden)`. **The FX canvas is ABOVE the curtain.** Putting it below makes the entire `0.12 – 1.95 s` build-up invisible — which is exactly the bug the Flutter client had until Slice 11.4.
+- **The Lockup Rule Is A Breakpoint, Not A Constant:** side by side in landscape, **stacked in portrait** (`H > W`). The Flutter client now follows this rule (Slice 11.4). Do not make its lockup side-by-side unconditionally — the phone is portrait and is already correct; the TV is landscape and is not.
+- **The Sequence Is Resolution-Independent, And That Is Proven, Not Assumed:** the web's oracle puts the **archived original** and the port side by side at **five** viewports — landscape, portrait, ultrawide (2560 × 1080), tablet (1024 × 1366) and a modern phone (1080 × 2400) — and compares them **pixel for pixel**. The Flutter client's sweep asserts the same five: the lockup's arrangement follows the breakpoint, the canonical's clamps hold, nothing overflows, and the parameters match the canonical's frame fixture at that aspect's design unit. The archived original is a standalone document that can be laid out at **any** viewport, so this is an exact comparison, not a tolerance against a reference that exists at two aspects only.
+- **The Reference Frames Are The Shipped Implementation's:** `docs/opening-sequence/frames/` and `frames-portrait/` are re-captured from the **shipped** implementation by `scripts/capture-shipped-frames.mjs`, which first proves the capture **reproducible** (two runs byte-identical where the curtain is closed) and **faithful** (the new frames compared pixel by pixel with the archived ones). They are replaced **only if** that comparison passes. The archived frames were captured in a different browser, so the SVG grain's turbulence (1–2 units over the whole frame) and the Gaussian blur on the wordmarks do not rasterise the same way — which is why the claim is a *perceptual* one, on the same metric the Flutter client's oracle uses.
+- **Mobile Client Opening Sequence (Flutter) — ALIGNED, as of Phase 11 Slice 11.4 (2026-10-20), and it has a score since 11.5:** Autoplays on cold boot launch in `AppShell` as a `CustomPaint` re-implementation (it is **not** video playback - the dead `assets/videos/intro-demo-portrait.mp4` was **removed** in Slice 11.5, taking 2.4 MB out of every APK), and `IntroController` sets `isPlaying: true` unconditionally - so it plays on **every launch**, which is now **deliberate**: the dead `hasSeenIntro` flag is gone and the behaviour is stated. Dismissal is implicit: a tap anywhere, or any key. The visible **Skip pill** is **gone**; the Settings **"Replay Brand Intro"** action was removed in Slice 11.1a (D4). The FX canvas is now **above** the curtain, with all seven effects and the sheen implemented, and there is a grain layer. The lockup is **responsive** - side by side in landscape, stacked in portrait, decided by the **stage's aspect** and never by the device type. The curtain **translates** (it does not shrink), overlaps by 1 px, feathers its inner edges only once parting, and carries **one** continuous gradient across both halves. The outro is a **removal** at 3.00 s, not a fade. `prefers-reduced-motion` is honoured and suppresses exactly four things. The mark is the canonical artwork, path for path. **The score** (Slice 11.5) is the canonical's `intro-theme.wav`, shipped **byte for byte** (the suite asserts its SHA-256) and played through `audioplayers`; it is **anchored to the sequence** when the player becomes ready, **dropped** if the sequence is over, and **the animation never waits for it**. Implementation: `flutter_client/lib/features/intro/` - `domain/` (the contract and the pure core), `infrastructure/` (the player), `presentation/` (the painters, the widgets and the controllers), `presentation/providers/`. The divergence ledger is `docs/OPENING_SEQUENCE.md` Part I §12; the three recorded divergences are **L3** (the grain: Flutter cannot render the canonical's SVG `feTurbulence`, so it uses a seeded white-noise texture of the same tile size and colour matrix), **L17** (the handover: Flutter releases touches at 2.57 s but keeps the keyboard for the whole three seconds, so a D-pad press cannot navigate the app behind the sequence) and **L18** (the score has **no unlocking gesture** - Android has no autoplay policy, so the intro makes a sound on every cold launch - and **no `m` mute**, because any key dismisses). Fullscreen video player routes (`/player`, `/player-poc`) remain strictly isolated. Tests: `flutter_client/test/features/intro/`.
 
 ## 2. Current architecture
 
 ```text
-Browser / Client
-  -> Cloudflare named tunnel: media.anisparvez.in
+Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
+  -> Caddy :443/:80 (MediaServerCaddy NSSM service, Let's Encrypt)
   -> http://127.0.0.1:8000
-  -> Waitress WSGI (NSSM Windows Service)
-  -> Flask routes / API
-  -> services
-     -> SQLite database (E:\MediaServer\media.db)
-     -> transcode/preview/poster cache (E:\MediaServer\cache)
-     -> local media/artwork/subtitle storage (D:\Flicks)
-     -> FFmpeg/FFprobe dual-GPU chunked transcoding
-        -> AMD Radeon RX 560X (discrete, dx11:1)
-        -> AMD Radeon Vega 8 (integrated, dx11:0)
-     -> Live frame preview cache (cache/previews/)
-     -> TMDb API
+  -> Rust Axum Server (MediaServerRust NSSM Windows Service)
+     ├─ React 19 SPA (web/dist/ static file serving + SPA fallback)
+     ├─ API Router (rust/src/routes/ - api, auth, media, hls, subtitles, download, manage, etc.)
+     ├─ Services (rust/src/services/ - catalog, progress, cast, device, system, probe, etc.)
+     ├─ Transcode Engine (rust/src/transcode/ - autonomous dual-GPU chunked fMP4)
+     │  ├─ AMD Radeon RX 560X (discrete, dx11:1)
+     │  └─ AMD Radeon Vega 8 (integrated, dx11:0)
+     ├─ Live seek frame preview cache (E:\MediaServer\cache\previews\)
+     ├─ PostgreSQL 18.4 (MediaServerPG Windows Service, port 5432)
+     └─ Local Media Root (D:\Flicks, D:\Flicks\.archive, D:\Flicks\.uploads)
 ```
 
 Important modules:
 
-- `app/config.py` — environment-driven paths and runtime settings.
-- `app/db.py` — SQLite/schema/migrations.
-- `app/routes/pages.py` — HTML pages.
-- `app/routes/api.py` — API/device/playback/seek-preview endpoints.
-- `app/routes/media.py` — byte-range media delivery and HLS segments.
-- `app/routes/subtitles.py` — local subtitle/WebVTT delivery.
-- `app/routes/upload.py` — resumable chunked uploads.
-- `app/services/chunk_transcode_service.py` — dynamic multi-GPU chunk scheduler.
-- `app/services/gpu_service.py` — GPU detection and live engine telemetry.
-- `app/services/preview_service.py` — live seek hover frame extraction & caching.
-- `app/services/media_service.py` — media probing/path operations.
-- `app/services/media_resolver.py` — multi-source/forensic media identification.
-- `app/services/scanner_service.py` — library ingestion.
-- `app/services/tmdb_service.py` — TMDb integration.
-- `app/services/transcode_service.py` — FFmpeg/HLS transcoding, cache/resume/cleanup.
-- `app/services/subtitles_service.py` — subtitle processing.
-- `app/services/device_service.py` — device telemetry/heartbeats/history.
-- `app/services/worker_service.py` — background work coordination.
-- `app/services/system_service.py` — system telemetry and multi-GPU utilization stats.
+- `rust/src/main.rs` & `rust/src/lib.rs` — Axum application setup and router composition.
+- `rust/src/config.rs` — environment-driven settings (`.env`).
+- `rust/src/db.rs` — PostgreSQL connection pool (SQLx).
+- `rust/src/routes/` — API handlers (`api.rs`, `auth.rs`, `media.rs`, `hls.rs`, `subtitles.rs`, `download.rs`, `manage.rs`, etc.).
+- `rust/src/services/` — backend services (`catalog.rs`, `device.rs`, `system.rs`, `cast.rs`, `progress.rs`, `gpu.rs`, `preview.rs`, `scan_service.rs`, `tmdb.rs`).
+- `rust/src/scanner/` — native library scanning engine (`engine.rs`, `parser.rs`, `models.rs`, `tmdb_client.rs`), driven by `scan_service.rs`.
+- `rust/src/transcode/` — chunked multi-GPU fMP4 transcoding pipeline (`engine.rs`, `planner.rs`, `queue.rs`, `sweeper.rs`).
+- `web/src/` — React 19 SPA frontend (components, pages, lib, hooks).
 
 ## 3. Completed capabilities
 
@@ -67,9 +127,9 @@ The current project includes:
 - **Direct Play:** Zero-copy RFC 7233 byte-range playback for MP4/M4V/WebM.
 - **Dynamic Multi-GPU Transcoding:** Concurrent chunk-based encoding across discrete AMD Radeon RX 560X (`dx11:1`) and integrated AMD Radeon Vega 8 (`dx11:0`).
 - **Live Multi-GPU Telemetry:** Real-time hardware engine utilization tracking via Windows Performance Counters and PyNVML displayed on the System Telemetry HUD.
-- **Live Seek Hover Previews:** Frame thumbnails extracted on-demand via `preview_service.py` and cached in `cache/previews/`.
+- **Live Seek Hover Previews:** Frame thumbnails extracted on-demand via `rust/src/services/preview_service.rs` and cached in `cache/previews/`.
 - **1-Second Transcode Cadence:** High-frequency status polling for smooth progress bars, fps/speed reporting, and smoothed ETA calculations.
-- **Windows Persistent Services:** `MediaServer` (Waitress via NSSM) and `Cloudflared` run as automatic Windows Services surviving reboots without user login, with crash auto-restart and 10 MB log rotation.
+- **Windows Persistent Services:** `MediaServerRust` (Axum via NSSM on port 8000), `MediaServerCaddy` (Caddy reverse proxy and TLS on 80/443 via NSSM), and `MediaServerPG` (PostgreSQL 18.4 native Windows service on 5432) start automatically, survive reboots, and have crash recovery; Rust and Caddy logs rotate at 10 MB.
 - **Upload Lifecycle Hardening:** Immediate Abort button concealment upon 100% upload completion and animated dynamic processing card showing cycling background indexing stages.
 - **Player Controls Polish:** Removed hold-to-speed-up gesture, cleaned shortcuts cheat-sheet modal, native dark scheme select dropdowns (`color-scheme: dark !important;`), uniform 36px circular buttons, prominent 21px SVG icons, and 4px controls-row padding preventing top focus clipping.
 - **Carousel Optimization:** Compacted "Continue watching" rail cards to 140px desktop / 115px mobile.
@@ -81,7 +141,7 @@ The current project includes:
 - **Periodic (4-Hour) TMDb Metadata Refresh & Manual Scan Trigger:** Background scheduler (`metadata-refresh-worker`) in `worker_service.py` refreshing TMDb details (ratings, vote averages, runtime, tagline, cast, certification, artwork) every 4 hours, SQLite `last_metadata_refresh` schema migration, and synchronized manual UI "↻ Scan" trigger re-synchronizing metadata alongside newly discovered files.
 - **Server-Wide Manual Subtitle Upload with Language Auto-Detection:** Subtitle upload interface on movie details (`/movie/<filename>`) and integrated directly inside the in-player Subtitle Settings modal (`#subSettingsModal`). Auto-detects subtitle language from content text (Unicode character analysis & NLP heuristic), saving files server-wide alongside media in the canonical format `<short_movie_name>_<detected_language>_<incremental_number>.<ext>` with dynamic in-player `<track>` insertion and zero playback disruption.
 - **Post-Transcode Storage Retention & Safe Orphaned Cache Purge:** User-configurable retention policies (`keep`, `archive`, `purge_cache`) persisted in the `settings` database table, automated cache reconciliation (`audit_orphaned_caches()`), safe Windows-lock-resilient orphaned purge (`purge_orphaned_caches()`), background daemon worker (`cache-maintenance-worker`), REST API suite (`/api/storage/*`), and interactive management UI with storage pool telemetry and one-click orphan cleaning.
-- **Dual-Drive Storage Tiering & Cross-Volume Cache Resilience:** Tiered architecture keeping all runtime state on the primary fast SSD `E:` — application (`E:\MediaServer`), SQLite database (`E:\MediaServer\media.db`), in-progress transcode scratch, seek-preview thumbnails, and completed HLS cache (`E:\MediaServer\cache\hls`) — while offloading cold raw media, resumable upload staging, and source archives to the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`). `C:` holds nothing for this project. Telemetry aggregates `D:` and `E:` into a single Storage Pool with a per-drive breakdown (`system_service.py` `target_mounts`). Includes dynamic multi-root discovery (`get_media_roots()`), cross-volume relative-path cache key preservation in `hls_cache_dir()` and `preview_dir()`, and cross-volume sidecar subtitle resolution and authorization.
+- **Dual-Drive Storage Tiering & Cross-Volume Cache Resilience:** Tiered architecture keeping all runtime state on the primary fast SSD `E:` — application (`E:\MediaServer`), PostgreSQL data directory (`E:\pgdata`), in-progress transcode scratch, seek-preview thumbnails, and completed HLS cache (`E:\MediaServer\cache\hls`) — while offloading cold raw media, resumable upload staging, and source archives to the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`). `C:` holds nothing for this project. Telemetry aggregates `D:` and `E:` into a single Storage Pool with a per-drive breakdown (`system_service.rs` `target_mounts`). Includes dynamic multi-root discovery (`get_media_roots()`), cross-volume relative-path cache key preservation in `hls_cache_dir()` and `preview_dir()`, and cross-volume sidecar subtitle resolution and authorization.
 - **Cross-Root Mirror Subtitle Discovery & HLS Seeking Stabilization:** Subtitle engine automatically discovers sidecar `.srt`/`.vtt` files across mirror subdirectories in any configured media root (stripping `.archive` paths) for archived media (e.g. *The Odyssey*), and player seeking event handlers guard `jumpStartGap()` and `checkPreparing()` against in-flight user scrubbing and active seeks, eliminating playback stalls and `0:00` resets.
 - **Unified Navigation Header & Brand Identity:** Redesigned frosted obsidian glass header with 3D glossy play SVG brand icon, two-tone typography (**Anis'** + **Home Media Server**), subtitle (**PLAY • ORGANIZE • ENJOY**), modular SVG pill buttons, and responsive horizontal swipeable action rails across all pages (`/`, `/movie/<filename>`, `/player/<filename>`, `/manage`, `/devices`, `/manual`).
 - **Universal Customizable `<select>` Popovers:** Modernized dropdown pickers using `appearance: base-select` and `select::picker(select)` across `/manage`, playback speed, and subtitle settings with obsidian glass styling and brand red active highlights.
@@ -90,44 +150,207 @@ The current project includes:
 - **Interactive User Manual & Footer Navigation:** Added in-app User Manual (`/manual`) with full shortcuts cheatsheet, touch gestures, multi-GPU streaming guide, and footer "How to use" link. Authored offline user guide in `docs/MANUAL.md`.
 - **Flutter Client Production Player:** Native Android & mobile Flutter client with translucent gradient controls overlay, symmetrical equidistant seekbar spacing (~6dp), dual-time anchor HUD (elapsed time left, total/remaining time right with tap-to-toggle), canonical web button sequence (`↺` Restart, `⏸`/`▶` Play/Pause, `🔊` Mute, `1×` Speed, Audio, Subtitles), vertical-swipe volume/brightness controls (left half = brightness, right half = system media volume, native channels), watch-progress persistence (`PlaybackProgressReporter`), and rapid direct-intent test automation (`--es route "/player"`).
 - **Universal Android APK & 10-Foot TV Experience (Fire TV Stick 4K & Android TV):** Single universal APK (`in.anisparvez.media_server_client`) operating seamlessly across mobile phones (touch UI + bottom bar) and Android TV / Fire TV Stick 4K (`AFTMM`) (10-foot D-pad remote UI + collapsible obsidian side rail + borderless fullscreen cinema player). Runtime capability detection (`deviceCapabilitiesProvider`), 2-column details with autofocus action (`autofocus: true`), 2-zone remote transport model (Zone 1 Timeline, Zone 2 Controls), edge traversal bridge (`TvDirectionalFocusAction`), and debounced exit dialog (`TvExitDialog`).
-- **Flutter Player Architecture Segregation & Modularization:** Modularized monolithic `player_screen.dart` (2,283 → 1,232 lines, ~46% reduction) into 5 decoupled domain/infrastructure/presentation modules: `tv_player_focus.dart` (`TvPlayerFocusZone`), `player_cast_bar.dart` (`PlayerCastBar`), `player_details_panel.dart` (`PlayerBrandHeader` & `PlayerDetailsPanel`), `player_key_dispatcher.dart` (`PlayerKeyDispatcher`), and `player_media_resolver.dart` (`PlayerMediaResolver`), with 100% backward compatibility and 204+ passing unit/widget tests.
 - **Fire TV Stick 4K Hardware Playback Hardening & Driver Lock Prevention:** Resolved low-level MediaTek Display Processor (MDP) kernel fence deadlock and PowerVR GE9215 GPU desynchronization on Amazon Fire TV Stick 4K (`AFTMM`) using `mediacodec-copy`, preventing direct `SurfaceTexture` / `ANativeWindow` fence timeouts on non-16-byte-aligned dimensions (e.g. 1916px) with automatic dynamic software fallback (`fallbackToSoftwareDecoder`, `hwdec: no`) and buffer flush seek.
-
+- **LAN Cast & DLNA Second-Screen Playback:** Cross-platform casting to DLNA TVs (Samsung Tizen, LG webOS) and Google Cast devices (Chromecast with Google TV, Nest Hub). Direct byte-range delivery for DLNA and web-friendly MP4/WebM, HLS for Matroska/HEVC on Chromecast, real-time receiver master volume tracking and 3-state mute toggle, WebVTT subtitle track delivery with live in-cast selector popover, and clean receiver app quit (`cast.quit_app()`) restoring the TV to its home screen upon disconnect.
+- **Phase 8 Fragmented MP4 (fMP4) Adaptive Streaming Architecture:** Modernized HLS streaming pipeline from legacy MPEG-2 Transport Stream (`.ts`) to ISO BMFF Fragmented MP4 (`.m4s` / `fMP4`) with `#EXT-X-MAP` initialization segments, unlocking native hardware-accelerated HEVC and H.264 playback across Chromium (Chrome, Edge) and Safari browsers with zero JavaScript demuxing overhead. Includes dynamic multi-bitrate quality ladder (4K, 2K, 1080p, 720p, 480p, 360p) with strict no-upscaling clamping, on-demand single-stream transcoding (Option A), Android/Fire TV MKV Direct Play (0% server load), and user-facing terminology modernization retiring developer-facing "HLS" labels.
 
 ## 4. Known unresolved issues & active roadmap
 
+### Completed high-priority items
+
+- **100% Rust + React + PostgreSQL Migration:** (Completed 2026-10-18)
+  All 10 migration phases (P0–P9, including Slice 7E Legacy Flask Decommissioning) are 100% delivered, hardened, and verified.
+  The production server runs exclusively on Rust Axum (`MediaServerRust`, port 8000), PostgreSQL 18.4 (`MediaServerPG`, port 5432), and React 19 SPA (`web/dist/`).
+- **Production concurrency tuning & remote streaming benchmarks:** (Completed 2026-10-14)
+  Evaluated local origin and Cloudflare named tunnel (`media.anisparvez.in`) across Direct Play, HLS segment streaming, and mixed API workloads (concurrency 1–16). Local aggregate throughput reached **510.86 Mbps** on Rust Axum with 100% success; remote throughput capped at **18.43 Mbps** due to physical ISP uplink (~20 Mbps). Documented in [`docs/STREAMING_BENCHMARK_REPORT.md`](docs/STREAMING_BENCHMARK_REPORT.md).
+
 ### Highest priority — immediate work queue
 
-1. **Production concurrency tuning & remote streaming benchmarks:**
-   Benchmark Waitress worker and thread pools against remote stream latency, Cloudflare tunnel limits, and concurrent client playback.
+1. **Production Maintenance & Feature Additions:**
+   The codebase is 100% modernized on native Rust, React, and PostgreSQL. All new development proceeds natively in Rust (`rust/`) and React (`web/`).
+2. **Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.**
+   It is unauthenticated and keyed only on the `qr_id`. Anyone who learns a `qr_id` — from a
+   log, a URL, a `Referer`, or browser history — can claim the confirmed session's cookie inside
+   the 2-minute window. A per-session secret issued at create time would close it.
+3. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
+   `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
+   connection, with no auth and no cap, on a publicly reachable endpoint.
+4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
+   lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
+5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
+   was deleted in Slice 7E.2 without a replacement, so the web app had no intro from 2026-10-18
+   until 2026-10-20. **Phase 11 is COMPLETE**: Slices 11.1 (the canonical specification), 11.1a
+   (removing the Flutter Replay action), **11.2 (the web canvas renderer)**, **11.3 (the web
+   lifecycle, gating and modes)**, **11.3a (the web Web Audio score)**, **11.4 (the Flutter client,
+   aligned)**, **11.5 (the Flutter score)** and **11.6 (the responsive sweep and the asset
+   regeneration)** are all done. The roadmap is
+   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
+   The renderer is **pixel-identical to the archived original at five viewports**, and the **shipped
+   app** is compared against the same harness (`web/e2e/intro-frame.spec.ts`). The score is live Web
+   Audio on the web (`web/src/lib/intro/audio.ts`) and the canonical's WAV on the phone and the TV.
+   The Flutter client is a **port of the canonical renderer**, and its score is the canonical's file
+   byte for byte. **The on-device session happened on 2026-10-21 and it changed the picture:**
+   * the **phone is verified** — it shows the canonical design exactly, in portrait, and it plays
+     the score;
+   * the **launch window was white** on both devices, and it is **fixed and verified by pixel**:
+     the `drawable-v21` variant of the launch background is the one Android picks on API 21+, and
+     it said `?android:colorBackground`, which is white under the Light theme. It now carries the
+     curtain's `#05060a`, and a `screencap` taken during a cold launch reads `R=5 G=6 B=10`;
+   * the **Fire TV cannot render the sequence**: its 2015 PowerVR Rogue GE8300 has no Vulkan, so
+     Impeller is unavailable and Skia compiles each new draw program at runtime — the first frame's
+     raster takes **1.09 seconds**, and the three-second sequence gets **five frames**. Two
+     remedies were tried and **rejected by the measurement** (a `ShaderWarmUp`, and moving the
+     clock's origin); both are recorded in the plan so they are not attempted again.
+   **Slices 11.7 and 11.8 are DONE (2026-10-21).** The television plays a **pre-rendered video**
+   of the sequence, rendered from the shipped web application (the canonical) by
+   `scripts/capture-intro-video.mjs` and verified against the canonical's reference frames by
+   `scripts/verify-intro-video.mjs` — the worst mean error over the 58 closed-curtain frames is
+   **5.33/255**, and it is all in the grain, which is the one thing a codec cannot carry. The
+   score stays a separate byte-for-byte canonical WAV, anchored to the **video's** position, and
+   the phone keeps the live sequence. The four divergences this creates are in the ledger as
+   **L19–L22**. Slice 11.8 is the one-line fix for the yellow underlines the phone showed, which
+   came from the wordmarks inheriting the ambient text style's decoration — a thing the oracle
+   cannot see, because a test's ambient style never carries one.
+   **What is left is the device check**: the video has to be seen on the television, and the
+   sequence's audio with it. See
+   [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](docs/PHASE_11_OPENING_SEQUENCE_PLAN.md).
+   **One open finding** from 11.3a: the web's score renders about **6 dB quieter** than the archived
+   original's Web Audio, and the cause is not yet isolated (spec section 7.9 lists everything that
+   was measured and ruled out).
+6. **Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.**
+   `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` all
+   fail in `setUpAll` with `Cannot find libmpv-2.dll in your system %PATH%`, because they call
+   `MediaKit.ensureInitialized()` and media_kit's **Windows** native libraries are not installed
+   here. The client targets **Android**, where media_kit does not use libmpv, so the **shipped app
+   is unaffected** — only these host-side Dart-VM tests cannot run.
+   **This gates verification of the Flutter slices in this very phase (11.4, 11.5), because
+   `app_shell_test.dart` is one of the three.** Fix: install the media_kit Windows libs, or drop
+   the `MediaKit.ensureInitialized()` call from the `runtime_player_*` files that do not need
+   native playback. Until then, the Flutter suite is **not** green here — a change is acceptable
+   when it adds **no new failures** and the pre-existing three are unchanged and named.
+   Tracked as Issue 11 in [`docs/Current issues.md`](docs/Current%20issues.md).
+7. **The Flask/Waitress era left three loose ends** (the backend is 100 % native Rust — Axum on
+   `:8000`; no `flask` and no `waitress` is installed anywhere). The footer badge and the
+   agent-facing Serena memories are **fixed**; three remain: the `media-db` MCP server still
+   serves a snapshot of the **retired SQLite** database rather than PostgreSQL; the stopped
+   `MediaServer` NSSM service is still registered (inert — its entry point no longer exists) and
+   removing it is the owner's call; and `web/vite.config.ts` still points its "Rust" proxy at
+   `:8001` and its "Flask" proxy at `:8000`, which is actually Rust — a dev-only change that
+   needs the un-migrated endpoint list confirmed first. Tracked as Issue 12 in
+   [`docs/Current issues.md`](docs/Current%20issues.md).
 
 ### Secondary / parked
 
-4. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-5. **Authentication/access control:** the stable Cloudflare hostname is not authentication. Add access control before wider public sharing.
-6. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
-7. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
+5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
+6. **Authentication/access control:** the stable hostname is not authentication. `media.anisparvez.in`
+   is now served by Caddy on a static IP rather than a Cloudflare tunnel, but that changes the
+   transport, not the posture: anyone on earth with a Google account can sign in. Add access
+   control before wider public sharing.
+7. **Backups are on the same volume as the data.** `E:\pgdata` and `E:\MediaServer\backups` are
+   both on `E:`. A volume failure takes the database *and* the backups together. An off-host copy
+   is the actual fix. The daily scheduled backup itself is in place — see
+   [`docs/BACKUP_AND_RESTORE.md`](docs/BACKUP_AND_RESTORE.md).
+8. **Rotate and scope the Cloudflare API token** in `E:\MediaServer\Caddyfile`. It is a live
+   credential with DNS-management rights over the hostname, stored in plaintext on disk. The file
+   is correctly gitignored, but the token should still be scoped and rotated.
+
+### Admin authorisation invariants (`rust/src/middleware/auth.rs` & `rust/src/routes/admin.rs`)
+
+Routes requiring admin credentials can **delete the library, purge caches, move originals into the
+archive and rewrite the retention policy.** They are reachable from the public internet through
+the Cloudflare tunnel. Treat them as the most destructive surface in the application.
+
+- **The Admin PIN fails closed, and has no default.** `settings.admin_pin` defaults to empty string.
+  A hard-coded default is not a safe fallback for a secret. Unset means the PIN channel is **closed**,
+  leaving only an authenticated admin session, which sets the first PIN deliberately.
+  `/api/admin/status` reports `has_pin` against the same empty-string default so the answers never disagree.
+- **Never accept the PIN from a query string.** Query parameters leak into access logs, Cloudflare edge
+  logs, browser history, and `Referer` headers. Header (`X-Admin-Pin`) and JSON body only.
+- **A closed probe is not a closed door.** Any test asserting the PIN is refused must also assert a
+  destructive route returns 403.
+- **Do not weaken auth to make a test pass.**
+
+### QR Device Sign-In invariants (`rust/src/routes/qr_auth.rs` & `rust/src/services/auth_service.rs`)
+
+The QR sign-in flow is reachable from the public internet, so its secrets are load-bearing.
+
+- **Every security token comes from the OS CSPRNG.** `getrandom` (BCryptGenRandom on Windows),
+  never a clock-derived seed. This covers the pair code, the `qr_id`, the `sess_` session tokens,
+  the `ms_` device tokens, the OAuth `state`/`nonce` and the PKCE `verifier`.
+  - The failure mode that motivated this: `generate_pair_code()` walked one 64-bit LCG and took
+    `seed % 32` per step. The LCG's multiplier and increment are both odd, so the low 5 bits of
+    every step depend only on the low 5 bits of the first one — the whole code collapsed to **32
+    possible values** instead of 32^5. Measured live: 40 sessions produced 15 distinct codes.
+    `POST /api/auth/qr/lookup` resolves a code to a live session, so 5 bits is a guessable code.
+  - `generate_random_token()` hashed `nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`. A token
+    minted at a known moment is a token an attacker can search for. `qr_id` was one of them, and
+    `qr_id` is the *only* key to the unauthenticated `/api/auth/qr/{id}/finalize` endpoint.
+- **Draw each character independently.** A shared state word whose low bits drive several output
+  characters is the whole bug. `test_pair_code_has_real_entropy` requires >= 5,000 distinct codes
+  from 10,000 draws; the collapsed generator produced 32.
+- **Fail closed, never mint a weak secret.** If the random source is unavailable, the request errors
+  rather than falling back to a guessable value. Same posture as an unset Admin PIN.
+- **Never log a pair code or a full `qr_id`.** `finalize` is unauthenticated, so either one in a
+  log is an account-takeover handout. The log carries a 12-hex-character reference only.
+- **`byte % 32` is unbiased here and only here.** The charset is 32 characters and 256 is a
+  multiple of 32, so no rejection sampling is needed. A different charset length needs it.
+- **Do not trust `Host` or `X-Forwarded-Proto` for the QR URL.** `get_base_url` read them
+  directly, so the emitted `qr_url` was host-header-injectable. A configured
+  `MEDIA_SERVER_PUBLIC_BASE_URL` now takes precedence — **set it in the NSSM service environment
+  and in `.env`**. The same applies to the Google OAuth redirect URI (`get_host_url`).
+- **The session cookie's `Secure` flag is conditional, and must stay that way.**
+  `AuthService::session_cookie()` adds `Secure` only when the request arrived over TLS
+  (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It **cannot** be unconditional:
+  the LAN path is plain HTTP (`http://192.168.1.16:8000`), and a browser refuses to store or send
+  a `Secure` cookie over plain HTTP — so an unconditional flag breaks LAN sign-in entirely.
+- **The pairing signature must never be keyed by a published constant.** `hmac_pair_code` read
+  `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so it was silently
+  using the literal fallback string published in the source. It now reads either name and falls
+  back to a **random process-local key**, never a known constant.
+
+### Public ingress invariants (Airtel Zyxel AOT5222ZY + Caddy)
+
+- **Only 443 and 80 may be forwarded from the internet.** The origin must not be reachable over
+  plain HTTP — that bypasses TLS, and the `session_token` cookie, entirely. A `8000` forward
+  existed from 2026-10-19 and was removed on 2026-10-20.
+- **The router's `delnum` is ZERO-BASED.** The table displays 1-based row numbers, but
+  `deleteClick(0)` is the *first* rule. Sending the displayed number would delete the wrong rule —
+  on this router, the **HTTPS** rule, taking the public site down. Use
+  `scripts\router_port_forward.ps1`, which identifies a rule by its *content* and only then acts on
+  the index, and which re-reads the table afterwards to confirm the other rules survived.
+- **This router emits malformed HTTP headers** (bare CR). `Invoke-WebRequest` rejects them as a
+  protocol violation; `curl.exe` tolerates them. The router script uses curl.
+- **The router's CGI is undocumented.** Take a config backup before changing it; the tooling in
+  `D:\Airtel xstream fiber` can download and decrypt one.
 
 ## 5. Platform/dependency rules
 
 ### Windows
 - Windows 10/11 or supported Windows Server.
-- Python 3.10+; current tested host uses Python 3.14.3.
+- Rust 1.85+ (MSRV 2021 edition), Cargo.
+- Node.js 20+ & npm for `web/` React SPA.
+- PostgreSQL 18.4 (`MediaServerPG` Windows Service on port 5432).
 - PowerShell, Git, FFmpeg and FFprobe.
-- Production WSGI: **Waitress**, not Gunicorn.
-- Remote access: `cloudflared.exe` Windows Service.
-- Never use `os.kill(pid, 0)` to check process liveness on Windows; use `app.services.transcode_service.is_pid_alive(pid)` (exported in `app`) to avoid broadcasting `CTRL_C_EVENT` across the console group.
+- Production Server: **MediaServerRust** (native Rust Axum binary via NSSM).
+- Remote access: **Caddy** (`MediaServerCaddy` NSSM service) on 80/443, proxying to `127.0.0.1:8000`. The Cloudflare named tunnel is decommissioned; Cloudflare is DNS-only for this hostname.
+- Never use `os.kill(pid, 0)` to check process liveness on Windows; use Win32 API process status checking to avoid broadcasting `CTRL_C_EVENT` across the console group.
 - Never use `os.rename()` across disk volumes on Windows; use `shutil.move()` with target collision pre-unlinking.
-- In tests and cache audits, always call `get_cache_dir()` rather than referencing `app.config.CACHE_DIR` directly, as test harnesses patch `app.CACHE_DIR`.
-- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database, active HLS streams, and preview thumbnails. `C:` is not part of this project's storage.
-- All media path, cache lookup, and subtitle delivery routines must resolve across `config.get_media_roots()`.
+- In tests and cache audits, always resolve the cache directory dynamically.
+- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database (`E:\pgdata`), active HLS streams, and preview thumbnails. `C:` holds only the resilient service wrappers and binaries (`C:\MediaServer`, `C:\postgres`), not media or transcode data.
+- All media path, cache lookup, and subtitle delivery routines must resolve across configured media roots.
+- **Mandatory User Notification on Service Restart**: Whenever native backend code (`rust/src/**/*.rs`) is edited and recompiled, or service configuration changes, instruct the user to restart the persistent Windows service by running `e:\MediaServer\scripts\restart_rust_service.bat` (or via elevated PowerShell `Restart-Service MediaServerRust`).
+- **Verify a deploy by artefact timestamp, never by a health check alone.** After restarting `MediaServerRust`, confirm the *binary* is newer than the last source commit before claiming the code is live. A 200 from `/health` proves only that *some* build is running. Concretely: `Get-Item rust\target\release\media-server-api.exe | Select LastWriteTime` and compare against `git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S'`.
+- **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` and `MediaServerCaddy` within ~5s of a crash, and both have SCM restart-x3 recovery. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
 
 ### Linux/Kali
-- Python 3.10+; current development uses Python 3.14.x.
-- `python3 -m venv`, `pip`, Git.
+- Rust 1.85+, Node.js 20+, PostgreSQL 16+.
+- **Python is tooling-only, not a runtime dependency.** The backend is native Rust, the frontend is
+  a React SPA, and the database is PostgreSQL — none of them need Python to build or run. Python
+  remains only for the operational probe and release scripts, and most of those are
+  standard-library only. See `requirements.txt`.
 - FFmpeg and FFprobe on `PATH`.
-- Production: Gunicorn/gthread; systemd is recommended.
-- Remote access: cloudflared named tunnel.
+- Production: `media-server-api` systemd service.
+- Remote access: Caddy TLS terminator on 80/443 (or a cloudflared named tunnel if that deployment uses one).
 - Keep origin on `127.0.0.1:8000` when Cloudflare is the public front end.
 
 ## 6. Player invariants
@@ -136,10 +359,10 @@ The current project includes:
 - Seeking must not synchronously assign `currentTime` on every seek-bar drag event; commit on gesture completion.
 - During scrubbing or browser seek, `timeupdate` must not snap the slider back to an old timestamp.
 - Direct MP4/AAC seeking and MKV/HEVC HLS seeking must both remain functional.
-- Preserve player container isolation and mobile viewport clamping.
-- `templates/player.html` has a strict single-`<script>` invariant; external scripts must be dynamically injected from the existing script block.
-- `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end — a WEBRip whose audio/subtitles outlive the picture otherwise shows an unplayable tail.
+- Preserve player container isolation and mobile viewport clamping in React (`web/src/pages/PlayerPage.tsx`).
+- `/api/media-info` reports the **video stream's end** as `duration` for HLS playback and the container duration for direct play: HLS timelines come from our playlist, while a direct-play browser reads the file's own metadata and must not be desynced. Any HLS completeness denominator (chunks, progress, ENDLIST) must likewise use the video end.
 - Do not perform broad player rewrites for narrow playback bugs.
+- **Modal Dialog Portaling & CSS Transform Isolation:** All modal dialogs, backdrops, and fixed overlay sheets in the web app MUST be portaled to `document.body` via `createPortal(..., document.body)`. Never render `position: fixed` modals inline within deep component trees where parent containers have or can have `transform`, `filter`, `perspective`, or `contain` properties (which trap `position: fixed` containing blocks under the W3C CSS Transforms specification). Page/container animations with `forwards` (such as `fadeIn`) must terminate on `to { opacity: 1; transform: none; }` rather than `transform: translateY(0)`. Overlay backdrops must declare `overflow-y-auto` and modal cards must declare `my-auto` for responsive vertical centering without clipping on short viewports.
 
 ### Android / Fire TV Hardware Decoders & Remote Control Invariants
 
@@ -154,6 +377,135 @@ The current project includes:
 - **MediaTek MDP & PowerVR Driver Lock Prevention:** On Android devices with MediaTek MDP and PowerVR GPUs (`AFTMM`), zero-copy `hwdec: mediacodec` causes display fence deadlock (`wait input fence timeout`) when video dimensions are not 16-byte-aligned. Always configure `VideoControllerConfiguration(hwdec: 'mediacodec-copy')` in `MediaKitPlayerAdapter` to copy decoded frames and upload via standard OpenGL ES texture shaders (`vo=gpu`), decoupling decoded frames from direct ANativeWindow hardware composer sync fences.
 - **Automatic Dynamic Software Fallback:** `fallbackToSoftwareDecoder()` dynamically sets `hwdec: 'no'` (libavcodec CPU decoding) and flushes decoder buffers with a micro-seek if hardware decoding errors occur or if the first video frame is not rendered within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`).
 - **Broadened Decoder Error Keywords:** The error listener must catch and trigger fallback on keywords: `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface`.
+
+### Cast and DLNA invariants (Rust migration, Phase C4)
+
+Applies to the native Rust cast service as much as to the Python one.
+
+- **An empty HTTP 500 from a DLNA renderer means "I could not fetch that URL."**
+  It is a reachability question, not a cast bug, and the empty body gives no
+  hint. Two separate layers produced it — `MediaServerRust` binding
+  `127.0.0.1`, and a missing Windows Firewall inbound rule for
+  `media-server-api.exe` (Flask has one for `python.exe`). Check the listener
+  address and the firewall rule before debugging the cast logic. The rule is
+  created idempotently by `scripts/install_rust_service.ps1`; it is required for
+  the port swap too, where Rust takes `:8000`.
+- **A service bound to loopback looks healthy from its own machine.** Every
+  probe and health check goes through `127.0.0.1`, so a loopback-only bind is
+  invisible to the whole suite *and* to every other device on the network. Rust
+  defaults `RUST_HOST` to `0.0.0.0`; Flask already binds `0.0.0.0`.
+- **A Cast receiver presents a self-signed X.509 v1 certificate.**
+  `rustls-webpki` accepts only v3 and rejects v1 while extracting the public
+  key, *before* any custom verifier runs, so no verifier configuration works
+  around it. Use the Windows Schannel stack (`native-tls`). Only the trust
+  *chain* is bypassed — the handshake signature is still verified, so a passive
+  attacker cannot impersonate the receiver. Never connect to a host supplied by
+  a request: take it from the discovery cache.
+- **Media-namespace messages go to the launched app's `transportId`, which is a
+  per-session UUID** — *not* `receiver-0`, and *not* the documented constant
+  `urn:x-cast:com.google.cast.media-receiver`. Addressing either is answered
+  with `CLOSE` on the connection namespace. The sequence is: `CONNECT` to
+  `receiver-0`, `LAUNCH` `CC1AD845`, read the app's `transportId` out of
+  `RECEIVER_STATUS`, **`CONNECT` to that transport**, then `LOAD`. Read the id
+  from `status.transportId` or `status.applications[].transportId`.
+- **`streamType: BUFFERED`, not `LIVE`.** A receiver told the stream is live
+  treats the artifact as unseekable, so both our seeks and a phone scrub do
+  nothing.
+- **Volume goes on the `receiver` namespace, and it is the only volume control
+  that works here.** `SET_VOLUME` on `receiver-0` moves this television's
+  speakers and raises its on-screen indicator — verified by watching it. The
+  media-namespace alternative with a `mediaSessionId` is accepted and echoed
+  back while changing nothing audible.
+- **The receiver's volume lives at `status.volume.level` and `status.volume.muted`,
+  nested — not at `status.volume` as a scalar.** Reading it flat misses the field,
+  and the documented fallbacks then report **100 and unmuted on every call**,
+  which is indistinguishable from a receiver that reports no volume at all.
+  pychromecast reads `status_data.get("volume", {})` then `.get("level")` /
+  `.get("muted")`; the working Flask path reports exactly that as
+  `cast.status.volume_level` / `volume_muted`. The media namespace also carries a
+  per-session volume, but that is a value the app stores, so report the
+  receiver's copy. **It is a real, working reading — do not conclude a field is
+  "not exposed by the protocol" before checking you are reading the path the
+  working implementation reads.**
+- **Write fixtures from a captured payload, never from imagination.** Every
+  accepted-and-ignored bug in this port was shielded by a unit test whose
+  fixture had the *same* wrong shape as the code: the parser read `volume` flat
+  and the fixture said `"volume":0.45`, so it passed against a payload the
+  receiver never sends and the live read fell back to 100 forever. A test whose
+  expected value was invented is not evidence. Capture the real message, paste
+  it in, and assert against that — and where a fallback default exists, add a
+  test that the real shape does *not* land on the default.
+- **A field that is never found reports its default, not an error.** That is why
+  every one of these failed silently. Prefer a missing field being visible over
+  it resolving to a plausible value.
+- **Mute is `SET_VOLUME` with a `muted` field — there is no `SET_VOLUME_MUTED`.**
+  The wrong type is accepted with `ok: true` and does nothing, which reads as
+  "this receiver has no mute". pychromecast (the working Flask path) sends
+  `{"type": "SET_VOLUME", "volume": {"muted": ...}}`.
+- **`currentTime` is a top-level member of `LOAD`, a sibling of `media`** — not
+  nested inside it. Nested, it is ignored completely: the LOAD succeeds, the
+  receiver plays from zero and reports no error, so a resume cast appears to
+  work while losing the user's position.
+- **`MEDIA_STATUS.status` may be a list, not an object.** Google specifies an
+  object; the DU7000 sends `{"status":[{...}]}`, and `[]` while idle. Parsing
+  it as an object returns nothing, so a playing cast reads as `unknown` with
+  position 0 and no error. Accept both.
+- **Cast status is read from the receiver, never from a cached push.** Receivers
+  emit `MEDIA_STATUS` on transitions only — measured minutes apart while
+  playing. A receiver in standby reports **no volume field**; the default must
+  be 100, because inventing 0 tells the user their television is muted.
+- **A media-namespace message needs a running session.** Launch the default
+  media receiver (`CC1AD845`) and confirm it is running *before* `LOAD`;
+  otherwise the receiver answers with `CLOSE` on the connection namespace. The
+  running app is reported as `status.appId` on some receivers and under
+  `status.applications[]` on others — check both. And `LAUNCH_STATUS:
+  USER_ALLOWED` is not the same as "the app is up": both replies arrive seconds
+  later, so sequence on a poll, not on the ack.
+- **An absent or empty media `status` means stopped, not buffering.** An app
+  that is running with nothing loaded is idle. Do not infer "buffering" from
+  "the app is running" — the receiver reports `BUFFERING` explicitly, and the
+  inference leaves a finished cast showing `buffering` forever.
+- **Every reader of receiver `status` goes through `cast_proto::status_object`.**
+  `MEDIA_STATUS.status` is a **list** on some receivers (`[]` while idle) and an
+  object on others. Indexing it directly produced three separate bugs — a zero
+  position on a playing cast, a refused `seek`, and a phantom "still playing"
+  after teardown — and two of them read as "casting is broken" when casting
+  worked. Keep the shape assumption in one function.
+- **Live verification must tear down in a `finally`.** `scripts/verify_cast_live.py`
+  starts playback on the real television; its `stop` cannot be skipped by an
+  early return or a timeout, and it exits non-zero if the receiver is still
+  playing. Never interleave code work between starting a cast and stopping it.
+- **A receiver may `PING` us and expects `PONG`.** Unanswered, it tears the
+  virtual connection down, which surfaces as a `CLOSE` mid-request.
+- **Never cache a Cast connection without a liveness path.** A receiver resets
+  the socket on its own, and a cached dead socket fails every later command
+  identically — so a playing cast becomes permanently uncontrollable, and
+  `stop` cannot be delivered at all. Every action must redial and retry once.
+  Redial must re-run the whole app session (launch, read `transportId`,
+  `CONNECT`), because the transport id is per-session; reusing a stale one is
+  what produces the original `CLOSE`.
+- **`stop` must quit the app, not just stop playback**, or the TV is left on an
+  idle blank receiver screen that reads as a hang. The quit message is
+  **`{"type": "STOP", "sessionId": ...}`** on the `receiver` namespace —
+  `STOP_APP` does not exist. See the standalone invariant below.
+- **Quitting the receiver app is `STOP` + `sessionId`; there is no `STOP_APP`.**
+  pychromecast, backing the working Flask path, sends `{"type": "STOP"}` with
+  `inc_session_id=True`, which becomes `data["sessionId"] = status.session_id`.
+  `sessionId` is read from `applications[].sessionId` in `RECEIVER_STATUS` — the
+  same entry that carries `transportId`. `{"type": "STOP_APP"}` is accepted,
+  answered, and leaves the app running on its blank screen while every layer
+  reports success. This is the third instance of the accepted-and-ignored
+  message type (`transportId`, `SET_VOLUME_MUTED`, `STOP_APP`); **diff a failing
+  payload against a working client before concluding the device lacks the
+  feature.**
+- **A cast scan replaces the device map**, so connections are cached per device
+  and survive a scan. mDNS/ARP windows miss a device in roughly one scan in
+  three; a visibly running cast must stay controllable.
+- **Verify receiver CORS on `/media/` and `/hls/` only.** A receiver is a web
+  runtime: it fetches the manifest and every segment cross-origin. Without
+  those headers it downloads the playlist, requests **no segment**, and the
+  session ends with no error this server can see. `/api/*` must stay
+  unreadable from another origin.
 
 ### DLNA rendering (Samsung TVs and other UPnP renderers)
 
@@ -220,8 +572,11 @@ The current project includes:
   and `/hls/` only — `/api/*` is deliberately outside the scope. A loader that sends `Range` preflights
   (`Range` is not a safelisted header), so OPTIONS is covered; `tests/test_media_cors.py` pins all of it,
   including that every URL `build_media_url()` hands a receiver lives on a CORS path.
-- Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`), so it is
+- Cast status is read from the receiver (`/api/cast/status` → `state`, `position`, `duration`, `volume`, `muted`), so it is
   the ground truth for "did the TV actually move?" — never infer it from the phone's UI.
+- **Cast Disconnect Quits Receiver App:** Disconnecting from Google Cast MUST invoke `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and connection cache eviction. Halting playback alone leaves the default media receiver running as an idle blank screen on the TV.
+- **Cast Master Volume & Anti-Reset Synchronization:** Cast status endpoints must query and report actual receiver volume (`volume_level * 100` and `volume_muted`), and remote UI sliders must enforce scrub isolation (`scrubVolume`) and progressive red track fills.
+- **Cast Subtitles Require Full LAN URLs:** Cast receivers cannot fetch relative paths (`/subtitles/...`). Tracks in `media_info['tracks']` must use fully-qualified LAN origins with WebVTT mimetype and high-contrast styles, and expose live in-cast switching (`action == 'subtitle'`).
 
 ### HLS cache integrity (learned the hard way)
 
@@ -357,6 +712,14 @@ The current project includes:
   (cache-maintenance-worker) strips ENDLIST from caches that claim completion but are short, so the
   pipeline re-renders them. It never relabels: a genuinely short cache must be re-rendered, not
   rewritten. The accepted shortfall is **recorded** to `hls.loss.json`, not silently swallowed.
+- **`_is_hls_truly_complete()` is a predicate and must never write.** Its only input is
+  `cumulative / source_duration`, which is label arithmetic - the exact measure recorded above
+  as having masked 277.2s of missing frames across 101 chunks. Appending `#EXT-X-ENDLIST`
+  there would seal precisely the frame-deficient caches the frame accounting exists to catch,
+  and did so from a 1Hz progress callback, unserialised and non-atomically, violating the
+  `_PLAYLIST_WRITE_LOCK` + `write_text_atomic` rule below. Sealing a verified-complete cache is
+  `scripts/hls_restore_endlist.py`, which re-checks with frame counting. **A function named
+  `is_*complete` has no business mutating the thing it is judging.**
 - **Frame measurement must respect the cache's layout.** Per-chunk windows are exact *only* on the
   strided grid (`.seg_layout` = `stride32`). On a legacy dense cache chunk N's overflow segment
   sits on chunk N+1's first index, so a strided window reads a neighbour's segments for most
@@ -447,8 +810,18 @@ Full write-up, with the measurements behind every number: `docs/TRANSCODE_CORREC
 Before committing:
 
 ```powershell
-python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
-.\venv\Scripts\python.exe -m pytest tests/
+# 1. Rust backend unit & integration tests
+cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+
+# 2. React frontend unit tests and production build verification
+cd web
+npm run test
+npm run build
+cd ..
+
+# 3. Live client contract probe suites (against running server)
+python scripts/probe_android_api.py
+python scripts/probe_phase_8_contracts.py
 ```
 
 Flutter client:
@@ -459,37 +832,10 @@ Flutter client:
 
 - **Run the Flutter suite through `scripts/run_flutter_tests.ps1`, never as a bare `flutter test`.** It purges media_kit's orphaned temp state before the run and again in a `finally`, which is what stops the accumulation. `NativeReferenceHolder` writes one reference-buffer address to `...NativeReferenceHolder.$pid`, creates that file empty before writing, and never deletes it; Windows recycles PIDs, so a new test process inherits a dead run's file and either `int.parse('')`s it (`FormatException: Invalid number`) or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` that awaits the never-completed `_completer` — the whole file then reports "did not complete". Measured: 415 orphaned files (70 empty) spanning 2026-09-24..10-03 caused 2 failures in 6 runs *including one `--concurrency=1` run*, so serial is **not** a fix; after the purge, repeated full runs leave 0 stale files. The script also refuses to delete a file whose PID is a live process. Debug-mode only (`if (!kDebugMode) return;`), so release APKs and device playback are unaffected. Full analysis, and the rule not to re-add `MediaKit.ensureInitialized()` to tests that do not need native playback, are in `docs/FLUTTER_CLIENT_STATUS.md`.
 - **Ordinary Flutter tests must never reach the live server.** `test/support/test_network_guard.dart` installs an allowlist `HttpOverrides` (per-isolate, so call it from each file's `setUp`/`setUpAll`, after `TestWidgetsFlutterBinding.ensureInitialized()`) that refuses any non-sentinel host, plus a shared sentinel origin `http://test.invalid:8000` — deliberately non-loopback, because `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests that genuinely need the running server stay behind `liveServerSkip` (`MEDIA_SERVER_LIVE_TESTS=1`) and must never null `HttpOverrides.global` unconditionally.
-
-Cache-directory safety when running the suite on the live host:
-- **Never resolve `conftest` by module name.** `tests/conftest.py` and `tests/integration/conftest.py`
-  share a basename and neither directory has `__init__.py`, so pytest registers **both** under the
-  module name `conftest` in `sys.modules`, and whichever is imported last wins. `_write_guard` looked
-  its production-path set up as `sys.modules["conftest"]._PRODUCTION_PATHS`, got a module that has no
-  such attribute, and **silently fell back to its own set** — so every path added through
-  `temporary_production_paths()` was invisible to the guard and 18 refusal tests failed with
-  `DID NOT RAISE RuntimeError` while the guard was installed, working, and correctly classifying
-  `D:/Flicks`. The owner now hands the set over explicitly
-  (`_write_guard.set_production_paths(_PRODUCTION_PATHS)` at `pytest_sessionstart`), holding a **live
-  reference, not a copy**, so temporary additions stay visible. If you need conftest's data in a test,
-  import it as a fixture — never as a module.
-- **A test module must not configure the environment at import time.** `test_app.py` used to create its
-  own `TemporaryDirectory`, set `MEDIA_SERVER_MEDIA_ROOT` to it, and then `import app` — which only
-  works if that file is the *first* module to import `app`. `test_api_contracts.py` sorts earlier and
-  imports `app` first, so `config.MEDIA_ROOT` was already bound to conftest's root, the later import was
-  a no-op, the fixtures landed in a directory nothing pointed at, and **36 tests failed with 404s** while
-  the same file passed 58/58 alone. It now uses the root the app is already pointed at. **Import order
-  must never decide where a test writes.**
-- When you change isolation, verify it the hard way rather than trusting a green run: snapshot the
-  library file list, the production `movies` rows and the `cache/hls` directory list (plus a hash of
-  each) before and after a full run — all three must be unchanged.
-- `tests/conftest.py` owns test isolation: it redirects the cache, database, upload target/staging, archive and deleted directories onto a throwaway tree **through the environment before the app is imported** (so a `config` reload recomputes throwaway paths), re-asserts them before every test, and refuses any deletion inside the checkout's `cache/` tree. Never rely on import-time attribute rebinding alone: `tests/test_app.py`'s teardown reloads `app.config` and `tests/test_selenium_multi_seek_coyote.py` rebinds `app.CACHE_DIR = app.config.CACHE_DIR` — that is how a full-suite run once deleted the live transcode cache. `audit_orphaned_caches()` derives the "active" set from `video_paths()`, so any run whose cache is not isolated makes every real HLS directory look orphaned and the non-dry-run purge deletes production transcodes; likewise, `_resolve_upload_dirs()` returns `MEDIA_ROOT` under pytest, which once wrote 22-byte fixtures into the real library and fixture rows into the production database.
-- The orphan audit is fail-closed by design; do not reintroduce bare `except Exception: <empty active set>` handling around media enumeration.
-- **A live purge deletes every cache directory under the active root that no enumerated media maps to — so a test that calls `purge_orphaned_caches(dry_run=False)` must own a dedicated cache root.** `CachePurgeSafetyTests` used to take the shared session cache root from `get_cache_dir()`, so its four live purges could remove directories belonging to *other* tests. Measured: a directory planted in the shared root by an unrelated test was destroyed by those purges **while the whole suite stayed green**, because the planted directory's owner had no assertion about its own survival. A green suite is exactly what hid this.
-  - Isolation belongs in **`setUp`**, not at import time: conftest's `_point_app_at_temp()` re-imposes the shared session cache before EVERY test, so a module-level `app.CACHE_DIR = ...` is already overwritten before any test body runs. `tests/test_storage_retention.py` now establishes it in `setUp` via `_dedicated_cache_root()` and validates with `_assert_dedicated_cache_root()` **before** pointing the app at it and **before** any purge-capable call, then restores in `tearDown` and removes the tree.
-  - `tests/test_cache_purge_isolation.py` pins the blast radius by snapshotting the shared root around the whole class and asserting it is byte-identical — not by planting one directory, which would miss a purge that removes several.
-- **Pre-existing leak, same file:** `test_audit_and_purge_orphaned_caches` creates a dedicated root with no matching cleanup — 40 `mscache_purge_orphans_*` trees had accumulated in `%TEMP%`. Cosmetic (all under temp), but it accumulates every run. Not fixed; noted rather than silently widened.
-- `purge_orphaned_caches()` refuses to run when the audit reports itself degraded, and skips any directory holding `hls.progress`/`playlist.m3u8`/`chunk_*.m3u8*` written within `RECENT_CACHE_GRACE_SECONDS` (live transcode). Startup no longer purges orphans unless `MEDIA_SERVER_PURGE_ON_STARTUP=1`.
-- Never fall back to a bare `MEDIA_ROOT / user_input` join when `safe_path()` refuses a name, and never unlink without an `_is_within_media_roots()` check: the service runs as LocalSystem, so a traversal name in `/api/media/delete` deletes arbitrary host files (see `docs/PROJECT_STATUS.md`). Audit sibling deletion paths the same way.
+- **Run the Playwright harness with the GPU disabled, and never alongside a transcode.** This host's AMD graphics driver is chronically unstable — 42 queued WER kernel reports from September 2025 to October 2026, including 22 GPU TDRs — and on **2026-10-20 15:01 a hard system reset** was triggered by headless-Chromium GPU compositing during the brand-intro pixel oracle. `web/playwright.config.ts` now launches every browser with `--disable-gpu`; software rasterisation is deterministic, which is what a pixel oracle needs anyway, and the oracle still passes 5/5 with it. **A transcode and the Playwright harness must never run at the same time** — both are GPU-heavy, and that is how a TDR becomes a hard reset. The full post-mortem is in [`Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md`](Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md); the finding is Issue 13 in [`docs/Current issues.md`](docs/Current%20issues.md).
+- **The Playwright harness needs the Vite dev server — and only while it runs.** `web/playwright.config.ts` sets `reuseExistingServer: true`, so the harness reuses a dev server if one is listening on `http://localhost:5173` and **starts one itself if none is**. So the rule is: **start it when you are about to run the web oracles, and stop it when you are done with them** — `cd web; npm run dev 2>&1` in the **background** (so it does not block), and stop the `vite` process when the run is over. It is a tool for the oracles, not a standing service: the brand-intro oracles need it (`web/e2e/intro-frame.spec.ts` drives the archived original from `web/e2e/intro-harness.html`, and `web/e2e/intro-audio.spec.ts` renders the score through the dev server's module graph), and **nothing else does** — not the Flutter suite, not the Rust backend, not the fixtures. **Note the host:** the dev server binds the **IPv6 loopback** (`::1`), so reach it at `http://localhost:5173` and not at `http://127.0.0.1:5173`.
+- **The dev server's API has ONE origin, and it is `:8000`.** The Rust service is the whole server — the Flask backend is decommissioned (Phase 7E) — so every proxied prefix goes to `http://127.0.0.1:8000`. The configuration used to point its "Rust" routes at `:8001` (where nothing runs) and its "Flask" routes at `:8000` (which *is* the Rust service): the two were **the wrong way round**, and every `/api/movies` call through the dev server failed with `ECONNREFUSED` while filling the log. **`:8001` is the *injection proxy's* own port** (`docs/opening-sequence/scripts/serve_with_intro.py`, which forwards to the app on `:8000`) — it is not a retired backend, and the archived tooling is consistent about it.
+- **Never let a long command block indefinitely.** Anything that can take minutes — a Flutter suite, a Playwright run, a build, a frame capture — goes to the **background** with an explicit timeout, and the agent **checks it on an interval** and reports its state rather than waiting on it forever. A foreground command with no bound is how a session appears to hang; a bounded wait with a status line is how it does not.
 
 Verify at minimum:
 - Direct MP4/AAC playback.
@@ -499,6 +845,52 @@ Verify at minimum:
 - System Telemetry HUD reports active GPU engine load.
 - Subtitles remain correctly positioned.
 - No mobile horizontal/vertical layout regression.
+
+### Frontend API client invariants (`web/src/lib/`)
+
+- **Every request has a deadline.** `request()` owns one `AbortController` covering both
+  caller cancellation and a timeout, and the socket is actually released when the deadline
+  fires — not merely abandoned. Without it a hung fetch and a slow one are indistinguishable:
+  the viewer gets an indefinite skeleton, no error, and no recovery short of a reload. This is
+  not hypothetical; `/api/movie/{filename}` was observed exceeding 30s during a service restart.
+- **Budgets are measured, not guessed.** Cold `/api/movie/` costs 2.5–8s because the route
+  probes the file server-side, so `DEFAULT_TIMEOUT_MS` is 20s and the media-probing endpoints
+  get `MEDIA_PROBE_TIMEOUT_MS` (45s). Ten simultaneous cold details requests finish in ~3.5s
+  wall. Re-measure before changing either number — a deadline below the real cold path fails
+  the slowest titles *deterministically*.
+- **A deadline reports as `ApiTimeoutError`, never as an abort.** Check `timedOut` before
+  rethrowing, or the platform's opaque "The operation was aborted" hides the cause. Equally, a
+  *caller* abort must stay an `AbortError`: reported as a timeout, every route change away
+  from a slow page would flash a spurious "server took too long" on the way out.
+- **A failed load is never terminal.** `useAsync` exposes `reload()` and `StateMessage` renders
+  a retry. When you add a screen, wire `onRetry` — do not leave the viewer needing a page reload
+  to recover from a dropped connection.
+- **Never hard-code a duration in a test's mock.** A `fetch` mock that never settles *and never
+  rejects on abort* leaves `await fetch()` pending after a timeout, so the deadline test hangs
+  instead of failing — the one outcome indistinguishable from a broken timeout. Mock the abort.
+
+### Client API Contract Stability
+
+The shipped Flutter app (`flutter_client/`) is an active client and must keep working seamlessly.
+Its entire server surface is `/api/*`, `/media/`, `/hls/`, `/subtitles/`, `/poster/*`, `/tmdb-poster/`, `/tmdb-backdrop/`.
+
+Verify after any API or routing change:
+
+```powershell
+python scripts/probe_android_api.py    # 22 endpoints, live server, exit 1 on break
+```
+
+Its expectations are each route's *contract*, not a wish for `200`: `/api/app/*` answers
+`404` when nothing is published for the channel, and `/api/cast/status` answers `400` when
+no cast is active. Both are working routes; `CastRepository.status()` catches the
+`DioException` and returns `null`, so polling while idle is normal. Do not "fix" those
+into `200`s — that would be changing a documented behaviour to satisfy a bad probe.
+
+- **Axum SPA Route Fallback Invariant:**
+  In `rust/src/main.rs`, the React SPA is hosted with static file serving from `web/dist/` and an
+  Axum fallback handler returning `web/dist/index.html` for client-side routing. All `/api/*`,
+  `/media/*`, `/hls/*`, `/subtitles/*`, `/poster/*`, `/tmdb-poster/*`, `/tmdb-backdrop/*`, and `/auth/*`
+  routes are registered first on the router to guarantee they are never shadowed by the SPA fallback.
 
 ## 8. Model routing, verification and project memory
 
@@ -531,3 +923,19 @@ Rules:
   or the `session_model_usage` table rather than assuming.
 - Task state, assignment and verification gates live on the kanban board (`media-server`), not in
   chat.
+
+## 9. Native Rust Subtitle Engine, Database Test Isolation & Routing Invariants
+
+- **Native Independence Invariant (Zero Proxy Shims):**
+  The backend is 100% native Rust Axum. All proxy bridges and interim delegations to the legacy Flask backend have been completely decommissioned. All features (e.g. gzip decompression via `flate2`, HTTP queries via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`) execute 100% natively in Rust.
+- **Database Test Isolation & Teardown Guardrail:**
+  Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL 18.4 — the only production database; the SQLite `media.db` was retired in the Phase 3 migration and no longer exists) MUST clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`), implement an explicit teardown hook (`harness.teardown().await` or fixture cleanup) deleting test rows, and guarantee zero phantom test movies remain in development or production databases.
+  - **The Rust integration suite must not touch the production database at all.** `AppConfig::from_env()` falls back to `postgresql://postgres:postgres@127.0.0.1:5432/media_server` when `MEDIA_SERVER_DATABASE_URL` is unset, which it is on this host — so a test built on `from_env()` writes to the live catalog. Use `media_server_api::test_support::test_config().await` instead: it provisions a dedicated `media_server_test` database (override with `MEDIA_SERVER_TEST_DATABASE_URL`), redirects `cache_dir` to a temp path, and leaves `media_roots` alone so file-based contracts still work. `media_server_api::test_support::seed_real_media_row()` seeds a catalog row for a real, probeable file when a test needs one, and `remove_seeded_media_row()` removes it again.
+  - **A test that inserts rows must be idempotent and must clean up on the way out.** A plain `INSERT` of a fixed key passes once and then fails forever with `23505 duplicate key value violates unique constraint`. Use `ON CONFLICT ... DO UPDATE` for the insert *and* a setup-time purge *and* an explicit teardown.
+  - **`Drop` cannot clean a database.** It is synchronous; the database calls are async. A teardown hook has to be an `async fn` the test calls, and the test should then assert the residue count is zero rather than trusting the hook.
+  - **Do not assert against production data.** A test that hardcodes a library title breaks when that title is removed. The `scanner_engine` reconciliation test used to assert that `Oculus.2013.1080p.BluRay.x264.YIFY.mp4` survived; it now owns its fixture.
+- **Axum Wildcard Routing & Internal Prefix Dispatcher:**
+  Axum's radix router strictly forbids overlapping wildcard parameters under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`). Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
+- **Recursive Media Path Resolution Fallback:**
+  Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, preserving strict directory traversal (`..`) security defenses.
+

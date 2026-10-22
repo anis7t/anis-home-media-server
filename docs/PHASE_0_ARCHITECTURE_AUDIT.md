@@ -188,6 +188,13 @@ The current web interface relies on server-rendered Jinja2 templates styled with
 ### 4.2 Proposed React Component Migration Hierarchy
 Proposed directory structure under `web/src/` utilizing Vite, TypeScript, Tailwind CSS, and TanStack Query:
 
+> **Note added 2026-10-20.** This is a *proposed* hierarchy, and `BrandIntroOverlay.tsx` is the
+> one entry in it that **was never built**. The brand opening sequence was a Jinja2 template
+> (`templates/intro-overlay.html`) until Slice 7E.2 deleted it on 2026-10-18, and no React
+> replacement was written — so the web app has had no intro since. The Flutter client still has it.
+> See [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) §0. Every other component in this tree
+> was built as proposed.
+
 ```text
 web/src/
 ├── app/

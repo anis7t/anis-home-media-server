@@ -326,3 +326,50 @@ reading the registry would have said everything was configured correctly.
 - `Restart-Service` does not pick up registry changes — the NSSM wrapper survives and keeps
   its original environment block. Use `Stop-Service` then `Start-Service`. No machine reboot
   is ever required.
+
+---
+
+## 5. The AMF pipeline is a GPU TDR trigger
+
+**This is measurement, and it changes how a "successful" transcode run should be read.**
+
+On 2026-10-20 the machine took a hard reset. The post-mortem is in
+[`Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md`](../Handoffs/2026-10-20_15-45_opencode_system-restart-forensics.md)
+and the finding is Issue 13 in [`docs/Current issues.md`](Current%20issues.md). Two things matter
+here.
+
+**The hardware fault is chronic.** The WER queue holds **42 kernel "Hardware error" reports**
+spanning September 2025 → 18 October 2026: 22× GPU TDR (`141`), 4× AMD driver hang, and 2 real
+bugchecks (`0xD1`, `0xA`). A transcode that completes without a visible error can still have
+provoked a hang that the driver recovered from.
+
+**The correlation with AMF is to the second.** `rust_api.log` shows `Worker … failed job #1077`
+within **11–27 s** of each of the four 18 October GPU hang dumps. The AMF pipeline is not a
+bystander to the GPU instability — it is one of the things that provokes it. That is the
+project-level risk: the hardware-accelerated HLS the product depends on is the same workload that
+hangs the GPU.
+
+### What that means for a transcode run
+
+- **A completed transcode is not, on its own, proof that the GPU was healthy.** The acceptance
+  test for the GPU fix is a **2160p AMF job** (3 workers across both GPUs) that produces **no new**
+  `C:\Windows\LiveKernelReports` dumps **and** no `Worker … failed job`. A 2160p AMF job is the
+  most reliable TDR stress available on this box, so it is the right probe.
+- **The `failed job` lines in `rust_api.log` are not just noise to be retried.** In this context
+  they are the *evidence* — the thing that correlates a worker failure with a GPU hang. Read them
+  when diagnosing a hang; do not dismiss them as a transient.
+- **Never run a transcode and the Playwright harness concurrently.** Both are GPU-heavy, and that
+  pairing is how a TDR becomes a hard reset. The Playwright harness now launches with
+  `--disable-gpu` (`web/playwright.config.ts`); the transcode side cannot be disabled, because
+  AMF *is* the accelerator.
+
+### What not to do
+
+- Do not install a generic AMD driver with DDU on this box without a recovery path.
+- Do not prune the HLS cache before the GPU fix: pruning means re-transcoding, which means more
+  AMF.
+- Do not re-enable a system-managed or large pagefile. The 2 GB fixed, reserved pagefile on `C:` is
+  deliberate.
+- Do not conclude that a media server caused a reset without checking whether it was idle. On
+  20 October it was (`scanned=33, queued=0, errors=0`; no `ffmpeg`; no cache writes 13:00–15:05),
+  and the trigger was headless-Chromium GPU compositing.

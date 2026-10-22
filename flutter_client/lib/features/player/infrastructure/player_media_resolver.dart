@@ -134,6 +134,27 @@ class PlayerMediaResolver {
         .toString();
   }
 
+  /// Resolves the specific playback URL based on selected quality tier and playback mode.
+  static String resolveQualityUrl({
+    required String serverOrigin,
+    required String filename,
+    required String quality,
+    required PlaybackMode mode,
+  }) {
+    final origin = serverOrigin.endsWith('/')
+        ? serverOrigin.substring(0, serverOrigin.length - 1)
+        : serverOrigin;
+    final encoded = Uri.encodeComponent(filename);
+
+    if (quality == 'source' || (quality == 'auto' && mode == PlaybackMode.directPlay)) {
+      return '$origin/media/$encoded';
+    }
+    if (quality == 'auto' || quality == 'default') {
+      return '$origin/hls/$encoded/master.m3u8';
+    }
+    return '$origin/hls/$encoded/$quality/playlist.m3u8';
+  }
+
   /// Fetches seek preview frames metadata (`/api/seek-preview-meta/<filename>`).
   static Future<Map<String, dynamic>?> loadPreviewMeta({
     required Dio dio,
@@ -208,13 +229,17 @@ class PlayerMediaResolver {
     CancelToken? cancelToken,
     void Function(PlaybackMode mode)? onModeResolved,
     void Function(Map<String, dynamic> updatedMeta)? onOverviewResolved,
+    void Function(List<QualityOption> qualityLadder)? onQualityLadderResolved,
+    String clientPlatform = 'android',
   }) async {
     final encoded = Uri.encodeComponent(filename);
     final url = '$serverOrigin/api/media-info/$encoded';
     final res = await dio.get(
       url,
+      queryParameters: {'client': clientPlatform},
       cancelToken: cancelToken,
       options: Options(
+        headers: {'X-Client-Platform': clientPlatform},
         responseType: ResponseType.json,
         validateStatus: (status) => status != null && status < 500,
       ),
@@ -226,6 +251,17 @@ class PlayerMediaResolver {
 
     if (onModeResolved != null) {
       onModeResolved(PlaybackMode.fromDirectPlay(meta['direct_play']));
+    }
+
+    if (onQualityLadderResolved != null && meta['quality_ladder'] is List) {
+      final rawLadder = meta['quality_ladder'] as List;
+      final ladder = <QualityOption>[];
+      for (final item in rawLadder) {
+        if (item is Map) {
+          ladder.add(QualityOption.fromJson(item.cast<String, dynamic>()));
+        }
+      }
+      onQualityLadderResolved(ladder);
     }
 
     // Fallback: If overview is missing or empty, fetch from the /movie/$encoded HTML page in background

@@ -46,6 +46,13 @@ dependencies:
   crypto: ^3.0.3
   path_provider: ^2.1.2
 
+  # The brand opening sequence's score. The web synthesises its own (D8); the
+  # phone and the TV ship the canonical's offline render instead, because
+  # Flutter has no Web Audio. `audioplayers` is a pure-Dart wrapper over
+  # Android's MediaPlayer - small, and mockable through its platform
+  # interface, so the host tests never touch a real player.
+  audioplayers: ^6.8.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -72,7 +79,19 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/videos/intro-demo-portrait.mp4
+    # The brand opening sequence's score - the canonical's offline render,
+    # byte for byte. It REPLACES `assets/videos/intro-demo-portrait.mp4`,
+    # which was declared here, never played, and cost 2.4 MB in every APK.
+    - assets/audio/intro-theme.wav
+    # The television's pre-rendered brand opening sequence. It is rendered
+    # from the canonical (the shipped web application) by
+    # `scripts/capture-intro-video.mjs`, and verified against the canonical's
+    # reference frames by `scripts/verify-intro-video.mjs`.
+    #
+    # The television's GPU cannot paint the sequence at an interactive frame
+    # rate - it compiles each new draw program at runtime, and it has no
+    # Vulkan for Impeller - so the television plays the sequence instead.
+    - assets/intro/intro-tv-1080p.mp4
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -23,12 +23,25 @@
         "closingNotifier": true,
         "flutterEnabled": true
       }
+    },
+    "rust-analyzer": {
+      "command": ["rust-analyzer"],
+      "extensions": [".rs"]
+    },
+    "typescript": {
+      "command": ["typescript-language-server.cmd", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
     }
   },
 
   "mcp": {
     "timeout": { "startup": 120000 },
     "servers": {
+      "cloudflare-api": {
+        "type": "remote",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "enabled": true
+      },
       "context7": {
         "type": "remote",
         "url": "https://mcp.context7.com/mcp",
@@ -54,6 +67,21 @@
         ],
         "enabled": true
       },
+      "postgres": {
+        "type": "local",
+        "command": ["uvx", "postgresql-mcp"],
+        "environment": {
+          "POSTGRES_HOST": "127.0.0.1",
+          "POSTGRES_PORT": "5432",
+          "POSTGRES_USER": "postgres",
+          "POSTGRES_PASSWORD": "{env:POSTGRES_PASSWORD}",
+          "POSTGRES_DB": "media_dev",
+          "POSTGRES_SSLMODE": "disable",
+          "ALLOW_WRITE_OPERATIONS": "true",
+          "QUERY_TIMEOUT": "30",
+          "MAX_ROWS": "1000"
+        }
+      },
       "serena": {
         "type": "local",
         "command": [
@@ -76,10 +104,6 @@
 
   "instructions": [
     "https://raw.githubusercontent.com/JRedeker/opencode-shell-strategy/trunk/shell_strategy.md"
-  ],
-
-  "plugins": [
-    "@tarquinen/opencode-dcp"
   ],
 
   "permissions": {
@@ -109,7 +133,10 @@
       "flutter_client/android/build/**",
       "logs/**",
       "updates/**",
-      "media.db*"
+      "media.db*",
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/target/**"
     ]
   }
 }

@@ -1,0 +1,67 @@
+[package]
+name = "media-server-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["Anis Parvez <anis@anisparvez.in>"]
+description = "High-performance Rust API foundation for Anis' Home Media Server"
+
+[dependencies]
+axum = { version = "0.8", features = ["json", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros", "chrono", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sysinfo = "0.33"
+dotenvy = "0.15"
+mime_guess = "2.0"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+# OS CSPRNG (BCryptGenRandom on Windows, getrandom(2)/urandom elsewhere).
+# Every security token this service mints - session tokens, the OAuth
+# state/nonce, the PKCE verifier, the QR pair code and the `qr_id` that gates
+# the unauthenticated /finalize endpoint - must come from here rather than
+# from a clock-derived seed.
+#
+# Already in Cargo.lock at 0.2.17 (pulled in by rand_core and ring), so
+# adding it as a direct dependency costs no additional compilation.
+getrandom = "0.2"
+# Already in Cargo.lock at 2.5.8 (sqlx-core and tower-http depend on it), so
+# adding it as a direct dependency costs no additional compilation. Used by
+# the test-support module to parse the PostgreSQL connection URL.
+url = "2"
+urlencoding = "2.1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+regex = "1.10"
+walkdir = "2.5"
+futures-util = "0.3"
+flate2 = "1.1.10"
+# Phase C4a: DLNA. quick-xml parses UPnP device descriptions and SOAP
+# responses; if-addrs enumerates interfaces for SSDP (the psutil equivalent);
+# socket2 carries the multicast socket options tokio's UdpSocket cannot set.
+quick-xml = "0.37"
+if-addrs = "0.13"
+socket2 = { version = "0.5", features = ["all"] }
+# Phase C4b: Cast receivers speak TLS on 8009 with **self-signed X.509 v1**
+# certificates - measured on the DU7000: subject == issuer, Version 1.
+# rustls-webpki accepts only v3 and rejects them during key extraction, before
+# any verifier can run, so rustls cannot talk to a Cast receiver at all.
+# native-tls uses the Windows Schannel stack, which accepts them, and needs no
+# C toolchain.
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+# Phase C4b: the IPv4 neighbour table, so Cast discovery does not shell out to
+# `arp -a` the way the Python implementation does.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+] }
+
+[dev-dependencies]
+http-body-util = "0.1"

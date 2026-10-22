@@ -7,6 +7,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../../core/navigation/tv_spatial_focus_traversal_policy.dart';
 import '../../../intro/presentation/controllers/intro_controller.dart';
+import '../../../intro/presentation/providers/intro_score_provider.dart';
 import '../../../intro/presentation/widgets/brand_intro_overlay.dart';
 import '../widgets/tv_exit_dialog.dart';
 import '../widgets/tv_side_navigation_rail.dart';
@@ -212,6 +213,19 @@ class _AppShellState extends ConsumerState<AppShell> {
           if (introState.isPlaying)
             BrandIntroOverlay(
               autoFinishOnError: widget.autoFinishIntroOnError,
+              score: ref.watch(introScoreProvider),
+              // On a television the sequence is PLAYED rather than painted: its
+              // GPU compiles each new draw program at runtime and has no
+              // Vulkan for Impeller, so painting it there costs about a second
+              // a frame. The video is rendered from the canonical, so the
+              // picture is the canonical's either way.
+              //
+              // Under `prefers-reduced-motion` the television keeps the live
+              // sequence, because the canonical suppresses four effects and a
+              // video has them baked in.
+              videoAssetPath: isTv && !MediaQuery.disableAnimationsOf(context)
+                  ? 'assets/intro/intro-tv-1080p.mp4'
+                  : null,
               onFinished: () =>
                   ref.read(introControllerProvider.notifier).markFinished(),
             ),

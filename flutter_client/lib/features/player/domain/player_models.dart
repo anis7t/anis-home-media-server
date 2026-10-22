@@ -1,3 +1,5 @@
+export 'quality_option.dart';
+
 /// Playback state of the player engine.
 enum PlayerPlaybackState {
   idle,

@@ -1,10 +1,220 @@
 # Media Server Modernization — Migration Status & Handoff
 
+> ## Current session handoff - 2026-10-20 (13:10 IST)
+>
+> **PHASE 11 IS PLANNED: Opening Sequence Unification (Web + Android Phone + Android TV).**
+> - **Branch:** `feature/phase-11-opening-sequence` (cut from `fb8b5f6`). No implementation has started.
+> - **Scope:** one brand opening sequence, implemented natively for all three targets, from a single
+>   canonical design. The web port does not exist (it was lost in Slice 7E.2); the Flutter
+>   implementation has drifted from the original - the whole FX layer is painted *beneath* the
+>   opaque curtain and is therefore invisible, there is no grain layer, the lockup is stacked
+>   unconditionally rather than by breakpoint, there is a visible Skip button, a Settings "Replay
+>   Brand Intro" action, and no score at all.
+> - **Decisions:** the **web original is canonical** (Flutter changes to match); **canvas renderer
+>   with a separate Web Audio score** for the web; **no visible Skip and no Replay action
+>   anywhere**, including the Flutter Settings screen; **web once per browser session, Android
+>   every launch**; the intro **plays over the login screen**; and it must be
+>   **resolution-independent** at every aspect ratio and orientation.
+> - **Canonical specification (Slice 11.1, complete 2026-10-20):** `docs/OPENING_SEQUENCE.md`
+>   Part I - the 15-cue timing table, the layer stack, the compositing / responsive / audio /
+>   dismissal / reduced-motion / gating contracts, and the divergence ledger (L1-L15).
+> - **Seven structural slices**, each independently verifiable and individually approved:
+>   11.1 canonical specification (no code) - **done** | 11.1a remove the Flutter Replay action |
+>   11.2 web canvas renderer | 11.3 web lifecycle,
+>   gating, modes and audio | 11.4 Flutter alignment to the canonical design | 11.5 Flutter
+>   score | 11.6 responsive hardening and asset regeneration.
+> - **Research (D1):** Netflix's own intro is authored code, not a media file, and the industry
+>   answer to a web intro *with sound* is a separate audio track - video autoplay with sound is
+>   blocked, so a `<video>` would have to be muted or gesture-gated. The efficient route is to
+>   port `renderAt(t)` as a pure function of time, which is unit-testable and directly comparable
+>   to the reference frames. Lottie/dotLottie is the industry vector tool and its
+>   `preserveAspectRatio` is the standard responsive-motion answer, but it is not recommended
+>   here: the existing design is already vmin-scaled, the original is deterministic code, and it
+>   would add an After-Effects authoring dependency.
+> - **Master plan:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md).
+>
+> ## Previous session handoff - 2026-10-20 (12:30 IST)
+>
+> **A MISSED MIGRATION BACKLOG ITEM: the web brand opening sequence was never ported.**
+> - **What:** the 3-second intro overlay shipped in the Flask era as `templates/intro-overlay.html`,
+>   included at the end of the library page. **Slice 7E.2 retired it on 2026-10-18** (`5a2af4f`) with
+>   the other legacy templates, and **no React component was ever written to replace it** - no
+>   `BrandIntro`/`IntroOverlay` component exists in `web/src` or in any branch's history. The web app
+>   has had no intro since 2026-10-18.
+> - **Why it was missed:** the Slice 7E.2 sign-off verified the *architecture* - *"the React SPA
+>   serves all pages directly without dependency on server-side Jinja templates"* - and that passed.
+>   Nobody diffed *capabilities*. Worse, `AGENTS.md` asserted the overlay *"is wired into the React
+>   SPA in `web/src/components/BrandIntroOverlay.tsx`"*, and **that file has never existed** - so
+>   every later reader had a reason to believe the feature was live.
+> - **Not lost:** the Flutter client still has it (`flutter_client/lib/features/intro/`, with its own
+>   copy of the portrait video and two test files); all 293 MB of assets are intact in
+>   `docs/opening-sequence/`; the design and the three web invariants are intact. The port is
+>   well-specified, not a redesign.
+> - **Status: OPEN** - item 5 of the `AGENTS.md` work queue. Full record:
+>   [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) section 0 and
+>   [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) section 6.
+> - **Lesson recorded:** *a decommissioning sign-off must diff capabilities, not just mechanisms.*
+>
+> ## Previous handoff - 2026-10-20 (10:55 IST)
+>
+> **OTT QR Device Sign-In is DELIVERED, HARDENED & VERIFIED.**
+> - **Feature**: OTT-style activation for camera-less devices (smart TVs, browsers, consoles) — six native Rust Axum endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by a PostgreSQL `device_pair_sessions` table, a `<QrSignInPanel>` on `/account`, and a standalone `/remotelogin` page for the phone. The phone signs in and names the device; the TV signs itself in.
+> - **P0 security fix — pair-code entropy collapse**: the 5-character code had **5 bits of entropy, not 25**. All five characters were derived from the low bits of one 64-bit LCG state word, so the code collapsed to 32 possible values. Measured live: 40 sessions produced 15 distinct codes. Since `POST /api/auth/qr/lookup` resolves a code to a live pairing session, any signed-in account could try all 32 and hijack another user's active TV pairing. Now drawn character-by-character from the OS CSPRNG. **Verified live: 200 sessions → 200 distinct codes.**
+> - **P0 security fix — predictable tokens**: `generate_random_token()` hashed a clock-derived seed. It mints session tokens, device tokens, the OAuth `state`/`nonce`, the PKCE `verifier`, and the `qr_id` — the only key to the unauthenticated `/finalize` endpoint. Now 256 bits from the CSPRNG, failing closed.
+> - **P0 security fix — plaintext secrets in the log**: the pair code and the full `qr_id` are no longer logged; only a 12-hex-character reference is.
+> - **P0 fix — the frontend suite was broken**: jsdom implements no `EventSource`, and the error thrown from inside an effect is fatal for that subtree in React, so it tore down the whole account page and failed every assertion in its file (5 failures). `web/src/test/setup.ts` now stubs it. The "Sign in with Admin PIN" accessible name was restored.
+> - **Test-database isolation**: the entire Rust integration suite was running against the **production** `media_server` database, because `AppConfig::from_env()` falls back to it when `MEDIA_SERVER_DATABASE_URL` is unset — and on this host it is. The suite now uses a dedicated `media_server_test` database via the new `rust/src/test_support.rs`. `ensure_schema()` was also creating only 7 of the 13 tables, so a fresh database was half-formed.
+> - **Test idempotency**: `qr_device_auth_flow_test` passed once and then failed on *every* subsequent run with a unique-constraint violation, leaving a phantom user and session in the live catalog. It now purges at setup, has an explicit async teardown, uses `ON CONFLICT`, and asserts zero residue.
+> - **Verification Status**: Rust test battery (**108 unit + 26/26 integration targets green, exit code 0**), React Vitest battery (**248/248 passed**, was 222 passed / 5 failed), TypeScript (**0 errors**), production build (**clean**), Android API probe (**22/22 OK**), live pair-code entropy (**200 → 200 distinct**), production database residue (**0**).
+> - Master Walkthrough: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
+>
+> ## Previous handoff — 2026-10-18 (13:50 IST)
+>
+> **Phase 10 (Native Rust Media Scanner Engine) is 100% COMPLETE & VERIFIED.**
+> - **Objective**: Completely eliminate Python from production runtime by porting `scanner.py` to native Rust.
+> - **Decisions**: Option 1A (Strict Reconciliation / Orphaned Pruning) and Option 2A (ffprobe Container Duration Fallback).
+> - **Delivered Slices**:
+>   - Slice 10.1: Filename & Release Parser (Regex Cleaning & Multi-Year Resolution) — `84aef59`
+>   - Slice 10.2: TMDb Async Client & Data Models (429 Backoff & JSON Synthesizer) — `59b8721`
+>   - Slice 10.3: Crawler, ffprobe Fallback (2A) & Delta Database Engine (1A) — `d21e371`
+>   - Slice 10.4: ScanService In-Process Integration & REST API Wiring (`/api/scan`) — `55ad242`
+>   - Slice 10.5: Decommission `scanner.py`, Release Compilation & Test Battery — `4793fdb`
+> - **Test Battery**: 21/21 tests passing across all 5 scanner suites (`background_daemon_test`, `scan_test`, `scanner_engine_test`, `scanner_parser_test`, `scanner_tmdb_test`).
+> - Master Plan: [`docs/PHASE_10_NATIVE_RUST_SCANNER_PLAN.md`](PHASE_10_NATIVE_RUST_SCANNER_PLAN.md).
+> - Master Walkthrough: [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md).
+>
+> ### Previous handoff — 2026-10-18 (03:15 IST)
+>
+> **Phase 7 Slice 7E & Full Modernization is 100% COMPLETE, VERIFIED & SIGNED OFF.**
+> - **Slice 7E.1 (Scripts Audit & Tooling Modernization)**: Decommissioned 30 obsolete scripts, updated `service_status.ps1` (`9e75ee2`).
+> - **Slice 7E.2 (Legacy Templates & Static Retirement)**: Retired 9 Jinja HTML templates (7,747 lines) and `static/` asset tree (`5a2af4f`).
+> - **Slice 7E.3 (Legacy Python Backend Decommissioning)**: Decoupled `scanner.py` into standalone utility; decommissioned entire `app/` directory tree (35 files, 15,355 lines) and WSGI launchers (`c5ee97d`).
+> - **Slice 7E.4 (Test Suite Modernization & Requirements Pruning)**: Pruned `requirements.txt` (removed Flask, waitress, gunicorn, win32); decommissioned 52 obsolete Python test suites (19,706 lines) while preserving historical load benchmark records in `tests/load/` (`5d0fbb3`).
+> - **Slice 7E.5 (Architectural Documentation & Final Sign-Off)**: Modernized `AGENTS.md`, `README.md`, `PROJECT_STATUS.md`, and master handoffs.
+> - **All 10 Phases Complete**: P0 (Architecture Audit), P1 (OpenAPI 3.1 & Contracts), P2 (React Web Frontend), P3 (PostgreSQL Migration), P4 (Rust API Foundation), P5 (Media & Streaming Engine), P2R (SPA Integration), P6 (Multi-GPU Transcode Cutover), P8 (fMP4 Quality Ladder), P9 (Pre-Transcode & Capabilities Probe), and P7 (Production Cutover & Flask Retirement).
+> - **Verification Status**: Rust test battery (**119/119 passed** across all 15 test suites), React Vitest battery (**212/212 passed**), TypeScript (**0 errors**), Android API probe (**22/22 OK**), Phase 8 contracts (**OK**).
+> - Refer to master walkthrough: [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md).
+>
+> ### Previous handoff — 2026-10-18 (02:40 IST)
+>
+> **Phase 9 & Active Issues Slices A–D are 100% COMPLETE & VERIFIED.**
+> - **Phase 9 (Capabilities Probe & Pre-Transcode Architecture)**: W3C Media Capabilities API probe, strict 100% transcode gating (`#EXT-X-ENDLIST` required, isolated `<video>`), Option 1C native resolution baseline, Option 2A layman warnings, autonomous transcode sweeper, and `/manage` operator tooling (`22feeaf`).
+> - **Slice A (APK Distribution `/download`)**: Native Rust endpoints `GET /api/app/download` (RFC 7233 byte-range streaming) and `GET /api/app/version`; obsidian-glass `<DownloadPage>` at `/download`, `/app`, `/android` with SHA-256 integrity verification (`6ba1e3a`, `6cdc0ff`).
+> - **Slice B (Google Sign-In 503 & Admin PIN Fallback)**: `oauth_configured` probe flag on `/api/auth/me`; smooth redirection to `/account?error=oauth_unconfigured`; constant-time `POST /api/auth/login-pin` with 30-day session token cookie; portaled `<AdminPinSignInModal>` (`e4a423b`).
+> - **Slice C (Subtitle Delay Flicker Elimination)**: Idempotent `applySubStyles` guards stylesheet DOM injection; decoupled effects into CSS, cue layout, and timing offset; smooth `applyCueTiming` with zero layout thrash (`8af2022`).
+> - **Slice D (Native 4K HEVC Direct Play Unlock)**: Dimension-aware `normalizeVideoCodecMime` targeting `hvc1.1.6.L150.90` (Level 5.0 Main 10); W3C `decodingInfo` query with real dimensions and `hvc1`/`hev1` fallback (`62d4984`).
+> - **Developer Experience**: Configured VS Code SQLTools PostgreSQL connection (`d7c814d`).
+> - **Verification Status**: Rust test battery (**119/119 passed** across all 15 test suites), React Vitest battery (**212/212 passed**), TypeScript (**0 errors**), Android API probe (**22/22 OK**).
+> - **Clarification on Slices**: Active issues contained only Slices A–D (no Slice E; all resolved).
+>
+> Repository state: branch `feat/phase-9-pre-transcode-capabilities` clean.
+> Refer to master handoff: [`Handoffs/2026-10-18_02-40_antigravity_slices-a-d-complete-and-slice-7e-plan.md`](../Handoffs/2026-10-18_02-40_antigravity_slices-a-d-complete-and-slice-7e-plan.md) and [`docs/SESSION_HANDOFF_PHASE_7_BACKLOGS.md`](SESSION_HANDOFF_PHASE_7_BACKLOGS.md).
+>
+> ### Previous handoff — 2026-10-17
+>
+> **Phase 8 (Fragmented MP4 Streaming, Dynamic Quality Ladder Engine, Client-Aware Direct Play, and Modernized UI/UX) is 100% COMPLETE & VERIFIED.**
+> - **Tier 1 (Automated Tests)**: Rust Backend (**103 lib + 42 integration passed**), Web Frontend (**183/183 passed**, built in 793ms), Flutter Frontend (**110/110 passed**, 0 analysis issues).
+> - **Tier 2 (Client Contract Probes)**: All **22/22 Android API endpoints passed** contract; Client-aware direct play verified (Web MKV requires transcode with dynamic ladder vs Android MKV zero-copy direct play); Quality status & start verified.
+> - **Tier 3 (Live Real Hardware fMP4 Transcode)**: Dual-AMD GPU transcode verified end-to-end on live sample clip at 2.6x real-time speed in 16 seconds. Master manifest (`#EXT-X-VERSION:7`), `#EXT-X-MAP`, and segments verified with `ffprobe` (1280x720 H.264). Zero storage pollution cleanup verified.
+> - **Tier 4 (Live Web SPA & Asset Delivery)**: SPA shell, JS/CSS bundles verified HTTP 200, zero legacy raw HLS strings in bundle.
+>
+> Repository state: branch `feat/rust-fmp4-quality-ladder` ready for commit and merge.
+> Next Phase: **Phase 7** — Production port cutover (`:8000`), Flask/Waitress service retirement, and final modernization sign-off.
+>
+> ### Previous handoff — 2026-10-14
+>
+> **Read `Handoffs/2026-10-14_16-00_antigravity_cast-polish-complete.md` for that snapshot.**
+>
+> Verified against the repository at `72c89f1` on `feat/react-web-frontend` (22 commits ahead
+> of origin, **not pushed**):
+>
+> | | 2026-10-12 notice said | 2026-10-14 reality |
+> |---|---|---|
+> | Phase 2 (React) | **began**, scoped to roadmap items 1, 3, 5 | **Complete against the Flask backend.** Every Jinja page ported; full 6-phase Video Player parity delivered with Cast Remote hardening; Modal dialogs portaled to `document.body` resolving CSS transform containing block traps; Manage page audit latency (~20s) tracked in backlog |
+> | Legacy test migration | 36 Jinja HTML assertions still failing | **Resolved.** Re-pointed at SPA shell status and real API contracts. `test_seek_preview_and_playback_advancement` fully migrated and passing in headless Selenium E2E |
+> | Auth | Out of Phase 2 scope; an open gap | **Delivered.** Google Sign-In live, profile resolves, QR pairing works, `@require_admin` guards the destructive routes |
+> | SPA routing | not recorded | `SpaPathConverter` catch-all, so the frontend can no longer shadow API routes |
+> | Security | not recorded | **Hard-coded default Admin PIN removed** — it had meant public unauthenticated access to library deletion. PIN now fails closed |
+>
+> **Resolved (2026-10-14):** **Backup, restore drill, and rollback window are DELIVERED & VERIFIED.**
+> [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) is the master runbook. Crash-safe online SQLite
+> WAL backup engine (`app/services/backup_service.py`), automated CLI tools (`scripts/backup_database.py`,
+> `scripts/restore_database.py`), Windows scheduled task wrapper (`scripts/backup_database.bat`), and 8/8
+> passing pytest integration tests (`tests/test_backup_restore.py`). A live baseline backup was captured
+> and verified on the host with an end-to-end dry-run recovery drill.
+>
+> **Still open for Phase 3:** Representative regression run of `app/db.py` against a live PostgreSQL
+> instance, row reconciliation, and final database write-ownership cutover.
+>
+> **P3.1–P3.8 are still marked *(reported)* below and should stay that way** until executed
+> under authorization. Treat them as untested code, not as progress.
+>
+> **Only one known pre-existing test failure**: `test_startup_errors_when_on_without_secret`
+> (pre-existing auth config test). `test_seek_preview_and_playback_advancement` is **fully resolved and passing in headless Selenium E2E**.
+
+> ## ⚠️ Reconciliation notice — 2026-10-12
+>
+> **This document below is a 2026-10-10 snapshot and is materially out of date.**
+> Its blockers were subsequently resolved on `main`. Read this notice before the
+> body text; where the two disagree, this notice wins.
+>
+> Verified against the repository on 2026-10-12:
+>
+> | Snapshot claim (2026-10-10) | Verified reality (2026-10-12) |
+> |---|---|
+> | Branch 2 commits ahead of origin, NOT pushed; 16 modified + 13 untracked | `main...feat/rust-react-postgres-migration` = **25 ahead / 0 behind**. Fully merged, zero divergence. The branch is a spent artifact. |
+> | P3.3–3.8G tests **untracked, never executed** (`compile()`/`ast.parse()` only) | All 10 files are **tracked**, landed via `064a9b3` ("make the suite order-independent — 54 failures to zero"). Suite: **720 passed / 28 skipped**. |
+> | Issue 1 (**Critical**) enumeration completeness — "blocks complete: Yes" | **Fixed.** `16592be` is an ancestor of `main`. |
+> | Issue 8 — `CachePurgeSafetyTests` shared-root defect | **Fixed.** `d1772e3`. |
+> | Issue 9 — retention-test correction uncommitted | **Fixed and committed.** |
+> | Issue 10 — 38 historical failures; "no completion claim defensible" | **Superseded.** 54 failures → 0, now 720 passing. |
+> | §2.3 item 1 — phase numbering diverges 0–9 vs 0–7, "needs a decision" | **Resolved.** The roadmap's **0–7 is canonical**; the 0–9 scheme is retired (recorded in the roadmap header). |
+> | §2.3 item 4 — roadmap status line stale ("Proposed roadmap only") | **Cleared.** Roadmap now reads Active. |
+>
+> **Phase 3 (PostgreSQL Migration) is COMPLETE (2026-10-14):**
+> Data transfer and recovery demonstrated via `scripts/migrate_sqlite_to_postgres.py` with
+> 100% row-for-row parity (852/852 rows). Real PostgreSQL 18.4 integration tests pass (26/26).
+> Application suites pass against PostgreSQL (15/15 API contracts, 33/33 devices, 20/20 admin auth,
+> 8/8 movies, 71 adapter tests). Phase 3 exit gate is fully satisfied.
+>
+> **Phase 4 (Rust API Foundation) is COMPLETE (2026-10-14):**
+> Modular Rust Axum/Tokio/SQLx crate delivered on branch `feat/rust-api-foundation` with PostgreSQL 18.4
+> pool management, structured tracing, health endpoints, movies catalog, and system telemetry.
+>
+> **Phase 5 (Media Library, Playback, and Streaming) is COMPLETE (2026-10-15):**
+> All 5 sub-phase slices delivered and verified on `feat/rust-api-foundation` with 47/47 passing tests:
+> - **Phase 5A**: Watch progress and history API (`/api/progress` GET/POST) with PostgreSQL upserts.
+> - **Phase 5B**: Safe multi-root path resolution and RFC 7233 byte-range streaming (`/media/{*path}`).
+> - **Phase 5C**: 100% Native Subtitle Engine — embedded container track discovery (`ffprobe`) and extraction (`ffmpeg`) to WebVTT, OpenSubtitles 64-bit LE hash downloads with native gzip streaming decompression (`reqwest` + `flate2`), local sidecar parsing with dynamic time offset shifting (`?offset=`), and multipart uploads. Full test coverage (16/16 tests passing).
+> - **Phase 5D**: Seek-hover frame previews engine, WebVTT storyboards, and multi-root thumbnail cache (`/api/seek-preview-meta`, `/seek-preview`, `/preview-vtt`).
+> - **Phase 5E**: HLS manifest/segment delivery, RFC 8216 target duration healing, transcode MP4 cache serving, and concurrency benchmarking (510.86 Mbps aggregate throughput, 32.5 MB RAM footprint).
+> - **Catalog Test Artifacts Purge & Isolation**: Purged all 11 phantom test movies from PostgreSQL and SQLite (leaving exactly 39 genuine library movies); hardened preview tests with automated teardown hooks preventing catalog pollution. All 61 Rust tests passing.
+>
+> **Phase 2 (React) began 2026-10-12** on `feat/react-web-frontend`, scoped to
+> roadmap sequence items 1, 3 and 5. Acceptance thresholds are recorded in the
+> roadmap under *Phase 2 acceptance thresholds*. 172 frontend component/unit tests pass.
+>
+> **Phase 2R (React + Rust Integration & Hybrid Hosting) is COMPLETE (2026-10-15):**
+> Full static SPA hosting and reverse-proxy bridge delivered on `MediaServerRust` (port 8001):
+> - **Phase 2R-A**: Vite dual-origin dev proxy configured for seamless frontend development.
+> - **Phase 2R-B**: Native Axum static SPA embedding with SPA fallback routing to `index.html`.
+> - **Phase 2R-C**: Streaming reverse-proxy bridge (`rust/src/routes/proxy.rs`) forwarding unmigrated endpoints (`/tmdb-poster/*`, `/poster/*`, `/api/devices/*`, `/auth/*`, `/api/cast/*`, `/api/storage/*`) to Flask port 8000 with 61/61 Rust integration tests passing.
+> - **Phase 2R-D**: Live End-to-End browser verification validating clean catalog (39 titles), movie details, player direct streaming, active subtitle tracks, devices dashboard, storage management gate, and user manual.
+> - **Production Service**: `MediaServerRust` deployed as persistent Windows Service with 1-click restart parity (`scripts/restart_rust_service.bat`).
+>
+> **Phase 8 (Fragmented MP4 Streaming & Dynamic Quality Ladder Engine) is COMPLETE (2026-10-17):**
+> Full modern fMP4 pipeline, multi-tier scaling engine, and cross-platform frontend quality switching delivered on `feat/rust-fmp4-quality-ladder`:
+> - **Slice 1 (1A, 1B, 1C)**: Fragmented MP4 (`.m4s`) packaging with `#EXT-X-MAP` initialization (`init.mp4`), AMF GPU scaling (`vpp_amf`) with strict no-upscaling and even-width invariants, and RFC 8216 multi-variant master playlists (`master.m3u8`).
+> - **Slice 2 (2A, 2B)**: Client-aware direct play evaluation (zero-copy MKV direct play for Android/Fire TV ExoPlayer), `/api/media-info` dynamic quality ladder endpoint, and quality-specific interactive transcode scheduling (`POST /api/transcode/start/{path}?quality={tier}`).
+> - **Slice 3**: React Web Player in-player quality selector modal (`QualitySelectorModal.tsx`), seamless in-flight position-preserving switching, on-demand transcode trigger, and Nerd Stats HUD telemetry (183/183 tests passing).
+> - **Slice 4**: Flutter Mobile & Fire TV client integration (`QualityOption` domain model, `QualitySelectorSheet` with touch and 10-foot D-pad remote support, `PlayerScreen` seamless switching, and Stream Specifications telemetry).
+> - **Slice 5**: UI/UX terminology modernization (retiring raw "HLS" in favor of "Adaptive Stream" and "Stream Ready" across Web and Flutter) and full multi-tier regression verification.
+> - **Verification**: 28/28 Rust tests passed, 183/183 Web tests passed (`npm run verify`), 110/110 Flutter tests passed (`flutter test`, 0 lints), deployed and serving live on port 8001.
+
 **Authoritative Roadmap:** [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)
-**Dedicated Branch:** `feat/rust-react-postgres-migration`
-**Current HEAD:** `99e63ed2fe6bca4172e9f4f263855be7d2016938` — *`feat(db): add PostgreSQL schema migrations and harden cleanup`* (2026-10-10)
+**Migration branch (now fully merged into `main`):** `feat/rust-react-postgres-migration`
 **Baseline Commit (previous revision of this document):** `b007944`
-**Last Updated:** October 10, 2026
+**Last Updated:** October 12, 2026 (reconciliation notice added; body below is the October 10 snapshot)
 
 > This revision consolidates the PostgreSQL adapter work (Phase 3.1–3.8G) that has
 > accumulated in the working tree since the `b007944` baseline. Every claim below is
@@ -96,19 +306,19 @@ Status key: **Complete** · **Partially complete** · **Blocked** · **Not start
 |---|---|---|---|---|---|
 | **P0 — Architecture audit** | Evidence-based inventory before code changes | `docs/PHASE_0_ARCHITECTURE_AUDIT.md` | Documented; reviewed | **Complete** | None known |
 | **P1 — API contracts & contract tests** | OpenAPI 3.1 spec + executable contract tests | `docs/openapi.yaml`, `tests/test_api_contracts.py` (both committed at `b007944`) | Reported 15/15 contract tests and 98 regression tests passing at Phase 1 | **Complete** (reported) | Re-verify; `test_api_contracts.py` is implicated in a known ordering failure (§6, item 10) |
-| **P2 — React web frontend** | Vite/React/TS app in `web/` against the existing Flask API | **No `web/` directory, no `package.json`** | None | **Not started** | Entire phase |
-| **P3.1 — PostgreSQL adapter** | Dual SQLite/PostgreSQL backend, versioned migrations, advisory locking, pool lifecycle | `app/db.py`: `POSTGRES_MIGRATIONS` (:311), `_validate_postgres_migrations` (:409), `run_postgres_migrations` (:509), `pg_advisory_lock` (:538/:612/:636), `schema_migrations` (:547/:669/:754), `_PG_POOL`/`_PG_POOL_LOCK` (:24-25). **Committed at `99e63ed`.** | Reported: 72 adapter tests (1 skipped), 23 API tests | **Partially complete** (reported) | Reconciliation, rollback plan, production cutover — all exit-gate items still open |
-| **P3.2 — PostgreSQL integration tests** | Opt-in real-PG tests against an isolated schema | `tests/integration/{conftest,test_postgres_migrations,test_postgres_timestamps}.py` + `README.md` (untracked) | Reported 26 tests passing against PG 18.4; clean skip when gate closed | **Partially complete** (reported, untracked) | Never re-run under authorization |
-| **P3.3 — Timestamp compatibility** | Normalize SQLite string ↔ PG datetime at the DB→app boundary | `app/utils/formatting.py` (+77), `app/services/device_service.py`, `app/services/media_service.py`; `tests/test_timestamp_compat.py` (untracked) | Reported focused results positive; **baseline suite had 38 failures** | **Partially complete** (reported) | Full-suite re-run |
+| **P2 — React web frontend** | Vite/React/TS app in `web/` against the existing Flask API | **Started 2026-10-12** on `feat/react-web-frontend`; every Jinja page now has a React equivalent (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual`, plus legacy aliases), served by a `SpaPathConverter` catch-all that cannot shadow API routes. Delivered: typed client generated from `docs/openapi.yaml`, app shell + account menu, library grid with hero spotlight, details (cast rail, trailer dialog, spec cards), player with direct-play + HLS, devices, manage and manual pages, per-request deadlines with retry. **Polished 2026-10-14:** Portaled all modal dialogs to `document.body` via `createPortal`, fixed `.animate-fade-in` CSS transform containing block trap, and tracked Manage page audit load latency (~20s) in backlog. | **151 unit/component tests passing**; `tsc -b` and `oxlint` clean; retry path verified in a real browser. Python suite **902 passed / 2 failed**; Android guardrail 18/18 per contract. | **Complete for the current Flask backend** | Manage page loading shimmer & audit cache optimization in backlog. Two known failures (1 pre-existing SECRET_KEY, 1 unmigrated Selenium test). Remaining roadmap items 2, 4, 6–9 are not frontend-slice work — see §7 of the handoff. |
+| **P3.1 — PostgreSQL adapter** | Dual SQLite/PostgreSQL backend, versioned migrations, advisory locking, pool lifecycle | `app/db.py`: `POSTGRES_MIGRATIONS`, dynamic `normalize_sql` `%` escape, `ON CONFLICT` translation, datetime interval arithmetic | **Verified (2026-10-14)**: 71 adapter tests pass, 15/15 API contract tests pass under PostgreSQL | **Complete** | None |
+| **P3.2 — PostgreSQL integration tests** | Opt-in real-PG tests against an isolated schema | `tests/integration/{conftest,test_postgres_migrations,test_postgres_timestamps}.py` | **26/26 passed in 15.21s** against PostgreSQL 18.4 (`media_integration_test`) | **Complete** | None |
+| **P3.3 — Timestamp compatibility & Migration** | Normalize SQLite string ↔ PG datetime at boundary; automated data migration | `app/utils/formatting.py`, `scripts/migrate_sqlite_to_postgres.py` | **25/25 timestamp tests pass**; `migrate_sqlite_to_postgres.py` verified 100% row-for-row parity (852/852 rows across 10 tables) | **Complete** | None |
 | **P3.4–3.7 — Test isolation & write guards** | No test may write to a deployed path | `tests/conftest.py` (+374), `tests/test_app.py` (+59), `tests/_isolation_paths.py`, `tests/_write_guard.py`, `tests/test_write_guard.py`, `tests/test_isolation_guard.py` (all untracked) | Reported 45 guard tests passing; `git diff --check` exit 0 | **Partially complete** — never executed under authorization in this history | Authorized run; `CachePurgeSafetyTests` isolation defect (§6, item 8) |
 | **P3.8 — Cache/destructive-path hardening** | `MEDIA_SERVER_CACHE_DIR`; centralized cache-root boundary; refusal reporting | `app/config.py` (+115): `CacheRootUnsafe`, `approved_cache_root` (:81), `require_within_cache_root` (:122). `transcode_service.py` (+116), `media_service.py` (+46), `subtitles_service.py` (+63), `api.py` (+5), `worker_service.py` (+10) | One disposable `verify` run exited 0 with `VERIFY OK` (Phase 3.8G8P) | **Partially complete** | Enumeration completeness; A8/A13/A14; C3–C6 |
-| **P3.8G — Cache-safety boundary tests** | Executable coverage of the cache-root boundary | `tests/_cache_test_support.py`, `tests/test_cache_safety_boundaries.py` (**19 test definitions**) | `compile()` + `ast.parse()` + `git diff --check` only | **Unverified** — static-only | First authorized execution |
-| **P4 — Rust API foundation** | Modular Axum app | **No `rust/`, `crates/`, or `Cargo.toml`** | None | **Not started** | Entire phase |
-| **P5 — Rust media/playback/streaming** | Library, range streaming, HLS in Rust | None | None | **Not started** | Entire phase |
+| **P4 — Rust API foundation** | Modular Axum app with SQLx and PostgreSQL 18.4 connection pool | `rust/` crate, `scripts/cargo.bat`, `docs/PHASE_4_RUST_API_PLAN.md`, `docs/PHASE_4_RUST_API_WALKTHROUGH.md` | **Verified (2026-10-15)**: 4/4 integration contract tests passing against PostgreSQL 18.4 (`media_server`), 0 warnings on `cargo check`, release binary compiled | **Complete** | None (Phase 5 will add media streaming & transcode worker) |
+| **P5 — Rust media/playback/streaming** | Library, range streaming, HLS in Rust | `rust/src/routes/{media,hls,transcode,subtitles,preview,progress}.rs`, `rust/src/services/{range,hls,subtitle,preview}_service.rs` | **Verified (2026-10-15/16)**: 61/61 integration tests passing; live `:8001` streaming at 510 Mbps peak; catalog reconciled to SQLite truth (36/36) | **Complete (5A-5E)** | Phase 6 transcoding worker remains |
+| **Operational resilience** | Survive reboots and USB-volume (`E:`) dropouts | `C:\MediaServer\bin\nssm.exe`, `C:\postgres` binaries, `MediaServerPG` service (NetworkService), `MediaServerWatchdog` 5-min task (`scripts/service_watchdog.ps1`) | Live failover drill passed 2026-10-16 (stopped Rust, watchdog restarted it); all origins + public 200 | **Complete** | Boot without logon *and* without `E:` remains unhandled by design |
 | **P6 — Rust transcoding worker** | Queue ownership + FFmpeg orchestration | None | None | **Not started** | Entire phase |
 | **P7 — Cutover, hardening, Flask retirement** | Staged cutover, tested rollback | None | None | **Not started** | Entire phase; blocked by P2–P6 |
 | **Deployment / operations** | Preserve NSSM + Cloudflare topology | Unmodified; `.gitignore` (uncommitted) already anticipates `target/`, `node_modules/`, `pgdata/`, `.pgpass` | None in this branch | **Not started** | Cutover evidence (roadmap §9) |
-| **Rollback / data safety** | Backup + demonstrated restore + point-of-no-return | **No documented backup, restore drill, or rollback window** | None | **Blocked** | Required by roadmap §9 and Phase 3 exit gate before any cutover |
+| **Rollback / data safety** | Backup + demonstrated restore + point-of-no-return | Online SQLite WAL backup engine, CLI suite, recovery drill & [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) | 8/8 tests pass (`test_backup_restore.py`); live baseline captured & verified | **Complete** | Automated Task Scheduler trigger optional |
 | **Acceptance testing** | Per-phase exit gates met | Only the two Phase 0/1 gates have artifacts | Not re-verified | **Blocked** | Depends on an authorized full-suite run |
 
 ---

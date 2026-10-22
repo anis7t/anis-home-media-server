@@ -1,9 +1,35 @@
 # Flask → Rust / React / PostgreSQL Migration Roadmap
 
-**Status:** Proposed — read-only audit required before implementation  
+**Status:** Active — Phase 0–1 delivered, **Phase 2 complete against the Flask backend**, Phase 3 landed (exit gate open)  
 **Owner:** Media Server project  
 **Repository default branch:** `main`  
-**Last updated:** 2026-10-10
+**Last updated:** 2026-10-14
+
+> **Phase 2 status update — 2026-10-14 (`feat/react-web-frontend`).**
+> Phase 2 is **DELIVERED & VERIFIED**. Every Jinja page has a React equivalent
+> (`/`, `/movie/*`, `/watch/*`, `/account`, `/manage`, `/devices`, `/manual`, plus legacy
+> aliases); the templates are removed and `pages.py` is down to four routes.
+>
+> Full 6-phase Video Player feature parity + Cast Remote Control hardening delivered:
+> - **Core Playback & Autoplay:** RFC 7233 byte-range Direct Play, HLS playlist transcode delivery, automatic playback start on open (Play / Resume).
+> - **Subtitle Engine & Synchronization:** Merged CC pill, custom font/color/opacity/alignment settings modal, sidecar upload, dynamic subtitle delay/advance sync offset controls (slider, ±100ms steppers, `z`/`x` hotkeys, HUD toast, and server-side `srt_to_vtt` / route `?offset=` parameter).
+> - **Extended Controls & Telemetry:** Aspect ratio cycle, PiP, speed, Nerd Stats HUD, Shortcuts modal.
+> - **Mobile Gestures & Ripples:** Double-tap seek (±10s), seek ripples, player preloader.
+> - **Transcode Staging Gate & Previews:** 100% transcode completion gate, live dual AMD GPU telemetry, seekbar hover frame previews in paused & playing states.
+> - **LAN Cast & DLNA Remote Controller:** Continuous discovery polling on rescan (`scanning: true`), incremental device discovery updates, scrollable Cast subtitle menu for large catalogs (37+ tracks), receiver hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle delivery, live in-cast subtitle selector, and clean receiver app quit (`cast.quit_app()`).
+> - **Google Cast Receiver Hardening:** Direct IP/port host connection bypassing mDNS packet loss, CORS headers on WebVTT subtitle routes (`/subtitles/*`), and status polling guards preventing app relaunch cycles during receiver loading.
+> - **Modal Dialog Portaling & Viewport Isolation:** Portaled all modal dialogs (`ManagePage`, `CastModal`, `AppShell`) to `document.body` via `createPortal`, terminating `.animate-fade-in` on `transform: none;` to eliminate CSS transform containing block traps that offset fixed dialogs on long pages.
+> - **Known Backlog Item Tracked:** Manage page audit latency (~20s) with optimistic "On-Demand HLS" badge display during audit loading recorded in backlog for shimmer and state persistence.
+>
+> Legacy test migration is **COMPLETE**: `tests/test_selenium_seek_playback.py` and the full E2E Selenium suite (`tests/test_selenium_exhaustive_player_suite.py` and `tests/test_selenium_cast_integration.py`) pass 100%. Frontend Vitest stands at **151/151 passed**, backend Cast tests at **56/56 passed**, and subtitle upload/offset tests at **8/8 passed**.
+>
+> Current-state detail: `docs/MIGRATION_STATUS.md`.
+
+> **Phase numbering is canonical 0–7 as defined here.** An earlier revision of
+> `MIGRATION_STATUS.md` used a 0–9 scheme that split Phase 7 into "Live Events" (7),
+> "Operations" (8) and "Deprecation" (9). That scheme is **retired**; the 0–7
+> numbering in this document is the single reference. This resolves
+> `MIGRATION_STATUS.md` §2.3 item 1.
 
 > This document describes the intended migration strategy, not completed work. All implementation details must be verified against the repository during Phase 0. Do not begin a big-bang rewrite.
 
@@ -187,14 +213,45 @@ Implementation sequence:
 3. Home screen and media library grid.
 4. Search, sorting/filtering, genres, collections, and details pages.
 5. Browser player and persisted playback progress.
-6. Subtitle/audio selection and existing seek/resume behaviors.
+6. Subtitle/audio selection, 50ms sync/delay fine-tuning (`±50ms` / `±250ms` hotkeys and steppers), live WebVTT cue offset shifting, and manual subtitle upload.
 7. Administration pages for scans, queue visibility, server status, and settings.
 8. Responsive behavior, accessibility, and performance.
 9. Browser and end-to-end regression tests.
+10. Second-screen LAN casting (Google Cast & DLNA) with active remote HUD, hardware volume anti-reset, 3-state mute toggle, WebVTT subtitle track delivery with in-flight offset sync (`?offset=` and `subtitle_offset` control), and receiver app quit.
 
 Target a polished, cinematic and responsive UI; do not treat template-to-component translation as the full design task.
 
 **Exit gate:** users can complete the current core web workflows against the existing backend, and the React app has automated coverage for its critical routes.
+
+#### Phase 2 acceptance thresholds (agreed 2026-10-12)
+
+The exit gate above is qualitative. These thresholds make it measurable for the
+first slice, which is roadmap sequence items **1, 3 and 5** (app shell + typed
+client; home screen and library grid; browser player and persisted progress).
+Items 4, 6, 7 and 9 remain for later slices. Clauses marked *(borrowed)* restate
+this roadmap or `AGENTS.md`; clauses marked *(proposed)* were added because the
+roadmap states no threshold.
+
+| Gate | Requirement | Source |
+|---|---|---|
+| **A — Scope** | React Router reaches library → detail → player. **No Flask template is deleted.** | *(borrowed)* roadmap:153 |
+| **B — Contract conformance** | Typed client is **generated from `docs/openapi.yaml`** (59 paths / 65 operations / 31 schemas), never hand-written. Every endpoint the slice calls is asserted in `tests/test_api_contracts.py`. | *(borrowed)* roadmap:146, §6 |
+| **C — Test floors** | **≥80% line coverage on `src/features/library` and `src/features/playback` only** — not whole-app, which would reward padding untested files. Each §6 route in the slice gets one render + one interaction test. One Playwright E2E: library → detail → playback → progress persisted. | *(proposed)* |
+| **D — Static** | `tsc --noEmit` clean; ESLint clean; `vite build` succeeds; **zero `any` in `src/lib/api`**. | *(proposed)* |
+| **E — Perf budget** | **≤250 KB gzip initial JS** for this slice. Video is excluded — fetched by the player element, not the bundle. Number is provisional and to be recalibrated from a measured build. | *(proposed)* |
+| **F — Playback correctness** | Reuses `/media` (Range) and `/hls` (CORS-scoped) unchanged. No regression to seek-to-`0:00`, arbitrary seek, subtitle toggle, or resume. **No CORS widening on `/api/*`** — a Vite `server.proxy` keeps the browser same-origin so `routes/media.py` `CORS_PATHS` is untouched. | *(borrowed)* `AGENTS.md` §6 |
+| **G — Docs** | Update the Phase 2 row in `MIGRATION_STATUS.md`; clear the stale "Proposed roadmap only" status line; reconcile phase numbering. | *(borrowed)* project rule |
+
+**Known limit of Gate B.** `tests/test_api_contracts.py` contains 15 test
+definitions against 65 operations. It does not cover the whole contract today and
+no claim of full contract coverage may be made. Gate B applies to the endpoints the
+slice actually calls; the uncovered remainder is to be reported, not hidden.
+
+**Not resolved by this slice.** Authentication remains absent from the API and
+`media.anisparvez.in` remains publicly reachable and unauthenticated. Phase 2 does
+not create that exposure and does not widen it (`/api/*` is already reachable by
+anyone holding the URL), but it places a polished browser client in front of it.
+Tracked as an open security gap; out of Phase 2 scope by decision.
 
 ### Phase 3 — PostgreSQL migration
 
@@ -208,12 +265,12 @@ Tasks:
 1. Inventory models, tables, indexes, constraints, relationships, JSON fields, IDs, and transaction boundaries.
 2. Identify SQLite-specific behavior, type coercion, autoincrement assumptions, lock/concurrency patterns, and conflict handling if applicable.
 3. Create explicit PostgreSQL schema and versioned migrations.
-4. Back up the source database and demonstrate restoration.
+4. Back up the source database and demonstrate restoration. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) — rewritten for PostgreSQL on 2026-10-20; the SQLite-era engine it originally described was retired with the Flask backend).
 5. Build an idempotent migration/transfer utility.
 6. Reconcile row counts, keys, foreign keys, timestamps, nulls, and representative records.
 7. Test concurrent playback state and background-job updates.
 8. Check query plans and performance for the important library/playback queries.
-9. Document the point of no return, rollback window, and recovery steps.
+9. Document the point of no return, rollback window, and recovery steps. ✅ **DELIVERED & VERIFIED** ([`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) §3 and §6).
 
 PostgreSQL should become the canonical application data store. If Flask and Rust must coexist during transition, assign write ownership explicitly and prevent split-brain state. Avoid long-running dual writes unless an audited design includes reconciliation and failure recovery.
 
@@ -335,6 +392,29 @@ Do not remove migration compatibility or old runtime support while rollback stil
 
 **Exit gate:** all production responsibilities have explicit owners in the new architecture, no production workflow depends on Flask, recovery procedures are tested, and all release criteria are met.
 
+### Phase 8 — Fragmented MP4 (fMP4) Streaming, Quality Ladder, and Client-Adaptive Playback
+
+**Estimate:** 1–2 weeks  
+**Depends on:** Phase 6 (Rust transcode worker engine) and Phase 2 (React player)  
+**Governing Plan:** `docs/PHASE_8_FMP4_QUALITY_LADDER_PLAN.md`
+
+Modernizes the streaming pipeline from legacy MPEG-2 Transport Stream (`.ts`) to ISO BMFF Fragmented MP4 (`.m4s` / `fMP4`), unlocking hardware-accelerated HEVC and H.264 playback across Chromium (Chrome, Edge) and Safari browsers with zero JavaScript demuxing overhead.
+
+1. **Fragmented MP4 (fMP4) Chunk Engine**:
+   - Update Rust transcode worker to emit `-hls_segment_type fmp4` with `#EXT-X-MAP:URI="init_chunk_{id}.mp4"` initialization headers and `.m4s` media fragments.
+   - Retain full backward compatibility for existing completed `.ts` caches in `rust/src/routes/hls.rs`.
+2. **Dynamic Multi-Bitrate Quality Ladder**:
+   - Provide user-selectable quality levels in the Web and Flutter players: 4K (2160p), 2K (1440p), 1080p (FHD), 720p (HD), 480p (SD), 360p (Data Saver), and Direct Play.
+   - **Strict No-Upscaling Invariant**: Dynamically bound allowed resolutions to $\le \text{source\_height}$.
+   - On-Demand Single-Stream Transcoding (Option A) to preserve dual-GPU capacity and SSD cache headroom.
+3. **Android Client MKV Direct Play**:
+   - Expand `/api/media-info` to recognize Android / Fire TV client hardware capabilities and permit Direct Play for `.mkv` containers (H.264, HEVC, AAC, AC3, EAC3) over RFC 7233 byte-range streaming (`/media/{*path}`) with 0% server transcode overhead.
+4. **UI/UX Terminology Modernization & HLS Label Retirement**:
+   - Retire internal protocol jargon ("HLS", "MPEG-TS", "HLS Transcode") across Web and Mobile user interfaces.
+   - Modernize player badges to `"Adaptive Stream (fMP4)"`, library inventory badges to `"Stream Ready"`, and transcode statuses to consumer-friendly terminology.
+
+**Exit gate:** Web browsers play fMP4 streams with native hardware acceleration; quality selector displays dynamically clamped ladder without upscaling; Android clients Direct Play MKV media with 0% server CPU/GPU load; all user-facing HLS jargon is retired in favor of clean streaming terminology.
+
 ## 6. Testing and release gates
 
 | Test layer | Required coverage |
@@ -449,4 +529,9 @@ The first coding-agent task must be read-only. Use a plan/audit mode and require
 - Backups/restoration, deployment, monitoring, and rollback have been tested and documented.
 - No production dependency on Flask remains, and unused runtime code/configuration is removed safely.
 
-**Current status: Proposed roadmap only. Phase 0 is the next action; implementation has not been authorized by this document.**
+**Current status: Active.** Phases 0–1 are delivered. Phase 3 (PostgreSQL) is
+committed to `main` and runtime-verified, but **its exit gate is not met** — there
+is no demonstrated data transfer or recovery, no representative regression run
+against PostgreSQL, and no documented backup, restore drill, or rollback window.
+Phase 2 (React) began 2026-10-12 on `feat/react-web-frontend`. Phases 4–7 (Rust)
+have not started. See `docs/MIGRATION_STATUS.md` for the reconciled tracker.

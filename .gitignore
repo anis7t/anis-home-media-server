@@ -1,5 +1,7 @@
 # Secrets
 .env
+Caddyfile
+secrets/
 
 # Python
 venv/
@@ -10,9 +12,17 @@ __pycache__/
 # Database
 media.db
 *.db
+# SQLite WAL sidecars. `*.db` does not match these: WAL and shared-memory files
+# are named after the database with a suffix, and they appear the moment any
+# connection opens the DB in WAL mode - including on a live host, constantly.
+media.db-shm
+media.db-wal
+*.db-shm
+*.db-wal
 
 # Cached/generated files
 cache/
+backups/
 
 # Hermes kanban task worktrees (one per dispatched task)
 .worktrees/
@@ -38,6 +48,7 @@ Hermes-agent-android-PC-companion-app/
 
 # Scratch notes
 IDEA.md
+_shots/
 
 # Android Signing Secrets
 *.jks
@@ -55,3 +66,38 @@ opencode/db/*.db.tmp
 
 # Serena MCP local project state (semantic index; regenerate with the serena MCP)
 .serena/
+
+# Rust toolchain (cargo build artifacts)
+target/
+rust/target/
+**/*.rs.bk
+
+# Node / React toolchain
+node_modules/
+.next/
+dist/
+*.tsbuildinfo
+
+# Local dev PostgreSQL never lives in the repo, but guard anyway:
+# the portable cluster is E:\pgdata and the server binaries are E:\postgres\pgsql.
+pgdata/
+.pgpass
+
+# Test artifacts
+tests/screenshots/
+
+
+# the on-device session's diagnostic captures (the audio dumps are kept; the screenshots are not)
+docs/opening-sequence/device/
+
+# scratch: the frame captures and device pulls taken while measuring
+_vid/
+_launch*.png
+_launch*.mp4
+_tv_now.png
+_installed.apk
+
+# the capture scripts' working directory: the extracted reference frames and the
+# comparison encodes live here. It is scratch, never an artifact - the shipped
+# video is flutter_client/assets/intro/intro-tv-1080p.mp4.
+/build/

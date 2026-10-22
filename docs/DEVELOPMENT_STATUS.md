@@ -15,9 +15,10 @@ Active Working branch: `feat/flutter-production-player` (the branch bullets unde
 - **Tested Hardware:** AMD Ryzen 5 3550H, 16 GB RAM
 - **Discrete GPU:** AMD Radeon RX 560X (4GB VRAM) — Task Manager GPU 0 / FFmpeg `dx11:1`
 - **Integrated GPU:** AMD Radeon Vega 8 Graphics — Task Manager GPU 1 / FFmpeg `dx11:0`
-- **Python:** 3.14.3 (`E:\MediaServer\venv`)
+- **Python:** 3.14.3 — **tooling only.** The venv (`E:\MediaServer\venv`) exists for the probe and
+  release scripts; the server itself is native Rust and needs no Python. See `requirements.txt`.
 - **FFmpeg:** 9.0.1 essentials build with AMF & D3D11va
-- **cloudflared:** 2026.9.1 (`C:\Cloudflared\bin\cloudflared.exe`)
+- **Caddy:** `E:\MediaServer\bin\caddy_custom.exe` (Cloudflare DNS module) — the public ingress
 - **Flutter:** 3.47.6 stable (`D:\src\flutter`), bundling **Dart 3.13.5**
 - **Android SDK:** `D:\platform-tools-latest-windows` (see the misnomer note below); platform-tools 37.0.1, build-tools 36.0.0, platforms android-35/36, NDK 28.2.13676358, emulator 37.2.12
 - **Node:** v25.7.0 · **npm:** 11.10.1 · **opencode:** 2.0.11
@@ -88,8 +89,9 @@ Archive root:  D:\Flicks\.archive (cold source retention on D:)
 Deleted root:  D:\Flicks\.deleted (deleted-source staging on D:)
 Transcode:     E:\MediaServer\cache\hls (fast SSD generation & delivery)
 Previews:      E:\MediaServer\cache\previews (seek thumbnail frame cache)
-Database:      E:\MediaServer\media.db
-Venv:          E:\MediaServer\venv
+Database:      PostgreSQL 18.4 - media_server @ 127.0.0.1:5432 (data E:\pgdata)
+Backups:       E:\MediaServer\backups\postgres (pg_dump -Fc; see docs/BACKUP_AND_RESTORE.md)
+Test database: media_server_test (created by rust/src/test_support.rs - never use production)
 Storage pool:  D: + E: aggregated (per-drive breakdown in /api/system-status)
 Note:          C: is not used by this project.
 ```
@@ -111,7 +113,7 @@ Note:          C: is not used by this project.
 - **Chromium Hls.js Precedence:** Prioritizes `window.Hls && Hls.isSupported()` over native `canPlayType` before falling back, preventing Windows Chromium browsers from attempting native Safari-style playback which cannot demux multi-chunk offsets.
 
 ### Dual-Drive Storage Tiering & Headroom Prioritization
-- **Headroom Optimization:** Preserves the primary fast SSD `E:` (`E:\MediaServer`) for the application and runtime, SQLite (`media.db`), transcode scratch, seek thumbnails (`cache\previews`), and completed multi-GPU HLS caches (`cache\hls`).
+- **Headroom Optimization:** Preserves the primary fast SSD `E:` (`E:\MediaServer`) for the application and runtime, the PostgreSQL data directory (`E:\pgdata`), transcode scratch, seek thumbnails (`cache\previews`), and completed multi-GPU HLS caches (`cache\hls`).
 - **Secondary Mass Storage (`D:`):** Offloads multi-gigabyte raw video files (`D:\Flicks`), resumable upload staging (`D:\Flicks\.uploads`), cold source archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
 - **Dynamic Multi-Root Discovery:** `config.get_media_roots()` returns all active storage roots. All routing, authorization, and media scanning procedures validate against all configured roots.
 - **Deterministic Cache Continuity:** `hls_cache_dir()` and `preview_dir()` compute relative paths across all active roots, ensuring media files moved or archived between drives retain their deterministic cache keys and active streams.
@@ -147,19 +149,36 @@ Note:          C: is not used by this project.
 - Integrated into YouTube-style seekbar with responsive viewport boundary clamping.
 
 ### Persistent Windows Services
-- Registered `MediaServer` (Waitress WSGI on `127.0.0.1:8000`) as an automatic Windows Service using NSSM with crash auto-recovery and 10 MB log rotation.
-- Registered `Cloudflared` as an automatic Windows Service for named tunnel routing (`media.anisparvez.in`).
+- `MediaServerRust` — the native Rust Axum backend on `0.0.0.0:8000`, serving the React 19 SPA and every `/api/*`, `/media/*`, `/hls/*`, `/subtitles/*`, `/auth/*` route. Automatic Windows Service via NSSM, with crash auto-recovery and log rotation.
+- `MediaServerCaddy` — the reverse proxy and TLS terminator on ports 80/443, fronting `127.0.0.1:8000` with a Let's Encrypt certificate. Automatic Windows Service via NSSM.
+- `MediaServerPG` — PostgreSQL 18.4 on port 5432, running as `NetworkService` with restart-x3 recovery actions. Binaries at `C:\postgres`, data at `E:\pgdata`.
+
+NSSM itself lives at `C:\MediaServer\bin\nssm.exe` and the PostgreSQL binaries at `C:\postgres`, so both survive the `E:` volume being absent — the `E:` glitch of 2026-10-16 took all three services down before that relocation.
+
+The Cloudflared service has been **decommissioned and removed**. The legacy `MediaServer` (Waitress / Flask) service is still registered as a Manual, stopped NSSM entry; it is inert and its removal is the owner's call. The backend is 100% native Rust and the frontend is a 100% React SPA.
+
+### QR Device Sign-In (OTT Activation Flow)
+- Six native endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by the `device_pair_sessions` table, plus a `/remotelogin` page for the phone and a `<QrSignInPanel>` on `/account` for the TV or browser.
+- Every security token (the 5-character pair code, the `qr_id`, session tokens, device tokens, the OAuth `state`/`nonce`, the PKCE verifier) is drawn from the operating system's CSPRNG via `getrandom`, and **fails closed** if the random source is unavailable.
+- The pair code carries **25 bits** of entropy (5 characters from a 32-symbol unambiguous charset). The original implementation collapsed to 32 possible codes because all five characters were derived from the low bits of one LCG state word — see [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md) §4.1.
+- The pair code and the full `qr_id` are **never logged**; only a 12-hex-character reference is.
 
 ---
 
 ## 3. Active Next Steps & Immediate Queue
 
-1. **Production Concurrency Tuning & Benchmarking:**
-   - Benchmark Waitress worker and thread pools against remote stream latency and Cloudflare tunnel limits.
-   - Remote streaming capacity is primarily bounded by ISP upload bandwidth and network tunnel latency.
-
-2. **Access Control & Authentication:**
-   - Prepare lightweight authentication before wider public sharing beyond personal devices.
+1. **Close the public `:8000` origin forward:**
+   - The router forwards 443, 80 **and 8000** to the host, so `http://122.163.124.18:8000/health` answers 200 from the internet, bypassing Caddy and TLS entirely. Port 8000 should not be forwarded.
+2. **Add `Secure` to the session cookie:**
+   - Pre-existing and codebase-wide — `auth.rs:345,405,424,467` and `qr_auth.rs:345` are all identical. Do this *after* the forward above, or LAN clients break.
+3. **Pin a public base URL:**
+   - `get_base_url` in `qr_auth.rs` trusts the `Host` and `X-Forwarded-Proto` request headers, so the emitted `qr_url` is host-header-injectable and defaults to `https` even on a plain-HTTP origin. Add `PUBLIC_BASE_URL` to `AppConfig`.
+4. **Bind `/finalize` to the waiting device:**
+   - It is unauthenticated and keyed only on the `qr_id`. A per-session secret issued at create time would close it.
+5. **Rate-limit the QR endpoints and cap concurrent SSE connections:**
+   - `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per connection, with no auth and no cap, on a publicly reachable endpoint.
+6. **Drop the plaintext `code` column** from `device_pair_sessions`; only `code_hash` is needed for lookup. Needs an `ALTER` on the live table.
+7. **Fix the stale `vite.config.ts` dev proxy** — it still points `/api` at the decommissioned Flask `:8000`, so `npm run dev` fails for every API call.
 
 ---
 
@@ -168,12 +187,38 @@ Note:          C: is not used by this project.
 Before committing changes, execute:
 
 ```powershell
-# Compile validation
-python -m py_compile app/config.py app/services/transcode_service.py app/services/chunk_transcode_service.py app/services/gpu_service.py
+# Rust backend: unit + integration tests (26 targets, 108 unit tests)
+cd E:\MediaServer\rust
+cmd /c "e:\MediaServer\scripts\cargo.bat test --no-fail-fast -- --test-threads=1"
 
-# Automated Test Suite (164 tests)
-.\venv\Scripts\python.exe -m pytest tests/
+# React frontend: unit tests, typecheck, production build
+cd E:\MediaServer\web
+npm run test
+npm run typecheck
+npm run build
+
+# Live client contract probe (22 endpoints)
+python scripts\probe_android_api.py
 ```
+
+### Test database isolation — do not skip this
+
+**The Rust integration suite must never touch the production database.**
+`AppConfig::from_env()` falls back to `postgresql://postgres:postgres@127.0.0.1:5432/media_server`
+when `MEDIA_SERVER_DATABASE_URL` is unset, and on this host it *is* unset. A test built on
+`from_env()` therefore writes to the live catalog.
+
+Use `media_server_api::test_support::test_config().await` instead. It provisions a dedicated
+`media_server_test` database (override with `MEDIA_SERVER_TEST_DATABASE_URL`), redirects the cache
+directory to a temp path, and leaves the media roots alone so file-based contracts still work.
+`seed_real_media_row()` / `remove_seeded_media_row()` seed and remove a catalog row for a real,
+probeable media file when a test needs one.
+
+A test that inserts rows must use `ON CONFLICT … DO UPDATE` **and** purge at setup **and** have an
+explicit `async fn teardown()`. `Drop` cannot clean a database — it is synchronous, the database
+calls are async — and the test should assert the residue count is zero rather than trusting the
+hook. Do not assert against production data: a test that hardcodes a library title breaks when
+that title is removed.
 
 Manual verification checklist:
 1. Direct MP4/AAC playback (*Oculus*, *Spider-Man*).
@@ -184,3 +229,5 @@ Manual verification checklist:
 6. Storage Retention & Cache Governance card on `/manage` reports accurate cache and storage telemetry.
 7. Expanded dropdown options display obsidian frosted glass popups with brand red highlights.
 8. No horizontal or vertical layout overflow on desktop or mobile viewports.
+9. **QR sign-in on a camera-less device:** `/account` shows the QR panel when unauthenticated, the code rotates after 2 minutes, and a phone at `/remotelogin` can complete the pairing and name the device.
+10. **Pair-code entropy:** creating 200 pairing sessions must yield ≥ 190 distinct codes, and the service log must contain neither the code nor a full `qr_id`.

@@ -1,0 +1,11 @@
+{
+    email anis7t@gmail.com
+    admin off
+}
+
+media.anisparvez.in {
+    tls {
+        dns cloudflare YOUR_CLOUDFLARE_API_TOKEN
+    }
+    reverse_proxy 127.0.0.1:8000
+}

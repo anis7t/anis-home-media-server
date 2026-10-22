@@ -495,7 +495,8 @@ ConnectionScreen → LibraryScreen → MovieDetailsScreen → PlayerScreen (prod
 
 ### Phase 4.6 — Persistent Navigation Shell & Settings Integration (COMPLETE)
 1. **Persistent Navigation Shell (`AppShell`):** `StatefulShellRoute.indexedStack` with 3 primary destinations: Home, Library, and Settings.
-2. **Settings Screen:** Fullscreen settings screen with active server base URL, device identity, update channel selector, manual update checker, and brand intro replay.
+2. **Settings Screen:** Fullscreen settings screen with active server base URL, device identity, update channel selector, and manual update checker.
+   - *Update 2026-10-20 (Phase 11, Slice 11.1a): the "Replay Brand Intro" action was **removed**. The brand opening now plays on every cold launch and has no Replay control on any target — canonical design: [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) Part I, decision **D4**.*
 3. **Presence Telemetry:** Automatic client heartbeat registration (`features/devices/presentation/controllers/device_presence_controller.dart`).
 
 ### Phase 4.7 — Fire TV Stick 4K & Universal Android APK (COMPLETE)
@@ -610,9 +611,13 @@ does not execute when every test in a file is skipped. Only files that genuinely
 
 ### Backend Testing
 ```powershell
-cd E:\MediaServer
-.\venv\Scripts\python.exe -m pytest tests/                  # 344 collected
+cd E:\MediaServer\rust
+cmd /c "e:\MediaServer\scripts\cargo.bat test --no-fail-fast -- --test-threads=1"
 ```
+
+> The Python backend test suite was decommissioned with the Flask backend in Slice 7E, so
+> `pytest tests/` no longer collects anything. The Rust integration suite is what validates the
+> `/api/*` contract the client depends on — see [`docs/DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) §4.
 
 ### Publishing an Update
 

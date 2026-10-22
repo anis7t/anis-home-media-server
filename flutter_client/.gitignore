@@ -39,10 +39,12 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android Studio and Gradle build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+.gradle/
 
 # Widget Preview related
 .widget_preview/
