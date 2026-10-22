@@ -85,3 +85,23 @@ same `setUpAll`. A group-level `skip:` skips test bodies, not fixtures. Correcte
 
 Delete `flutter_client/build/windows/x64/runner/Release/libmpv-2.dll` and the cache under
 `%LOCALAPPDATA%\MediaServer\tooling\libmpv`; no source, schema, or service state was touched.
+
+## Follow-up, same session: 3b no longer initialises media_kit it cannot use
+
+The "not done (out of scope)" item above was completed on request.
+
+`runtime_player_3b_test.dart`'s `setUpAll` now returns before touching media_kit (or
+`HttpOverrides`) unless `liveServerTestsEnabled`, because every test in that file carries
+`skip: liveServerSkip`. It was the one file that could be fixed this way - `3a` and `app_shell`
+construct a real player on tests that actually run.
+
+Both directions are measured, with the DLL moved out of its path and restored in a `finally`:
+
+- **DLL absent, live tests off:** `+0 ~2`, "All tests skipped", `RESULT: PASS`. The file no longer
+  depends on a library it would never use. Before this change the same run was `-1` at `setUpAll`.
+- **DLL absent, live tests on:** `-1` at `(setUpAll)` with
+  `Cannot find libmpv-2.dll in your system %PATH%`, and **no test body ran** - so the loud failure
+  is preserved exactly where it is real, and no production request was made.
+
+`docs/FLUTTER_CLIENT_STATUS.md` and Issue 11 were updated to describe the guard instead of listing
+it as a follow-up.

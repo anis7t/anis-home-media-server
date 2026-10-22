@@ -628,17 +628,27 @@ native playback: every such file is one more participant.
 `test/connection_screen_test.dart` renders only `ConnectionScreen`/`HomeScreen`/`AppShell` and
 deliberately omits it. Files that genuinely construct a real `Player`/`VideoController` must call it
 - that is `app_shell_test.dart` (its `/player` route test pumps the production `PlayerScreen`) and
-`runtime_player_3a_test.dart` (its non-live test builds a real `MediaKitPlayerAdapter`), and today
-`runtime_player_3b_test.dart` calls it too, although all of its tests are live-gated.
+`runtime_player_3a_test.dart` (its non-live test builds a real `MediaKitPlayerAdapter`).
+`runtime_player_3b_test.dart` calls it **only when `liveServerTestsEnabled`**, because every test in
+that file is live-gated; see below.
 
 **Correction to an earlier claim in this document.** It used to say `runtime_player_3b_test.dart`
 "no longer runs it either, because `setUpAll` does not execute when every test in a file is skipped".
-**That is false, and the fix depended on it.** Measured on 2026-10-23: with every test in that group
-carrying `skip:`, `setUpAll` still ran and still threw at `native_library.dart:81`; after
-provisioning, a fully skipped run printed `media_kit: NativeReferenceHolder: Allocated ...` from that
-same `setUpAll`. A group-level `skip:` skips the **bodies**, not the fixtures. Gating 3b's
-`MediaKit.ensureInitialized()` on `liveServerTestsEnabled` would therefore be a genuine (small)
-improvement - it is left for a follow-up rather than smuggled into the libmpv fix.
+**That is false, and the libmpv diagnosis depended on discovering it.** Measured on 2026-10-23: with
+every test in that group carrying `skip:`, `setUpAll` still ran and still threw at
+`native_library.dart:81`; after provisioning, a fully skipped run printed
+`media_kit: NativeReferenceHolder: Allocated ...` from that same `setUpAll`. A group-level `skip:`
+skips the **bodies**, not the fixtures.
+
+`runtime_player_3b_test.dart` now returns from `setUpAll` before touching media_kit (or
+`HttpOverrides`) unless the live tests are enabled. Both directions are measured:
+
+- **native library absent, live tests off:** `+0 ~2`, "All tests skipped", `RESULT: PASS` - the
+  file no longer depends on a library it would never use.
+- **native library absent, live tests on:** `-1` at `(setUpAll)` with
+  `Cannot find libmpv-2.dll in your system %PATH%`, and **no test body ran** (so no production
+  request was made). The failure stays loud exactly where it is real.
+
 
 
 ### Backend Testing

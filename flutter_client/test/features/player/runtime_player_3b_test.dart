@@ -16,14 +16,24 @@ const String libmpvPath =
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
+    // Nothing in this file runs unless the operator opted into live-server tests: every test
+    // below carries `skip: liveServerSkip`, and a group/file-level `skip:` skips the test
+    // BODIES - not setUpAll. That distinction is measured, not assumed: this hook used to call
+    // MediaKit.ensureInitialized() unconditionally and failed here with
+    // "Cannot find libmpv-2.dll in your system %PATH%" (native_library.dart:81) on runs where
+    // every test was skipped, which made a host without the native library fail on tests it
+    // never intended to run.
+    if (!liveServerTestsEnabled) return;
+
     // Re-enabling real sockets is only ever correct for an operator who has explicitly
     // opted into live-server tests. Unconditionally nulling this made every ordinary
     // `flutter test` run issue real GETs to http://127.0.0.1:8000 - the running
     // production service on this host - which the assertions in this group then
     // depended on, so they passed only while production happened to answer.
-    if (liveServerTestsEnabled) {
-      HttpOverrides.global = null;
-    }
+    HttpOverrides.global = null;
+
+    // Live tests build a real MediaKitPlayerAdapter, so they genuinely need the native
+    // library. If it is missing the failure is real and should be loud.
     if (File(libmpvPath).existsSync()) {
       MediaKit.ensureInitialized(libmpv: libmpvPath);
     } else {

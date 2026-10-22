@@ -227,7 +227,13 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   work: `runtime_player_3a_test.dart`'s only non-live test constructs a real `MediaKitPlayerAdapter`,
   whose constructor does `player ?? Player()` - a real native player - and `app_shell_test.dart`
   pumps the production `/player` route, so a real `PlayerScreen` and its `VideoController` are built.
-  Both genuinely need natives. Only `runtime_player_3b_test.dart` could have been fixed that way.
+  Both genuinely need natives. Only `runtime_player_3b_test.dart` could have been fixed that way, and
+  that part was done afterwards: its `setUpAll` now returns before touching media_kit unless
+  `liveServerTestsEnabled`, so a file whose tests are all live-gated no longer requires a library it
+  would never use. Both directions were measured - with the DLL moved away and live tests off it
+  reports `+0 ~2` "All tests skipped" and passes; with live tests on and the DLL absent it still
+  fails at `setUpAll` with the libmpv error and **no test body runs**, so the loud failure remains
+  exactly where it is real.
 - **A false premise was recorded in `docs/FLUTTER_CLIENT_STATUS.md`** and is now corrected there:
   it claimed `runtime_player_3b_test.dart` "no longer runs it, because `setUpAll` does not execute
   when every test in a file is skipped". Measured: the baseline failure *was* `3b`'s `setUpAll`
