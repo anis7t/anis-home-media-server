@@ -173,9 +173,12 @@ The current project includes:
    path-scoped `HttpOnly` cookie and stored only as `secret_hash`; missing or wrong → **403 with no
    session cookie**. Verified live: 403 without the cookie, 400 (not yet confirmed) with it.
    See the QR invariants above.
-3. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
-   `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
-   connection, with no auth and no cap, on a publicly reachable endpoint.
+3. ~~Rate-limit the QR endpoints and cap concurrent SSE connections.~~ **DONE 2026-10-23.**
+   Every QR route now has a per-client sliding window (create 10/min, lookup and confirm 20/min,
+   finalize 30/min, wait 10/min, status 120/min) answering **429 with `Retry-After`**, and SSE
+   streams are capped at **64 global** (`MEDIA_SERVER_QR_MAX_SSE`) and **4 per client**, with the
+   permit owned by the response stream so a disconnect returns the capacity. See the QR invariants
+   above.
 4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
    lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
@@ -309,6 +312,19 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   read it, and it must not appear in screenshots), and a successful finalize clears the cookie with
   the same `Path` that set it. Distance from the failure mode: a `qr_id` copied out of a log line
   used to buy a session inside the two-minute window; now it buys a 403.
+- **Every QR route is budgeted, and SSE concurrency is capped.** The QR routes are the cheapest
+  unauthenticated work on the server: `create` writes a row and `wait` holds a connection plus a
+  PostgreSQL query every three seconds. Each route therefore has a per-client sliding window
+  (create 10/min, lookup 20/min, confirm 20/min, finalize 30/min, wait 10/min, status 120/min),
+  answering **429 with `Retry-After`**. SSE streams are capped at **64 globally**
+  (`MEDIA_SERVER_QR_MAX_SSE`) and **4 per client**; the permit is owned by the **response stream**,
+  so a disconnect, a timeout, or a proxy that never reads the body returns the capacity - a permit
+  leaked per abandoned stream would shrink the pool permanently. The client identity is the **last**
+  `X-Forwarded-For` entry (correct whether Caddy appends or replaces), else a shared `direct` bucket
+  for LAN traffic; the identity table is capped at 8192 and refuses **new** identities rather than
+  evicting live ones, because eviction would hand an attacker a fresh budget per spoofed address.
+  This is an availability brake, not an authorization control: the counters are in-process and
+  reset on restart, which is acceptable because nothing about identity depends on them.
 - **The session cookie's `Secure` flag is conditional, and must stay that way.**
   `AuthService::session_cookie()` adds `Secure` only when the request arrived over TLS
   (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It **cannot** be unconditional:

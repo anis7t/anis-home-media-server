@@ -19,13 +19,200 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Duration;
+
+// ─── Abuse bounds ────────────────────────────────────────────────────────────
+//
+// The QR routes are reachable from the public internet through Caddy and need
+// no session to be hit, so they are the cheapest way to make this server work
+// for someone else: every `create` writes a row, and every `wait` holds a
+// connection plus a database query every three seconds.
+//
+// These are denial-of-service brakes, not authorization controls. A real TV
+// creates one session per two minutes and keeps one wait open, so the budgets
+// below are roughly an order of magnitude of headroom.
+
+/// Sliding-window length for every per-identity budget.
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+
+/// Per-identity attempts allowed per window, by route.
+const LIMIT_CREATE: usize = 10;
+const LIMIT_LOOKUP: usize = 20;
+const LIMIT_CONFIRM: usize = 20;
+const LIMIT_FINALIZE: usize = 30;
+const LIMIT_WAIT: usize = 10;
+const LIMIT_STATUS: usize = 120;
+
+/// Concurrent SSE streams: global pool (overridable) and per client.
+const SSE_MAX_GLOBAL_DEFAULT: usize = 64;
+const SSE_MAX_PER_IP: usize = 4;
+
+/// Upper bound on tracked identities, so churning `X-Forwarded-For` values
+/// cannot grow the table without bound.
+const RATE_MAX_IDENTITIES: usize = 8192;
+
+/// Per-identity sliding-window counter.
+///
+/// Deliberately in-process and dependency-free: the service is one process and
+/// this guards availability, not identity, so losing counters on restart costs
+/// nothing. When the identity table is full a *new* identity is refused rather
+/// than evicting a live one, because eviction would hand an attacker a fresh
+/// budget on every spoofed address.
+pub struct RateLimiter {
+    windows: Mutex<HashMap<String, VecDeque<Instant>>>,
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            windows: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Count one attempt. `Err(retry_after_secs)` means the caller is over
+    /// budget and the request must be refused with that delay.
+    fn check(&self, bucket: &str, identity: &str, limit: usize) -> Result<(), u64> {
+        self.check_window(bucket, identity, limit, RATE_WINDOW)
+    }
+
+    fn check_window(
+        &self,
+        bucket: &str,
+        identity: &str,
+        limit: usize,
+        window: Duration,
+    ) -> Result<(), u64> {
+        let key = format!("{}:{}", bucket, identity);
+        let now = Instant::now();
+        let mut windows = self.windows.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Opportunistic pruning keeps the table proportional to live clients.
+        if windows.len() > RATE_MAX_IDENTITIES {
+            windows.retain(|_, hits| {
+                hits.back()
+                    .map(|t| now.duration_since(*t) < window)
+                    .unwrap_or(false)
+            });
+        }
+        if !windows.contains_key(&key) && windows.len() >= RATE_MAX_IDENTITIES {
+            return Err(window.as_secs().max(1));
+        }
+
+        let hits = windows.entry(key).or_default();
+        while let Some(front) = hits.front() {
+            if now.duration_since(*front) >= window {
+                hits.pop_front();
+            } else {
+                break;
+            }
+        }
+        if hits.len() >= limit {
+            let oldest = *hits.front().expect("queue is non-empty when over budget");
+            let remaining = window.saturating_sub(now.duration_since(oldest));
+            return Err(remaining.as_secs().max(1));
+        }
+        hits.push_back(now);
+        Ok(())
+    }
+}
+
+/// Admission control for concurrent SSE streams.
+///
+/// The global pool bounds the whole server; the per-identity count stops one
+/// client from occupying all of it. Both are released by dropping the returned
+/// permit, which is moved into the response stream - so a disconnect, a
+/// timeout, or a proxy that never reads the body all give the capacity back.
+pub struct SseGate {
+    permits: Arc<Semaphore>,
+    by_identity: Mutex<HashMap<String, usize>>,
+}
+
+pub struct SsePermit {
+    _permit: OwnedSemaphorePermit,
+    gate: Arc<SseGate>,
+    identity: String,
+}
+
+impl Drop for SsePermit {
+    fn drop(&mut self) {
+        let mut by_identity = self.gate.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = by_identity.get_mut(&self.identity) {
+            *count -= 1;
+            if *count == 0 {
+                by_identity.remove(&self.identity);
+            }
+        }
+    }
+}
+
+impl SseGate {
+    fn new(max_global: usize) -> Arc<Self> {
+        Arc::new(Self {
+            permits: Arc::new(Semaphore::new(max_global)),
+            by_identity: Mutex::new(HashMap::new()),
+        })
+    }
+
+    fn try_acquire(self: &Arc<Self>, identity: &str) -> Option<SsePermit> {
+        {
+            let mut by_identity =
+                self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+            let count = by_identity.entry(identity.to_string()).or_insert(0);
+            if *count >= SSE_MAX_PER_IP {
+                return None;
+            }
+            *count += 1;
+        }
+
+        match self.permits.clone().try_acquire_owned() {
+            Ok(permit) => Some(SsePermit {
+                _permit: permit,
+                gate: self.clone(),
+                identity: identity.to_string(),
+            }),
+            Err(_) => {
+                // The global pool is full: undo the per-identity reservation so
+                // a later attempt is judged on the pool alone.
+                let mut by_identity =
+                    self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(count) = by_identity.get_mut(identity) {
+                    *count -= 1;
+                    if *count == 0 {
+                        by_identity.remove(identity);
+                    }
+                }
+                None
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct QrAuthState {
     pub pool: Arc<PgPool>,
+    pub limiter: Arc<RateLimiter>,
+    pub sse: Arc<SseGate>,
 }
+
+impl QrAuthState {
+    pub fn new(pool: Arc<PgPool>) -> Self {
+        let max_sse = std::env::var("MEDIA_SERVER_QR_MAX_SSE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(SSE_MAX_GLOBAL_DEFAULT);
+        Self {
+            pool,
+            limiter: Arc::new(RateLimiter::new()),
+            sse: SseGate::new(max_sse),
+        }
+    }
+}
+
 
 // ─── Request / Response shapes ───────────────────────────────────────────────
 
@@ -102,6 +289,41 @@ fn get_base_url(headers: &HeaderMap) -> String {
     format!("{}://{}", proto, host)
 }
 
+/// The identity used for per-client budgets.
+///
+/// The public origin is reached only through Caddy, which supplies
+/// `X-Forwarded-For`; the **last** entry is the client as the closest proxy saw
+/// it, which is correct whether Caddy appends to or replaces the header.
+///
+/// Direct LAN requests carry no header and share one bucket. That is safe even
+/// though the bucket is coarser than a per-host one: ports 80 and 443 are the
+/// only forwarded ports, so a public caller cannot bypass Caddy and forge the
+/// header - and a LAN caller is already inside the trust boundary. The length
+/// is capped because the value becomes a table key.
+fn client_identity(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| raw.rsplit(',').next())
+        .map(|ip| ip.trim())
+        .filter(|ip| !ip.is_empty())
+        .map(|ip| ip.chars().take(64).collect())
+        .unwrap_or_else(|| "direct".to_string())
+}
+
+/// Enforce one route's per-identity budget, answering 429 with `Retry-After`.
+fn enforce(
+    state: &QrAuthState,
+    headers: &HeaderMap,
+    bucket: &str,
+    limit: usize,
+) -> Result<(), AppError> {
+    state
+        .limiter
+        .check(bucket, &client_identity(headers), limit)
+        .map_err(AppError::TooManyRequests)
+}
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// `POST /api/auth/qr`
@@ -117,6 +339,8 @@ pub async fn create_pair_session_handler(
     State(state): State<QrAuthState>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    enforce(&state, &headers, "create", LIMIT_CREATE)?;
+
     let (qr_id, code, sig, expires_at, secret) =
         AuthService::create_pair_session(&state.pool).await?;
 
@@ -158,6 +382,10 @@ pub async fn qr_lookup_handler(
     headers: HeaderMap,
     Json(payload): Json<LookupQrPayload>,
 ) -> Result<Json<LookupQrResponse>, AppError> {
+    // Limit before the auth lookup: an unauthenticated flood must not reach the
+    // session resolver either.
+    enforce(&state, &headers, "lookup", LIMIT_LOOKUP)?;
+
     // Caller must be signed in on phone
     let _ = AuthService::resolve_session_or_token(&state.pool, &headers)
         .await
@@ -194,9 +422,20 @@ pub async fn qr_lookup_handler(
 pub async fn qr_wait_handler(
     Path(qr_id): Path<String>,
     State(state): State<QrAuthState>,
-) -> impl IntoResponse {
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
     use axum::body::Body;
     use tokio::sync::mpsc;
+
+    enforce(&state, &headers, "wait", LIMIT_WAIT)?;
+
+    let identity = client_identity(&headers);
+    let Some(permit) = state.sse.try_acquire(&identity) else {
+        // A refused stream retries sooner than a refused request: the stream
+        // that holds the slot usually finishes or disconnects within the
+        // session's two-minute life.
+        return Err(AppError::TooManyRequests(5));
+    };
 
     // 16-frame buffer — we only send one frame per 3s tick so this is very generous
     let (tx, rx) = mpsc::channel::<String>(16);
@@ -234,21 +473,25 @@ pub async fn qr_wait_handler(
         }
     });
 
-    // Convert the mpsc receiver into a byte stream for the HTTP response body
-    let byte_stream = futures_util::stream::unfold(rx, |mut rx| async move {
+    // Convert the mpsc receiver into a byte stream for the HTTP response body.
+    //
+    // The SSE permit rides in the stream state: dropping the stream (client
+    // disconnect, timeout, proxy that never reads) drops the permit with it, so
+    // capacity cannot leak away from the pool.
+    let byte_stream = futures_util::stream::unfold((rx, permit), |(mut rx, permit)| async move {
         rx.recv().await.map(|frame| {
             let bytes = axum::body::Bytes::from(frame.into_bytes());
-            (Ok::<_, std::convert::Infallible>(bytes), rx)
+            (Ok::<_, std::convert::Infallible>(bytes), (rx, permit))
         })
     });
 
-    axum::response::Response::builder()
+    Ok(axum::response::Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
         .header(header::CACHE_CONTROL, "no-cache")
         .header("X-Accel-Buffering", "no") // tell reverse proxies not to buffer SSE
         .body(Body::from_stream(byte_stream))
-        .expect("SSE response is valid")
+        .expect("SSE response is valid"))
 }
 
 /// `GET /api/auth/qr/{id}/status`
@@ -257,7 +500,10 @@ pub async fn qr_wait_handler(
 pub async fn qr_status_handler(
     Path(qr_id): Path<String>,
     State(state): State<QrAuthState>,
+    headers: HeaderMap,
 ) -> Result<Json<QrStatusResponse>, AppError> {
+    enforce(&state, &headers, "status", LIMIT_STATUS)?;
+
     let status = match AuthService::get_pair_session_status(&state.pool, &qr_id).await? {
         Some((true, _, _)) => "confirmed",
         Some((false, _, _)) => "pending",
@@ -279,6 +525,10 @@ pub async fn qr_confirm_handler(
     headers: HeaderMap,
     body: Option<Json<ConfirmQrPayload>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Meter before the session lookup: a flood of guesses must not become a
+    // flood of database work, and the phone legitimately confirms once.
+    enforce(&state, &headers, "confirm", LIMIT_CONFIRM)?;
+
     // The phone must be signed in
     let identity = AuthService::resolve_session_or_token(&state.pool, &headers)
         .await
@@ -342,6 +592,10 @@ pub async fn qr_finalize_handler(
     // Fail closed before revealing anything about the session's state: a
     // caller without the secret gets the same 403 whether the session is
     // pending, confirmed or absent.
+    // The budget is spent before the secret check so that guessing secrets is
+    // as expensive as guessing session ids.
+    enforce(&state, &headers, "finalize", LIMIT_FINALIZE)?;
+
     let presented = cookie_value(&headers, "ms_qr_secret").unwrap_or_default();
     let secret_ok = !presented.is_empty()
         && AuthService::verify_pair_session_secret(&state.pool, &qr_id, &presented).await?;
@@ -400,4 +654,87 @@ pub async fn qr_finalize_handler(
     }
 
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limiter_allows_the_budget_then_refuses() {
+        let limiter = RateLimiter::new();
+        for _ in 0..3 {
+            assert!(limiter.check("create", "10.0.0.1", 3).is_ok());
+        }
+        let retry = limiter.check("create", "10.0.0.1", 3).unwrap_err();
+        assert!(
+            (1..=60).contains(&retry),
+            "retry-after must be a sensible delay, was {}",
+            retry
+        );
+
+        // Another identity has its own budget...
+        assert!(limiter.check("create", "10.0.0.2", 3).is_ok());
+        // ...and so does another route for the same identity, so a burst of
+        // status polls cannot spend the create budget.
+        assert!(limiter.check("finalize", "10.0.0.1", 3).is_ok());
+    }
+
+    #[test]
+    fn limiter_reopens_after_the_window() {
+        let limiter = RateLimiter::new();
+        let window = Duration::from_millis(40);
+        assert!(limiter.check_window("wait", "10.0.0.1", 1, window).is_ok());
+        assert!(limiter.check_window("wait", "10.0.0.1", 1, window).is_err());
+        std::thread::sleep(Duration::from_millis(70));
+        assert!(limiter.check_window("wait", "10.0.0.1", 1, window).is_ok());
+    }
+
+    #[test]
+    fn sse_global_cap_refuses_beyond_the_pool() {
+        let gate = SseGate::new(2);
+        let _first = gate.try_acquire("10.0.0.1").expect("first within cap");
+        let _second = gate.try_acquire("10.0.0.2").expect("second within cap");
+        assert!(
+            gate.try_acquire("10.0.0.3").is_none(),
+            "the global pool must refuse a stream past its size"
+        );
+    }
+
+    #[test]
+    fn sse_cap_is_per_identity_and_released_on_drop() {
+        // Global == per-identity so both gates agree for this test.
+        let gate = SseGate::new(SSE_MAX_PER_IP);
+        let held: Vec<SsePermit> = (0..SSE_MAX_PER_IP)
+            .map(|_| {
+                gate.try_acquire("10.0.0.1")
+                    .expect("within the per-identity cap")
+            })
+            .collect();
+        assert!(
+            gate.try_acquire("10.0.0.1").is_none(),
+            "one client must not hold more than its share"
+        );
+        assert!(
+            gate.try_acquire("10.0.0.2").is_none(),
+            "the global pool is exhausted too"
+        );
+
+        drop(held);
+        assert!(
+            gate.try_acquire("10.0.0.1").is_some(),
+            "dropping a stream must return its permits - otherwise the pool leaks"
+        );
+    }
+
+    #[test]
+    fn client_identity_uses_the_last_forwarded_entry() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.9, 198.51.100.7".parse().unwrap(),
+        );
+        assert_eq!(client_identity(&headers), "198.51.100.7");
+        assert_eq!(client_identity(&HeaderMap::new()), "direct");
+    }
 }

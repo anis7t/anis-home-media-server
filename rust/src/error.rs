@@ -14,6 +14,9 @@ pub enum AppError {
     Unauthorized(String),
     UnsupportedMediaType(String),
     PayloadTooLarge(String),
+    /// Rate limited. Carries the number of seconds the caller must wait, which
+    /// becomes the `Retry-After` response header.
+    TooManyRequests(u64),
     BadGateway(String),
     ServiceUnavailable(String),
     Internal(String),
@@ -29,6 +32,9 @@ impl std::fmt::Display for AppError {
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
             AppError::UnsupportedMediaType(msg) => write!(f, "Unsupported Media Type: {}", msg),
             AppError::PayloadTooLarge(msg) => write!(f, "Payload Too Large: {}", msg),
+            AppError::TooManyRequests(secs) => {
+                write!(f, "Too Many Requests: retry after {}s", secs)
+            }
             AppError::BadGateway(msg) => write!(f, "Bad Gateway: {}", msg),
             AppError::ServiceUnavailable(msg) => write!(f, "Service Unavailable: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal Error: {}", msg),
@@ -62,6 +68,13 @@ impl From<std::io::Error> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        // A refusal must tell the caller when to come back: an SSE client that
+        // retries with no delay turns a rate limit into a busy loop.
+        let retry_after_secs = match &self {
+            AppError::TooManyRequests(secs) => Some(*secs),
+            _ => None,
+        };
+
         let (status, error_message) = match self {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
@@ -69,6 +82,13 @@ impl IntoResponse for AppError {
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             AppError::UnsupportedMediaType(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg),
             AppError::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, msg),
+            AppError::TooManyRequests(secs) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!(
+                    "Too many requests. Please wait {} second(s) and try again.",
+                    secs
+                ),
+            ),
             AppError::BadGateway(msg) => (StatusCode::BAD_GATEWAY, msg),
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
@@ -86,6 +106,14 @@ impl IntoResponse for AppError {
             "status": status.as_u16(),
         }));
 
-        (status, body).into_response()
+        let mut response = (status, body).into_response();
+        if let Some(secs) = retry_after_secs {
+            if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, value);
+            }
+        }
+        response
     }
 }

@@ -729,3 +729,91 @@ async fn qr_device_auth_flow_test() {
     .unwrap();
     assert_eq!(residue, 0, "the test must leave no phantom rows behind");
 }
+
+#[tokio::test]
+async fn qr_create_rate_limit_test() {
+    let ctx = TestContext::new().await;
+
+    // One client, eleven rapid creates. The budget is ten per minute, so the
+    // eleventh must be refused - and a refusal must say when to come back.
+    const CLIENT_A: &str = "198.51.100.44";
+    const CLIENT_B: &str = "198.51.100.45";
+
+    let mut created: Vec<String> = Vec::new();
+    let mut refused = 0;
+    for _ in 0..11 {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/auth/qr")
+            .header("x-forwarded-for", CLIENT_A)
+            .body(Body::empty())
+            .unwrap();
+        let resp = ctx.app.clone().oneshot(req).await.unwrap();
+        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+            refused += 1;
+            assert!(
+                resp.headers().get(header::RETRY_AFTER).is_some(),
+                "a rate-limited response must carry Retry-After"
+            );
+        } else {
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body: Value =
+                serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes())
+                    .unwrap();
+            created.push(body["qr_id"].as_str().unwrap().to_string());
+        }
+    }
+    assert_eq!(
+        created.len(),
+        10,
+        "the budget must be ten creates per minute"
+    );
+    assert_eq!(refused, 1, "the eleventh create must be refused");
+
+    // A different client is judged on its own budget...
+    let req_other = Request::builder()
+        .method("POST")
+        .uri("/api/auth/qr")
+        .header("x-forwarded-for", CLIENT_B)
+        .body(Body::empty())
+        .unwrap();
+    let resp_other = ctx.app.clone().oneshot(req_other).await.unwrap();
+    assert_eq!(resp_other.status(), StatusCode::OK);
+    let other_body: Value =
+        serde_json::from_slice(&resp_other.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    created.push(other_body["qr_id"].as_str().unwrap().to_string());
+
+    // ...and a different route does not spend this client's create budget.
+    let req_status = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/status", created[0]))
+        .header("x-forwarded-for", CLIENT_A)
+        .body(Body::empty())
+        .unwrap();
+    let resp_status = ctx.app.clone().oneshot(req_status).await.unwrap();
+    assert_eq!(resp_status.status(), StatusCode::OK);
+
+    // These sessions are unconfirmed (user_id is NULL), so deleting a test user
+    // would not cascade them away: remove them explicitly.
+    for id in &created {
+        sqlx::query("DELETE FROM device_pair_sessions WHERE id = $1")
+            .bind(id)
+            .execute(&ctx.pool)
+            .await
+            .unwrap();
+    }
+
+    ctx.teardown().await;
+
+    let residue: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM device_pair_sessions WHERE id = ANY($1)")
+            .bind(created.clone())
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        residue, 0,
+        "the test must leave no phantom pair sessions behind"
+    );
+}

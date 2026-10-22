@@ -516,9 +516,7 @@ pub fn create_app_full(
         .with_state(auth_state);
 
     // QR Device Sign-In (TV & browser remote login flow)
-    let qr_auth_state = routes::qr_auth::QrAuthState {
-        pool: Arc::new(pool.clone()),
-    };
+    let qr_auth_state = routes::qr_auth::QrAuthState::new(Arc::new(pool.clone()));
 
     let qr_auth_routes = Router::new()
         .route(
