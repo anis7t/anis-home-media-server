@@ -710,14 +710,58 @@ impl DeviceService {
         .is_ok()
     }
 
+    /// Record that `user_id` owns `device_id`, **only if the device is
+    /// currently unowned**.
+    ///
+    /// First authenticated owner wins. A shared browser must not silently
+    /// transfer a device's ownership (and, through it, its watch history) each
+    /// time a different account signs in on it; a deliberate transfer is a
+    /// separate action, not a side effect of loading the device list.
+    ///
+    /// Returns true when this call performed the claim.
+    pub async fn claim_device_for_user(pool: &PgPool, device_id: &str, user_id: i64) -> bool {
+        sqlx::query("UPDATE devices SET user_id = $1 WHERE device_id = $2 AND user_id IS NULL")
+            .bind(user_id)
+            .bind(device_id)
+            .execute(pool)
+            .await
+            .map(|r| r.rows_affected() > 0)
+            .unwrap_or(false)
+    }
+
+    /// Whether `device_id` exists and is owned by `user_id`.
+    pub async fn device_owned_by(pool: &PgPool, device_id: &str, user_id: i64) -> bool {
+        let row = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT user_id FROM devices WHERE device_id = $1",
+        )
+        .bind(device_id)
+        .fetch_optional(pool)
+        .await;
+
+        match row {
+            Ok(Some(Some(uid))) => uid == user_id,
+            _ => false,
+        }
+    }
+
     /// Retrieve all recorded devices with network metadata and watch history.
+    ///
+    /// Phase 2 scoping: an admin sees every device and every history row; a
+    /// signed-in caller sees the devices they own (`devices.user_id`) plus the
+    /// device they are using right now (which may not be claimed yet); an
+    /// anonymous caller sees only the device it is using. The filter is in SQL
+    /// below, because filtering in memory after reading every row is the same
+    /// query cost for a list that is always small but the wrong guarantee:
+    /// rows the caller may not see would still have been read.
     pub async fn get_all_devices(
         pool: &PgPool,
         current_device_id: Option<&str>,
+        caller_user_id: Option<i64>,
         is_admin: bool,
         _cache_dir: &Path,
         _roots: &[PathBuf],
     ) -> Result<(Vec<DeviceDetail>, DeviceStats), AppError> {
+        let current = current_device_id.unwrap_or("");
         let dev_rows = sqlx::query(
             r#"
             SELECT
@@ -737,34 +781,85 @@ impl DeviceService {
                 country,
                 first_seen,
                 last_seen,
-                device_model
+                device_model,
+                user_id
             FROM devices
+            WHERE $1::boolean
+               OR (CASE WHEN $2::bigint IS NOT NULL
+                        THEN (user_id = $2 OR device_id = $3)
+                        ELSE device_id = $3 END)
             ORDER BY last_seen DESC
             "#,
         )
+        .bind(is_admin)
+        .bind(caller_user_id)
+        .bind(current)
         .fetch_all(pool)
         .await?;
 
-        let hist_rows = sqlx::query(
-            r#"
-            SELECT
-                h.device_id,
-                h.filename,
-                h.position::double precision as position,
-                h.duration::double precision as duration,
-                h.completed,
-                h.last_watched,
-                m.title,
-                m.year,
-                m.tmdb_id::BIGINT as tmdb_id,
-                m.poster_path
-            FROM device_watch_history h
-            LEFT JOIN movies m ON h.filename = m.filename
-            ORDER BY h.last_watched DESC
-            "#,
-        )
-        .fetch_all(pool)
-        .await?;
+        // History follows the *owning* device set, not merely the listed set.
+        // A caller may read history for devices they own and for unowned
+        // devices (a guest device before anyone signs in). A device owned by
+        // somebody else may still be listed when it is the caller's current
+        // device - they are physically using it - but its watch history is not
+        // theirs to read.
+        let device_ids: Vec<String> = dev_rows
+            .iter()
+            .filter(|d| {
+                let owner: Option<i64> = d.try_get("user_id").ok().flatten();
+                match owner {
+                    None => true,
+                    Some(uid) => Some(uid) == caller_user_id,
+                }
+            })
+            .filter_map(|d| d.try_get::<String, _>("device_id").ok())
+            .collect();
+
+        let hist_rows = if is_admin {
+            sqlx::query(
+                r#"
+                SELECT
+                    h.device_id,
+                    h.filename,
+                    h.position::double precision as position,
+                    h.duration::double precision as duration,
+                    h.completed,
+                    h.last_watched,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.poster_path
+                FROM device_watch_history h
+                LEFT JOIN movies m ON h.filename = m.filename
+                ORDER BY h.last_watched DESC
+                "#,
+            )
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                SELECT
+                    h.device_id,
+                    h.filename,
+                    h.position::double precision as position,
+                    h.duration::double precision as duration,
+                    h.completed,
+                    h.last_watched,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.poster_path
+                FROM device_watch_history h
+                LEFT JOIN movies m ON h.filename = m.filename
+                WHERE h.device_id = ANY($1)
+                ORDER BY h.last_watched DESC
+                "#,
+            )
+            .bind(&device_ids)
+            .fetch_all(pool)
+            .await?
+        };
 
         let now = Utc::now();
         let mut history_map: HashMap<String, Vec<WatchHistoryItem>> = HashMap::new();
@@ -921,9 +1016,11 @@ impl DeviceService {
             });
         }
 
-        if !is_admin {
-            devices.retain(|d| d.is_current);
-        }
+        // Scoping already happened in SQL above: an admin sees every device,
+        // a signed-in user sees the devices they own plus the one they are
+        // using, and an anonymous caller sees only the device it is using.
+        // Do not re-filter on `is_current` here - that would hide a signed-in
+        // user's other devices, which is the whole point of Phase 2.
 
         let total_devices = devices.len();
         let active_now = devices.iter().filter(|d| d.is_active).count();

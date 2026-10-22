@@ -2,7 +2,7 @@
 
 ## 0. Standing working rules
 
-These two rules govern **all** work in this repository. Added 2026-10-16.
+These three rules govern **all** work in this repository. Rules 0.1 and 0.2 added 2026-10-16; rule 0.3 added 2026-10-23.
 
 ### 0.1 Ask before drafting a plan, then plan first and ask for approval
 
@@ -27,6 +27,14 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 - **Do not introduce Python web frameworks.** All new routes, services, APIs, and background workers belong natively in Rust (`rust/`).
 - **All proxy bridges are retired.** There is zero reverse proxying or hybrid hosting. All endpoints (`/api/*`, `/media/*`, `/hls/*`, `/subtitles/*`, `/poster/*`, `/auth/*`, `/manage/*`, `/download`) are served directly by Axum.
 - Keep the Flutter/Fire TV client working throughout; `/api/*` contract shapes must not change underneath it (guarded by `scripts/probe_android_api.py`).
+
+### 0.3 Always use the question tool, when the harness provides one
+
+**Always use the harness's structured question tool (OpenCode calls it the `question` tool) if it is available.** Every question put to the user goes through that tool instead of plain prose — approval gates (including the plan approval in 0.1), the open decisions a plan raises, clarifications, and any "which option?" choice. Prose is the fallback only when no such tool exists, and then say so explicitly.
+
+- The plan itself is still presented in full first; the question tool carries the approval question, not the plan.
+- Keep options concrete, distinct and short, and mark the preferred one "(Recommended)" when another option is not clearly better.
+- A question answered through the tool does not remove the need to honour 0.1 — approval is still explicit, and implementation still waits for it.
 
 ## 1. Project identity and source of truth
 
@@ -259,7 +267,7 @@ The current project includes:
 ### Secondary / parked
 
 5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-6. **Authentication/access control — Phase 1 done 2026-10-23.** The stable hostname is not
+6. **Authentication/access control — Phases 1–2 done 2026-10-23.** The stable hostname is not
    authentication. `media.anisparvez.in` is served by Caddy on a static IP, so anyone on earth
    with a Google account could sign in and (previously) become a viewer, and the allowlist
    defaulted to "allow everyone." Phase 1 closes the account-creation side:
@@ -275,10 +283,12 @@ The current project includes:
    - The `MEDIA_SERVER_AUTH_ALLOWLIST` was cleared so anyone can still sign in (guest browsing
      and per-user watch history stay available); only account *creation* is scoped by the admin
      list, and admin oversight is the remaining work.
-   Remaining phases (not yet done): Phase 2 — `user_id` on `devices` and per-user scoping of
-   the device list / watch history (admin sees all); Phase 3 — admin UI to view and modify any
-   account's devices and watch history. The media library itself stays public (gating it would
-   break DLNA/cast/device tokens). Tracked in `docs/Current issues.md` / the handoff.
+   - **Phase 2 (done 2026-10-23):** `devices.user_id` and per-user scoping of the device list and
+     its embedded watch history; rename/delete authorisation follows ownership. The invariants are
+     in *Device ownership & watch-history scoping* below.
+   Remaining: Phase 3 — admin UI to view and modify any account's devices and watch history. The
+   media library itself stays public (gating it would break DLNA/cast/device tokens). Tracked in
+   `docs/Current issues.md` / the handoff.
 7. **Backups are on the same volume as the data.** `E:\pgdata` and `E:\MediaServer\backups` are
    both on `E:`. A volume failure takes the database *and* the backups together. An off-host copy
    is the actual fix. The daily scheduled backup itself is in place — see
@@ -371,6 +381,43 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so it was silently
   using the literal fallback string published in the source. It now reads either name and falls
   back to a **random process-local key**, never a known constant.
+
+### Device ownership & watch-history scoping (Phase 2, `rust/src/services/device_service.rs` & `rust/src/routes/devices.rs`)
+
+`devices.user_id` (nullable, `ON DELETE SET NULL`, indexed by `idx_devices_user`) records which
+account a physical client belongs to. It scopes the device list and its embedded watch history, and
+it authorises renaming and deleting a device. The media library itself stays public — this scopes
+*devices*, not media.
+
+- **The column is additive and nullable, and that is the whole migration.** `NULL` means unowned: a
+  guest device, or every row written before Phase 2. No row was rewritten and no backfill was needed.
+  `ON DELETE SET NULL`, never `CASCADE`: deleting an account must unlink its devices, not delete the
+  physical client's row and (through `device_watch_history`'s FK) the history beneath it.
+- **Ownership is claimed exactly once, by the first signed-in devices request from that device.**
+  The claim points are `GET /api/devices`, `/api/devices/heartbeat`, `/api/devices/client-hints`,
+  and the rename/delete handlers (each claims the device the request came from). `claim_device_for_user`
+  is `UPDATE ... WHERE device_id = $1 AND user_id IS NULL` — one conditional
+  update, so it is atomic and a second account signing in on the same browser cannot take the device
+  over. Never "reassign on sign-in": that would hand a device and its history to whoever loads the
+  app next. `device_owned_by` is the read side, used by rename/delete.
+- **The list is scoped in SQL, not filtered in memory.** Admin (PIN **or** admin session) sees every
+  device; a signed-in caller sees the devices they own plus the device they are using; an anonymous
+  caller sees only the device they are using. Do not restore a `devices.retain(|d| d.is_current)` for
+  signed-in users — that was the Phase 1 behaviour and it hides a user's other devices.
+- **Watch history follows *ownership*, not visibility.**
+  A caller may read history for the devices they own and for unowned devices. A device owned by
+  somebody else is still *listed* when it is the caller's current device (they are physically using
+  it), but its `watch_history` is **empty**. That is the deliberate answer to a shared browser: the
+  device is visible, the other account's viewing is not. A signed-out session on a claimed device
+  therefore shows the device and no history.
+- **Rename/delete authorisation is current device OR owned device; admins are unchanged.** A signed-in
+  user may rename a device they own while using a different one, and a refused request is a **403
+  whose target row must still exist**. Anonymous callers keep the original current-device-only rule.
+- **`progress` (the legacy filename-keyed table) stays global, deliberately.** It is only consulted
+  when a request carries no device id. Scoping it is tracked debt, not an oversight: the scoped
+  history is `device_watch_history`, and that is the one the device list reads.
+- **The Flutter contract is unchanged.** `/api/devices` keeps its shape — scoping changes *which*
+  rows are returned, not the fields. `scripts/probe_android_api.py` remains the gate.
 
 ### Public ingress invariants (Airtel Zyxel AOT5222ZY + Caddy)
 

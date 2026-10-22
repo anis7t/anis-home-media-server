@@ -19,6 +19,10 @@ use std::net::SocketAddr;
 use tower::ServiceExt;
 
 const TEST_PREFIX: &str = "dev_rustc3a_";
+/// Phase 2 ownership rows this suite owns. Users and sessions are namespaced
+/// so cleanup can never touch a real account.
+const TEST_USER_SUB_PREFIX: &str = "sub_dev_phase2_";
+const TEST_SESSION_PREFIX: &str = "sess_dev_phase2_";
 const UA_WINDOWS: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36";
 
@@ -48,6 +52,15 @@ async fn cleanup(pool: &PgPool) {
         .await;
     let _ = sqlx::query("DELETE FROM devices WHERE device_id LIKE $1")
         .bind(format!("{}%", TEST_PREFIX))
+        .execute(pool)
+        .await;
+    // Phase 2: sessions reference users, so they go first.
+    let _ = sqlx::query("DELETE FROM sessions WHERE id LIKE $1")
+        .bind(format!("{}%", TEST_SESSION_PREFIX))
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE google_sub LIKE $1")
+        .bind(format!("{}%", TEST_USER_SUB_PREFIX))
         .execute(pool)
         .await;
     let _ = sqlx::query(
@@ -113,6 +126,80 @@ async fn call_full(app: &axum::Router, req: Request<Body>) -> (StatusCode, axum:
     let headers = res.headers().clone();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// Create (or reuse) a viewer account and a live session for it.
+/// Returns `(user_id, session_id)`. Both rows are namespaced.
+async fn make_user_and_session(pool: &PgPool, suffix: &str, email: &str) -> (i64, String) {
+    let sub = format!("{}{}", TEST_USER_SUB_PREFIX, suffix);
+    let session_id = format!("{}{}", TEST_SESSION_PREFIX, suffix);
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)
+        VALUES ($1, $2, 'Phase 2 Test', 'viewer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email
+        "#,
+    )
+    .bind(&sub)
+    .bind(email)
+    .execute(pool)
+    .await
+    .expect("upsert test user");
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE google_sub = $1")
+        .bind(&sub)
+        .fetch_one(pool)
+        .await
+        .expect("fetch test user id");
+
+    sqlx::query(
+        r#"
+        INSERT INTO sessions (id, user_id, email, role, expires_at)
+        VALUES ($1, $2, $3, 'viewer', CURRENT_TIMESTAMP + INTERVAL '30 days')
+        ON CONFLICT (id) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            email = EXCLUDED.email,
+            expires_at = EXCLUDED.expires_at
+        "#,
+    )
+    .bind(&session_id)
+    .bind(user_id)
+    .bind(email)
+    .execute(pool)
+    .await
+    .expect("upsert test session");
+
+    (user_id, session_id)
+}
+
+/// Insert a device row with an optional owner (`None` = unowned/guest).
+async fn insert_device(pool: &PgPool, device_id: &str, owner: Option<i64>) {
+    sqlx::query(
+        "INSERT INTO devices (device_id, device_name, device_type, device_os, user_id, first_seen, last_seen) \
+         VALUES ($1, 'Phase Two Device', 'Desktop', 'Linux', $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(device_id)
+    .bind(owner)
+    .execute(pool)
+    .await
+    .expect("insert test device");
+}
+
+async fn insert_history(pool: &PgPool, device_id: &str, filename: &str) {
+    sqlx::query(
+        "INSERT INTO device_watch_history (device_id, filename, position, duration, completed) \
+         VALUES ($1, $2, 12.5, 100.0, 0)",
+    )
+    .bind(device_id)
+    .bind(filename)
+    .execute(pool)
+    .await
+    .expect("insert test history");
+}
+
+fn session_cookie(session_id: &str) -> String {
+    format!("session_token={}", session_id)
 }
 
 #[tokio::test]
@@ -743,5 +830,257 @@ async fn test_suite_leaves_no_test_devices() {
     .await
     .unwrap();
     assert_eq!(remaining, 0, "devices table must retain no test rows");
+
+    let users: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE google_sub LIKE $1")
+        .bind(format!("{}%", TEST_USER_SUB_PREFIX))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(users, 0, "users table must retain no Phase 2 test rows");
+
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE id LIKE $1")
+        .bind(format!("{}%", TEST_SESSION_PREFIX))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sessions, 0, "sessions table must retain no Phase 2 test rows");
+
     let _ = header::CONTENT_TYPE;
+}
+
+// --- Phase 2: per-user device ownership and watch-history scoping ---
+
+#[tokio::test]
+async fn test_signed_in_user_sees_only_their_devices_and_history() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, alice_session) =
+        make_user_and_session(&pool, "alice", "alice@example.com").await;
+    let (bob_id, _) = make_user_and_session(&pool, "bob", "bob@example.com").await;
+
+    let alice_phone = format!("{}alice_phone", TEST_PREFIX);
+    let alice_tv = format!("{}alice_tv", TEST_PREFIX);
+    let bob_phone = format!("{}bob_phone", TEST_PREFIX);
+    let unowned = format!("{}unowned", TEST_PREFIX);
+
+    insert_device(&pool, &alice_phone, Some(alice_id)).await;
+    insert_device(&pool, &alice_tv, Some(alice_id)).await;
+    insert_device(&pool, &bob_phone, Some(bob_id)).await;
+    insert_device(&pool, &unowned, None).await;
+
+    insert_history(&pool, &alice_tv, "alice_movie.mp4").await;
+    insert_history(&pool, &bob_phone, "bob_movie.mp4").await;
+
+    let req = request_with_headers(
+        Method::GET,
+        "/api/devices",
+        Some(&alice_phone),
+        None,
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&alice_session)),
+    );
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let devices = body["devices"].as_array().expect("devices array");
+    let ids: Vec<&str> = devices.iter().filter_map(|d| d["device_id"].as_str()).collect();
+
+    assert!(ids.contains(&alice_phone.as_str()), "current device must be listed");
+    assert!(ids.contains(&alice_tv.as_str()), "a device the user owns must be listed");
+    assert!(!ids.contains(&bob_phone.as_str()), "another user's device must not be listed");
+    assert!(!ids.contains(&unowned.as_str()), "an unowned device must not be listed");
+    assert_eq!(devices.len(), 2, "exactly the user's own two devices");
+    assert_eq!(body["stats"]["total_devices"], 2);
+
+    let tv = devices
+        .iter()
+        .find(|d| d["device_id"] == alice_tv.as_str())
+        .expect("owned TV");
+    let tv_history = tv["watch_history"].as_array().expect("history array");
+    assert_eq!(tv_history.len(), 1);
+    assert_eq!(tv_history[0]["filename"], "alice_movie.mp4");
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_owner_can_rename_a_device_they_are_not_using() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, alice_session) =
+        make_user_and_session(&pool, "alice_rename", "alice_rename@example.com").await;
+
+    let alice_phone = format!("{}alice_r_phone", TEST_PREFIX);
+    let alice_tv = format!("{}alice_r_tv", TEST_PREFIX);
+    insert_device(&pool, &alice_phone, Some(alice_id)).await;
+    insert_device(&pool, &alice_tv, Some(alice_id)).await;
+
+    let payload =
+        serde_json::json!({ "device_id": alice_tv, "name": "Living Room TV" }).to_string();
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/rename",
+        Some(&alice_phone),
+        Some(&payload),
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&alice_session)),
+    );
+    let (status, body) = call(&app, req).await;
+
+    assert_eq!(status, StatusCode::OK, "a user may rename a device they own");
+    assert_eq!(body["success"], true);
+
+    let name: Option<String> =
+        sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+            .bind(&alice_tv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(name.as_deref(), Some("Living Room TV"));
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_other_user_cannot_rename_or_delete_my_device() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, _) = make_user_and_session(&pool, "alice_cross", "alice_cross@example.com").await;
+    let (bob_id, bob_session) =
+        make_user_and_session(&pool, "bob_cross", "bob_cross@example.com").await;
+
+    let alice_tv = format!("{}alice_cross_tv", TEST_PREFIX);
+    let bob_phone = format!("{}bob_cross_phone", TEST_PREFIX);
+    insert_device(&pool, &alice_tv, Some(alice_id)).await;
+    insert_device(&pool, &bob_phone, Some(bob_id)).await;
+
+    // Bob tries to rename Alice's TV.
+    let rename_payload =
+        serde_json::json!({ "device_id": alice_tv, "name": "Not Yours" }).to_string();
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/rename",
+        Some(&bob_phone),
+        Some(&rename_payload),
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&bob_session)),
+    );
+    let (status, _) = call(&app, req).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "renaming another user's device must be forbidden"
+    );
+
+    // Bob tries to delete Alice's TV.
+    let delete_payload = serde_json::json!({ "device_id": alice_tv }).to_string();
+    let req = request_with_headers(
+        Method::POST,
+        "/api/devices/delete",
+        Some(&bob_phone),
+        Some(&delete_payload),
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&bob_session)),
+    );
+    let (status, _) = call(&app, req).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "deleting another user's device must be forbidden"
+    );
+
+    let still_there: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id = $1")
+        .bind(&alice_tv)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(still_there, 1, "the target device must survive a refused delete");
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+async fn test_first_signed_in_request_claims_an_unowned_device_once() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let (alice_id, alice_session) =
+        make_user_and_session(&pool, "alice_claim", "alice_claim@example.com").await;
+    let (_bob_id, bob_session) =
+        make_user_and_session(&pool, "bob_claim", "bob_claim@example.com").await;
+
+    // A device nobody owns yet: a guest, or a client that predates Phase 2.
+    let shared = format!("{}shared", TEST_PREFIX);
+    insert_device(&pool, &shared, None).await;
+
+    // Alice's first signed-in request claims it.
+    let req = request_with_headers(
+        Method::GET,
+        "/api/devices",
+        Some(&shared),
+        None,
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&alice_session)),
+    );
+    let (status, _) = call(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let owner: Option<i64> =
+        sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
+            .bind(&shared)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner, Some(alice_id), "first signed-in request must claim the device");
+
+    // Alice watches something on it.
+    insert_history(&pool, &shared, "alice_secret.mp4").await;
+
+    // Bob signs in on the same physical device. Ownership must not transfer,
+    // and Alice's history must not become readable through it.
+    let req = request_with_headers(
+        Method::GET,
+        "/api/devices",
+        Some(&shared),
+        None,
+        Some(UA_WINDOWS),
+        None,
+        Some(&session_cookie(&bob_session)),
+    );
+    let (status, body) = call(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let owner: Option<i64> =
+        sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
+            .bind(&shared)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner, Some(alice_id), "an already-owned device must never be reassigned");
+
+    let listed = body["devices"]
+        .as_array()
+        .expect("devices array")
+        .iter()
+        .find(|d| d["device_id"] == shared.as_str())
+        .expect("the current device is always listed");
+    let history = listed["watch_history"].as_array().expect("history array");
+    assert!(
+        history.is_empty(),
+        "a caller must not read another owner's history from a shared device"
+    );
+
+    cleanup(&pool).await;
 }

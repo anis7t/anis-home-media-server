@@ -360,6 +360,32 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // Phase 2 (access control): a device belongs to the user who first
+    // authenticated from it. The column is additive and nullable: NULL means
+    // unowned (guests, and every row written before Phase 2), so this alters
+    // an existing catalog without rewriting a single row.
+    //
+    // `ON DELETE SET NULL`, not CASCADE: deleting an account unlinks its
+    // devices rather than deleting the physical client's row (and, through
+    // the history FK, its watch history).
+    sqlx::query(
+        r#"
+        ALTER TABLE devices
+            ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_devices_user
+            ON devices (user_id)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS device_watch_history (

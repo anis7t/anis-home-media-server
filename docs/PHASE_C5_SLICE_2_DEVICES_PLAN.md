@@ -5,6 +5,11 @@
 **Prerequisites:** Phase C5 Slice 1 complete & committed (`68538e1`)  
 **Objective:** Port the remaining device management endpoints natively to Rust Axum, eliminate the `/api/devices/*` reverse-proxy bridge group from `rust/src/lib.rs`, enforce fail-closed admin authorization semantics, and ensure 100% contract parity with the Flutter client and React SPA.
 
+> **Superseded in part (2026-10-23, access-control Phase 2).** The 403 rule described below ("you can
+> only rename/remove your current device") now reads "your current device **or one you own**", and
+> `GET /api/devices` is scoped per user. The authoritative description is the *Device ownership &
+> watch-history scoping* section of `AGENTS.md`.
+
 ---
 
 ## 1. Background & Current State

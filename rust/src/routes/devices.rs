@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::services::auth_service::{AuthService, ResolvedIdentity};
 use crate::services::device_service::{
     ClientHints, ConnectionInfo, DeviceService, RequestFacts,
 };
@@ -131,6 +132,30 @@ fn resolve_device_id(headers: &HeaderMap, remote_addr: &str, user_agent: &str) -
     )
 }
 
+/// Resolve the signed-in caller, and claim an unowned device for them.
+///
+/// Claim-on-first-authenticated-request: a device that has never been linked
+/// to an account belongs to the first account that signs in from it. An
+/// already-owned device is never reassigned here, so signing in as a different
+/// account does not silently take over a shared browser's device (or, through
+/// it, its watch history).
+///
+/// Returns the caller's identity for per-user scoping, or `None` when the
+/// request is anonymous.
+async fn resolve_and_claim(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    device_id: &str,
+) -> Option<ResolvedIdentity> {
+    let identity = AuthService::resolve_session_or_token(pool, headers).await;
+    if let Some(id) = identity.as_ref() {
+        if id.user_id > 0 {
+            DeviceService::claim_device_for_user(pool, device_id, id.user_id).await;
+        }
+    }
+    identity
+}
+
 ///
 /// A known device is one UPDATE. An unknown one falls through to full
 /// registration, so a first-contact client still records its telemetry
@@ -157,6 +182,7 @@ pub async fn heartbeat_handler(
 
     let ctx = facts(&headers, &addr, &ua, hints_from(&headers));
     DeviceService::record_heartbeat(&state.pool, &device_id, &ctx).await;
+    resolve_and_claim(&state.pool, &headers, &device_id).await;
 
     Ok(json_response(json!({ "success": true, "device_id": device_id })))
 }
@@ -186,6 +212,12 @@ pub async fn client_hints_handler(
     )
     .await;
 
+    // The row must exist for a claim to land; a request that updated hints
+    // always does, and an unknown device has nothing to claim.
+    if updated {
+        resolve_and_claim(&state.pool, &headers, &device_id).await;
+    }
+
     Ok(json_response(
         json!({ "success": true, "updated": updated, "device_id": device_id }),
     ))
@@ -209,6 +241,11 @@ pub async fn list_devices_handler(
     let ctx = facts(&headers, &addr, &ua, hints_from(&headers));
     DeviceService::record_heartbeat(&state.pool, &device_id, &ctx).await;
 
+    // Claim-on-first-signed-in-request, and use the identity as the per-user
+    // scope for the list and its embedded watch history.
+    let identity = resolve_and_claim(&state.pool, &headers, &device_id).await;
+    let caller_user_id = identity.as_ref().map(|i| i.user_id).filter(|uid| *uid > 0);
+
     let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
         &state.pool,
         &headers,
@@ -219,6 +256,7 @@ pub async fn list_devices_handler(
     let (devices, stats) = DeviceService::get_all_devices(
         &state.pool,
         Some(&device_id),
+        caller_user_id,
         is_admin,
         &state.cache_dir,
         &state.media_roots,
@@ -265,6 +303,11 @@ pub async fn rename_device_handler(
         ));
     }
 
+    // The request comes from `current_device_id`; claim it for the signed-in
+    // caller, then decide whether the *target* is theirs to rename.
+    let identity = resolve_and_claim(&state.pool, &headers, &current_device_id).await;
+    let caller_user_id = identity.as_ref().map(|i| i.user_id).filter(|uid| *uid > 0);
+
     let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
         &state.pool,
         &headers,
@@ -272,10 +315,15 @@ pub async fn rename_device_handler(
     )
     .await;
 
-    if !is_admin && target_id != current_device_id {
+    let owns_target = match caller_user_id {
+        Some(uid) => DeviceService::device_owned_by(&state.pool, &target_id, uid).await,
+        None => false,
+    };
+
+    if !is_admin && target_id != current_device_id && !owns_target {
         return Ok(json_response_with_status(
             StatusCode::FORBIDDEN,
-            json!({ "error": "Unauthorized: You can only rename your current device." }),
+            json!({ "error": "Unauthorized: You can only rename your current device or one you own." }),
         ));
     }
 
@@ -317,6 +365,11 @@ pub async fn delete_device_handler(
         ));
     }
 
+    // The request comes from `current_device_id`; claim it for the signed-in
+    // caller, then decide whether the *target* is theirs to remove.
+    let identity = resolve_and_claim(&state.pool, &headers, &current_device_id).await;
+    let caller_user_id = identity.as_ref().map(|i| i.user_id).filter(|uid| *uid > 0);
+
     let is_admin = crate::services::auth_service::AuthService::is_admin_authorized(
         &state.pool,
         &headers,
@@ -324,10 +377,15 @@ pub async fn delete_device_handler(
     )
     .await;
 
-    if !is_admin && target_id != current_device_id {
+    let owns_target = match caller_user_id {
+        Some(uid) => DeviceService::device_owned_by(&state.pool, &target_id, uid).await,
+        None => false,
+    };
+
+    if !is_admin && target_id != current_device_id && !owns_target {
         return Ok(json_response_with_status(
             StatusCode::FORBIDDEN,
-            json!({ "error": "Unauthorized: You can only remove your current device." }),
+            json!({ "error": "Unauthorized: You can only remove your current device or one you own." }),
         ));
     }
 
