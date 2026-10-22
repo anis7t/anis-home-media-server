@@ -259,10 +259,26 @@ The current project includes:
 ### Secondary / parked
 
 5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-6. **Authentication/access control:** the stable hostname is not authentication. `media.anisparvez.in`
-   is now served by Caddy on a static IP rather than a Cloudflare tunnel, but that changes the
-   transport, not the posture: anyone on earth with a Google account can sign in. Add access
-   control before wider public sharing.
+6. **Authentication/access control — Phase 1 done 2026-10-23.** The stable hostname is not
+   authentication. `media.anisparvez.in` is served by Caddy on a static IP, so anyone on earth
+   with a Google account could sign in and (previously) become a viewer, and the allowlist
+   defaulted to "allow everyone." Phase 1 closes the account-creation side:
+   - `MEDIA_SERVER_ADMIN_EMAILS` (comma list) promotes those addresses to `admin` on Google
+     sign-in; everyone else is `viewer`. `anis7t@gmail.com` is configured.
+   - The role is re-checked against the `users` table on every request (session cookie path
+     now reads `COALESCE(u.role, s.role)`), so a removal from the list takes effect immediately
+     rather than at the next sign-in.
+   - Upload was already admin-only (`require_admin`); it is now reachable by a signed-in admin
+     account as well as the Admin PIN. Verified: admin session → past the gate, viewer session
+     and anonymous → 403.
+   - Admin PIN channel is untouched and remains the bootstrap/recovery path.
+   - The `MEDIA_SERVER_AUTH_ALLOWLIST` was cleared so anyone can still sign in (guest browsing
+     and per-user watch history stay available); only account *creation* is scoped by the admin
+     list, and admin oversight is the remaining work.
+   Remaining phases (not yet done): Phase 2 — `user_id` on `devices` and per-user scoping of
+   the device list / watch history (admin sees all); Phase 3 — admin UI to view and modify any
+   account's devices and watch history. The media library itself stays public (gating it would
+   break DLNA/cast/device tokens). Tracked in `docs/Current issues.md` / the handoff.
 7. **Backups are on the same volume as the data.** `E:\pgdata` and `E:\MediaServer\backups` are
    both on `E:`. A volume failure takes the database *and* the backups together. An off-host copy
    is the actual fix. The daily scheduled backup itself is in place — see

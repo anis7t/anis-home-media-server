@@ -300,7 +300,7 @@ impl AuthService {
                     if (key == "session_token" || key == "media_session") && !token.is_empty() {
                         let row = sqlx::query(
                             r#"
-                            SELECT s.user_id, s.email, s.role, u.name, u.picture_url
+                            SELECT s.user_id, s.email, COALESCE(u.role, s.role) AS role, u.name, u.picture_url
                             FROM sessions s
                             LEFT JOIN users u ON s.user_id = u.id
                             WHERE s.id = $1 AND s.expires_at > CURRENT_TIMESTAMP
@@ -468,6 +468,15 @@ impl AuthService {
         }
         let target = email.trim().to_lowercase();
         allowlist.effective.iter().any(|e| e == &target)
+    }
+
+    pub fn role_for_email(email: &str) -> &'static str {
+        let target = email.trim().to_lowercase();
+        if crate::config::admin_emails().contains(&target) {
+            "admin"
+        } else {
+            "viewer"
+        }
     }
 
     fn split_emails(raw: &str) -> Vec<String> {
@@ -931,15 +940,21 @@ impl AuthService {
         let name = claims.get("name").and_then(|v| v.as_str());
         let picture = claims.get("picture").and_then(|v| v.as_str());
 
+        // Role is determined by the configured admin list on every sign-in, so
+        // adding/removing an email takes effect at the next login (and the
+        // per-request role re-check makes the admin flag live even sooner).
+        let role = AuthService::role_for_email(&email);
+
         // Upsert user
         let user_row = sqlx::query(
             r#"
             INSERT INTO users (google_sub, email, name, picture_url, role, created_at, last_login_at)
-            VALUES ($1, $2, $3, $4, 'viewer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (google_sub) DO UPDATE
                 SET email = $2,
                     name = COALESCE($3, users.name),
                     picture_url = COALESCE($4, users.picture_url),
+                    role = $5,
                     last_login_at = CURRENT_TIMESTAMP
             RETURNING id, role
             "#,
@@ -948,6 +963,7 @@ impl AuthService {
         .bind(&email)
         .bind(name)
         .bind(picture)
+        .bind(role)
         .fetch_one(pool)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to upsert user: {}", e)))?;

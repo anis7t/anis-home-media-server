@@ -37,6 +37,18 @@ pub fn public_base_url() -> Option<String> {
         .clone()
 }
 
+pub fn admin_emails() -> Vec<String> {
+    let raw = std::env::var("MEDIA_SERVER_ADMIN_EMAILS").unwrap_or_default();
+    let mut out: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalise_public_base_url;
