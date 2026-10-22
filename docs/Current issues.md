@@ -335,3 +335,44 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   correctness document's subject. It is also a constraint on the pipeline itself, so it belongs
   next to the `vpp_amf` / `h264_amf` rules in AGENTS.md §6 as well. See also
   `docs/TRANSCODE_CORRECTNESS_AND_TELEMETRY.md`.
+
+---
+
+### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
+
+Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
+sign-in was restored. **State: documented, not yet triaged or fixed** (this entry only records
+what was said; no code change accompanied it).
+
+1. **Watch history not populated.** While signed in on the web browser and after playing media,
+   **no played entry was listed in the devices menu**. Possibly a device-scoping / progress-source
+   mismatch (`GET /api/devices` returns the caller's current device plus owned devices and embeds
+   `watch_history` from the device/progress tables), or the history UI rendering. Needs a live,
+   signed-in reproduction.
+2. **Account icon missing.** The user account icon is **not present throughout all pages** of the
+   web app — some pages lack the signed-in identity affordance.
+3. **Playback stuck at 0:00.** Movies such as *2001: A Space Odyssey* don't play automatically and,
+   after pressing play, stay at **0:00**. Occasionally, after trying other media and then returning
+   to the unplayable media, it **does** play — the owner is unsure how consistent this is, and it
+   needs re-testing for reliability.
+4. **Unscannable QR code in the devices menu.** In the **signed-in** state, the QR code displayed in
+   the devices menu is **cropped / not fully displayed**, making it unscannable.
+5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
+   sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
+   scan option should be **disabled only in the TV variant** of the app.
+6. **Add-device / QR flow confusion.** In the devices menu, the **"Add device"** option: after
+   entering a device name it shows a **QR code, a URL and a token**. Questions the owner has:
+   - What am I supposed to do with the QR code?
+   - The URL is **non-functional**.
+   - Where was I supposed to enter the token?
+   - Why does this whole thing exist, since QR login is already handled?
+
+- **Open questions for triage:** watch-history source of truth and per-device scoping;
+  playback root cause (autoplay / 0:00 / direct play vs HLS); QR display/scoping; sign-in menu
+  option set; add-device token/QR flow.
+- **Context:** the sign-in outage itself was fixed on 2026-10-23 (stale allowlist row cleared; allowlist
+  endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
+  against that restored state and are presumed **unrelated to the allowlist**, pending reproduction.
+
+---
+
