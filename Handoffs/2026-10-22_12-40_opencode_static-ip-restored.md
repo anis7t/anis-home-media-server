@@ -22,9 +22,8 @@ internet. It falls in `100.128.0.0/9`, announced by **AS21928 (T-Mobile
 USA)**, not Airtel. The 100.x pool Airtel was handing out was
 Airtel-internal, not globally routed to the line.
 
-On 2026-10-22 Airtel's network engineer called the owner and configured the
-router over the phone. The line was moved to IPoE with a static address.
-The router form now shows:
+On 2026-10-22 the line was moved to IPoE with a static address. The router
+form now shows:
 
   * `RN_IPAddr = 171.50.176.119`
   * `RN_Subnet = 255.255.255.0`
@@ -94,8 +93,6 @@ title).
 ## TIMELINE
 
   * 2026-10-21: carrier NAT proven; Caddy disabled; public ingress dead.
-  * 2026-10-22: Airtel's network engineer called and configured the router
-    over the phone.
   * 2026-10-22 ~12:20 IST: IPoE static address observed on the router.
   * 2026-10-22 12:27:32 IST: external port-80 probe reached the temporary
     listener.
