@@ -25,4 +25,5 @@ pub mod transcode_sweeper;
 pub mod gpu_service;
 pub mod chunk_transcode;
 pub mod transcode_worker;
+pub mod upload_service;
 

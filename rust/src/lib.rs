@@ -157,7 +157,8 @@ pub fn create_app_full(
         )
         .route(
             "/api/upload-subtitle/{*filename}",
-            axum::routing::post(routes::subtitles::upload_subtitle_handler),
+            axum::routing::post(routes::subtitles::upload_subtitle_handler)
+                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
         )
         .with_state(subtitle_state);
 
@@ -371,7 +372,7 @@ pub fn create_app_full(
         pool: Arc::new(pool.clone()),
         media_roots: roots_arc.clone(),
         cache_dir: cache_dir_arc.clone(),
-        tmdb_token,
+        tmdb_token: tmdb_token.clone(),
     };
 
     let scan_routes = Router::new()
@@ -381,6 +382,43 @@ pub fn create_app_full(
                 .post(routes::scan::post_scan_handler),
         )
         .with_state(scan_state);
+
+    // Media upload: admin-gated, per-route body limits, chunk staging on disk.
+    // The single-file compatibility route and the 8 MiB resumable chunk route
+    // carry their own `DefaultBodyLimit`; every other route keeps Axum's 2 MB
+    // default so an upload feature does not turn the JSON surface into an
+    // unbounded body sink.
+    let media_root = roots_arc
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("D:\\Flicks"));
+    let upload_tmp = std::env::var("MEDIA_SERVER_UPLOAD_TMP")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| media_root.join(".uploads"));
+    let upload_target_dir = std::env::var("MEDIA_SERVER_UPLOAD_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| media_root.clone());
+
+    let scan_pool = Arc::new(pool.clone());
+    let scan_roots = roots_arc.clone();
+    let scan_cache = cache_dir_arc.clone();
+    let scan_tmdb = tmdb_token.clone();
+    let upload_scan_trigger: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+        crate::services::scan_service::ScanService::trigger_scan(
+            scan_pool.clone(),
+            scan_roots.clone(),
+            scan_cache.clone(),
+            scan_tmdb.clone(),
+        )
+    });
+
+    let upload_routes = routes::upload::build_upload_routes(routes::upload::UploadState {
+        pool: Arc::new(pool.clone()),
+        media_root,
+        upload_tmp,
+        upload_target_dir,
+        scan_trigger: upload_scan_trigger,
+    });
 
     // Phase C5 Slice 3: storage audit, purge-orphans, settings, and archive, 100% native.
     let storage_state = routes::storage::StorageState {
@@ -530,6 +568,7 @@ pub fn create_app_full(
         .merge(progress_routes)
         .merge(media_routes)
         .merge(subtitle_routes)
+        .merge(upload_routes)
         .merge(preview_routes)
         .merge(hls_routes)
         .merge(transcode_routes)

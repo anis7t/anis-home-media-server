@@ -1,14 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { listMovies } from '../../lib/api/client';
+import { getStoredAdminPin } from '../../lib/api/account';
+import { verifyAdminPin } from '../../lib/api/manage';
+import { useOptionalAuth } from '../../auth/AuthProvider';
 import { useDeviceId } from '../../lib/useDeviceId';
 import { StateMessage } from '../../components/StateMessage';
 import { useAsync } from '../../lib/useAsync';
 import { MovieGrid } from '../../components/MovieGrid';
+import { AdminPinModal } from '../manage/components/AdminPinModal';
+import { MediaUploadModal } from '../upload/MediaUploadModal';
+import type { UploadSuccess } from '../upload/uploadApi';
 import { HeroSpotlight } from './HeroSpotlight';
 import { Icon } from '../../components/icons';
 
 export function LibraryPage() {
   const deviceId = useDeviceId();
+  const auth = useOptionalAuth();
+  const role = auth?.role ?? null;
 
   const { data, error, loading, reload } = useAsync(
     (signal) => listMovies({ signal, deviceId }),
@@ -21,6 +29,70 @@ export function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'recent' | 'title' | 'rating' | 'year'>('recent');
+
+  // Upload is admin-only. An admin session is enough; otherwise the PIN is
+  // verified once, stored in sessionStorage, and sent as X-Admin-Pin.
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [adminPin, setAdminPin] = useState<string | null>(() => getStoredAdminPin());
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinValue, setPinValue] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+
+  const handleUploadClick = () => {
+    setPinError(null);
+    setPinValue('');
+    if (role !== 'admin' && !adminPin) {
+      setPinModalOpen(true);
+      return;
+    }
+    setUploadOpen(true);
+  };
+
+  const handleVerifyPin = async () => {
+    if (pinBusy) return;
+    const candidate = pinValue.trim();
+    if (!candidate) {
+      setPinError('Enter your Admin PIN.');
+      return;
+    }
+    setPinBusy(true);
+    setPinError(null);
+    try {
+      const data = await verifyAdminPin(candidate);
+      if (data.success) {
+        setAdminPin(candidate);
+        try {
+          sessionStorage.setItem('ms_admin_pin', candidate);
+        } catch {
+          // Storage can be unavailable; the in-memory PIN still works.
+        }
+        setPinModalOpen(false);
+        setPinValue('');
+        setUploadOpen(true);
+      } else {
+        setPinError(data.error || 'Incorrect Admin PIN.');
+      }
+    } catch {
+      setPinError('Failed to verify the Admin PIN.');
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
+  const handleNeedPin = useCallback(() => {
+    setUploadOpen(false);
+    setPinError(null);
+    setPinValue('');
+    setPinModalOpen(true);
+  }, []);
+
+  const handleUploaded = useCallback(
+    (_result: UploadSuccess) => {
+      void reload();
+    },
+    [reload],
+  );
 
   // Featured billboard candidate: prefer active watch or title with rich artwork
   const featured = useMemo(() => {
@@ -75,6 +147,17 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleUploadClick}
+          className="inline-flex items-center gap-2 rounded-full brand-gradient px-4 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 active:scale-[0.98]"
+        >
+          <Icon name="upload" size={14} />
+          Upload Media
+        </button>
+      </div>
+
       {/* Cinematic Hero Billboard (only shown when catalog is populated and featured has artwork) */}
       {!loading && !error && featured && (featured.overview || featured.backdrop_path) && !hasActiveFilters ? (
         <HeroSpotlight movie={featured} hasTopBanner={false} />
@@ -204,6 +287,27 @@ export function LibraryPage() {
           </div>
         )}
       </StateMessage>
+
+      <AdminPinModal
+        isOpen={pinModalOpen}
+        pinValue={pinValue}
+        error={pinError}
+        onChangePin={setPinValue}
+        onSubmit={() => {
+          void handleVerifyPin();
+        }}
+        onClose={() => {
+          setPinModalOpen(false);
+          setPinError(null);
+        }}
+      />
+      <MediaUploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={handleUploaded}
+        onNeedPin={handleNeedPin}
+        adminPin={adminPin}
+      />
     </div>
   );
 }

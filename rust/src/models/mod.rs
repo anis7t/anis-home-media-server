@@ -7,3 +7,4 @@ pub mod storage;
 pub mod subtitle;
 pub mod system;
 pub mod transcode;
+pub mod upload;

@@ -75,6 +75,10 @@ pub struct AppConfig {
     pub flask_origin: String,
     pub base_dir: PathBuf,
     pub tmdb_api_token: Option<String>,
+    /// Staging directory for resumable uploads. Defaults to `<media_root>/.uploads`.
+    pub upload_tmp: PathBuf,
+    /// Final directory for completed media uploads. Defaults to `<media_root>`.
+    pub upload_target_dir: PathBuf,
     /// The pinned public origin, when `MEDIA_SERVER_PUBLIC_BASE_URL` is set.
     pub public_base_url: Option<String>,
 }
@@ -154,6 +158,13 @@ impl AppConfig {
             }
         }
 
+        let upload_tmp = env::var("MEDIA_SERVER_UPLOAD_TMP")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| media_root.join(".uploads"));
+        let upload_target_dir = env::var("MEDIA_SERVER_UPLOAD_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| media_root.clone());
+
         let cache_dir = env::var("MEDIA_SERVER_CACHE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("E:\\MediaServer\\cache"));
@@ -195,6 +206,8 @@ impl AppConfig {
             flask_origin,
             base_dir,
             tmdb_api_token,
+            upload_tmp,
+            upload_target_dir,
             public_base_url: public_base_url(),
         }
     }

@@ -126,6 +126,18 @@ pub async fn test_config() -> AppConfig {
     let _ = std::fs::create_dir_all(&cache_dir);
     config.cache_dir = cache_dir;
 
+    // Upload tests construct their UploadState from these fields directly, so
+    // they never write into the production media root (`D:\Flicks`). The
+    // production router derives the same paths from the media root and env.
+    let upload_root =
+        std::env::temp_dir().join(format!("ms_test_uploads_{}", std::process::id()));
+    let upload_tmp = upload_root.join("tmp");
+    let upload_target = upload_root.join("target");
+    let _ = std::fs::create_dir_all(&upload_tmp);
+    let _ = std::fs::create_dir_all(&upload_target);
+    config.upload_tmp = upload_tmp;
+    config.upload_target_dir = upload_target;
+
     config
 }
 

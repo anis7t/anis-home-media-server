@@ -15,6 +15,7 @@ pub mod system;
 pub mod spa;
 pub mod transcode;
 pub mod scan;
+pub mod upload;
 pub mod storage;
 pub mod admin;
 pub mod app_dist;

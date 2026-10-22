@@ -209,7 +209,7 @@ The following actions are strictly restricted to administrators (Google Admin se
 | **Orphaned Cache Purging** | `/api/storage/audit`, `/api/storage/purge-orphans` | Protects in-progress and cached transcode files. |
 | **Permanent Media Deletion** | `DELETE /api/media/<filename>` | Irreversible deletion of original files from disk. |
 | **Cold Archival Movement** | `POST /api/storage/archive/<filename>` | Moves original media files into secondary storage. |
-| **Media File Uploads** | `POST /upload`, `POST /upload/chunk/init` | Protects server storage from unauthorized uploads. |
+| **Media File Uploads** | `POST /api/upload`, `POST /api/upload/chunk/init` | Protects server storage from unauthorized uploads. |
 | **Library Re-indexing** | `POST /api/scan` | CPU/GPU intensive background scan. |
 | **Household Fleet Telemetry** | `/devices`, `GET /api/devices` | Masks IP addresses and other household device sessions. |
 
@@ -355,12 +355,15 @@ Each movie features a dedicated cinema details page (`/movie/<filename>`):
 ### Resumable Chunked File Uploads
 
 Upload new media files directly through the browser without needing FTP or SMB shares:
-1. Click **Upload** in the navigation header on any page.
-2. Drag and drop any video file (`.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.m4v`).
-3. *(Optional)* Enter a clean Movie Title in the rename box if your original file has a cryptic scene name.
-4. Click **Start Upload**.
-5. The client partitions the file into binary chunks, transferring them sequentially with exponential speed smoothing and an accurate remaining time countdown (ETA).
-6. Once the transfer reaches 100%, client abort is automatically concealed as server-side background ingestion begins.
+1. Sign in as an administrator, or have the Admin PIN ready. The upload routes are admin-gated: a signed-in admin session works without a PIN; otherwise the browser asks for the PIN once and keeps it for the tab session.
+2. On the library page (`/`), click **Upload Media**.
+3. Drag and drop or choose a `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, or `.m4v` file up to **20 GiB**.
+4. *(Optional)* Enter a clean display title if your original file has a cryptic scene name. The original extension is preserved.
+5. Leave **Replace an existing file with the same name** off to keep both files; the server appends ` (1)`, ` (2)`, and so on. Enable it only when you intend to replace a same-named file.
+6. Click **Start upload**. The browser sends sequential **8 MiB** chunks at the offset the server reports, shows transfer speed and a measured ETA, retries transient network/5xx failures, and can resume from a `409` offset mismatch. **Abort upload** removes the temporary session.
+7. At 100% the server verifies the declared byte count, moves the file into the library root, inserts a fallback catalog row, and queues a full library scan. The details page is available immediately; TMDb metadata and artwork enrichment follows.
+
+The upload PIN is sent in the `X-Admin-Pin` request header, never in a URL or query string. The single-file compatibility route (`POST /api/upload`) accepts one file up to **256 MiB**; the browser uses the resumable chunked route for everything.
 
 ### Automated TMDb Enrichment & 4-Hour Background Refresh
 
