@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router';
 import { Icon } from '../../components/icons';
 import { getStoredAdminPin } from '../../lib/api/account';
+import { useOptionalAuth } from '../../auth/AuthProvider';
 
 export interface WatchHistoryItem {
   filename: string;
@@ -17,6 +18,30 @@ export interface WatchHistoryItem {
   last_watched: string;
   last_watched_ago: string;
   poster_url: string | null;
+}
+
+/** Present only when an admin asked; `null` means unowned for admins, and is
+ * also the value every non-admin receives (the server withholds attribution). */
+export interface DeviceOwner {
+  id: number;
+  email: string;
+  name: string | null;
+  role: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string | null;
+  role: string;
+  created_at: string;
+  last_login_at: string | null;
+  device_count: number;
+  history_count: number;
+}
+
+interface AdminUsersResponse {
+  users: AdminUser[];
 }
 
 interface DeviceItem {
@@ -40,6 +65,7 @@ interface DeviceItem {
   total_watched?: number;
   recent_watch?: WatchHistoryItem | { filename: string; percent: number } | null;
   watch_history?: WatchHistoryItem[];
+  owner?: DeviceOwner | null;
 }
 
 interface DevicesResponse {
@@ -67,6 +93,19 @@ export function DevicesPage() {
   const [pinInputValue, setPinInputValue] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
   const [isFleetUnlocked, setIsFleetUnlocked] = useState(false);
+  const [adminData, setAdminData] = useState<AdminUsersResponse | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [reassignTarget, setReassignTarget] = useState<DeviceItem | null>(null);
+  const [reassignUserId, setReassignUserId] = useState<string>('');
+
+  // Admin identity comes from three places, in this order of authority: the
+  // signed-in account's role, a PIN this browser holds, or a PIN unlocked in
+  // this session. The server is the final arbiter: the Accounts panel and every
+  // mutation control render only after `/api/admin/users` has actually answered.
+  const auth = useOptionalAuth();
+  const isAdminSession = auth?.role === 'admin';
+  const hasStoredPin = Boolean(getStoredAdminPin());
+  const isAdmin = isAdminSession || hasStoredPin || isFleetUnlocked;
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -92,6 +131,26 @@ export function DevicesPage() {
       setLoading(false);
     }
   }, []);
+
+  const loadAccounts = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch('/api/admin/users', {
+        headers: getAdminHeaders(),
+        signal,
+      });
+      if (!res.ok) {
+        // A stale PIN or a viewer session: hide the oversight surfaces rather
+        // than offering actions the server will refuse.
+        setAdminData(null);
+        return;
+      }
+      const body = (await res.json()) as Partial<AdminUsersResponse>;
+      setAdminData({ users: Array.isArray(body.users) ? body.users : [] });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setAdminData(null);
+    }
+  }, [getAdminHeaders]);
 
   const handleVerifyFleetPin = async (candidatePin: string) => {
     setPinModalError(null);
@@ -129,6 +188,18 @@ export function DevicesPage() {
       clearInterval(timer);
     };
   }, [loadDevices]);
+
+  // The account list is the admin probe: it answers 200 only for a caller who
+  // is actually authorised, so its success is what unlocks the oversight UI.
+  useEffect(() => {
+    if (!isAdmin) {
+      setAdminData(null);
+      return;
+    }
+    const controller = new AbortController();
+    void loadAccounts(controller.signal);
+    return () => controller.abort();
+  }, [isAdmin, loadAccounts]);
 
   const onRename = async (deviceId: string) => {
     if (!editName.trim()) return;
@@ -170,10 +241,98 @@ export function DevicesPage() {
     }
   };
 
+  const ownerLabel = (device: DeviceItem) =>
+    device.owner ? device.owner.name || device.owner.email : 'Unassigned';
+
+  /** Commit the reassignment chosen in the modal. Ownership is what scopes a
+   * device's watch history, so the history moves with it — the modal says so. */
+  const onReassign = async () => {
+    if (!reassignTarget) return;
+    const nextUserId = reassignUserId === '' ? null : Number(reassignUserId);
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/devices/assign', {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({
+          device_id: reassignTarget.device_id,
+          user_id: nextUserId,
+        }),
+      });
+      if (res.ok) {
+        setReassignTarget(null);
+        await Promise.all([loadDevices(), loadAccounts()]);
+      }
+    } catch {
+      // Leave the modal open: the next poll re-reads the server state.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearHistory = async (device: DeviceItem) => {
+    const recorded = device.watch_history?.length ?? device.total_watched ?? 0;
+    if (
+      !confirm(
+        `Clear all watch history for "${device.display_name}"? ${recorded} recorded ${
+          recorded === 1 ? 'title' : 'titles'
+        } will be removed. The media files are not touched.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/devices/history/delete', {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ device_id: device.device_id }),
+      });
+      if (res.ok) {
+        setSelectedDeviceHistory(null);
+        await Promise.all([loadDevices(), loadAccounts()]);
+      }
+    } catch {
+      // silently handle
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDeleteHistoryEntry = async (
+    device: DeviceItem,
+    item: WatchHistoryItem,
+  ) => {
+    if (!confirm(`Remove "${item.title}" from this device's watch history?`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/devices/history/delete', {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({
+          device_id: device.device_id,
+          filename: item.filename,
+        }),
+      });
+      if (res.ok) {
+        setSelectedDeviceHistory(null);
+        await Promise.all([loadDevices(), loadAccounts()]);
+      }
+    } catch {
+      // silently handle
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const filteredDevices = (data?.devices ?? []).filter((d) => {
-    if (filter === 'active') return d.is_active;
-    if (filter === 'offline') return !d.is_active;
-    return true;
+    if (filter === 'active' && !d.is_active) return false;
+    if (filter === 'offline' && d.is_active) return false;
+    if (!adminData || ownerFilter === 'all') return true;
+    if (ownerFilter === 'unassigned') return !d.owner;
+    return d.owner?.id === Number(ownerFilter);
   });
 
   const handleLockFleet = async () => {
@@ -185,9 +344,9 @@ export function DevicesPage() {
     await loadDevices();
   };
 
-  const hasStoredPin = Boolean(getStoredAdminPin());
   const isSingleCurrentDevice = Boolean(data && data.devices.length === 1 && data.devices[0].is_current);
-  const isPrivacyScoped = isSingleCurrentDevice && !hasStoredPin && !isFleetUnlocked;
+  const isPrivacyScoped =
+    isSingleCurrentDevice && !hasStoredPin && !isFleetUnlocked && !isAdminSession;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 animate-fade-in pb-12">
@@ -209,7 +368,12 @@ export function DevicesPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-            {isPrivacyScoped ? (
+            {isAdminSession ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm">
+                <Icon name="shield" size={13} />
+                <span>Fleet Admin View</span>
+              </span>
+            ) : isPrivacyScoped ? (
               <button
                 type="button"
                 onClick={() => setShowPinModal(true)}
@@ -296,6 +460,62 @@ export function DevicesPage() {
         </div>
       </section>
 
+      {/* Admin oversight: accounts and what each one owns */}
+      {adminData ? (
+        <section className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+            <div>
+              <h2 className="text-lg font-bold text-white">Accounts</h2>
+              <p className="mt-0.5 text-xs text-white/50">
+                Who can sign in, and what each account owns. Reassign a device or clear its
+                history from the device list below.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-semibold text-white/60">
+              {adminData.users.length} {adminData.users.length === 1 ? 'account' : 'accounts'}
+            </span>
+          </div>
+          {adminData.users.length === 0 ? (
+            <p className="text-xs text-white/40">No accounts have signed in yet.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {adminData.users.map((u) => (
+                <div
+                  key={u.id}
+                  className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-3.5 space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-semibold text-white">
+                      {u.name || u.email}
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                        u.role === 'admin'
+                          ? 'border-brand-500/40 bg-brand-500/15 text-brand-300'
+                          : 'border-white/10 bg-white/5 text-white/50'
+                      }`}
+                    >
+                      {u.role}
+                    </span>
+                  </div>
+                  <div className="truncate text-[11px] text-white/50">{u.email}</div>
+                  <div className="flex items-center gap-2 text-[11px] text-white/40">
+                    <span>
+                      {u.device_count} {u.device_count === 1 ? 'device' : 'devices'}
+                    </span>
+                    <span>·</span>
+                    <span>
+                      {u.history_count} history{' '}
+                      {u.history_count === 1 ? 'entry' : 'entries'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {/* Filter Tabs & Device List */}
       <section className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
@@ -315,6 +535,23 @@ export function DevicesPage() {
               </button>
             ))}
           </div>
+
+          {adminData ? (
+            <select
+              aria-label="Filter by owner"
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              className="rounded-full border border-white/15 bg-obsidian-850 px-3 py-1.5 text-xs font-semibold text-white/80"
+            >
+              <option value="all">All owners</option>
+              <option value="unassigned">Unassigned</option>
+              {adminData.users.map((u) => (
+                <option key={u.id} value={String(u.id)}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
+          ) : null}
 
           <button
             type="button"
@@ -403,6 +640,18 @@ export function DevicesPage() {
                             THIS BROWSER
                           </span>
                         ) : null}
+                        {adminData ? (
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              d.owner
+                                ? 'border-sky-500/30 bg-sky-500/15 text-sky-300'
+                                : 'border-white/10 bg-white/5 text-white/40'
+                            }`}
+                            title={d.owner ? `Owned by ${d.owner.email}` : 'No account owns this device'}
+                          >
+                            {ownerLabel(d)}
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-xs text-white/50">
                         {d.browser} • {d.device_os} • {d.device_type}
@@ -425,6 +674,21 @@ export function DevicesPage() {
                       />
                       {d.is_active ? 'Active Now' : 'Offline'}
                     </span>
+
+                    {adminData ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setReassignTarget(d);
+                          setReassignUserId(d.owner ? String(d.owner.id) : '');
+                        }}
+                        className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/60 hover:bg-white/10 hover:text-white transition"
+                        title="Reassign this device to another account"
+                      >
+                        Reassign
+                      </button>
+                    ) : null}
 
                     {!d.is_current ? (
                       <button
@@ -476,16 +740,29 @@ export function DevicesPage() {
                         )}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDeviceHistory(d)}
-                      className="card-ring self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition whitespace-nowrap active:scale-95"
-                    >
-                      <span>📜 Watch History</span>
-                      <span className="rounded-full bg-brand-500/20 px-1.5 py-0.2 text-[10px] font-bold text-brand-300 border border-brand-500/30">
-                        {d.total_watched || d.watch_history?.length || 0}
-                      </span>
-                    </button>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDeviceHistory(d)}
+                        className="card-ring inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition whitespace-nowrap active:scale-95"
+                      >
+                        <span>📜 Watch History</span>
+                        <span className="rounded-full bg-brand-500/20 px-1.5 py-0.2 text-[10px] font-bold text-brand-300 border border-brand-500/30">
+                          {d.total_watched || d.watch_history?.length || 0}
+                        </span>
+                      </button>
+                      {adminData ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void onClearHistory(d)}
+                          className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300/80 hover:bg-rose-500/20 hover:text-rose-200 transition whitespace-nowrap"
+                          title="Clear this device's watch history"
+                        >
+                          Clear history
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -567,6 +844,20 @@ export function DevicesPage() {
                             {item.percent}%
                           </span>
                         )}
+                        {adminData ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              void onDeleteHistoryEntry(selectedDeviceHistory, item)
+                            }
+                            className="shrink-0 rounded-full p-1 text-white/30 hover:bg-rose-500/15 hover:text-rose-300 transition"
+                            title={`Remove ${item.title} from history`}
+                            aria-label={`Remove ${item.title} from history`}
+                          >
+                            <Icon name="x" size={13} />
+                          </button>
+                        ) : null}
                       </div>
 
                       {/* Progress bar */}
@@ -602,6 +893,70 @@ export function DevicesPage() {
         </div>,
         document.body
       ) : null}
+
+      {/* Admin Oversight: Reassign Device Owner */}
+      {reassignTarget && adminData
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reassign-device-title"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/80 backdrop-blur-md animate-fade-in"
+              onClick={() => setReassignTarget(null)}
+            >
+              <div
+                className="glass-card relative my-auto w-full max-w-md rounded-3xl border border-white/15 bg-obsidian-950 p-6 sm:p-8 shadow-2xl space-y-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="border-b border-white/10 pb-4">
+                  <h2 id="reassign-device-title" className="text-xl font-bold text-white">
+                    Reassign device
+                  </h2>
+                  <p className="mt-1 text-xs text-white/50">
+                    {reassignTarget.display_name} — the device&apos;s watch history moves with it,
+                    because ownership is what scopes it.
+                  </p>
+                </div>
+
+                <label className="block space-y-1.5 text-xs text-white/60">
+                  <span className="font-semibold text-white/80">Owner</span>
+                  <select
+                    aria-label="New device owner"
+                    value={reassignUserId}
+                    onChange={(e) => setReassignUserId(e.target.value)}
+                    className="w-full rounded-xl border border-white/15 bg-obsidian-850 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">Unassigned</option>
+                    {adminData.users.map((u) => (
+                      <option key={u.id} value={String(u.id)}>
+                        {u.name ? `${u.name} (${u.email})` : u.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex justify-end gap-2 border-t border-white/10 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setReassignTarget(null)}
+                    className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onReassign()}
+                    className="rounded-full bg-brand-500 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-400 disabled:opacity-50 transition"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {/* Fleet Telemetry Admin PIN Unlock Dialog */}
       {showPinModal && typeof document !== 'undefined'
