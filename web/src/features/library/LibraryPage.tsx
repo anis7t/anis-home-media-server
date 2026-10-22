@@ -160,7 +160,14 @@ export function LibraryPage() {
 
       {/* Cinematic Hero Billboard (only shown when catalog is populated and featured has artwork) */}
       {!loading && !error && featured && (featured.overview || featured.backdrop_path) && !hasActiveFilters ? (
-        <HeroSpotlight movie={featured} hasTopBanner={false} />
+        /*
+         * hasTopBanner=true: the Upload Media row above means the hero is no
+         * longer the page's first element. The default variant tucks its top
+         * edge under the sticky header with a negative margin (-mt-6 sm:-mt-8),
+         * which would pull the artwork up over that row. The banner variant
+         * keeps it below with a positive margin instead.
+         */
+        <HeroSpotlight movie={featured} hasTopBanner={true} />
       ) : null}
 
       {/* Interactive Search, Filter & Sort Bar */}

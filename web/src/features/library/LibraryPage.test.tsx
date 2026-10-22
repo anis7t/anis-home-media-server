@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HeroSpotlight } from './HeroSpotlight';
 import { LibraryPage } from './LibraryPage';
 import type { MovieSummaryLive } from './test-fixtures';
 
@@ -149,5 +150,100 @@ describe('LibraryPage states', () => {
 
     expect(screen.getByText('SciFi Movie')).toBeInTheDocument();
     expect(screen.queryByText('Drama Movie')).not.toBeInTheDocument();
+  });
+});
+
+describe('Upload Media placement', () => {
+  it('covers the featured billboard with rich artwork', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({
+        movies: [
+          {
+            filename: 'epic.mkv',
+            title: 'Epic',
+            year: 2020,
+            tmdb_id: 5,
+            overview: 'A blockbuster with artwork.',
+            poster: 'tmdb:5',
+            position: 0,
+            duration: 0,
+            percent: 0,
+          },
+        ] as MovieSummaryLive[],
+        watching: [],
+        total: 1,
+      }),
+    );
+
+    renderLibrary();
+
+    expect(await screen.findByTestId('hero-spotlight')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /upload media/i })).toBeInTheDocument();
+  });
+
+  it('never overlaps the hero: the banner row displaces the negative-margin tuck', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({
+        movies: [
+          {
+            filename: 'epic.mkv',
+            title: 'Epic',
+            year: 2020,
+            tmdb_id: 5,
+            overview: 'A blockbuster with artwork.',
+            poster: 'tmdb:5',
+            position: 0,
+            duration: 0,
+            percent: 0,
+          },
+        ] as MovieSummaryLive[],
+        watching: [],
+        total: 1,
+      }),
+    );
+
+    renderLibrary();
+
+    const uploadButton = await screen.findByRole('button', { name: /upload media/i });
+    const hero = screen.getByTestId('hero-spotlight');
+
+    // The button row precedes the hero in document order.
+    expect(
+      uploadButton.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // The hero is no longer the page's first element, so it must not carry
+    // the tucked variant's negative top margin (which pulled the artwork up
+    // over this button row); it renders the banner variant instead.
+    expect(hero.className).not.toMatch(/(^|\s)-mt-/);
+    expect(hero.className).toMatch(/rounded-3xl/);
+  });
+
+  it('keeps the negative-margin header tuck available for a hero with nothing above it', () => {
+    const movie = {
+      filename: 'epic.mkv',
+      title: 'Epic',
+      year: 2020,
+      tmdb_id: 5,
+      overview: 'A blockbuster with artwork.',
+      poster: 'tmdb:5',
+      position: 0,
+      duration: 0,
+      percent: 0,
+    } as MovieSummaryLive;
+
+    render(
+      <MemoryRouter>
+        <HeroSpotlight movie={movie} hasTopBanner={false} />
+      </MemoryRouter>,
+    );
+
+    const hero = screen.getByTestId('hero-spotlight');
+    // The tucked variant (hero is the page's first element, sliding under
+    // the sticky header) is unchanged: negative top margin, bottom-only
+    // rounding.
+    expect(hero.className).toMatch(/(^|\s)-mt-6(\s|$)/);
+    expect(hero.className).toMatch(/rounded-b-3xl/);
+    expect(hero.className).not.toMatch(/rounded-3xl(\s|$)/);
   });
 });
