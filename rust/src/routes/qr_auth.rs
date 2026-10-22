@@ -7,7 +7,8 @@
 /// 2. `GET  /api/auth/qr/{id}/wait`    — TV waits via SSE; pushed on confirmation
 /// 3. `GET  /api/auth/qr/{id}/status`  — TV polls (fallback for SSE-hostile proxies)
 /// 4. `POST /api/auth/qr/{id}/confirm` — Phone confirms after Google sign-in
-/// 5. `GET  /api/auth/qr/{id}/finalize`— TV fetches this to get the session cookie
+/// 5. `GET  /api/auth/qr/{id}/finalize`— TV proves it owns the session
+///    (path-scoped secret cookie from step 1) and receives the session cookie
 use crate::error::AppError;
 use crate::services::auth_service::AuthService;
 use axum::{
@@ -107,11 +108,16 @@ fn get_base_url(headers: &HeaderMap) -> String {
 ///
 /// Creates a new QR pair session. The TV/browser calls this immediately on
 /// page load to get the QR data to display.
+///
+/// The response also sets a path-scoped `ms_qr_secret` cookie. That cookie is
+/// the calling device's proof of ownership for `finalize`; the secret itself
+/// is never placed in the JSON body (the page must not be able to read it, and
+/// it must not end up in screenshots or copy-paste).
 pub async fn create_pair_session_handler(
     State(state): State<QrAuthState>,
     headers: HeaderMap,
-) -> Result<Json<CreateQrResponse>, AppError> {
-    let (qr_id, code, sig, expires_at) =
+) -> Result<Response, AppError> {
+    let (qr_id, code, sig, expires_at, secret) =
         AuthService::create_pair_session(&state.pool).await?;
 
     let base = get_base_url(&headers);
@@ -125,14 +131,23 @@ pub async fn create_pair_session_handler(
     );
     let login_url = format!("{}/remotelogin", base);
 
-    Ok(Json(CreateQrResponse {
-        qr_id,
+    let mut res = Json(CreateQrResponse {
+        qr_id: qr_id.clone(),
         code,
         sig,
         expires_at,
         qr_url,
         login_url,
-    }))
+    })
+    .into_response();
+
+    if let Ok(cookie) =
+        header::HeaderValue::from_str(&AuthService::qr_secret_cookie(&qr_id, &secret, &headers))
+    {
+        res.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+
+    Ok(res)
 }
 
 /// `POST /api/auth/qr/lookup`
@@ -312,11 +327,30 @@ pub async fn qr_confirm_handler(
 ///
 /// Called by the TV/browser after receiving the SSE `confirmed` event.
 /// Sets the session cookie and redirects to `/`.
+///
+/// **Bound to the waiting device.** Possession of `qr_id` is not enough: the
+/// caller must also present the path-scoped `ms_qr_secret` cookie issued by
+/// `POST /api/auth/qr`. Without it (or with the wrong one) this answers 403
+/// and sets no session cookie - so a `qr_id` copied out of a log, a `Referer`
+/// or browser history cannot be exchanged for a session inside the 2-minute
+/// window.
 pub async fn qr_finalize_handler(
     Path(qr_id): Path<String>,
     State(state): State<QrAuthState>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    // Fail closed before revealing anything about the session's state: a
+    // caller without the secret gets the same 403 whether the session is
+    // pending, confirmed or absent.
+    let presented = cookie_value(&headers, "ms_qr_secret").unwrap_or_default();
+    let secret_ok = !presented.is_empty()
+        && AuthService::verify_pair_session_secret(&state.pool, &qr_id, &presented).await?;
+    if !secret_ok {
+        return Err(AppError::Forbidden(
+            "This pairing session could not be verified. Refresh the QR code on this device and try again.".to_string(),
+        ));
+    }
+
     let status = AuthService::get_pair_session_status(&state.pool, &qr_id).await?;
 
     let (session_id, device_name) = match status {
@@ -356,6 +390,13 @@ pub async fn qr_finalize_handler(
     let mut res = axum::response::Redirect::temporary("/").into_response();
     if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {
         res.headers_mut().insert(header::SET_COOKIE, hdr_val);
+    }
+    // The secret has served its purpose; clear it with the same Path so the
+    // browser treats this as the cookie that was set at create time.
+    if let Ok(clear) =
+        header::HeaderValue::from_str(&AuthService::clear_qr_secret_cookie(&qr_id, &headers))
+    {
+        res.headers_mut().append(header::SET_COOKIE, clear);
     }
 
     Ok(res)

@@ -189,6 +189,7 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             id          TEXT PRIMARY KEY,
             code        TEXT NOT NULL,
             code_hash   TEXT NOT NULL,
+            secret_hash TEXT,
             sig         TEXT NOT NULL,
             user_id     BIGINT REFERENCES users(id) ON DELETE CASCADE,
             session_id  TEXT,
@@ -197,6 +198,23 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at  TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '2 minutes')
         )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Per-session secret binding for `GET /api/auth/qr/{id}/finalize`.
+    //
+    // That route hands out a session cookie, and `qr_id` alone appears in the
+    // QR URL, the SSE URL, browser history and access logs - so it must not be
+    // the only key. The waiting device receives a CSPRNG secret at creation
+    // and stores it in a path-scoped cookie; only its SHA-256 is persisted.
+    // Nullable because the column is added to an existing table: rows created
+    // before this change fail closed in `finalize` (the table only holds
+    // 2-minute sessions, so there is nothing to migrate).
+    sqlx::query(
+        r#"
+        ALTER TABLE device_pair_sessions ADD COLUMN IF NOT EXISTS secret_hash TEXT;
         "#,
     )
     .execute(&mut *tx)

@@ -168,10 +168,11 @@ The current project includes:
 
 1. **Production Maintenance & Feature Additions:**
    The codebase is 100% modernized on native Rust, React, and PostgreSQL. All new development proceeds natively in Rust (`rust/`) and React (`web/`).
-2. **Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.**
-   It is unauthenticated and keyed only on the `qr_id`. Anyone who learns a `qr_id` — from a
-   log, a URL, a `Referer`, or browser history — can claim the confirmed session's cookie inside
-   the 2-minute window. A per-session secret issued at create time would close it.
+2. ~~Bind `GET /api/auth/qr/{id}/finalize` to the waiting device.~~ **DONE 2026-10-23.**
+   The route now requires the per-session CSPRNG secret issued at create time, delivered in a
+   path-scoped `HttpOnly` cookie and stored only as `secret_hash`; missing or wrong → **403 with no
+   session cookie**. Verified live: 403 without the cookie, 400 (not yet confirmed) with it.
+   See the QR invariants above.
 3. **Rate-limit the QR endpoints and cap concurrent SSE connections.**
    `GET /api/auth/qr/{id}/wait` spawns a task plus a PostgreSQL query every 3 seconds per
    connection, with no auth and no cap, on a publicly reachable endpoint.
@@ -298,6 +299,16 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   directly, so the emitted `qr_url` was host-header-injectable. A configured
   `MEDIA_SERVER_PUBLIC_BASE_URL` now takes precedence — **set it in the NSSM service environment
   and in `.env`**. The same applies to the Google OAuth redirect URI (`get_host_url`).
+- **`finalize` is bound to the waiting device, not to the `qr_id`.** The `qr_id` travels in the QR
+  URL, the SSE URL, browser history and access logs, so possessing it must never be enough to claim
+  a confirmed session. `POST /api/auth/qr` issues a CSPRNG secret in a **path-scoped**
+  (`Path=/api/auth/qr/<id>`), `HttpOnly`, `SameSite=Lax`, 130-second cookie, and only its SHA-256 is
+  stored (`device_pair_sessions.secret_hash`). `finalize` compares in constant time and answers
+  **403 with no cookie** when the secret is missing or wrong; the refusal is what the test asserts,
+  not merely the happy path. The secret is never in the response body (a page must not be able to
+  read it, and it must not appear in screenshots), and a successful finalize clears the cookie with
+  the same `Path` that set it. Distance from the failure mode: a `qr_id` copied out of a log line
+  used to buy a session inside the two-minute window; now it buys a 403.
 - **The session cookie's `Secure` flag is conditional, and must stay that way.**
   `AuthService::session_cookie()` adds `Secure` only when the request arrived over TLS
   (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It **cannot** be unconditional:

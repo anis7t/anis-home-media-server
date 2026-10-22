@@ -464,14 +464,46 @@ async fn qr_device_auth_flow_test() {
     let resp_qr_create = ctx.app.clone().oneshot(req_qr_create).await.unwrap();
     assert_eq!(resp_qr_create.status(), StatusCode::OK);
 
-    let body_create: Value =
-        serde_json::from_slice(&resp_qr_create.into_body().collect().await.unwrap().to_bytes())
-            .unwrap();
+    // The session secret must be delivered only as a path-scoped, HttpOnly
+    // cookie: `finalize` is unauthenticated, so this cookie is the sole proof
+    // that the caller is the device that created the session.
+    let qr_secret_cookie = resp_qr_create
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("POST /api/auth/qr must set the ms_qr_secret cookie")
+        .to_string();
+    assert!(qr_secret_cookie.starts_with("ms_qr_secret="));
+    assert!(qr_secret_cookie.contains("; HttpOnly"));
+    assert!(qr_secret_cookie.contains("SameSite=Lax"));
+    assert!(qr_secret_cookie.contains("Max-Age=130"));
+    assert!(!qr_secret_cookie.contains("session_token="));
+    let qr_secret_cookie_val = qr_secret_cookie
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    let qr_secret = qr_secret_cookie_val
+        .trim_start_matches("ms_qr_secret=")
+        .to_string();
+    assert!(!qr_secret.is_empty());
+
+    let body_bytes = resp_qr_create.into_body().collect().await.unwrap().to_bytes();
+    // The secret must not be readable from the page: it is not in the body.
+    assert!(
+        !String::from_utf8_lossy(&body_bytes).contains(&qr_secret),
+        "the response body must not contain the pairing secret"
+    );
+    let body_create: Value = serde_json::from_slice(&body_bytes).unwrap();
     let qr_id = body_create["qr_id"].as_str().expect("qr_id must be a string");
     let code = body_create["code"].as_str().expect("code must be a string");
     let sig = body_create["sig"].as_str().expect("sig must be a string");
     assert_eq!(code.len(), 5);
     assert!(body_create["qr_url"].as_str().unwrap().contains("/remotelogin"));
+    assert!(
+        qr_secret_cookie.contains(&format!("Path=/api/auth/qr/{}", qr_id)),
+        "the secret cookie must be scoped to this session's own path"
+    );
 
     // 3. TV checks status: GET /api/auth/qr/{qr_id}/status -> "pending"
     let req_status_1 = Request::builder()
@@ -542,10 +574,102 @@ async fn qr_device_auth_flow_test() {
             .unwrap();
     assert_eq!(body_status_2["status"], "confirmed");
 
-    // 7. TV finalizes: GET /api/auth/qr/{qr_id}/finalize
+    // 7. Finalize is bound to the waiting device. The refusals come first,
+    // because a happy-path-only test would pass against the pre-fix code.
+    //
+    // 7a. Holding only the qr_id (the pre-fix requirement) must be refused.
+    let req_finalize_no_secret = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/finalize", qr_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp_no_secret = ctx.app.clone().oneshot(req_finalize_no_secret).await.unwrap();
+    assert_eq!(resp_no_secret.status(), StatusCode::FORBIDDEN);
+    assert!(
+        resp_no_secret.headers().get(header::SET_COOKIE).is_none(),
+        "a refused finalize must not issue any cookie"
+    );
+
+    // 7b. A wrong secret for the right session must be refused.
+    let req_finalize_wrong_secret = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/finalize", qr_id))
+        .header(
+            header::COOKIE,
+            "ms_qr_secret=0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .body(Body::empty())
+        .unwrap();
+    let resp_wrong_secret = ctx
+        .app
+        .clone()
+        .oneshot(req_finalize_wrong_secret)
+        .await
+        .unwrap();
+    assert_eq!(resp_wrong_secret.status(), StatusCode::FORBIDDEN);
+    assert!(resp_wrong_secret
+        .headers()
+        .get(header::SET_COOKIE)
+        .is_none());
+
+    // 7c. Another session's valid secret must not unlock this session.
+    let req_other_create = Request::builder()
+        .method("POST")
+        .uri("/api/auth/qr")
+        .body(Body::empty())
+        .unwrap();
+    let resp_other_create = ctx.app.clone().oneshot(req_other_create).await.unwrap();
+    assert_eq!(resp_other_create.status(), StatusCode::OK);
+    let other_secret_cookie = resp_other_create
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("second create must set its own secret cookie")
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    let other_body: Value = serde_json::from_slice(
+        &resp_other_create
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes(),
+    )
+    .unwrap();
+    let other_qr_id = other_body["qr_id"].as_str().unwrap();
+
+    let req_finalize_cross_session = Request::builder()
+        .method("GET")
+        .uri(format!("/api/auth/qr/{}/finalize", qr_id))
+        .header(header::COOKIE, &other_secret_cookie)
+        .body(Body::empty())
+        .unwrap();
+    let resp_cross_session = ctx
+        .app
+        .clone()
+        .oneshot(req_finalize_cross_session)
+        .await
+        .unwrap();
+    assert_eq!(resp_cross_session.status(), StatusCode::FORBIDDEN);
+    assert!(resp_cross_session
+        .headers()
+        .get(header::SET_COOKIE)
+        .is_none());
+
+    // The second session served its purpose; remove it so the residue check
+    // below can be exact (an unconfirmed session has no user_id to cascade on).
+    let _ = sqlx::query("DELETE FROM device_pair_sessions WHERE id = $1")
+        .bind(other_qr_id)
+        .execute(&ctx.pool)
+        .await;
+
+    // 7d. The creator, presenting its own secret, finalizes successfully.
     let req_finalize = Request::builder()
         .method("GET")
         .uri(format!("/api/auth/qr/{}/finalize", qr_id))
+        .header(header::COOKIE, &qr_secret_cookie_val)
         .body(Body::empty())
         .unwrap();
     let resp_finalize = ctx.app.clone().oneshot(req_finalize).await.unwrap();
@@ -555,9 +679,21 @@ async fn qr_device_auth_flow_test() {
         .headers()
         .get(header::SET_COOKIE)
         .and_then(|v| v.to_str().ok())
-        .expect("Finalize must set session_token cookie");
+        .expect("Finalize must set session_token cookie")
+        .to_string();
     assert!(tv_cookie_header.contains("session_token=sess_"));
     let tv_cookie_val = tv_cookie_header.split(';').next().unwrap();
+
+    // The used secret must be cleared with the same Path that set it.
+    let cleared_secret = resp_finalize
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|c| c.starts_with("ms_qr_secret=;"));
+    let cleared_secret = cleared_secret.expect("finalize must clear the used pair secret");
+    assert!(cleared_secret.contains("Max-Age=0"));
+    assert!(cleared_secret.contains(&format!("Path=/api/auth/qr/{}", qr_id)));
 
     // 8. TV uses session cookie to access /api/auth/me
     let req_tv_me = Request::builder()

@@ -1111,8 +1111,20 @@ impl AuthService {
         hex::encode(mac.finalize().into_bytes())
     }
 
-    /// Create a new ephemeral QR pair session. Returns `(qr_id, code, sig, expires_at_unix)`.
-    pub async fn create_pair_session(pool: &PgPool) -> Result<(String, String, String, i64), AppError> {
+    /// Create a new ephemeral QR pair session.
+    ///
+    /// Returns `(qr_id, code, sig, expires_at_unix, session_secret)`.
+    ///
+    /// `session_secret` is the **waiting device's** proof of ownership for
+    /// `GET /api/auth/qr/{id}/finalize`. The route is unauthenticated and
+    /// `qr_id` is not a secret - it travels in the QR URL, the SSE URL, browser
+    /// history and access logs - so the caller that created the session gets a
+    /// CSPRNG secret and the database stores only its SHA-256. The secret is
+    /// returned to the handler only; it is never written to the response body
+    /// or the log.
+    pub async fn create_pair_session(
+        pool: &PgPool,
+    ) -> Result<(String, String, String, i64, String), AppError> {
         // Sweep any sessions older than 5 minutes while we're here
         let _ = Self::sweep_expired_pair_sessions(pool).await;
 
@@ -1120,17 +1132,20 @@ impl AuthService {
         let code = Self::generate_pair_code()?;
         let sig = Self::hmac_pair_code(&qr_id, &code);
         let code_hash = Self::hash_token(&code);
+        let secret = Self::generate_random_token()?;
+        let secret_hash = Self::hash_token(&secret);
         let expires_at = Utc::now() + Duration::minutes(2);
 
         sqlx::query(
             r#"
-            INSERT INTO device_pair_sessions (id, code, code_hash, sig, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO device_pair_sessions (id, code, code_hash, secret_hash, sig, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&qr_id)
         .bind(&code)
         .bind(&code_hash)
+        .bind(&secret_hash)
         .bind(&sig)
         .bind(expires_at)
         .execute(pool)
@@ -1146,7 +1161,91 @@ impl AuthService {
             "QR: created pair session ref={} ttl=120s",
             Self::redacted_pair_ref(&qr_id)
         );
-        Ok((qr_id, code, sig, expires_at.timestamp()))
+        Ok((qr_id, code, sig, expires_at.timestamp(), secret))
+    }
+
+    /// Whether `secret` is the one issued to the device that created `qr_id`.
+    ///
+    /// `GET /api/auth/qr/{id}/finalize` is reachable by anyone who learns a
+    /// `qr_id`, so possession of a live, unexpired, confirmed `qr_id` is
+    /// **not** sufficient to claim the session - the caller must also present
+    /// the per-session secret, which is delivered only in the create response
+    /// and stored only as a hash. Missing, malformed or mismatched secrets all
+    /// return `false`; there is no path that treats "cannot tell" as "yes".
+    pub async fn verify_pair_session_secret(
+        pool: &PgPool,
+        qr_id: &str,
+        secret: &str,
+    ) -> Result<bool, AppError> {
+        let row = sqlx::query(
+            r#"
+            SELECT secret_hash
+            FROM device_pair_sessions
+            WHERE id = $1 AND expires_at > CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(qr_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some(row) = row else { return Ok(false) };
+        let stored: Option<String> = row.try_get("secret_hash").ok().flatten();
+        let Some(stored) = stored else { return Ok(false) };
+        let candidate = Self::hash_token(secret);
+        Ok(Self::constant_time_eq(
+            candidate.as_bytes(),
+            stored.as_bytes(),
+        ))
+    }
+
+    /// Constant-time comparison for secrets of equal length.
+    ///
+    /// Both operands here are hex-encoded SHA-256 digests (64 bytes), so the
+    /// length check leaks only the fixed, public length. The body folds every
+    /// byte into `diff` without an early exit, so timing does not reveal how
+    /// many leading characters matched.
+    fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut diff = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) {
+            diff |= x ^ y;
+        }
+        diff == 0
+    }
+
+    /// The path-scoped cookie that binds a pair session to its creator.
+    ///
+    /// `Path` is the session's own finalize path, so two concurrent sessions
+    /// (StrictMode creates two in development) store two cookies under the
+    /// same name without overwriting each other, and the secret is never sent
+    /// to any other endpoint. `Secure` is conditional for the same reason as
+    /// [`Self::session_cookie`]: the LAN path is plain HTTP.
+    pub fn qr_secret_cookie(qr_id: &str, secret: &str, headers: &HeaderMap) -> String {
+        let mut cookie = format!(
+            "ms_qr_secret={}; Path=/api/auth/qr/{}; HttpOnly; SameSite=Lax; Max-Age=130",
+            secret, qr_id
+        );
+        if Self::request_is_secure(headers) {
+            cookie.push_str("; Secure");
+        }
+        cookie
+    }
+
+    /// Clears the pairing secret once it has been used or the session ended.
+    ///
+    /// The `Path` must match the cookie that was set, or the browser treats
+    /// the deletion as a different cookie and silently keeps the secret.
+    pub fn clear_qr_secret_cookie(qr_id: &str, headers: &HeaderMap) -> String {
+        let mut cookie = format!(
+            "ms_qr_secret=; Path=/api/auth/qr/{}; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+            qr_id
+        );
+        if Self::request_is_secure(headers) {
+            cookie.push_str("; Secure");
+        }
+        cookie
     }
 
     /// A short, non-secret reference for a pair session id, safe to write to
