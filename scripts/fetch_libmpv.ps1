@@ -71,7 +71,7 @@ function Show-DllState([string] $Path) {
     $item = Get-Item -LiteralPath $Path
     $sha256 = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Host ("  path   : {0}" -f $item.FullName)
-    Write-Host ("  size   : {0:N0} bytes" -f $item.Length)
+    Write-Host ("  size   : {0} bytes" -f $item.Length)
     Write-Host ("  sha256 : {0}" -f $sha256)
 }
 
