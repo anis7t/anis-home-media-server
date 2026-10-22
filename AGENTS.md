@@ -225,17 +225,26 @@ The current project includes:
    **One open finding** from 11.3a: the web's score renders about **6 dB quieter** than the archived
    original's Web Audio, and the cause is not yet isolated (spec section 7.9 lists everything that
    was measured and ruled out).
-6. **Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.**
-   `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` all
-   fail in `setUpAll` with `Cannot find libmpv-2.dll in your system %PATH%`, because they call
-   `MediaKit.ensureInitialized()` and media_kit's **Windows** native libraries are not installed
+6. ~~Three Flutter test files cannot run on this host — `libmpv-2.dll` is missing.~~ **DONE 2026-10-23.**
+   `runtime_player_3a_test.dart`, `runtime_player_3b_test.dart` and `app_shell_test.dart` failed in
+   `setUpAll` with `Cannot find libmpv-2.dll in your system %PATH%`, because they call
+   `MediaKit.ensureInitialized()` and media_kit's **Windows** native libraries were not installed
    here. The client targets **Android**, where media_kit does not use libmpv, so the **shipped app
-   is unaffected** — only these host-side Dart-VM tests cannot run.
-   **This gates verification of the Flutter slices in this very phase (11.4, 11.5), because
-   `app_shell_test.dart` is one of the three.** Fix: install the media_kit Windows libs, or drop
-   the `MediaKit.ensureInitialized()` call from the `runtime_player_*` files that do not need
-   native playback. Until then, the Flutter suite is **not** green here — a change is acceptable
-   when it adds **no new failures** and the pre-existing three are unchanged and named.
+   was never affected** — only these host-side Dart-VM tests could not run.
+   **Fix: `scripts/fetch_libmpv.ps1`** provisions exactly the archive our own dependency already
+   pins — `media_kit_libs_windows_video 1.0.11`'s `windows/CMakeLists.txt` downloads
+   `mpv-dev-x86_64-20230924-git-652a1dd.7z` and checks **MD5 `a832ef24b3a6ff97cd2560b5b9d04cd8`** —
+   verifies it before extraction, fails closed on mismatch, and places `libmpv-2.dll` at
+   `flutter_client/build/windows/x64/runner/Release/`, the exact path all three files already
+   prefer. That directory is **gitignored**; nothing fetched is ever committed. **Re-run the script
+   after `flutter clean`**, which deletes it. **Dropping `ensureInitialized()` was rejected as a
+   fix**: `runtime_player_3a_test.dart`'s non-live test constructs a real `MediaKitPlayerAdapter`
+   (whose constructor builds a real `Player`), and `app_shell_test.dart` pumps the production
+   `/player` route — both genuinely need natives.
+   **Measured after provisioning:** the three files `+7 ~4`, and the **full suite `+327 ~12`, 0
+   failures**, `flutter analyze` clean. The suite is **green here** — the old "no new failures,
+   name the pre-existing three" bar is retired. The live-gated tests remain skipped by default
+   (`MEDIA_SERVER_LIVE_TESTS=1` opts in; they play a production file and write device telemetry).
    Tracked as Issue 11 in [`docs/Current issues.md`](docs/Current%20issues.md).
 7. **The Flask/Waitress era left three loose ends** (the backend is 100 % native Rust — Axum on
    `:8000`; no `flask` and no `waitress` is installed anywhere). The footer badge and the

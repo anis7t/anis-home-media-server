@@ -193,7 +193,7 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 
 ---
 
-### Issue 11: Three Flutter Test Files Cannot Run On This Host — `libmpv-2.dll` Is Missing (2026-10-20)
+### Issue 11: Three Flutter Test Files Cannot Run On This Host — `libmpv-2.dll` Is Missing (2026-10-20, RESOLVED 2026-10-23)
 
 - **Reported:** *(found while baselining the Flutter suite before Phase 11 Slice 11.1a)* — the
   suite was already red before any change was made:
@@ -215,19 +215,35 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   the change that caused it. This is why Phase 11 Slice 11.1a baselined the suite *before* making
   any change — the three failures were pre-existing and the slice's own delta was exactly
   `+276 ~8 -3` → `+275 ~8 -3`, i.e. the one test it deliberately deleted.
-- **Status:** ⏳ **OPEN — backlogged.** Two candidate fixes, both for the owner to choose:
-  1. **Install the media_kit Windows native libraries** so the full suite is runnable here. This
-     means fetching a binary onto the host, which is a supply-chain decision and is explicitly
-     *not* something to do unattended.
-  2. **Drop the `MediaKit.ensureInitialized()` call** from the two `runtime_player_*` files that do
-     not genuinely need native playback, and re-baseline. `AGENTS.md` already carries the
-     governing rule: *"the rule not to re-add `MediaKit.ensureInitialized()` to tests that do not
-     need native playback, are in `docs/FLUTTER_CLIENT_STATUS.md`."*
-- **Not done in Slice 11.1a:** fixing this is a separate concern from the Replay removal, and it
-  was deliberately left alone so the slice's verification could attribute its own delta cleanly.
-- **Verification bar for now:** the Flutter suite is **not** green on this host. A change is
-  acceptable when it introduces **no new failures** and the count of pre-existing failures is
-  unchanged — and the pre-existing three are named explicitly every time.
+- **Status:** ✅ **RESOLVED 2026-10-23.** Fixed by **provisioning the library**, not by changing the
+  tests. `scripts/fetch_libmpv.ps1` fetches exactly the archive our own dependency already pins -
+  `media_kit_libs_windows_video 1.0.11`'s `windows/CMakeLists.txt` downloads
+  `mpv-dev-x86_64-20230924-git-652a1dd.7z` with **MD5 `a832ef24b3a6ff97cd2560b5b9d04cd8`** - verifies
+  it before extraction, fails closed on a mismatch, and places `libmpv-2.dll` at
+  `flutter_client/build/windows/x64/runner/Release/`, the exact path all three test files already
+  preferred. That directory is gitignored, so nothing fetched is committed; the script is idempotent
+  and must be re-run after `flutter clean`.
+- **Why option 2 (dropping `ensureInitialized()`) was rejected.** Reconnaissance showed it could not
+  work: `runtime_player_3a_test.dart`'s only non-live test constructs a real `MediaKitPlayerAdapter`,
+  whose constructor does `player ?? Player()` - a real native player - and `app_shell_test.dart`
+  pumps the production `/player` route, so a real `PlayerScreen` and its `VideoController` are built.
+  Both genuinely need natives. Only `runtime_player_3b_test.dart` could have been fixed that way.
+- **A false premise was recorded in `docs/FLUTTER_CLIENT_STATUS.md`** and is now corrected there:
+  it claimed `runtime_player_3b_test.dart` "no longer runs it, because `setUpAll` does not execute
+  when every test in a file is skipped". Measured: the baseline failure *was* `3b`'s `setUpAll`
+  (`native_library.dart:81`) with every test in the group skipped, and after provisioning a
+  fully-skipped run printed `NativeReferenceHolder: Allocated ...` from that same `setUpAll`. A
+  group-level `skip:` skips test bodies, not fixtures.
+- **Verified:** before - all three files failed in `setUpAll`, `+0 -3`, every test in them unrunnable.
+  After - the three files `+7 ~4` (0 failures), the **full suite `+327 ~12` (0 failures)** through
+  `scripts/run_flutter_tests.ps1`, and `flutter analyze` "No issues found". Provisioned DLL:
+  `libmpv-2.dll`, 29,764,622 bytes, SHA-256
+  `d5f0694b08c124e785d858d00082f3e3b158dd9138bfc48c0382bf1eb443a5fc`.
+- **Standing bar from now on:** the Flutter suite is **green on this host**, so "no new failures
+  against a red baseline" is retired - a Flutter change is expected to leave the suite at
+  `+327 ~12` (0 failures) or better. The live-gated tests stay opt-in
+  (`MEDIA_SERVER_LIVE_TESTS=1`); they play a production file and write device telemetry.
+
 
 ---
 

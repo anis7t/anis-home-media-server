@@ -574,6 +574,27 @@ cd E:\MediaServer
 **Use the script, not a bare `flutter test`.** Plain `flutter test` is flaky, and the flake is an
 upstream `media_kit` defect, not a project bug.
 
+**Host prerequisite: `libmpv-2.dll` (provisioned, not committed).** Three test files construct a real
+media_kit `Player`, so a `flutter test` process needs media_kit's Windows native library:
+
+```powershell
+.\scripts\fetch_libmpv.ps1              # provision (idempotent); re-run after `flutter clean`
+.\scripts\fetch_libmpv.ps1 -VerifyOnly  # report state, change nothing
+```
+
+The script fetches **exactly** the archive our own dependency pins -
+`media_kit_libs_windows_video 1.0.11`'s `windows/CMakeLists.txt` downloads
+`mpv-dev-x86_64-20230924-git-652a1dd.7z` and checks **MD5 `a832ef24b3a6ff97cd2560b5b9d04cd8`** - verifies
+it **before** extraction, and fails closed on a mismatch. It places `libmpv-2.dll` at
+`flutter_client/build/windows/x64/runner/Release/`, the path all three tests already prefer. That
+directory is gitignored, so **nothing fetched is ever committed**, and `flutter clean` deletes it -
+which is why the script exists rather than a one-off copy.
+
+Measured 2026-10-23 with it provisioned: the three files `+7 ~4`, and the **full suite `+327 ~12`,
+0 failures**, `flutter analyze` clean. Before it, all three failed in `setUpAll` with
+`Cannot find libmpv-2.dll in your system %PATH%` (`native_library.dart:81`), and every test in those
+files was unrunnable rather than failing.
+
 `NativeReferenceHolder` (`media_kit-1.2.6/lib/src/player/native/utils/native_reference_holder.dart`)
 persists one reference-buffer address in a temp file named
 `com.alexmercerind.media_kit.NativeReferenceHolder.$pid`. The file is **created empty and written
@@ -605,9 +626,20 @@ on-device playback are unaffected** - this is host-test-only.
 Do not "fix" the flake by re-adding `MediaKit.ensureInitialized()` to test files that do not need
 native playback: every such file is one more participant.
 `test/connection_screen_test.dart` renders only `ConnectionScreen`/`HomeScreen`/`AppShell` and
-deliberately omits it. `runtime_player_3b_test.dart` no longer runs it either, because `setUpAll`
-does not execute when every test in a file is skipped. Only files that genuinely construct a real
-`PlayerController` (`app_shell_test.dart`, `runtime_player_3a_test.dart`) should call it.
+deliberately omits it. Files that genuinely construct a real `Player`/`VideoController` must call it
+- that is `app_shell_test.dart` (its `/player` route test pumps the production `PlayerScreen`) and
+`runtime_player_3a_test.dart` (its non-live test builds a real `MediaKitPlayerAdapter`), and today
+`runtime_player_3b_test.dart` calls it too, although all of its tests are live-gated.
+
+**Correction to an earlier claim in this document.** It used to say `runtime_player_3b_test.dart`
+"no longer runs it either, because `setUpAll` does not execute when every test in a file is skipped".
+**That is false, and the fix depended on it.** Measured on 2026-10-23: with every test in that group
+carrying `skip:`, `setUpAll` still ran and still threw at `native_library.dart:81`; after
+provisioning, a fully skipped run printed `media_kit: NativeReferenceHolder: Allocated ...` from that
+same `setUpAll`. A group-level `skip:` skips the **bodies**, not the fixtures. Gating 3b's
+`MediaKit.ensureInitialized()` on `liveServerTestsEnabled` would therefore be a genuine (small)
+improvement - it is left for a follow-up rather than smuggled into the libmpv fix.
+
 
 ### Backend Testing
 ```powershell
