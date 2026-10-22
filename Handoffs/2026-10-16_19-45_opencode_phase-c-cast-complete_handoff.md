@@ -506,7 +506,7 @@ compatibility surface, and the probe asserts the old path.
 the Cloudflare tunnel. Treat as the **highest-risk item** in the backlog:
 
 - The Admin PIN **fails closed and has no default**. `get_setting('admin_pin', '')`, never a
-  literal. There *was* a hard-coded `'6361'`, which made "no PIN configured" mean "anyone who
+  literal. There *was* a hard-coded `'[admin-pin]'`, which made "no PIN configured" mean "anyone who
   guesses four digits may delete the library". Unset must mean the PIN channel is **closed**,
   leaving only a Google admin session, which is what sets the first PIN deliberately.
 - **Never accept the PIN from a query string.** `?pin=` writes the secret into Waitress access

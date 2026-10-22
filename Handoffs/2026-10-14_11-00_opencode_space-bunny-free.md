@@ -276,7 +276,7 @@ no reload.
 
 Both were in uncommitted work inherited from a prior session. Both are fixed.
 
-**Hard-coded default Admin PIN.** `get_setting('admin_pin', '6361')`. On a host published to
+**Hard-coded default Admin PIN.** `get_setting('admin_pin', '[admin-pin]')`. On a host published to
 the internet through the Cloudflare tunnel, that is **permanent unauthenticated access** to
 everything behind `@require_admin` — *including deleting the library*, purging caches, moving
 originals into the archive, and rewriting the retention policy. Four digits against a route

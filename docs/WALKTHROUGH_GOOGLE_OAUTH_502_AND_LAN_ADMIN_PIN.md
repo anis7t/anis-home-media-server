@@ -10,7 +10,7 @@
 
 This walkthrough documents the resolution for:
 1. **Cloudflare 502 Bad Gateway on Google OAuth Callback:** Clicking "Sign in" via `https://media.anisparvez.in` returned HTTP 502 Bad Gateway when Google redirected back to `/auth/google/callback`.
-2. **Admin PIN "6361" Verification on Manage Page:** Resolving why entering `6361` reported "invalid admin pin" while maintaining the policy that administrative capabilities strictly require admin authorization across both LAN and WAN.
+2. **Admin PIN "[admin-pin]" Verification on Manage Page:** Resolving why entering `[admin-pin]` reported "invalid admin pin" while maintaining the policy that administrative capabilities strictly require admin authorization across both LAN and WAN.
 
 ---
 
@@ -26,11 +26,11 @@ This walkthrough documents the resolution for:
   - Added verbose logging in `oauth_callback` to capture HTTP status codes and error bodies if Google ever returns a non-200 response.
 
 ### B. Admin PIN Persistence & Test Fixture Isolation
-- **Problem:** `tests/auth_pin_login_test.rs` and `tests/devices_test.rs` previously ran `INSERT INTO settings (key, value) VALUES ('admin_pin', '998877')` and `DELETE FROM settings...` against the shared database without restoring the user's PIN `6361`.
+- **Problem:** `tests/auth_pin_login_test.rs` and `tests/devices_test.rs` previously ran `INSERT INTO settings (key, value) VALUES ('admin_pin', '998877')` and `DELETE FROM settings...` against the shared database without restoring the user's PIN `[admin-pin]`.
 - **Fix:**
-  - Restored `admin_pin = '6361'` in PostgreSQL `settings` table.
-  - Updated `tests/auth_pin_login_test.rs` to use `6361` as the test PIN and restore `6361` in teardown.
-  - Updated `tests/devices_test.rs` to restore `6361` during cleanup instead of deleting `admin_pin`.
+  - Restored `admin_pin = '[admin-pin]'` in PostgreSQL `settings` table.
+  - Updated `tests/auth_pin_login_test.rs` to use `[admin-pin]` as the test PIN and restore `[admin-pin]` in teardown.
+  - Updated `tests/devices_test.rs` to restore `[admin-pin]` during cleanup instead of deleting `admin_pin`.
 
 ---
 
@@ -51,7 +51,7 @@ This walkthrough documents the resolution for:
    test result: ok. 3 passed; 0 failed; 0 ignored; finished in 4.91s
    ```
 3. **Database Integrity Check:**
-   - PostgreSQL `settings` table verified: `[('admin_pin', '6361')]`.
+   - PostgreSQL `settings` table verified: `[('admin_pin', '[admin-pin]')]`.
 4. **Release Compilation Check:**
    - `cargo check --release` succeeded with exit code 0 in 1m 49s.
 
@@ -68,4 +68,4 @@ e:\MediaServer\scripts\restart_rust_service.bat
 ```
 *(Accept the Administrator UAC prompt when it appears).*
 
-This script will stop the service, compile the release binary with the new PKCE fix, restart `MediaServerRust`, and probe the `/health` endpoint. Once completed, both PIN `6361` on `/manage` and Google Sign-In via `https://media.anisparvez.in` will be fully operational.
+This script will stop the service, compile the release binary with the new PKCE fix, restart `MediaServerRust`, and probe the `/health` endpoint. Once completed, both PIN `[admin-pin]` on `/manage` and Google Sign-In via `https://media.anisparvez.in` will be fully operational.

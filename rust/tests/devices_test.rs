@@ -51,7 +51,7 @@ async fn cleanup(pool: &PgPool) {
         .execute(pool)
         .await;
     let _ = sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(pool)
     .await;

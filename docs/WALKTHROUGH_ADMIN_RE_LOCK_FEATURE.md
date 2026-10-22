@@ -100,7 +100,7 @@ Executed `npm run build`:
 3. Click **"Lock Admin"**:
    - The Manage page immediately locks, dropping back to the `<AdminAccessGate />` view ("Administrator Authentication Required").
    - Sensitive storage policy options and audit controls are concealed.
-4. Click **"Unlock with Admin PIN"** and enter `6361`:
+4. Click **"Unlock with Admin PIN"** and enter `[admin-pin]`:
    - Admin controls instantly unlock.
 5. Click **"Sign out"** in the top navigation bar:
    - Your session is ended and all local admin tokens are purged from `sessionStorage`. Returning to `/manage` will require re-authentication.

@@ -87,7 +87,7 @@ async fn test_admin_status_reports_has_pin_false_when_unset() {
 
     // Restore test admin pin
     let _ = sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await;
@@ -98,7 +98,7 @@ async fn test_admin_status_reports_has_pin_true_when_set() {
     let ctx = TestContext::new().await;
 
     sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await
@@ -123,7 +123,7 @@ async fn test_admin_status_reports_has_pin_true_when_set() {
     let req_authed = Request::builder()
         .method("GET")
         .uri("/api/admin/status")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -141,18 +141,18 @@ async fn test_verify_pin_success_variations() {
     let ctx = TestContext::new().await;
 
     sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await
     .unwrap();
 
-    // 1. Exact string {"pin": "6361"}
+    // 1. Exact string {"pin": "97531"}
     let req1 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": "6361" }).to_string()))
+        .body(Body::from(json!({ "pin": "97531" }).to_string()))
         .unwrap();
     let resp1 = ctx.app.clone().oneshot(req1).await.unwrap();
     assert_eq!(resp1.status(), StatusCode::OK);
@@ -161,12 +161,12 @@ async fn test_verify_pin_success_variations() {
     assert_eq!(body1["admin"], true);
     assert_eq!(body1["method"], "pin");
 
-    // 2. Numeric integer in JSON {"pin": 6361}
+    // 2. Numeric integer in JSON {"pin": 97531}
     let req2 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": 6361 }).to_string()))
+        .body(Body::from(json!({ "pin": 97531 }).to_string()))
         .unwrap();
     let resp2 = ctx.app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::OK);
@@ -178,7 +178,7 @@ async fn test_verify_pin_success_variations() {
         .method("POST")
         .uri("/api/admin/verify")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "admin_pin": "6361" }).to_string()))
+        .body(Body::from(json!({ "admin_pin": "97531" }).to_string()))
         .unwrap();
     let resp3 = ctx.app.clone().oneshot(req3).await.unwrap();
     assert_eq!(resp3.status(), StatusCode::OK);
@@ -189,7 +189,7 @@ async fn test_verify_pin_success_variations() {
     let req4 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
     let resp4 = ctx.app.clone().oneshot(req4).await.unwrap();
@@ -201,7 +201,7 @@ async fn test_verify_pin_success_variations() {
     let req5 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
-        .header("X-Admin-Pin", "  6361  ")
+        .header("X-Admin-Pin", "  97531  ")
         .body(Body::empty())
         .unwrap();
     let resp5 = ctx.app.clone().oneshot(req5).await.unwrap();
@@ -215,7 +215,7 @@ async fn test_verify_pin_failure_cases() {
     let ctx = TestContext::new().await;
 
     sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await
@@ -254,12 +254,12 @@ async fn test_verify_pin_fails_closed_when_pin_unset() {
         .await
         .unwrap();
 
-    // Even if caller submits candidate PIN "6361", an unset PIN means auth is closed.
+    // Even if caller submits candidate PIN "97531", an unset PIN means auth is closed.
     let req = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": "6361" }).to_string()))
+        .body(Body::from(json!({ "pin": "97531" }).to_string()))
         .unwrap();
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
@@ -267,7 +267,7 @@ async fn test_verify_pin_fails_closed_when_pin_unset() {
 
     // Restore test admin pin
     let _ = sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await;
@@ -278,7 +278,7 @@ async fn test_admin_pin_rotation_lifecycle() {
     let ctx = TestContext::new().await;
 
     sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
     )
     .execute(&ctx.pool)
     .await
@@ -298,7 +298,7 @@ async fn test_admin_pin_rotation_lifecycle() {
     let req_short = Request::builder()
         .method("POST")
         .uri("/api/admin/pin")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "new_pin": "123" }).to_string()))
         .unwrap();
@@ -309,7 +309,7 @@ async fn test_admin_pin_rotation_lifecycle() {
     let req_valid = Request::builder()
         .method("POST")
         .uri("/api/admin/pin")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "new_pin": "9999" }).to_string()))
         .unwrap();
@@ -318,12 +318,12 @@ async fn test_admin_pin_rotation_lifecycle() {
     let body_valid: Value = serde_json::from_slice(&resp_valid.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body_valid["success"], true);
 
-    // D. Old PIN '6361' is now rejected (401)
+    // D. Old PIN '97531' is now rejected (401)
     let req_old = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": "6361" }).to_string()))
+        .body(Body::from(json!({ "pin": "97531" }).to_string()))
         .unwrap();
     let resp_old = ctx.app.clone().oneshot(req_old).await.unwrap();
     assert_eq!(resp_old.status(), StatusCode::UNAUTHORIZED);
@@ -338,13 +338,13 @@ async fn test_admin_pin_rotation_lifecycle() {
     let resp_new = ctx.app.clone().oneshot(req_new).await.unwrap();
     assert_eq!(resp_new.status(), StatusCode::OK);
 
-    // F. Restore original PIN '6361'
+    // F. Restore original PIN '97531'
     let req_restore = Request::builder()
         .method("POST")
         .uri("/api/admin/pin")
         .header("X-Admin-Pin", "9999")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "new_pin": "6361" }).to_string()))
+        .body(Body::from(json!({ "new_pin": "97531" }).to_string()))
         .unwrap();
     let resp_restore = ctx.app.clone().oneshot(req_restore).await.unwrap();
     assert_eq!(resp_restore.status(), StatusCode::OK);

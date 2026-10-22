@@ -47,7 +47,7 @@ Currently:
 ## 3. Exit Criteria
 1. On `/manage`, an unlocked user sees an interactive **"🔒 Lock Admin"** button.
 2. Clicking **"Lock Admin"** immediately transitions `/manage` back to the locked `<AdminAccessGate />` state and removes PIN tokens from `sessionStorage`.
-3. Unlocking again with PIN `6361` successfully restores full administrative access.
+3. Unlocking again with PIN `[admin-pin]` successfully restores full administrative access.
 4. Clicking **"Sign out"** from anywhere in the app completely clears all `sessionStorage` admin tokens so a signed-out client is never auto-unlocked.
 5. On `/devices`, unlocking fleet telemetry shows a **"🔒 Lock Fleet"** button that re-engages privacy scoping upon click.
 6. All existing React component unit tests pass cleanly.
@@ -91,5 +91,5 @@ Currently:
    - Run `npm test -- --run` in `web/` to verify tests pass.
    - Run `npm run build` in `web/` to compile the updated bundle into `web/dist/`.
 5. **Verify Live in Browser:**
-   - Test unlocking `/manage` with PIN `6361`, then clicking "Lock Admin".
+   - Test unlocking `/manage` with PIN `[admin-pin]`, then clicking "Lock Admin".
    - Test signing out and confirming admin is locked.

@@ -64,12 +64,12 @@ describe('manage API client', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ retention_policy: 'keep', archive_dir: 'D:/archive', allowed_policies: ['keep'] })
     );
-    const settings = await fetchStorageSettings('6361');
+    const settings = await fetchStorageSettings('97531');
     expect(settings.retention_policy).toBe('keep');
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/settings',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'X-Admin-Pin': '6361' }),
+        headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
       })
     );
   });
@@ -78,40 +78,40 @@ describe('manage API client', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ storage: { free_str: '100 GB' }, audit: { total_orphaned_dirs: 0 } })
     );
-    const audit = await fetchStorageAudit('6361');
+    const audit = await fetchStorageAudit('97531');
     expect(audit.storage.free_str).toBe('100 GB');
   });
 
   it('verifies admin pin via POST', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, admin: true }));
-    const res = await verifyAdminPin('6361');
+    const res = await verifyAdminPin('97531');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/admin/verify',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ pin: '6361' }),
+        body: JSON.stringify({ pin: '97531' }),
       })
     );
   });
 
   it('updates storage policy and passes PIN header', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, retention_policy: 'archive' }));
-    const res = await updateStoragePolicy('archive', '6361');
+    const res = await updateStoragePolicy('archive', '97531');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/settings',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ retention_policy: 'archive' }),
-        headers: expect.objectContaining({ 'X-Admin-Pin': '6361' }),
+        headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
       })
     );
   });
 
   it('purges orphaned caches via POST', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, result: { purged: 3 } }));
-    const res = await purgeOrphanedCaches('6361');
+    const res = await purgeOrphanedCaches('97531');
     expect(res.result?.purged).toBe(3);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/purge-orphans',
@@ -121,7 +121,7 @@ describe('manage API client', () => {
 
   it('triggers library scan via POST', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
-    const res = await triggerLibraryScan('6361');
+    const res = await triggerLibraryScan('97531');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/scan',
@@ -131,7 +131,7 @@ describe('manage API client', () => {
 
   it('archives movie media via POST', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
-    const res = await archiveMovieMedia('Matrix.1999.mkv', '6361');
+    const res = await archiveMovieMedia('Matrix.1999.mkv', '97531');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/archive/Matrix.1999.mkv',
@@ -141,7 +141,7 @@ describe('manage API client', () => {
 
   it('deletes movie media via DELETE method', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, message: 'Purged' }));
-    const res = await deleteMovieMedia('Matrix.1999.mkv', '6361');
+    const res = await deleteMovieMedia('Matrix.1999.mkv', '97531');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/media/Matrix.1999.mkv',

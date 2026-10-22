@@ -101,7 +101,7 @@ beforeEach(() => {
     }
     if (url === '/api/admin/verify') {
       const body = JSON.parse(String(init?.body || '{}'));
-      if (body.pin === '6361') {
+      if (body.pin === '97531') {
         return jsonResponse({ success: true, admin: true, method: 'pin' });
       }
       return jsonResponse({ success: false, error: 'Invalid Admin PIN' }, 401);
@@ -150,7 +150,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('filters movies by search query and category chips', async () => {
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -202,19 +202,19 @@ describe('ManagePage Comprehensive Edge Cases', () => {
 
     // Entering correct PIN succeeds
     await user.clear(pinInput);
-    await user.type(pinInput, '6361');
+    await user.type(pinInput, '97531');
     await user.click(submitBtn);
 
     await waitFor(() => {
       expect(screen.getByText(/admin verified/i)).toBeInTheDocument();
     });
     expect(screen.getByText('The Matrix')).toBeInTheDocument();
-    expect(sessionStorage.getItem('ms_admin_pin')).toBe('6361');
+    expect(sessionStorage.getItem('ms_admin_pin')).toBe('97531');
     expect(sessionStorage.getItem('ms_admin_unlocked')).toBe('true');
   });
 
   it('locks admin mode on Lock Admin click', async () => {
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -282,7 +282,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(modalPin).toBeInTheDocument();
 
     // Enter PIN and confirm deletion
-    await user.type(modalPin, '6361');
+    await user.type(modalPin, '97531');
     const confirmDeleteBtn = screen.getByRole('button', { name: /yes, delete & purge everything/i });
     await user.click(confirmDeleteBtn);
 
@@ -291,14 +291,14 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         expect.stringContaining('/api/media/Inception.2010.mp4'),
         expect.objectContaining({
           method: 'DELETE',
-          headers: expect.objectContaining({ 'X-Admin-Pin': '6361' }),
+          headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
         })
       );
     });
   });
 
   it('sends X-Admin-Pin when updating storage policy', async () => {
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -315,7 +315,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         '/api/storage/settings',
         expect.objectContaining({
           method: 'POST',
-          headers: expect.objectContaining({ 'X-Admin-Pin': '6361' }),
+          headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
           body: JSON.stringify({ retention_policy: 'archive' }),
         })
       );
@@ -323,7 +323,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('renders Stream Ready badge instantly from movie metadata even while storage audit is pending', async () => {
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     // Delay /api/storage/audit to simulate a 10s drive crawl
@@ -359,7 +359,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('filters by Needs Pre-Transcode chip and allows triggering pre-transcode', async () => {
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     const moviesWithUntranscoded = [
@@ -448,7 +448,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
       return jsonResponse({});
     });
 
-    sessionStorage.setItem('ms_admin_pin', '6361');
+    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();

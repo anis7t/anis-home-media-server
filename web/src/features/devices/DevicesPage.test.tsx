@@ -164,14 +164,14 @@ describe('DevicesPage', () => {
     const pinInput = screen.getByPlaceholderText(/admin pin…/i);
     expect(pinInput).toBeInTheDocument();
 
-    await user.type(pinInput, '6361');
+    await user.type(pinInput, '97531');
     const submitBtn = screen.getByRole('button', { name: /^Unlock Fleet$/i });
     await user.click(submitBtn);
 
     await waitFor(() => {
       expect(screen.getByText(/fleet admin view/i)).toBeInTheDocument();
     });
-    expect(sessionStorage.getItem('ms_admin_pin')).toBe('6361');
+    expect(sessionStorage.getItem('ms_admin_pin')).toBe('97531');
   });
 
   it('passes AbortSignal to fetch and aborts on unmount', async () => {

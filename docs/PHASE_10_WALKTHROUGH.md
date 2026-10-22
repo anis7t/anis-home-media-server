@@ -154,7 +154,7 @@ To activate the newly compiled release binary:
 3. Verify live service health and probe scan endpoint:
    ```powershell
    Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
-   Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/scan" -Method Post -Headers @{ "X-Admin-Pin" = "6361" }
+   Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/scan" -Method Post -Headers @{ "X-Admin-Pin" = "[admin-pin]" }
    ```
 
 ---

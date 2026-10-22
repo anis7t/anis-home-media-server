@@ -62,7 +62,7 @@ impl TestContext {
 
         // Ensure admin PIN is configured for test context
         sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+            "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
         )
         .execute(&pool)
         .await
@@ -166,7 +166,7 @@ async fn test_allowlist_endpoints_and_validation() {
     let req_get = Request::builder()
         .method("GET")
         .uri("/api/auth/allowlist")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -181,7 +181,7 @@ async fn test_allowlist_endpoints_and_validation() {
     let req_post = Request::builder()
         .method("POST")
         .uri("/api/auth/allowlist")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "emails": ["Operator@Example.com", "second@example.com"] }).to_string()))
         .unwrap();
@@ -198,7 +198,7 @@ async fn test_allowlist_endpoints_and_validation() {
     let req_bad = Request::builder()
         .method("POST")
         .uri("/api/auth/allowlist")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "emails": [123, 456] }).to_string()))
         .unwrap();
@@ -252,7 +252,7 @@ async fn test_tokens_minting_validation_and_lifecycle() {
     let req_no_label = Request::builder()
         .method("POST")
         .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({}).to_string()))
         .unwrap();
@@ -263,7 +263,7 @@ async fn test_tokens_minting_validation_and_lifecycle() {
     let req_bad_validity = Request::builder()
         .method("POST")
         .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "label": "TV", "validity_days": -10 }).to_string()))
         .unwrap();
@@ -274,7 +274,7 @@ async fn test_tokens_minting_validation_and_lifecycle() {
     let req_valid = Request::builder()
         .method("POST")
         .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "label": "Living Room TV" }).to_string()))
         .unwrap();
@@ -293,7 +293,7 @@ async fn test_tokens_minting_validation_and_lifecycle() {
     let req_list = Request::builder()
         .method("GET")
         .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
     let resp_list = ctx.app.clone().oneshot(req_list).await.unwrap();
@@ -306,7 +306,7 @@ async fn test_tokens_minting_validation_and_lifecycle() {
     let req_revoke = Request::builder()
         .method("DELETE")
         .uri(format!("/api/auth/tokens/{}", token_id))
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
     let resp_revoke = ctx.app.clone().oneshot(req_revoke).await.unwrap();

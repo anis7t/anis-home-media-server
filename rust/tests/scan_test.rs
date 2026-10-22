@@ -78,7 +78,7 @@ async fn test_post_scan_without_admin_pin_returns_403() {
         "Administrator verification required to trigger library scan."
     );
 
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'")
+    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)
         .await;
 }
@@ -107,7 +107,7 @@ async fn test_post_scan_rejects_query_string_pin() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'")
+    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)
         .await;
 }
@@ -140,7 +140,7 @@ async fn test_post_scan_with_valid_header_pin_succeeds() {
     assert_eq!(json["status"], "scanning");
     assert_eq!(json["busy"], true);
 
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'")
+    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)
         .await;
 }
@@ -173,7 +173,7 @@ async fn test_post_scan_with_valid_body_pin_succeeds() {
     assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
 
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'")
+    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)
         .await;
 }

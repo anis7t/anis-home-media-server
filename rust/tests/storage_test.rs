@@ -54,7 +54,7 @@ impl StorageTestContext {
 
         // Ensure admin PIN is configured
         sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('admin_pin', '6361') ON CONFLICT (key) DO UPDATE SET value = '6361'"
+            "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
         )
         .execute(&pool)
         .await
@@ -145,7 +145,7 @@ async fn test_storage_settings_get_and_post() {
         .method("POST")
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::from(json!({ "retention_policy": "invalid_mode" }).to_string()))
         .unwrap();
 
@@ -157,7 +157,7 @@ async fn test_storage_settings_get_and_post() {
         .method("POST")
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::from(json!({ "retention_policy": "archive" }).to_string()))
         .unwrap();
 
@@ -212,7 +212,7 @@ async fn test_storage_audit_and_purge() {
     let req = Request::builder()
         .method("GET")
         .uri("/api/storage/audit")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -229,7 +229,7 @@ async fn test_storage_audit_and_purge() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/purge-orphans?dry_run=true")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -253,7 +253,7 @@ async fn test_storage_audit_and_purge() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/purge-orphans")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "dry_run": true }).to_string()))
         .unwrap();
@@ -301,7 +301,7 @@ async fn test_storage_archive_endpoint() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/DoesNotExist.mkv")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -312,7 +312,7 @@ async fn test_storage_archive_endpoint() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/ArchiveMe.mkv")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
@@ -341,7 +341,7 @@ async fn test_storage_archive_endpoint() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/ArchiveMe.mkv")
-        .header("X-Admin-Pin", "6361")
+        .header("X-Admin-Pin", "97531")
         .body(Body::empty())
         .unwrap();
 
