@@ -179,8 +179,12 @@ The current project includes:
    streams are capped at **64 global** (`MEDIA_SERVER_QR_MAX_SSE`) and **4 per client**, with the
    permit owned by the response stream so a disconnect returns the capacity. See the QR invariants
    above.
-4. **Drop the plaintext `code` column** from `device_pair_sessions`. Only `code_hash` is needed for
-   lookup; the plaintext is redundant at rest. Needs an `ALTER` on the live table.
+4. ~~Drop the plaintext `code` column from `device_pair_sessions`.~~ **DONE 2026-10-23.**
+   Lookup and confirmation compare against `code_hash` only; the column was dropped by
+   `ALTER TABLE ... DROP COLUMN IF EXISTS code`, and its index was replaced by
+   `idx_device_pair_code_hash`. Verified live: the column is gone from `information_schema`, a
+   create still succeeds, and the schema shows `code_hash` + `secret_hash`. **Rolling back to a
+   pre-drop binary requires re-adding the column first.** See the QR invariants above.
 5. **Port the web opening sequence to React.** The brand intro overlay was a Jinja2 template and
    was deleted in Slice 7E.2 without a replacement, so the web app had no intro from 2026-10-18
    until 2026-10-20. **Phase 11 is COMPLETE**: Slices 11.1 (the canonical specification), 11.1a
@@ -325,6 +329,14 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   evicting live ones, because eviction would hand an attacker a fresh budget per spoofed address.
   This is an availability brake, not an authorization control: the counters are in-process and
   reset on restart, which is acceptable because nothing about identity depends on them.
+- **The pair code is stored only as a hash, and the plaintext column is gone.** `code_hash` is the
+  only form at rest; `find_pair_session_by_code` and `confirm_pair_session` both hash the
+  case-normalized submission, so a code typed in lowercase still works (the generated charset is
+  uppercase). The column was dropped by `ALTER TABLE ... DROP COLUMN IF EXISTS code` in `db.rs`,
+  and `idx_device_pair_code` with it, replaced by `idx_device_pair_code_hash`. **Never re-add a
+  `CREATE INDEX ... (code)` there** - the column does not exist, so schema init would fail on every
+  startup. A test must confirm with **code only** (sending `sig` too would let a broken hash
+  comparison pass, since either factor is accepted) and look up a **lowercase** code.
 - **The session cookie's `Secure` flag is conditional, and must stay that way.**
   `AuthService::session_cookie()` adds `Secure` only when the request arrived over TLS
   (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It **cannot** be unconditional:

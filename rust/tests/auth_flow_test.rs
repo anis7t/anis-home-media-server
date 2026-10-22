@@ -497,7 +497,6 @@ async fn qr_device_auth_flow_test() {
     let body_create: Value = serde_json::from_slice(&body_bytes).unwrap();
     let qr_id = body_create["qr_id"].as_str().expect("qr_id must be a string");
     let code = body_create["code"].as_str().expect("code must be a string");
-    let sig = body_create["sig"].as_str().expect("sig must be a string");
     assert_eq!(code.len(), 5);
     assert!(body_create["qr_url"].as_str().unwrap().contains("/remotelogin"));
     assert!(
@@ -518,7 +517,11 @@ async fn qr_device_auth_flow_test() {
             .unwrap();
     assert_eq!(body_status_1["status"], "pending");
 
-    // 4. Phone manual entry flow: POST /api/auth/qr/lookup with the 5-char code
+    // 4. Phone manual entry flow: POST /api/auth/qr/lookup with the 5-char code.
+    //
+    // A deliberately *lowercase* code is sent: lookup is documented as
+    // case-insensitive, and it now hashes the normalized submission, so this
+    // is what proves the normalization still happens before hashing.
     let req_lookup_invalid = Request::builder()
         .method("POST")
         .uri("/api/auth/qr/lookup")
@@ -534,7 +537,9 @@ async fn qr_device_auth_flow_test() {
         .uri("/api/auth/qr/lookup")
         .header(header::COOKIE, &phone_cookie)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "code": code }).to_string()))
+        .body(Body::from(
+            json!({ "code": code.to_lowercase() }).to_string(),
+        ))
         .unwrap();
     let resp_lookup_valid = ctx.app.clone().oneshot(req_lookup_valid).await.unwrap();
     assert_eq!(resp_lookup_valid.status(), StatusCode::OK);
@@ -544,6 +549,11 @@ async fn qr_device_auth_flow_test() {
     assert_eq!(body_lookup["qr_id"], qr_id);
 
     // 5. Phone confirms pairing: POST /api/auth/qr/{qr_id}/confirm
+    //
+    // Code only, and lowercase on purpose: sending `sig` as well would let a
+    // broken code comparison pass, because either factor is accepted. This is
+    // the assertion that the *hash* comparison works now that the plaintext
+    // column is gone.
     let req_confirm = Request::builder()
         .method("POST")
         .uri(format!("/api/auth/qr/{}/confirm", qr_id))
@@ -551,8 +561,7 @@ async fn qr_device_auth_flow_test() {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({
-                "code": code,
-                "sig": sig,
+                "code": code.to_lowercase(),
                 "device_name": "Living Room TV"
             })
             .to_string(),
@@ -657,6 +666,22 @@ async fn qr_device_auth_flow_test() {
         .headers()
         .get(header::SET_COOKIE)
         .is_none());
+
+    // 7c-bis. The QR-signature path must still work with no code at all: a
+    // scanned QR posts `sig` alone, and that factor is independent of the
+    // plaintext code column that was dropped.
+    let other_sig = other_body["sig"].as_str().unwrap();
+    let req_confirm_sig_only = Request::builder()
+        .method("POST")
+        .uri(format!("/api/auth/qr/{}/confirm", other_qr_id))
+        .header(header::COOKIE, &phone_cookie)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({ "sig": other_sig, "device_name": "Bedroom TV" }).to_string(),
+        ))
+        .unwrap();
+    let resp_confirm_sig_only = ctx.app.clone().oneshot(req_confirm_sig_only).await.unwrap();
+    assert_eq!(resp_confirm_sig_only.status(), StatusCode::OK);
 
     // The second session served its purpose; remove it so the residue check
     // below can be exact (an unconfirmed session has no user_id to cascade on).

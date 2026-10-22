@@ -187,7 +187,6 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         r#"
         CREATE TABLE IF NOT EXISTS device_pair_sessions (
             id          TEXT PRIMARY KEY,
-            code        TEXT NOT NULL,
             code_hash   TEXT NOT NULL,
             secret_hash TEXT,
             sig         TEXT NOT NULL,
@@ -220,6 +219,27 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // The plaintext pair code is gone: `find_pair_session_by_code` and
+    // `confirm_pair_session` compare against `code_hash` only, so there is
+    // nothing left that needs to read the original. The drop also removes
+    // `idx_device_pair_code`, which the next statement makes explicit for
+    // databases that survived the column.
+    sqlx::query(
+        r#"
+        ALTER TABLE device_pair_sessions DROP COLUMN IF EXISTS code;
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DROP INDEX IF EXISTS idx_device_pair_code;
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query(
         r#"
         CREATE INDEX IF NOT EXISTS idx_device_pair_expires ON device_pair_sessions(expires_at)
@@ -229,12 +249,12 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .await?;
 
     // `POST /api/auth/qr/lookup` resolves a pair code to a live session, so
-    // this column is read on every manual code entry. The table holds only
+    // the hash is read on every manual code entry. The table holds only
     // unexpired sessions, but the index is free and makes the lookup a
     // single index probe instead of a sequential scan.
     sqlx::query(
         r#"
-        CREATE INDEX IF NOT EXISTS idx_device_pair_code ON device_pair_sessions(code)
+        CREATE INDEX IF NOT EXISTS idx_device_pair_code_hash ON device_pair_sessions(code_hash)
         "#,
     )
     .execute(&mut *tx)

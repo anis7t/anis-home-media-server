@@ -1138,12 +1138,11 @@ impl AuthService {
 
         sqlx::query(
             r#"
-            INSERT INTO device_pair_sessions (id, code, code_hash, secret_hash, sig, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO device_pair_sessions (id, code_hash, secret_hash, sig, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(&qr_id)
-        .bind(&code)
         .bind(&code_hash)
         .bind(&secret_hash)
         .bind(&sig)
@@ -1283,21 +1282,26 @@ impl AuthService {
 
     /// Look up an active (unexpired, unconfirmed) pair session by its 5-char code.
     /// Case-insensitive. Returns `Some(qr_id)` if found, `None` if expired or not found.
+    ///
+    /// Only the hash is compared or stored: the plaintext code lived in this
+    /// table until it was dropped, and it was the one value in the row that a
+    /// database reader could replay on another pairing.
     pub async fn find_pair_session_by_code(
         pool: &PgPool,
         code: &str,
     ) -> Result<Option<String>, AppError> {
         let clean_code = code.trim().to_uppercase();
+        let code_hash = Self::hash_token(&clean_code);
         let row = sqlx::query(
             r#"
             SELECT id
             FROM device_pair_sessions
-            WHERE code = $1 AND expires_at > CURRENT_TIMESTAMP AND confirmed = FALSE
+            WHERE code_hash = $1 AND expires_at > CURRENT_TIMESTAMP AND confirmed = FALSE
             ORDER BY created_at DESC
             LIMIT 1
             "#,
         )
-        .bind(&clean_code)
+        .bind(&code_hash)
         .fetch_optional(pool)
         .await?;
 
@@ -1317,7 +1321,7 @@ impl AuthService {
     ) -> Result<(), AppError> {
         let row = sqlx::query(
             r#"
-            SELECT code, sig, confirmed
+            SELECT code_hash, sig, confirmed
             FROM device_pair_sessions
             WHERE id = $1 AND expires_at > CURRENT_TIMESTAMP
             "#,
@@ -1337,12 +1341,16 @@ impl AuthService {
             ));
         }
 
-        let stored_code: String = r.get("code");
+        let stored_code_hash: String = r.get("code_hash");
         let stored_sig: String = r.get("sig");
 
-        // Accept if either the HMAC sig matches OR the raw code matches (case-insensitive)
+        // Accept if either the HMAC sig matches OR the code matches. The code
+        // is compared by hash - the plaintext is no longer stored - and the
+        // submission is normalized exactly as the old plaintext comparison
+        // did, so a code typed in lowercase still works.
         let sig_valid = submitted_sig.map(|s| s == stored_sig).unwrap_or(false);
-        let code_valid = submitted_code.trim().to_uppercase() == stored_code;
+        let submitted_hash = Self::hash_token(&submitted_code.trim().to_uppercase());
+        let code_valid = Self::constant_time_eq(submitted_hash.as_bytes(), stored_code_hash.as_bytes());
 
         if !sig_valid && !code_valid {
             return Err(AppError::Unauthorized(
