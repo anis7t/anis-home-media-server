@@ -14,8 +14,7 @@ export function LoginScreen() {
 
       <h1 className="text-2xl font-bold text-white">Sign in required</h1>
       <p className="mt-2 text-sm leading-relaxed text-white/60">
-        This server is protected. Sign in with the Google account that has been
-        added to the allowlist.
+        This server is protected. Sign in with your Google account to continue.
       </p>
 
       <button

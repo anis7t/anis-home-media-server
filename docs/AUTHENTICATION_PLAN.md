@@ -1,5 +1,12 @@
 # Authentication & Access Control Plan
 
+> **Policy superseded 2026-10-23 — this document is the historical Flask-era proposal, kept for
+> the record.** The shipped policy is **open Google sign-in**: an **empty** allowlist admits any
+> verified Google account as `viewer`, and `MEDIA_SERVER_ADMIN_EMAILS` is the only source of
+> `admin`. A non-empty allowlist is the optional brake. The Rust implementation's invariants are in
+> `AGENTS.md` → *Sign-in allowlist invariants*; the "allowlist is a precondition" stance below is
+> **not** current policy.
+
 **Status:** Proposal — not implemented.
 **Author:** Phase 2 React work, 2026-10-12
 **Addresses:** `AGENTS.md` §4 ("the stable Cloudflare hostname is not authentication.

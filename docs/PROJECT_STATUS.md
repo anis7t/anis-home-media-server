@@ -29,6 +29,28 @@ Active branch: `feat/rust-react-postgres-migration`
 
 ---
 
+## 2026-10-23 — Google sign-in 403 / allowlist hardening (resolved)
+
+Every real Google account was refused with `{"error":"This account is not permitted to use this
+server.","status":403}` because `settings.auth_allowlist` in production held the stale fixture
+`operator@example.com,second@example.com`. The live log recorded
+`AUTH: Rejected unlisted identity: anis7t@gmail.com` at 21:35–21:36 on 2026-10-22.
+
+- **Data**: removed the stale production row; `settings.auth_allowlist` now has 0 rows and the
+  effective list is empty, so any verified Google account can sign in (viewer by default).
+- **Security**: `GET`/`POST /api/auth/allowlist` now require admin **always** (Admin PIN or admin
+  session). They were unauthenticated whenever `MEDIA_SERVER_AUTH` was off; a live anonymous `POST`
+  succeeded during diagnosis (writing `probe@example.test`) and was removed immediately.
+- **Policy**: an empty allowlist means **open** sign-in regardless of `MEDIA_SERVER_AUTH`; a
+  non-empty list still restricts. The decision is the pure `AuthService::allowlist_allows`.
+  Admin promotion remains `MEDIA_SERVER_ADMIN_EMAILS`-only.
+- **Tests**: pure policy tests (empty → any; non-empty → listed only, case/whitespace-insensitive)
+  and route tests (anonymous GET/POST → 401 with no mutation; Admin PIN → 200; invalid body → 400;
+  zero allowlist residue in the test database).
+- **Docs**: the invariants are in `AGENTS.md` → *Sign-in allowlist invariants*.
+
+---
+
 ## Immediate Active Issues & Work Queue (Reported 2026-10-18) — ✅ ALL RESOLVED
 
 All 4 reported issues were grouped into Slices A–D, implemented, thoroughly verified, and committed (Note: there was no Slice E; all issues are resolved):

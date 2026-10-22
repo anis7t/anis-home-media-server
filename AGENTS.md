@@ -283,6 +283,13 @@ The current project includes:
    - The `MEDIA_SERVER_AUTH_ALLOWLIST` was cleared so anyone can still sign in (guest browsing
      and per-user watch history stay available); only account *creation* is scoped by the admin
      list, and admin oversight is the remaining work.
+   - **2026-10-23 — the allowlist was the 403.** A stale production row,
+     `operator@example.com,second@example.com` (the `auth_flow_test.rs` fixture), rejected every
+     real account; the live log read `AUTH: Rejected unlisted identity: anis7t@gmail.com`. The row
+     was removed, open sign-in is restored, the empty-list policy is now explicit in
+     `AuthService::allowlist_allows` (empty = open, independent of `MEDIA_SERVER_AUTH`), and the
+     allowlist endpoints are admin-only **always**. The invariants are in *Sign-in allowlist
+     invariants* below; a live anonymous `POST` had made those endpoints the vulnerability.
    - **Phase 2 (done 2026-10-23):** `devices.user_id` and per-user scoping of the device list and
      its embedded watch history; rename/delete authorisation follows ownership. The invariants are
      in *Device ownership & watch-history scoping* below.
@@ -314,6 +321,34 @@ the Cloudflare tunnel. Treat them as the most destructive surface in the applica
 - **A closed probe is not a closed door.** Any test asserting the PIN is refused must also assert a
   destructive route returns 403.
 - **Do not weaken auth to make a test pass.**
+
+### Sign-in allowlist invariants (`rust/src/services/auth_service.rs` & `rust/src/routes/auth.rs`)
+
+The allowlist decides **who may complete Google sign-in**. It is not the authentication
+enforcement switch (`MEDIA_SERVER_AUTH` is), and the two must never be conflated again.
+
+- **An empty effective allowlist means open sign-in.** Any verified Google account may sign in; it
+  becomes a `viewer` unless its address is in `MEDIA_SERVER_ADMIN_EMAILS`, which is the only source
+  of `admin`. A **non-empty** allowlist restricts sign-in to exactly the listed addresses
+  (case- and whitespace-insensitive).
+- **`MEDIA_SERVER_AUTH` must not participate in this decision.** Enabling enforcement is a statement
+  about API access, not about who may create an account. The earlier implementation returned
+  `!auth_enabled` for an empty list, so clearing the allowlist denied everyone the moment
+  enforcement was enabled — the inverse of the documented Phase 1 policy. The decision lives in the
+  pure `AuthService::allowlist_allows(effective, email)`, and `is_email_allowed` delegates to it.
+- **`GET`/`POST /api/auth/allowlist` are admin-only, always.** Admin PIN (`X-Admin-Pin`) or an
+  admin session, never anonymous. They were gated on `MEDIA_SERVER_AUTH` until 2026-10-23, which
+  made them unauthenticated whenever enforcement was off: a live anonymous `POST` rewrote the list
+  to `probe@example.test` during diagnosis (removed immediately). Editing the allowlist is a
+  destructive authorization surface, so it does not inherit the enforcement switch.
+- **The row that caused the outage was the test fixture, not a test run.** Production held
+  `operator@example.com,second@example.com`, and every real account was refused. `auth_flow_test.rs`
+  uses `test_config()` and the dedicated test database, so the suite is not the writer; the likely
+  author was a manual/live POST while the endpoint was open. **Never seed a demo allowlist in
+  production.**
+- **The allowlist is the brake, not the default.** Open sign-in is deliberate (Phase 1). To close
+  the server, set a non-empty list (admin-only); to reopen it, clear the list. Never "fix" a
+  lockout by adding a placeholder address, and never add a default list in code.
 
 ### QR Device Sign-In invariants (`rust/src/routes/qr_auth.rs` & `rust/src/services/auth_service.rs`)
 

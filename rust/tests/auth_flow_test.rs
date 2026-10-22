@@ -162,6 +162,36 @@ async fn test_auth_me_unauthenticated_returns_authenticated_false() {
 async fn test_allowlist_endpoints_and_validation() {
     let ctx = TestContext::new().await;
 
+    // This test owns `auth_allowlist` in the test database. A previous run
+    // that failed before its cleanup must not decide who may sign in, so start
+    // from a known-empty list.
+    sqlx::query("DELETE FROM settings WHERE key = 'auth_allowlist'")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+
+    // Anonymous callers are refused even when `MEDIA_SERVER_AUTH` is off.
+    // The allowlist decides who may sign in, so it must never be readable or
+    // writable by a visitor who is not an admin.
+    let req_anon_get = Request::builder()
+        .method("GET")
+        .uri("/api/auth/allowlist")
+        .body(Body::empty())
+        .unwrap();
+    let resp_anon_get = ctx.app.clone().oneshot(req_anon_get).await.unwrap();
+    assert_eq!(resp_anon_get.status(), StatusCode::UNAUTHORIZED);
+
+    let req_anon_post = Request::builder()
+        .method("POST")
+        .uri("/api/auth/allowlist")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({ "emails": ["attacker@example.test"] }).to_string(),
+        ))
+        .unwrap();
+    let resp_anon_post = ctx.app.clone().oneshot(req_anon_post).await.unwrap();
+    assert_eq!(resp_anon_post.status(), StatusCode::UNAUTHORIZED);
+
     // GET allowlist
     let req_get = Request::builder()
         .method("GET")
@@ -176,6 +206,15 @@ async fn test_allowlist_endpoints_and_validation() {
     assert!(body_get["stored"].is_array());
     assert!(body_get["environment"].is_array());
     assert!(body_get["effective"].is_array());
+    // The refused anonymous POST must not have written anything.
+    assert!(
+        body_get["stored"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e != "attacker@example.test"),
+        "anonymous POST must not mutate the allowlist"
+    );
 
     // POST allowlist valid
     let req_post = Request::builder()
@@ -204,6 +243,24 @@ async fn test_allowlist_endpoints_and_validation() {
         .unwrap();
     let resp_bad = ctx.app.clone().oneshot(req_bad).await.unwrap();
     assert_eq!(resp_bad.status(), StatusCode::BAD_REQUEST);
+
+    // Leave the test database exactly as found: this suite owns the row while
+    // it runs, and the rule is zero residue (AGENTS.md s9).
+    sqlx::query("DELETE FROM settings WHERE key = 'auth_allowlist'")
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let residue: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM settings WHERE key = 'auth_allowlist'")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        residue, 0,
+        "allowlist fixture must not leak into the test database"
+    );
+
+    ctx.teardown().await;
 }
 
 #[tokio::test]

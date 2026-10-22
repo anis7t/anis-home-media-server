@@ -457,17 +457,32 @@ impl AuthService {
         Ok(Self::get_allowlist(pool).await)
     }
 
-    pub async fn is_email_allowed(pool: &PgPool, email: &str) -> bool {
-        let allowlist = Self::get_allowlist(pool).await;
-        if allowlist.effective.is_empty() {
-            // If no allowlist is configured, fail closed or allow only if auth is disabled
-            let auth_enabled = std::env::var("MEDIA_SERVER_AUTH")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
-            return !auth_enabled;
+    /// Decide whether `email` may complete Google sign-in.
+    ///
+    /// Policy: an **empty** effective allowlist means open sign-in - any
+    /// verified Google account may sign in (as a `viewer` unless its address
+    /// is in `MEDIA_SERVER_ADMIN_EMAILS`). A **non-empty** allowlist restricts
+    /// sign-in to exactly the listed addresses.
+    ///
+    /// `MEDIA_SERVER_AUTH` deliberately does not participate here. It is the
+    /// switch that enforces authentication on API routes; it is not a
+    /// statement about who may create an account. The earlier implementation
+    /// inverted that (`empty + enforcement enabled` denied everyone), so
+    /// clearing the allowlist locked every account out the moment enforcement
+    /// was turned on - the opposite of the documented Phase 1 policy.
+    pub fn allowlist_allows(effective: &[String], email: &str) -> bool {
+        if effective.is_empty() {
+            return true;
         }
         let target = email.trim().to_lowercase();
-        allowlist.effective.iter().any(|e| e == &target)
+        effective
+            .iter()
+            .any(|e| e.trim().to_lowercase() == target)
+    }
+
+    pub async fn is_email_allowed(pool: &PgPool, email: &str) -> bool {
+        let allowlist = Self::get_allowlist(pool).await;
+        Self::allowlist_allows(&allowlist.effective, email)
     }
 
     pub fn role_for_email(email: &str) -> &'static str {
@@ -1464,6 +1479,35 @@ impl AuthService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Policy: an empty allowlist is *open* sign-in, not a closed door. The
+    /// earlier implementation returned `!auth_enabled`, so clearing the list
+    /// denied every account as soon as `MEDIA_SERVER_AUTH=1`. That inversion
+    /// is what this test pins shut.
+    #[test]
+    fn test_allowlist_allows_empty_list_is_open() {
+        let empty: Vec<String> = Vec::new();
+        assert!(AuthService::allowlist_allows(&empty, "anis7t@gmail.com"));
+        assert!(AuthService::allowlist_allows(&empty, "someone.else@example.test"));
+        assert!(AuthService::allowlist_allows(&empty, ""));
+    }
+
+    /// A configured allowlist is exclusive, and membership is case- and
+    /// whitespace-insensitive so a mixed-case address still matches.
+    #[test]
+    fn test_allowlist_allows_non_empty_list_restricts() {
+        let list = vec![
+            "operator@example.com".to_string(),
+            "second@example.com".to_string(),
+        ];
+        assert!(AuthService::allowlist_allows(&list, "operator@example.com"));
+        assert!(AuthService::allowlist_allows(
+            &list,
+            "  Operator@Example.COM "
+        ));
+        assert!(!AuthService::allowlist_allows(&list, "anis7t@gmail.com"));
+        assert!(!AuthService::allowlist_allows(&list, ""));
+    }
 
     #[test]
     fn test_rfc7636_pkce_challenge_vector() {

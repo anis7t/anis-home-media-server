@@ -116,13 +116,15 @@ pub async fn get_allowlist_handler(
     State(state): State<AuthState>,
     headers: HeaderMap,
 ) -> Result<Json<AllowlistResponse>, AppError> {
-    if is_enforcement_enabled() {
-        let is_admin = AuthService::is_admin_authorized(&state.pool, &headers, None).await;
-        if !is_admin {
-            return Err(AppError::Unauthorized(
-                "Authentication required.".to_string(),
-            ));
-        }
+    // Admin-only, always. The allowlist decides who may sign in; when
+    // `MEDIA_SERVER_AUTH` is off this used to be reachable anonymously, so any
+    // visitor could rewrite it and lock every real account out. Enforcement is
+    // an API-access switch, not an authorization substitute for this surface.
+    let is_admin = AuthService::is_admin_authorized(&state.pool, &headers, None).await;
+    if !is_admin {
+        return Err(AppError::Unauthorized(
+            "Authentication required.".to_string(),
+        ));
     }
 
     let resp = AuthService::get_allowlist(&state.pool).await;
@@ -135,13 +137,13 @@ pub async fn post_allowlist_handler(
     headers: HeaderMap,
     body: Option<Json<AllowlistPayload>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if is_enforcement_enabled() {
-        let is_admin = AuthService::is_admin_authorized(&state.pool, &headers, None).await;
-        if !is_admin {
-            return Err(AppError::Unauthorized(
-                "Authentication required.".to_string(),
-            ));
-        }
+    // Admin-only, always. See `get_allowlist_handler`: this write decides who
+    // may sign in, and it must never be reachable anonymously.
+    let is_admin = AuthService::is_admin_authorized(&state.pool, &headers, None).await;
+    if !is_admin {
+        return Err(AppError::Unauthorized(
+            "Authentication required.".to_string(),
+        ));
     }
 
     let raw_emails = body.and_then(|Json(b)| b.emails);
