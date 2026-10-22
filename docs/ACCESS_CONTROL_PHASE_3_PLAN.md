@@ -1,7 +1,8 @@
 # Access Control Phase 3 — Admin Oversight of Accounts, Devices and Watch History
 
-**Status:** APPROVED 2026-10-23 — proceeding slice by slice (D1 = delete entry + clear device,
-D2 = include reassignment, D3 = extend `/devices`).
+**Status:** DELIVERED 2026-10-23 — Slices 3.1 `753c901`, 3.2 `2e4109e`, 3.3 `2781c51`, live-proofed
+and deployed (binary 2026-10-23 03:00:14, later than the last source change at 02:58:07), Flutter
+contract probe 22/22, zero live residue. Delivery record in §8.
 **Predecessors:** Phase 1 `f9df666` (admin bootstrap, upload gating, docs `6111ae5`);
 Phase 2 `7bfe34c` (per-user device ownership, scoped list and watch history).
 **Invariants it must not break:** the *Device ownership & watch-history scoping (Phase 2)* and
@@ -196,3 +197,46 @@ D2 = **include reassignment**; D3 = **extend `/devices`**.
 | 3.4 | Live verification, docs, deploy, handoff | Live matrix on temp rows; probe 22/22; binary timestamp |
 
 Each slice is presented for approval before it is implemented, per `AGENTS.md` §0.1.
+
+## 8. Delivery record (2026-10-23)
+
+| Slice | Commit | Result |
+|---|---|---|
+| 3.1 read model | `753c901` | `owner` on `/api/devices` (admin-only) + `GET /api/admin/users`; 4 tests |
+| 3.2 mutations | `2e4109e` | assign + history delete; 7 tests in the oversight suite |
+| 3.3 web view | `2781c51` | Accounts panel, owner badges/filter, reassign modal, clear/one-entry history; 5 new Vitest cases |
+| 3.4 deploy & proof | this commit | binary 2026-10-23 03:00:14; live matrix below; probe 22/22 |
+
+**Tests.** Rust **343 passed, 0 failed** across 33 suites (`--test-threads=1`), web **42 files /
+314 tests**, `npm run build` clean (tsc + vite). The Rust suite runs against the isolated
+`media_server_test` database and its last test asserts zero oversight residue.
+
+**Live matrix.** Temporary rows (`phase3.live.*` users, `dev_live_phase3` device, one admin and one
+viewer session) were proven and then deleted, leaving `0/0/0/0` residue; production stayed at
+**403 devices / 3 users** throughout.
+
+- anonymous and viewer `GET /api/admin/users` → **403**; admin session → **200** with both accounts,
+  server-computed `device_count`/`history_count`, and **no `google_sub`**;
+- admin `GET /api/devices` → `owner.email`; viewer `/api/devices` → `owner: null` and **no account
+  email anywhere in the raw JSON**;
+- viewer and anonymous `POST assign` / `POST history/delete` → **403 and the row unchanged**;
+- assign A→B → 200 and DB owner B; explicit `null` → 200 and DB NULL; missing `user_id` → 400;
+  unknown device/user → 404, ownership untouched;
+- delete one entry → `deleted: 1` with the sibling intact; unknown filename → 404 and nothing
+  deleted; clear device → `deleted: 1`; clear again → `deleted: 0`; unknown device → 404.
+
+**Implementation notes worth keeping.**
+
+- `Option<Option<i64>>` alone does not distinguish the cases; the field needs
+  `#[serde(default, deserialize_with = "...")]` and `Option::<i64>::deserialize(d).map(Some)`.
+  Plain `Option<i64>` — and `Option<Value>` — turn JSON `null` into `None`, so "unassign" becomes
+  indistinguishable from "field missing" and the explicit unassign silently 400s.
+- The web gate is `/api/admin/users` returning 200. A stale stored PIN therefore leaves the page
+  *without* oversight controls rather than with controls that 403.
+- `x-device-id` only honours ids beginning `dev_` (`DeviceService::resolve_device_id`), so a live
+  proof that targets a specific device must use that prefix.
+- `psql -c "... RETURNING id"` prints the value **and** the `INSERT 0 1` command tag; a script
+  reading it as a scalar must take the first line.
+
+**Not delivered (deliberate):** position editing, account create/delete, role changes, library
+gating, `progress` scoping, account-list pagination and an audit log. See §2.

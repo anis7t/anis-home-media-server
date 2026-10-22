@@ -267,7 +267,7 @@ The current project includes:
 ### Secondary / parked
 
 5. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-6. **Authentication/access control — Phases 1–2 done 2026-10-23.** The stable hostname is not
+6. **Authentication/access control — Phases 1–3 done 2026-10-23.** The stable hostname is not
    authentication. `media.anisparvez.in` is served by Caddy on a static IP, so anyone on earth
    with a Google account could sign in and (previously) become a viewer, and the allowlist
    defaulted to "allow everyone." Phase 1 closes the account-creation side:
@@ -286,9 +286,11 @@ The current project includes:
    - **Phase 2 (done 2026-10-23):** `devices.user_id` and per-user scoping of the device list and
      its embedded watch history; rename/delete authorisation follows ownership. The invariants are
      in *Device ownership & watch-history scoping* below.
-   Remaining: Phase 3 — admin UI to view and modify any account's devices and watch history. The
-   media library itself stays public (gating it would break DLNA/cast/device tokens). Tracked in
-   `docs/Current issues.md` / the handoff.
+   - **Phase 3 (done 2026-10-23):** admin oversight — admin-only owner attribution on
+     `/api/devices`, `GET /api/admin/users`, `POST /api/admin/devices/assign`,
+     `POST /api/admin/devices/history/delete`, and the admin view on `/devices`. The invariants are
+     in *Admin oversight of accounts, devices & watch history* below.
+   The media library itself stays public (gating it would break DLNA/cast/device tokens).
 7. **Backups are on the same volume as the data.** `E:\pgdata` and `E:\MediaServer\backups` are
    both on `E:`. A volume failure takes the database *and* the backups together. An off-host copy
    is the actual fix. The daily scheduled backup itself is in place — see
@@ -418,6 +420,46 @@ it authorises renaming and deleting a device. The media library itself stays pub
   history is `device_watch_history`, and that is the one the device list reads.
 - **The Flutter contract is unchanged.** `/api/devices` keeps its shape — scoping changes *which*
   rows are returned, not the fields. `scripts/probe_android_api.py` remains the gate.
+
+### Admin oversight of accounts, devices & watch history (Phase 3, `rust/src/routes/admin.rs` & `web/src/features/devices/DevicesPage.tsx`)
+
+Phase 2 made ownership and history *sticky*: a device is claimed once and never reassigned, and a
+watch-history row is never editable. Phase 3 is the supported, auditable way to correct both. It is
+**oversight of what already exists — it adds no new scoping and shifts no visibility boundary.**
+
+- **Owner attribution is admin-only, and that is the privacy boundary.** `GET /api/devices` carries
+  `owner: {id, email, name, role}` for an admin (Admin PIN **or** admin session) and `null` for
+  every other caller. The LEFT JOIN is attribution; the WHERE clause is Phase 2's scoping and must
+  not widen. A viewer's payload must never contain another account's address — asserted in Rust and
+  in the live smoke, never inferred from the UI.
+- **`GET /api/admin/users` is the admin probe.** It answers 200 only for an authorised caller and
+  lists `id, email, name, role, created_at, last_login_at, device_count, history_count`. It never
+  returns `google_sub` (an identity key the UI does not need), and a viewer gets **403, not an empty
+  list** — an empty list would be indistinguishable from a working route.
+- **Reassignment is the one explicit exception to claim-once.**
+  `POST /api/admin/devices/assign` takes `{device_id, user_id|null}`. A **missing** `user_id` is a
+  400 — an explicit `null` is what unassigns, and `Option<Option<i64>>` plus a custom deserializer is
+  the only serde shape that keeps "absent" and "null" distinct (plain `Option<T>` collapses them).
+  An unknown device or user is a 404. The automatic claim stays `UPDATE ... WHERE user_id IS NULL`,
+  so merely signing in still cannot take a device over. Ownership scopes history, so the history
+  moves with the device; the confirmation says so before it happens.
+- **History deletion touches history only.** `POST /api/admin/devices/history/delete` takes
+  `{device_id, filename?}`: a filename deletes one row and a miss is a 404; omitting it clears the
+  device's history (idempotent, `deleted: 0`). It deletes from **`device_watch_history`** and never
+  from the legacy filename-keyed `progress` table, and no media file is read, moved or deleted.
+- **Both mutations are admin-gated and the refusal is real.** Viewer and anonymous callers get 403,
+  and the test asserts the target row is unchanged afterwards — a 403 that had already mutated state
+  is not a refusal.
+- **The web UI unlocks on server confirmation, not on a local flag.** A stored PIN or an admin role
+  triggers `GET /api/admin/users`; only a 200 renders the Accounts panel, owner badges, owner filter,
+  reassign modal and clear-history controls. A stale PIN therefore hides the controls instead of
+  offering actions the server will refuse, and an ordinary viewer never sees them. Every modal is
+  portaled to `document.body`.
+- **No position editing, no account creation or deletion, no role changes, no library gating.** Those
+  are deliberately out of Phase 3; the media library itself stays public (gating it would break
+  DLNA/cast/device tokens).
+- **The Flutter contract is unchanged.** `/api/devices` gains exactly one additive key, and the new
+  routes are outside the client's surface. `scripts/probe_android_api.py` remains the gate.
 
 ### Public ingress invariants (Airtel Zyxel AOT5222ZY + Caddy)
 

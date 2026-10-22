@@ -170,7 +170,7 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 
-### 2026-10-23 — Access control Phases 1–2: admin bootstrap, per-user devices & scoped history
+### 2026-10-23 — Access control Phases 1–3: admin bootstrap, per-user devices, scoped history & admin oversight
 
 **Phase 1 (`f9df666`, docs `6111ae5`).** `MEDIA_SERVER_ADMIN_EMAILS` decides who is `admin` at Google
 sign-in; everyone else is `viewer`, and the role is re-read from `users` on every request rather than
@@ -195,7 +195,27 @@ Verified: 123 unit + all integration suites and `devices_test` 21/21; web 42 fil
 build; release 25.54 s deployed with the binary newer than the newest source; a live two-viewer
 matrix on temporary rows (scoping, hidden history, cross-user 403s) cleaned to zero residue;
 `probe_android_api.py` 22/22. Runbook: `Handoffs/2026-10-23_02-27_opencode_access-control-phase2.md`.
-**Remaining: Phase 3** — admin oversight UI; plan at [`docs/ACCESS_CONTROL_PHASE_3_PLAN.md`](ACCESS_CONTROL_PHASE_3_PLAN.md).
+
+**Phase 3 (`753c901`, `2e4109e`, `2781c51`).** Admin oversight of what Phase 2 made sticky.
+`GET /api/devices` carries an additive `owner {id, email, name, role}` for an admin (Admin PIN **or**
+admin session) and `owner: null` for everyone else — attribution is admin-only and the Phase 2
+WHERE-clause scoping is untouched. `GET /api/admin/users` (admin-gated, never returns `google_sub`)
+lists accounts with server-computed `device_count`/`history_count`. Two mutations:
+`POST /api/admin/devices/assign` `{device_id, user_id|null}` — the one explicit exception to
+claim-once, where an absent `user_id` is a 400, `null` unassigns, and an unknown device or user is a
+404 — and `POST /api/admin/devices/history/delete` `{device_id, filename?}`, which deletes one entry
+(404 on a miss) or the device's whole history (idempotent). No media file is touched, and the legacy
+filename-keyed `progress` table is not involved. The `/devices` page gains an admin view (Accounts
+panel, owner badges and filter, reassign modal, clear-history and per-entry delete) that renders only
+after `/api/admin/users` answers 200, so a stale PIN hides the controls instead of offering actions
+the server refuses; an admin session no longer sees the PIN-unlock prompt.
+
+Verified: Rust **343 passed / 0 failed** over 33 suites; web **42 files / 314 tests** and a clean
+`npm run build`; release deployed at **03:00:14** with the binary newer than the newest source
+(02:58:07); a live matrix on temporary rows (admin vs viewer attribution, accounts without
+`google_sub`, assign A→B→null, one-entry/clear history, 403s that left state unchanged) cleaned to
+`0/0/0/0`, production unchanged at **403 devices / 3 users**; `probe_android_api.py` **22/22**.
+Runbook: `Handoffs/2026-10-23_03-03_opencode_access-control-phase3.md`.
 
 ### 2026-10-16 — Catalog Reconciliation & USB-Dropout Service Watchdog
 
@@ -1652,7 +1672,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Secondary / parked
 1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. Remaining: **Phase 3** — an admin UI to view and modify any account's devices and watch history. The Cloudflare hostname alone is still not authentication.
+2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. **Phase 3 (2026-10-23)** adds admin oversight on `/devices`: admin-only owner attribution on `/api/devices`, `GET /api/admin/users`, device reassignment (the one explicit exception to claim-once) and watch-history deletion (one entry or a whole device, never a media file), with every route admin-gated and covered by the live matrix. Nothing in this phase remains; the library itself is intentionally public. The Cloudflare hostname alone is still not authentication.
 3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 
