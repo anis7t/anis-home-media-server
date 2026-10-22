@@ -155,7 +155,7 @@ Note:          C: is not used by this project.
 
 NSSM itself lives at `C:\MediaServer\bin\nssm.exe` and the PostgreSQL binaries at `C:\postgres`, so both survive the `E:` volume being absent — the `E:` glitch of 2026-10-16 took all three services down before that relocation.
 
-The legacy `MediaServer` (Waitress / Flask) and `Cloudflared` services have been **decommissioned and removed**. The backend is 100% native Rust and the frontend is a 100% React SPA.
+The Cloudflared service has been **decommissioned and removed**. The legacy `MediaServer` (Waitress / Flask) service is still registered as a Manual, stopped NSSM entry; it is inert and its removal is the owner's call. The backend is 100% native Rust and the frontend is a 100% React SPA.
 
 ### QR Device Sign-In (OTT Activation Flow)
 - Six native endpoints under `/api/auth/qr/*` (`create`, `lookup`, `wait` [SSE], `status`, `confirm`, `finalize`) backed by the `device_pair_sessions` table, plus a `/remotelogin` page for the phone and a `<QrSignInPanel>` on `/account` for the TV or browser.

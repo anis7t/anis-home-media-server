@@ -11,12 +11,11 @@
 > process every 5 minutes, which flashed a console window on the desktop -
 > unacceptable for a background safety net.
 >
-> The scripts are **retained on purpose**: `scripts/install_watchdog.ps1`
-> re-arms it on demand, and §3 records the two bugs that must not be
-> reintroduced if it is ever brought back.
+> The scripts were **retained on purpose at the time**, but Slice 7E.1 (2026-10-18) subsequently
+> removed them as obsolete Flask-era tooling. The task remains uninstalled.
 >
-> **What now covers service loss without the watchdog:** NSSM restarts
-> Flask/Rust within ~5s of a crash; `MediaServerPG` has restart-x3 recovery
+> **What now covers service loss without the watchdog:** NSSM and SCM recovery restart `MediaServerRust`
+> and `MediaServerCaddy` (x3, 5s/5s/10s); `MediaServerPG` has restart-x3 recovery
 > actions; the "NSSM itself missing" failure is gone with the C: move.
 >
 > **Accepted gap (deliberate):** recovery actions are finite. If all three

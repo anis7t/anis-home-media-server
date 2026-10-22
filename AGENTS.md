@@ -35,7 +35,9 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 - Backend: Modular Rust crate (`rust/`) with Axum 0.8, Tokio, SQLx, and tracing.
 - Frontend: Single Page Application in React 19 + TypeScript + Vite (`web/`), served directly by Axum from `web/dist/`.
 - Database: PostgreSQL 18.4 running as Windows Service `MediaServerPG` on port 5432.
-- Standalone Utilities: `scanner.py` (library ingestion connecting directly to PostgreSQL via psycopg).
+- **No Python runtime utilities remain.** Library ingestion is native Rust
+  (`rust/src/scanner/` + `rust/src/services/scan_service.rs`); the old `scanner.py` was deleted in
+  `4793fdb` (Phase 10.5).
 - `docs/PROJECT_STATUS.md` is the primary current handoff: it records completed work, known bugs, platform requirements, testing requirements, and the immediate work queue. Read it before substantial changes.
 - **Session handoffs live in `Handoffs/`**, named `YYYY-MM-DD_HH-MM_<agent>.md` in IST.
 - **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
@@ -93,7 +95,7 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 
 ```text
 Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
-  -> Cloudflare named tunnel: media.anisparvez.in
+  -> Caddy :443/:80 (MediaServerCaddy NSSM service, Let's Encrypt)
   -> http://127.0.0.1:8000
   -> Rust Axum Server (MediaServerRust NSSM Windows Service)
      ├─ React 19 SPA (web/dist/ static file serving + SPA fallback)
@@ -113,10 +115,10 @@ Important modules:
 - `rust/src/config.rs` — environment-driven settings (`.env`).
 - `rust/src/db.rs` — PostgreSQL connection pool (SQLx).
 - `rust/src/routes/` — API handlers (`api.rs`, `auth.rs`, `media.rs`, `hls.rs`, `subtitles.rs`, `download.rs`, `manage.rs`, etc.).
-- `rust/src/services/` — backend services (`catalog.rs`, `device.rs`, `system.rs`, `cast.rs`, `progress.rs`, `gpu.rs`, `preview.rs`, `scanner.rs`, `tmdb.rs`).
+- `rust/src/services/` — backend services (`catalog.rs`, `device.rs`, `system.rs`, `cast.rs`, `progress.rs`, `gpu.rs`, `preview.rs`, `scan_service.rs`, `tmdb.rs`).
+- `rust/src/scanner/` — native library scanning engine (`engine.rs`, `parser.rs`, `models.rs`, `tmdb_client.rs`), driven by `scan_service.rs`.
 - `rust/src/transcode/` — chunked multi-GPU fMP4 transcoding pipeline (`engine.rs`, `planner.rs`, `queue.rs`, `sweeper.rs`).
 - `web/src/` — React 19 SPA frontend (components, pages, lib, hooks).
-- `scanner.py` — Standalone media library ingestion script (executed by Rust scan service).
 
 ## 3. Completed capabilities
 
@@ -125,9 +127,9 @@ The current project includes:
 - **Direct Play:** Zero-copy RFC 7233 byte-range playback for MP4/M4V/WebM.
 - **Dynamic Multi-GPU Transcoding:** Concurrent chunk-based encoding across discrete AMD Radeon RX 560X (`dx11:1`) and integrated AMD Radeon Vega 8 (`dx11:0`).
 - **Live Multi-GPU Telemetry:** Real-time hardware engine utilization tracking via Windows Performance Counters and PyNVML displayed on the System Telemetry HUD.
-- **Live Seek Hover Previews:** Frame thumbnails extracted on-demand via `preview_service.py` and cached in `cache/previews/`.
+- **Live Seek Hover Previews:** Frame thumbnails extracted on-demand via `rust/src/services/preview_service.rs` and cached in `cache/previews/`.
 - **1-Second Transcode Cadence:** High-frequency status polling for smooth progress bars, fps/speed reporting, and smoothed ETA calculations.
-- **Windows Persistent Services:** `MediaServerRust` (Axum via NSSM on port 8000), `MediaServerPG` (PostgreSQL 18.4 on port 5432), and `Cloudflared` run as automatic Windows Services surviving reboots without user login, with crash auto-restart and log rotation.
+- **Windows Persistent Services:** `MediaServerRust` (Axum via NSSM on port 8000), `MediaServerCaddy` (Caddy reverse proxy and TLS on 80/443 via NSSM), and `MediaServerPG` (PostgreSQL 18.4 native Windows service on 5432) start automatically, survive reboots, and have crash recovery; Rust and Caddy logs rotate at 10 MB.
 - **Upload Lifecycle Hardening:** Immediate Abort button concealment upon 100% upload completion and animated dynamic processing card showing cycling background indexing stages.
 - **Player Controls Polish:** Removed hold-to-speed-up gesture, cleaned shortcuts cheat-sheet modal, native dark scheme select dropdowns (`color-scheme: dark !important;`), uniform 36px circular buttons, prominent 21px SVG icons, and 4px controls-row padding preventing top focus clipping.
 - **Carousel Optimization:** Compacted "Continue watching" rail cards to 140px desktop / 115px mobile.
@@ -330,15 +332,15 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
 - PostgreSQL 18.4 (`MediaServerPG` Windows Service on port 5432).
 - PowerShell, Git, FFmpeg and FFprobe.
 - Production Server: **MediaServerRust** (native Rust Axum binary via NSSM).
-- Remote access: `cloudflared.exe` Windows Service routing `media.anisparvez.in` to `127.0.0.1:8000`.
+- Remote access: **Caddy** (`MediaServerCaddy` NSSM service) on 80/443, proxying to `127.0.0.1:8000`. The Cloudflare named tunnel is decommissioned; Cloudflare is DNS-only for this hostname.
 - Never use `os.kill(pid, 0)` to check process liveness on Windows; use Win32 API process status checking to avoid broadcasting `CTRL_C_EVENT` across the console group.
 - Never use `os.rename()` across disk volumes on Windows; use `shutil.move()` with target collision pre-unlinking.
 - In tests and cache audits, always resolve the cache directory dynamically.
-- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database (`E:\pgdata`), active HLS streams, and preview thumbnails. `C:` is not part of this project's storage.
+- Prioritize the high-capacity secondary drive `D:` (`D:\Flicks`, `D:\Flicks\.archive`, `D:\Flicks\.uploads`, `D:\Flicks\.deleted`) for raw video files, upload staging, cold source retention, and deleted-source staging, preserving the primary fast SSD `E:` (`E:\MediaServer`) headroom for the application, database (`E:\pgdata`), active HLS streams, and preview thumbnails. `C:` holds only the resilient service wrappers and binaries (`C:\MediaServer`, `C:\postgres`), not media or transcode data.
 - All media path, cache lookup, and subtitle delivery routines must resolve across configured media roots.
 - **Mandatory User Notification on Service Restart**: Whenever native backend code (`rust/src/**/*.rs`) is edited and recompiled, or service configuration changes, instruct the user to restart the persistent Windows service by running `e:\MediaServer\scripts\restart_rust_service.bat` (or via elevated PowerShell `Restart-Service MediaServerRust`).
 - **Verify a deploy by artefact timestamp, never by a health check alone.** After restarting `MediaServerRust`, confirm the *binary* is newer than the last source commit before claiming the code is live. A 200 from `/health` proves only that *some* build is running. Concretely: `Get-Item rust\target\release\media-server-api.exe | Select LastWriteTime` and compare against `git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S'`.
-- **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` within ~5s of a crash. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
+- **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` and `MediaServerCaddy` within ~5s of a crash, and both have SCM restart-x3 recovery. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
 
 ### Linux/Kali
 - Rust 1.85+, Node.js 20+, PostgreSQL 16+.
@@ -348,7 +350,7 @@ The QR sign-in flow is reachable from the public internet, so its secrets are lo
   standard-library only. See `requirements.txt`.
 - FFmpeg and FFprobe on `PATH`.
 - Production: `media-server-api` systemd service.
-- Remote access: cloudflared named tunnel.
+- Remote access: Caddy TLS terminator on 80/443 (or a cloudflared named tunnel if that deployment uses one).
 - Keep origin on `127.0.0.1:8000` when Cloudflare is the public front end.
 
 ## 6. Player invariants

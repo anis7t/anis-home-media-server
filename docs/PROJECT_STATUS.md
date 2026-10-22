@@ -198,8 +198,9 @@ scheduled task was built and proven (stopped Rust → next tick restarted it,
 `:8001` 200), then **unregistered by user decision** once NSSM's own restart
 covered the crash case, because its 5-minute interactive run flashed a
 console window on the desktop. `scripts/service_watchdog.ps1` /
-`install_watchdog.ps1` / `uninstall_watchdog.ps1` are retained so it can be
-re-armed on demand. Three traps recorded in the walkthrough: repo `.ps1` files
+`install_watchdog.ps1` / `uninstall_watchdog.ps1` were retained at the time, but Slice 7E.1
+(2026-10-18) subsequently removed them as obsolete Flask-era tooling. The task remains
+uninstalled. Three traps recorded in the walkthrough: repo `.ps1` files
 must stay pure ASCII (PS 5.1 mangles UTF-8 dashes into parse errors);
 repetition on AtLogOn triggers never fires (use Once+Repetition); and
 `pg_ctl status` reports a healthy NetworkService cluster as stopped, so PG
@@ -399,11 +400,11 @@ released, caller-abort-is-not-a-timeout, probe endpoints get the longer budget).
 
 **2. Hard-coded default Admin PIN - removed (`app/routes/api.py`).**
 
-The uncommitted admin work defaulted to `get_setting('admin_pin', '6361')`. On a host
+The uncommitted admin work defaulted to `get_setting('admin_pin', '<hard-coded>')`. On a host
 reachable from the public internet through the Cloudflare tunnel that is equivalent to
 publishing **permanent unauthenticated access** to everything behind `@require_admin`,
 which includes *deleting the library*, purging caches, moving originals into the archive
-and rewriting the retention policy. `6361` is four digits on a box with a known catalogue.
+and rewriting the retention policy. The default was four digits on a box with a known catalogue.
 
 `get_setting('admin_pin', '')` now, via `_configured_admin_pin()`. Unset means **no PIN
 channel at all**, leaving only a Google admin session to set the first one - which is also

@@ -51,7 +51,7 @@ The Windows host features two AMD graphics processors:
 
 The system runs completely detached as persistent Windows Services that survive reboots without active user login.
 
-> **C:-resident hosting & Autonomous Rust Operation (2026-10-17).** The application lives on the removable volume `E:`. NSSM runs from `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries from `C:\postgres` (data on `E:\pgdata`). A 5-minute watchdog (`MediaServerWatchdog` scheduled task running `scripts\service_watchdog.ps1`) strictly maintains PostgreSQL (`MediaServerPG`) and the unified Rust/React service (`MediaServerRust`), while ignoring the decommissioned Flask service.
+> **C:-resident hosting & Autonomous Rust Operation (2026-10-17).** The application lives on the removable volume `E:`. NSSM runs from `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries from `C:\postgres` (data on `E:\pgdata`). The `MediaServerWatchdog` task was deliberately unregistered on 2026-10-16 after its interactive 5-minute run flashed a console window; its scripts were removed in Slice 7E.1. Service survival now relies on the Automatic start and SCM restart-x3 recovery of `MediaServerRust`, `MediaServerCaddy`, and `MediaServerPG`; `docs/SERVICE_WATCHDOG.md` records the accepted gap.
 
 ### A. MediaServerRust (Rust Axum API & React Web SPA — Primary Production Service)
 Registered using NSSM (Non-Sucking Service Manager):
@@ -68,7 +68,7 @@ Registered using NSSM (Non-Sucking Service Manager):
 #### Harmonized Management Scripts:
 - **Unified Service Restart:** `scripts\restart_service.bat` (elevates to Administrator via UAC, restarts `MediaServerRust`, and runs status diagnostic)
 - **Compatibility Restart Alias:** `scripts\restart_rust_service.bat` (delegates to `restart_service.bat`)
-- **Authoritative Diagnostic:** `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1` (verifies `MediaServerRust` on `:8000`, `MediaServerPG` on `:5432`, `Cloudflared`, reports `MediaServer` stopped, checks local SPA, API, tunnel, active transcodes, and log tails)
+- **Authoritative Diagnostic:** `powershell -ExecutionPolicy Bypass -File scripts\service_status.ps1` (verifies `MediaServerRust` on `:8000`, `MediaServerPG` on `:5432`, `MediaServerCaddy` on `:80/:443`, reports decommissioned `MediaServer`/`Cloudflared`, checks local SPA, API, public ingress, active transcodes, and log tails)
 - **Compatibility Status Alias:** `powershell -ExecutionPolicy Bypass -File scripts\rust_service_status.ps1` (delegates to `service_status.ps1`)
 - **Install / Reinstall:** `scripts\install_rust_service.bat` (Run as Administrator; defaults to port 8000)
 - **Uninstall:** `scripts\uninstall_rust_service.bat` (Run as Administrator)
@@ -77,7 +77,7 @@ Registered using NSSM (Non-Sucking Service Manager):
 - **Service Name:** `MediaServer`
 - **Display Name:** `Media Server WSGI (Waitress)`
 - **Status:** **Decommissioned & Stopped** (`Startup Type: Manual`)
-- **Note:** Port 8000 is now owned by `MediaServerRust`. The legacy service is retained temporarily in a stopped state for final code retirement in Slice 7E. It is decoupled from the watchdog and will not auto-start.
+- **Note:** Port 8000 is now owned by `MediaServerRust`. The legacy service is retained as an inert, Manual-start registration and will not auto-start; removing it is the owner's call.
 
 ### B2. MediaServerPG (PostgreSQL 18.4)
 Registered via `pg_ctl register` (`scripts\move_pg_to_c.ps1`):
@@ -93,9 +93,11 @@ Registered via `pg_ctl register` (`scripts\move_pg_to_c.ps1`):
 - **Scheduled Backup Task:** `MediaServerBackup` — daily at 03:00, runs as `SYSTEM`, logs to `E:\MediaServer\logs\backup_postgres.log`. Installed with `scripts\install_backup_task.bat`, removed with `scripts\uninstall_backup_task.ps1`. Full detail in [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md) §2.3.
 
 ### C. MediaServerCaddy (Reverse Proxy & TLS Terminator) — Active
-Runs as an automatic Windows Service, fronting the Rust origin with a Let's Encrypt certificate:
-- **Caddy binary:** `E:\MediaServer\bin\caddy_custom.exe` (built with the Cloudflare DNS module for the DNS-01 challenge)
-- **Config:** `E:\MediaServer\Caddyfile` — **untracked / gitignored**, because it contains a live Cloudflare API token
+Runs as an automatic NSSM Windows Service, fronting the Rust origin with a Let's Encrypt certificate. The SCM restart policy is restart x3 (5s/5s/10s), and NSSM restarts the Caddy process after 5s on an unexpected exit:
+- **Service Name:** `MediaServerCaddy`
+- **Service Wrapper:** `C:\MediaServer\bin\nssm.exe` (Automatic)
+- **Caddy binary:** `C:\MediaServer\bin\caddy_custom.exe` (copied from `E:\MediaServer\bin\caddy_custom.exe` for `E:` resilience; built with the Cloudflare DNS module for the DNS-01 challenge)
+- **Config:** `C:\MediaServer\Caddyfile` (copied from `E:\MediaServer\Caddyfile`) — **untracked / gitignored**, because it contains a live Cloudflare API token
 - **Listener:** ports 80 and 443, TLS 1.3, reverse-proxying to `http://127.0.0.1:8000`
 - **Hostname:** `media.anisparvez.in` → the Airtel Xstream Fiber static IP `122.163.124.18`
 - **Router Port Forwarding:** only 443 and 80 reach the host. The `MediaServer` forward for 8000 was
