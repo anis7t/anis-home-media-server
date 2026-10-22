@@ -463,6 +463,7 @@ pub fn create_app_full(
 
     let admin_routes = Router::new()
         .route("/api/admin/status", get(routes::admin::admin_status_handler))
+        .route("/api/admin/users", get(routes::admin::admin_users_handler))
         .route(
             "/api/admin/verify",
             axum::routing::post(routes::admin::admin_verify_handler),

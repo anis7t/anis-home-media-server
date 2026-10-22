@@ -782,8 +782,13 @@ impl DeviceService {
                 first_seen,
                 last_seen,
                 device_model,
-                user_id
+                user_id,
+                u.id    AS owner_id,
+                u.email AS owner_email,
+                u.name  AS owner_name,
+                u.role  AS owner_role
             FROM devices
+            LEFT JOIN users u ON u.id = devices.user_id
             WHERE $1::boolean
                OR (CASE WHEN $2::bigint IS NOT NULL
                         THEN (user_id = $2 OR device_id = $3)
@@ -959,6 +964,27 @@ impl DeviceService {
             let city: Option<String> = d.try_get("city").ok().flatten();
             let country: Option<String> = d.try_get("country").ok().flatten();
 
+            // Attribution is admin-only. The LEFT JOIN gives every row owner
+            // columns, but they are discarded for non-admin callers, so a
+            // viewer's payload never carries another account's email.
+            let owner = if is_admin {
+                let owner_id: Option<i64> = d.try_get("owner_id").ok().flatten();
+                let owner_email: Option<String> = d.try_get("owner_email").ok().flatten();
+                match (owner_id, owner_email) {
+                    (Some(id), Some(email)) => Some(DeviceOwner {
+                        id,
+                        email,
+                        name: d.try_get("owner_name").ok().flatten(),
+                        role: d
+                            .try_get("owner_role")
+                            .unwrap_or_else(|_| "viewer".to_string()),
+                    }),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
             let first_seen_dt: Option<DateTime<Utc>> = d.try_get("first_seen").ok();
             let last_seen_dt: Option<DateTime<Utc>> = d.try_get("last_seen").ok();
 
@@ -1013,6 +1039,7 @@ impl DeviceService {
                 recent_watch,
                 watch_history,
                 total_watched,
+                owner,
             });
         }
 
@@ -1110,6 +1137,17 @@ pub struct WatchHistoryItem {
     pub poster_url: Option<String>,
 }
 
+/// The account a device belongs to. Serialized on `DeviceDetail` **only for
+/// admin callers**: a viewer must never receive another account's address, so
+/// the mapping leaves `owner` as `None` for every non-admin response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceOwner {
+    pub id: i64,
+    pub email: String,
+    pub name: Option<String>,
+    pub role: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceDetail {
     pub device_id: String,
@@ -1137,6 +1175,9 @@ pub struct DeviceDetail {
     pub recent_watch: Option<WatchHistoryItem>,
     pub watch_history: Vec<WatchHistoryItem>,
     pub total_watched: usize,
+    /// Present only when an admin is asking; `None` means unowned **or** the
+    /// caller is not an admin (the two are indistinguishable on purpose).
+    pub owner: Option<DeviceOwner>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
