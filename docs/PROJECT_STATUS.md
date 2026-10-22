@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-10-05
+Last reviewed: 2026-10-23
 Repository: `anis7t/media-server`
 Working branch: `feat/rust-react-postgres-migration`
 
@@ -169,6 +169,33 @@ Full handoff document: **[`docs/FLUTTER_CLIENT_STATUS.md`](FLUTTER_CLIENT_STATUS
 > and carries the paste-ready prompt, the P0-P7 migration phase table, the test coverage,
 > and the traps. Read it first; this log remains the detailed record of *why* each change was made.
 > Migration state: `docs/MIGRATION_STATUS.md`; phase gates: `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
+
+### 2026-10-23 — Access control Phases 1–2: admin bootstrap, per-user devices & scoped history
+
+**Phase 1 (`f9df666`, docs `6111ae5`).** `MEDIA_SERVER_ADMIN_EMAILS` decides who is `admin` at Google
+sign-in; everyone else is `viewer`, and the role is re-read from `users` on every request rather than
+trusted from the session row, so removing an address takes effect immediately. Upload was already
+admin-only and now accepts a signed-in admin alongside the Admin PIN; viewers and anonymous callers
+still get 403. Sign-in stays open (guest browsing and per-user history are the point) and the media
+library stays public — gating it would break DLNA, cast and device tokens.
+
+**Phase 2 (`7bfe34c`).** `devices.user_id` (`BIGINT REFERENCES users(id) ON DELETE SET NULL`,
+`idx_devices_user`) records which account a physical client belongs to. The column is additive and
+nullable — `NULL` means unowned (guests and every pre-Phase-2 row), so nothing was backfilled. The
+device list is scoped in SQL: admin sees all, a signed-in caller sees the devices they own plus the
+one they are using, an anonymous caller sees only the one they are using. Watch history follows
+*ownership*, not visibility: a device owned by somebody else is listed when it is the caller's
+current device, with an empty history — the answer to a shared browser. Ownership is claimed exactly
+once by the first signed-in devices request (`UPDATE ... WHERE user_id IS NULL`) and is never
+reassigned. Rename/delete allow admin, current device, or an owned device. The legacy filename-keyed
+`progress` table stays global (tracked debt) and `/api/devices` keeps its shape, so the Flutter
+client is untouched.
+
+Verified: 123 unit + all integration suites and `devices_test` 21/21; web 42 files / 309 tests and
+build; release 25.54 s deployed with the binary newer than the newest source; a live two-viewer
+matrix on temporary rows (scoping, hidden history, cross-user 403s) cleaned to zero residue;
+`probe_android_api.py` 22/22. Runbook: `Handoffs/2026-10-23_02-27_opencode_access-control-phase2.md`.
+**Remaining: Phase 3** — admin oversight UI; plan at [`docs/ACCESS_CONTROL_PHASE_3_PLAN.md`](ACCESS_CONTROL_PHASE_3_PLAN.md).
 
 ### 2026-10-16 — Catalog Reconciliation & USB-Dropout Service Watchdog
 

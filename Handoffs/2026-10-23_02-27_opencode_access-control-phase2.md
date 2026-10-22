@@ -2,6 +2,9 @@
 
 Agent: opencode (DeepSeek V4.1 Flash)
 Scope: Phase 2 of the access-control backlog — implemented, tested, deployed and live-verified.
+Commit: **`7bfe34c`** — "feat(devices): per-user device ownership and scoped watch history (access
+control Phase 2)", 2026-10-23 02:27:19 IST. Working tree clean at handoff time. Phase 1 was
+`f9df666` (docs `6111ae5`).
 
 ## Objective
 
