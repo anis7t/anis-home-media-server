@@ -345,8 +345,8 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: 14.1, 14.2, 14.3 and 14.6 are closed; 14.4 and 14.5 remain open**
-(14.4 and 14.5 have a chosen option and await implementation).
+sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4 and 14.6 are closed; 14.5 remains open**
+(14.5 has a chosen option and awaits implementation).
 
 1. **Watch history not populated — FIXED 2026-10-23 (17:50).** While signed in on the web browser
    and after playing media, **no played entry was listed in the devices menu**.
@@ -399,8 +399,21 @@ sign-in was restored. **State: 14.1, 14.2, 14.3 and 14.6 are closed; 14.4 and 14
      [`docs/TRIAGE_03_PLAYBACK_ZERO_STALL.md`](TRIAGE_03_PLAYBACK_ZERO_STALL.md).
      *(The temporary `Avatar`-in-`LibraryPage` test failures noted here are gone: that edit was
      reverted as part of the 14.2 correction above.)*
-4. **Unscannable QR code in the devices menu.** In the **signed-in** state, the QR code displayed in
-   the devices menu is **cropped / not fully displayed**, making it unscannable.
+4. **Unscannable QR code in the devices menu — FIXED 2026-10-24.** In the **signed-in** state, the
+   QR code was reported as **cropped / not fully displayed**.
+   - The reported QR was `PairingQr` in the Add-device / *Devices & TV App Pairing* panel. That
+     panel and component were removed with the pairing-token retirement in `d6d6786` (14.6), so
+     signed-in `/account` no longer renders a QR.
+   - The remaining signed-out `QrSignInPanel` reproduced the defect: `qrcode` with `width: 0` fell
+     back to its default scale and produced a fixed **236 px** canvas inside a **160–220 px** card
+     with `overflow-hidden`, clipping it at 390, 768 and 1280 px (by 76 / 67 / 16 px).
+   - **Fix:** the card clamps to **220–240 px**, and the canvas uses `max-w-full max-h-full` so the
+     bitmap is fitted rather than clipped. QR payload, colours, error correction, auth backend and
+     the TV/Flutter variants are unchanged.
+   - **Verified:** `web/e2e/qr-layout.spec.ts` now measures 218 px inside 220 px at 390/768 and
+     236 px inside 240 px at 1280; the signed-in state renders no QR and sends no
+     `POST /api/auth/qr`. Web suite **309/309**, production build passes.
+   - Details and measurements: [`docs/TRIAGE_04_QR_CROPPED_SIGNED_IN.md`](TRIAGE_04_QR_CROPPED_SIGNED_IN.md).
 5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
    sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
    scan option should be **disabled only in the TV variant** of the app.
@@ -421,7 +434,7 @@ sign-in was restored. **State: 14.1, 14.2, 14.3 and 14.6 are closed; 14.4 and 14
    but does not restore the rows. The QR flow is untouched. Details:
    [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
-- **Open questions for triage:** QR display/scoping (14.4) and the sign-in menu option set (14.5).
+- **Open question for triage:** the sign-in menu option set (14.5).
 - **Context:** the sign-in outage itself was fixed on 2026-10-23 (stale allowlist row cleared; allowlist
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
   against that restored state and are presumed **unrelated to the allowlist**, pending reproduction.

@@ -100,11 +100,11 @@ phone-confirmed exchange. Nothing consumes `ms_…`, so the panel had no remaini
 | 14.1 | Watch history not populated | ✅ **Fixed** — client id accepted, header wins over the stale cookie |
 | 14.2 | Account icon missing across pages | ✅ **Closed** — misdiagnosis; one header avatar |
 | 14.3 | Playback stuck at 0:00 | ✅ **Fixed** — `PlayerPage` source-attach effect |
-| 14.4 | Unscannable QR in signed-in menu | ✅ **Option selected** — expand QR code container (option B) |
+| 14.4 | Unscannable QR in signed-in menu | ✅ **Fixed** — reported Add-device QR removed in 14.6; remaining signed-out QR fitted and regression-tested (2026-10-24) |
 | 14.5 | Header sign-in → Google only | ✅ **Option selected** — QR on web/TV; disabled on phone |
 | 14.6 | Add-device QR/URL/token confusion | ✅ **Fixed** — exposed token revoked, panel removed, backend + table retired (2026-10-23) |
 
-**Remaining:** 14.4 and 14.5 have a chosen option and await implementation.
+**Remaining:** 14.5 has a chosen option and awaits implementation.
 
 ---
 
