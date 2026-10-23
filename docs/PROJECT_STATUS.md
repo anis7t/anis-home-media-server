@@ -372,7 +372,7 @@ all 200.
 - Replaced confusing "Signed in as Unknown" with an informative obsidian **Guest Mode** card explaining hardware cookie identification (`ms_device_id`), and replaced the unauthenticated Sign Out button with a prominent **Sign in with Google** button.
 
 **3. Device Token Pairing, Admin PIN Support & Watch History Drawer (Issues 4, 5, 6)**
-- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords.
+- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords. *(Retired: the Flask routes were removed in the Rust migration and the Add-device UI was removed on 2026-10-23 — see `docs/Current issues.md` Issue 14, fault 6.)*
 - Added user-scoped interactive Watch History Drawer on `/account` with poster thumbnails, timestamps, watch percentages, resume points, and a **Clear All History** action.
 - Permitted non-admin authenticated users (`role: 'viewer'`) to pair devices in their own scope.
 - Added Admin PIN authorization support to token minting, eliminating 403 barriers for administrators.

@@ -423,7 +423,7 @@ export function DevicesPage() {
               to="/account"
               className="card-ring rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition"
             >
-              Pair New TV App →
+              Account &amp; Devices →
             </NavLink>
           </div>
         </div>
@@ -468,12 +468,14 @@ export function DevicesPage() {
             <span>How Device Pairing &amp; Watch History Work</span>
           </div>
           <p>
-            <strong>Browser vs. External Screens:</strong> Your web browser signs in directly with your Google account.
-            To connect a TV (Android TV or Fire TV Stick) without typing Google passwords with a remote control,
-            visit <NavLink to="/account" className="text-brand-400 underline hover:text-brand-300 font-medium">Account &gt; Pair New TV App</NavLink> to mint a pairing token and QR code.
+            <strong>Browser vs. the TV app:</strong> Your web browser signs in directly with your Google
+            account. The Android / Fire TV app does not sign in — it identifies itself with its own
+            device id, and the library is public. To sign a browser in on a camera-less screen, open{' '}
+            <NavLink to="/account" className="text-brand-400 underline hover:text-brand-300 font-medium">Account &amp; Devices</NavLink>{' '}
+            there and confirm its QR code or 5-character code from your phone.
           </p>
           <p className="text-white/50">
-            All playback progress, resume positions, and watch history are synchronized automatically across your account and all paired devices.
+            Playback progress, resume positions, and watch history are recorded per device and shown in the fleet table below.
           </p>
         </div>
       </section>

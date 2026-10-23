@@ -22,6 +22,11 @@ describe('ManualPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: /Touch Gestures/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /10-Foot TV Remote Navigation/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /Zero-Password Device Pairing/i })).toBeInTheDocument();
+
+    // The retired add-device / pairing-token flow must not be documented
+    expect(screen.queryByText(/Generate Pairing Token/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1-Year Token/i)).not.toBeInTheDocument();
+
     expect(screen.getByRole('heading', { level: 2, name: /Subtitles & Dual-Axis Customization/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /Second-Screen Playback/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /Dual-GPU Streaming & Storage Topology/i })).toBeInTheDocument();

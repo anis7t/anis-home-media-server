@@ -489,7 +489,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
                   </p>
                   <p>
-                    Playback progress, user accounts, and device pairing tokens are persisted entirely within a local SQLite database (<code>media.db</code>) on your host machine.
+                    Playback progress, user accounts, and device identities are stored in the server&apos;s PostgreSQL database on your host machine.
                   </p>
                   <p>
                     Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.

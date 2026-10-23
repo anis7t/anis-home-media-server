@@ -22,7 +22,7 @@ This document serves as the authoritative, end-to-end operator manual and user g
    - [The `MEDIA_SERVER_AUTH` Enforcement Flag](#the-media_server_auth-enforcement-flag)
    - [Administrator PIN Channel](#administrator-pin-channel)
    - [Admin-Only Gated Routes & Protected Capabilities](#admin-only-gated-routes--protected-capabilities)
-4. [Device Pairing, Tokens & Fleet Privacy](#4-device-pairing-tokens--fleet-privacy)
+4. [Device Pairing & Fleet Privacy](#4-device-pairing--fleet-privacy)
    - [The Passwordless TV Pairing Model](#the-passwordless-tv-pairing-model)
    - [How to Pair a TV or Secondary Device (Step-by-Step)](#how-to-pair-a-tv-or-secondary-device-step-by-step)
    - [OTT QR Device Sign-In (TV & Browser)](#ott-qr-device-sign-in-tv--browser)
@@ -215,47 +215,24 @@ The following actions are strictly restricted to administrators (Google Admin se
 
 ---
 
-## 4. Device Pairing, Tokens & Fleet Privacy
+## 4. Device Pairing & Fleet Privacy
 
-### The Passwordless TV Pairing Model
+### The Passwordless Sign-In Model
 
-Typing lengthy email addresses and complex passwords on smart TVs, Fire TV Sticks, or Apple TVs using a remote D-pad is frustrating. The media server solves this with a **zero-password pairing token workflow**:
+Typing a Google password on a smart TV, Fire TV Stick or Apple TV with a remote D-pad is
+frustrating. The server instead uses a **QR / activation-code sign-in**: the screen that wants to
+sign in shows a short-lived code, and a phone that is already signed in confirms it. No password is
+typed on the TV, and no long-lived bearer link is minted.
 
-```text
-Step 1: Admin or User generates Pairing Token on Phone/PC (/account)
-         │  Token: "K9X2P4" (Valid for 15 minutes)
-         ▼
-Step 2: User opens Android TV / Fire TV app
-         │  Prompts: "Enter 6-character Pairing Code"
-         ▼
-Step 3: TV submits Code to POST /api/devices/pair
-         │  Server verifies code & generates permanent Device Token (1-year lifespan)
-         ▼
-Step 4: TV stores Token in secure storage
-         └── Seamlessly authenticates as that User Account for 365 days!
-```
-
-### How to Pair a TV or Secondary Device (Step-by-Step)
-
-1. **On your phone or computer:**
-   - Navigate to **Account & Devices** (`/account`).
-   - If unauthenticated, sign in with your Google Account or enter your Admin PIN.
-   - In the **Pair a New Device** section, enter a friendly name for the device (e.g. *"Master Bedroom Fire TV"* or *"Living Room Sony TV"*).
-   - Click **Generate Pairing Token**.
-2. **Retrieve the Token:**
-   - A 6-character code (e.g. `B8F3Q1`) appears on screen along with an instant pairing link.
-   - The token remains valid for 15 minutes.
-3. **On the Target TV or Device:**
-   - Open the **Anis' Media Server** app on the TV.
-   - Enter the 6-character code into the prompt and press **Confirm**.
-   - The TV instantly pairs, downloads your library, and adopts the user account's watch history.
+There is **one** pairing path — the QR Device Sign-In card on `/account`. The old "Add device"
+token form was removed on 2026-10-23: it minted a 365-day, reusable sign-in link that no client
+consumed. See [`Current issues.md`](Current%20issues.md) → Issue 14, fault 6.
 
 ### OTT QR Device Sign-In (TV & Browser)
 
-The pairing token above is for the **Android / Fire TV app**. For a *browser* on a camera-less
-device — a smart TV's built-in browser, a console, a desktop PC you cannot reach with a
-keyboard — the server offers the industry-standard **activation code** flow, the same idea as
-Netflix's and YouTube TV's *"enter this code on your phone"* screen.
+For a camera-less device — a smart TV's built-in browser, a console, a desktop PC you cannot reach
+with a keyboard — the server offers the industry-standard **activation code** flow, the same idea
+as Netflix's and YouTube TV's *"enter this code on your phone"* screen.
 
 **On the TV or browser (the device that wants to sign in):**
 
@@ -292,14 +269,8 @@ list instead of an anonymous browser row.
   bound to the account that authorised it, not to the phone.
 - If the SSE stream is blocked by a network, the TV falls back to polling the status endpoint
   automatically — no user-visible difference.
-- The QR flow is for the **web** interface. The Android / Fire TV app uses the pairing-token
-  flow above, because it can display a prompt and accept typed input natively.
-
-### Token Lifespans & Auto-Recovery
-
-- **Pairing Codes:** Ephemeral, single-use, 6-character alphanumeric tokens valid for **15 minutes**.
-- **Device Tokens (`ms_device_token`):** Cryptographically random 64-character bearer tokens valid for **1 year** (365 days).
-- **Auto-Recovery:** If a browser clears local storage, the server uses the hardware device cookie (`ms_device_id`) to automatically recover the device's friendly name and link it back to its active sessions.
+- The QR flow is the only pairing path. The Android / Fire TV client does not consume a pairing
+  token — it identifies itself with its own device id, and the library is public.
 
 ### Fleet Presence Privacy Scoping & Admin Unlock
 
@@ -643,7 +614,9 @@ MKV containers cannot be decoded directly by web browsers. When you click play, 
 To protect household privacy, non-administrative sessions only show telemetry and history for your own active device. To view the full household fleet table, click **Unlock Fleet Telemetry** and enter your 4-digit Admin PIN.
 
 ### How do I pair my Fire TV Stick without typing a password?
-Visit `/account` on your phone or PC, enter your TV name, and click **Generate Pairing Token**. Then enter the 6-character code into the prompt on your Fire TV app.
+The Fire TV app does not sign in — it identifies itself with its own device id, and the library is
+public. To sign a browser in on a camera-less screen, open `/account` there, then scan the QR with
+your phone (or type the 5-character code at `media.anisparvez.in/remotelogin`) and confirm.
 
 ### How do I sign in on a TV or browser that has no keyboard?
 Open `/account` on that device. The **QR Device Sign-In** panel appears automatically when you are

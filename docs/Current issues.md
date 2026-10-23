@@ -46,7 +46,7 @@ sign-in feature and the migration cutover. **Two are open:**
 ### Issue 4: Device Pairing Mechanism, Tokens & Watch History
 - **Reported:** *In the devices page, there is a section to pair a device but it also says in browser it's not required. And the whole point of pairing a device is to have a watch history, resume points and other settings without typing password. WHere can one see their watch history? Also the mechanism is confusing. How would it know which device is to be paired by just entering a name? Like how adding a device would provide a token and if i have the token, i can pair my device. What is purpose of google sign in then? doesn't it preserve settings account wise and then on different devices with the same account can have device name for distinction?*
 - **Resolution (Phase 3):**
-  - **15-Minute Pairing Token Engine:** Added `POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim` to `app/routes/auth.py`. Users enter a friendly name on `/account` (phone/PC) to generate an ephemeral 6-character code (e.g. `K9X2P4`). Entering this code on Fire TV or a secondary browser mints a 1-year cryptographically secure device bearer token (`ms_device_token`).
+  - **15-Minute Pairing Token Engine:** Added `POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim` to `app/routes/auth.py`. Users enter a friendly name on `/account` (phone/PC) to generate an ephemeral 6-character code (e.g. `K9X2P4`). Entering this code on Fire TV or a secondary browser mints a 1-year cryptographically secure device bearer token (`ms_device_token`). *(Retired 2026-10-23: the Flask routes no longer exist, and the Add-device UI was removed — see Issue 14, fault 6.)*
   - **Interactive Watch History Drawer:** Added `POST /api/progress` watch reporting and a sliding obsidian Watch History Drawer on `/account`. Displays movie posters, timestamps, completion percentages, resume action buttons, and a **Clear All History** option.
   - **Google Account Association:** User-scoped progress and paired device tokens are tied to the Google account, syncing watch state across all authorized household screens.
 
@@ -341,8 +341,8 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: 14.1, 14.2 and 14.3 are fixed; 14.4, 14.5 and 14.6 remain open**
-(14.4–14.6 have a chosen option and await implementation).
+sign-in was restored. **State: 14.1, 14.2, 14.3 and 14.6 are closed; 14.4 and 14.5 remain open**
+(14.4 and 14.5 have a chosen option and await implementation).
 
 1. **Watch history not populated — FIXED 2026-10-23 (17:50).** While signed in on the web browser
    and after playing media, **no played entry was listed in the devices menu**.
@@ -400,16 +400,19 @@ sign-in was restored. **State: 14.1, 14.2 and 14.3 are fixed; 14.4, 14.5 and 14.
 5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
    sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
    scan option should be **disabled only in the TV variant** of the app.
-6. **Add-device / QR flow confusion.** In the devices menu, the **"Add device"** option: after
-   entering a device name it shows a **QR code, a URL and a token**. Questions the owner has:
-   - What am I supposed to do with the QR code?
-   - The URL is **non-functional**.
-   - Where was I supposed to enter the token?
-   - Why does this whole thing exist, since QR login is already handled?
+6. **Add-device / QR flow confusion — FIXED 2026-10-23 (23:20) by removing the flow.** The
+   **"Add device"** form on `/account` minted a CSPRNG `ms_…` token (stored as SHA-256, default
+   lifetime **365 days**). Its QR code and URL were the same `https://…/auth/pair#token=…` link;
+   opening that link in any browser posted the token and received a **30-day session** for the
+   minting account — a reusable, non-device-bound, password-equivalent link. It never added a
+   device row, and the Flutter client has no code that accepts the token (its only identity is
+   `dev_[0-9a-f]{16}`). The panel — form, one-time token display, token list and the "For Android
+   TV & Fire TV" copy — was removed, and `web/src/components/PairingQr.tsx` with it. The QR sign-in
+   card is the only pairing path. The token pasted into the report (`ms_bbd276…`, row 40) was
+   revoked and `/auth/pair` answers **401** for it; all 25 token rows are now revoked. Details:
+   [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
-- **Open questions for triage:** watch-history source of truth and per-device scoping;
-  playback root cause (autoplay / 0:00 / direct play vs HLS); QR display/scoping; sign-in menu
-  option set; add-device token/QR flow.
+- **Open questions for triage:** QR display/scoping (14.4) and the sign-in menu option set (14.5).
 - **Context:** the sign-in outage itself was fixed on 2026-10-23 (stale allowlist row cleared; allowlist
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
   against that restored state and are presumed **unrelated to the allowlist**, pending reproduction.

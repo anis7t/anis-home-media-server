@@ -284,7 +284,7 @@ export function ManualPage() {
         </div>
       </section>
 
-      {/* 4. Zero-Password Device Pairing & Tokens */}
+      {/* 4. Zero-Password Device Pairing (QR sign-in) */}
       <section id="pairing" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 scroll-mt-20">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
@@ -296,60 +296,14 @@ export function ManualPage() {
           </div>
         </div>
 
+        {/* QR sign-in — the only pairing path */}
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
-            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 font-bold">
-                1
-              </span>
-              <h3 className="font-bold text-sm text-white">Generate Code</h3>
-              <p className="text-white/60 leading-relaxed">
-                Open <strong>Account &amp; Devices</strong> on your phone or PC. Enter a device name and click <strong>Generate Pairing Token</strong>.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 font-bold">
-                2
-              </span>
-              <h3 className="font-bold text-sm text-white">Enter on TV</h3>
-              <p className="text-white/60 leading-relaxed">
-                Open the Fire TV or Android TV app. Enter the 6-character code into the pairing dialog. Codes remain valid for 15 minutes.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-obsidian-900/60 p-4 space-y-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 font-bold">
-                3
-              </span>
-              <h3 className="font-bold text-sm text-white">1-Year Token</h3>
-              <p className="text-white/60 leading-relaxed">
-                The TV receives a cryptographically secure 1-year device token, instantly adopting your account watch history and resume points.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <span className="text-white/70">
-              Both server administrators and regular signed-in users can pair devices in their own user scope.
-            </span>
-            <NavLink
-              to="/account"
-              className="card-ring shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
-            >
-              Go to Account &amp; Pairing →
-            </NavLink>
-          </div>
-        </div>
-
-        {/* QR device sign-in — for camera-less devices with no keyboard */}
-        <div className="space-y-4 border-t border-white/10 pt-5">
           <div>
             <h3 className="text-sm font-bold text-white">QR Sign-In (TVs &amp; Browsers Without a Keyboard)</h3>
             <p className="mt-1 text-xs text-white/50 leading-relaxed">
-              The pairing token above is for the Android / Fire TV app. A smart TV's built-in browser, a
-              console or a desktop PC you cannot reach with a keyboard uses the industry-standard
-              activation-code flow instead.
+              The screen that needs to sign in shows a short-lived code, and a phone that is already
+              signed in confirms it — the same idea as Netflix&apos;s and YouTube TV&apos;s &quot;enter this code on
+              your phone&quot; screen.
             </p>
           </div>
 
@@ -392,6 +346,18 @@ export function ManualPage() {
             be read aloud without ambiguity. If the countdown finishes, the code rotates
             automatically — just use the new one.
           </p>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <span className="text-white/70">
+              Both server administrators and regular signed-in users can confirm a sign-in in their own scope.
+            </span>
+            <NavLink
+              to="/account"
+              className="card-ring shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
+            >
+              Go to Account &amp; Devices →
+            </NavLink>
+          </div>
         </div>
       </section>
 
