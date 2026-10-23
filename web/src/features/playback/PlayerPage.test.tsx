@@ -32,6 +32,44 @@ vi.mock('hls.js', () => {
   return { default: MockHls };
 });
 
+/*
+ * The capability probe is the second half of the page's two-phase probe: the
+ * server's media-info arrives first, the browser verdict resolves after it. In a
+ * real browser that gap spans several task turns, so React commits the
+ * "info known, still loading" render first and mounts the <video> afterwards.
+ * jsdom settles everything inside a single microtask, which is precisely what
+ * hid Issue 14.3 — an effect that gated on `videoRef.current` ran once into a
+ * null and never again. The gate below lets a test restore that ordering.
+ */
+const probeGate = vi.hoisted(() => {
+  let release: (() => void) | null = null;
+  let pending: Promise<void> = Promise.resolve();
+  return {
+    hold(): () => void {
+      pending = new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+      return () => {
+        release?.();
+      };
+    },
+    wait(): Promise<void> {
+      return pending;
+    },
+    reset(): void {
+      pending = Promise.resolve();
+      release = null;
+    },
+  };
+});
+
+vi.mock('../../lib/capabilities/mediaCapabilities', () => ({
+  probeClientMediaCapabilities: vi.fn(async () => {
+    await probeGate.wait();
+    return { canDirectPlay: true };
+  }),
+}));
+
 const FILENAME = '2001 A Space Odyssey (1968) [BluRay]/2001.mkv';
 
 function renderPlayer() {
@@ -58,6 +96,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
+  probeGate.reset();
   mockLoadSource.mockClear();
   mockAttachMedia.mockClear();
   mockDestroy.mockClear();
@@ -755,3 +794,88 @@ describe('PlayerPage quality ladder & switching', () => {
     });
   });
 });
+
+/*
+ * Issue 14.3 — the media source must be attached without user interaction.
+ *
+ * This is an *ordering* regression, and it is invisible to every assertion that
+ * only looks at `data-mode`: the page renders the right mode, the right title
+ * and a plausible duration from `/api/media-info`, while the <video> element has
+ * no `src` at all. The probe resolves in two commits — media-info first, the
+ * browser-capability verdict second — and the <video> only mounts on the second.
+ * An effect that gates on `videoRef.current` therefore runs once into a `null`
+ * and never runs again, because no dependency changed when the element arrived.
+ * `play()` on a source-less element resolves and waits forever: the reported
+ * "pressing play does nothing, stays at 0:00", with no console error and no
+ * failed request.
+ */
+describe('PlayerPage source attachment (Issue 14.3)', () => {
+  const expectedSrc = `/media/${FILENAME.split('/').map(encodeURIComponent).join('/')}`;
+
+  function stashProbe() {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/media-info/')) return jsonResponse(directPlayPayload());
+      if (url.startsWith('/api/subtitles/')) return jsonResponse({ tracks: [] });
+      if (url.startsWith('/api/progress?')) return jsonResponse({ position: 0, duration: 3600 });
+      if (url.startsWith('/api/seek-preview-meta/')) {
+        return jsonResponse({ duration: 3600, interval: 10, count: 360, base_url: '/seek-preview/test.mp4' });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+  }
+
+  it('attaches the direct-play source when the <video> mounts after the probe resolves', async () => {
+    const releaseProbe = probeGate.hold();
+    stashProbe();
+
+    const { container } = renderPlayer();
+
+    // Commit A: media-info has landed, the capability verdict has not. The page
+    // is still the "Probing media…" skeleton, so there is no <video> to attach
+    // a source to — and the effect runs here, into a null ref.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container.querySelector('#video')).toBeNull();
+
+    // Commit B: the verdict lands and the element mounts. Nothing the effect
+    // depends on changed at this moment, so only an effect that can see the
+    // element itself will run again.
+    releaseProbe();
+    const video = await waitFor(() => {
+      const el = container.querySelector('#video');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    await waitFor(() => {
+      expect(video).toHaveAttribute('src', expectedSrc);
+    });
+  });
+
+  it('tracks Picture-in-Picture state, so the PiP listeners are still bound', async () => {
+    stashProbe();
+
+    const { container } = renderPlayer();
+    await waitFor(() => {
+      expect(screen.getByTestId('player')).toHaveAttribute('data-mode', 'direct');
+    });
+
+    const video = container.querySelector('#video');
+    const pipButton = container.querySelector('#pipBtn');
+    expect(video).not.toBeNull();
+    expect(pipButton).not.toBeNull();
+    expect(pipButton!.className).not.toContain('border-brand-500/80');
+
+    fireEvent(video!, new Event('enterpictureinpicture'));
+    await waitFor(() => {
+      expect(container.querySelector('#pipBtn')!.className).toContain('border-brand-500/80');
+    });
+
+    fireEvent(video!, new Event('leavepictureinpicture'));
+    await waitFor(() => {
+      expect(container.querySelector('#pipBtn')!.className).not.toContain('border-brand-500/80');
+    });
+  });
+});
+ 

@@ -355,6 +355,21 @@ what was said; no code change accompanied it).
    after pressing play, stay at **0:00**. Occasionally, after trying other media and then returning
    to the unplayable media, it **does** play — the owner is unsure how consistent this is, and it
    needs re-testing for reliability.
+   - **FIXED 2026-10-23.** Root cause measured, not inferred: `PlayerPage`'s source-attach effect
+     gated on `videoRef.current`, but the `<video>` only mounts on the commit *after* the one that
+     sets `info` (the capability probe is awaited between them), and no dependency changed when the
+     element arrived — so the effect ran once into a `null` and never again. Direct-play titles
+     therefore had **no `src` at all**: zero `/media/` requests, `readyState` 0, and `play()` on a
+     source-less element resolves and waits forever, which is exactly "press play, stays at 0:00,
+     no error". Any quality change re-ran the effect, which is the intermittency that was reported.
+     Fixed by mirroring the element into state through a stable callback ref and adding it to the
+     dependencies (plus the same for the PiP listeners, and a HUD instead of silence when a
+     user-initiated `play()` rejects). Verified live in Edge: *2001* attaches its source at 1.5 s and
+     plays with no interaction; *Monsters Inc* identical; *28 Days Later* (HLS) unregressed;
+     `probe_android_api.py` 22/22. Details and evidence:
+     [`docs/TRIAGE_03_PLAYBACK_ZERO_STALL.md`](TRIAGE_03_PLAYBACK_ZERO_STALL.md).
+     **Open:** the retained Issue 14.2 `Avatar` edit in `LibraryPage.tsx` calls `useAuth()` outside a
+     provider and fails 9 `LibraryPage` unit tests (`useAuth must be used inside <AuthProvider>`).
 4. **Unscannable QR code in the devices menu.** In the **signed-in** state, the QR code displayed in
    the devices menu is **cropped / not fully displayed**, making it unscannable.
 5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
