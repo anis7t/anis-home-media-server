@@ -341,16 +341,32 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: documented, not yet triaged or fixed** (this entry only records
-what was said; no code change accompanied it).
+sign-in was restored. **State: 14.2 and 14.3 are fixed; 14.1, 14.4, 14.5 and 14.6 remain open**
+(14.4–14.6 have a chosen option and await implementation; 14.1's recorded "fix" was retracted — see
+[`docs/TRIAGE_01_WATCH_HISTORY.md`](TRIAGE_01_WATCH_HISTORY.md) §9).
 
 1. **Watch history not populated.** While signed in on the web browser and after playing media,
    **no played entry was listed in the devices menu**. Possibly a device-scoping / progress-source
    mismatch (`GET /api/devices` returns the caller's current device plus owned devices and embeds
    `watch_history` from the device/progress tables), or the history UI rendering. Needs a live,
    signed-in reproduction.
-2. **Account icon missing.** The user account icon is **not present throughout all pages** of the
-   web app — some pages lack the signed-in identity affordance.
+   - **Open.** The 2026-10-23 attempt recorded in `TRIAGE_01` as a fix is **behaviour-identical** to
+     the code it replaced and is retracted (that document, §9). Re-investigation starts at whether
+     the web player writes `POST /api/progress` at all, and whether the device id it writes with is
+     the one `/api/devices` reads back.
+2. **Account icon "missing" across pages — CLOSED 2026-10-23: the report was a misdiagnosis.**
+   The account affordance is rendered by the shared `AppShell` header on **every** route (both
+   `AuthProvider` and `AppShell` wrap the whole route table in `main.tsx`): **"Sign in"** when
+   signed out, the **account avatar** when signed in. It is deliberately hidden on `/watch/*` so a
+   stray nav click cannot interrupt playback (`AppShell.tsx:221`). The 14.2 remediation added a
+   **second**, auth-ungated `Avatar` to `LibraryPage`'s `Upload Media` row, so signed out the page
+   showed the header's "Sign in" pill *and* a silhouette on the next row, and signed in it showed
+   **two** avatars — reported by the owner as "the user icon and sign in icon both are being
+   displayed … the items should be in the same row of the header … no 2 rows". The page-level
+   duplicate (and the companion `Avatar` `useOptionalAuth` change that only existed to keep it
+   renderable outside a provider) was reverted, and a regression test now pins that the page does
+   not render one. Verified live at 390 / 1280 / 1440 px: exactly one account glyph, in the header,
+   which never wraps. See [`docs/TRIAGE_02_ACCOUNT_ICON.md`](TRIAGE_02_ACCOUNT_ICON.md).
 3. **Playback stuck at 0:00.** Movies such as *2001: A Space Odyssey* don't play automatically and,
    after pressing play, stay at **0:00**. Occasionally, after trying other media and then returning
    to the unplayable media, it **does** play — the owner is unsure how consistent this is, and it
@@ -368,8 +384,8 @@ what was said; no code change accompanied it).
      plays with no interaction; *Monsters Inc* identical; *28 Days Later* (HLS) unregressed;
      `probe_android_api.py` 22/22. Details and evidence:
      [`docs/TRIAGE_03_PLAYBACK_ZERO_STALL.md`](TRIAGE_03_PLAYBACK_ZERO_STALL.md).
-     **Open:** the retained Issue 14.2 `Avatar` edit in `LibraryPage.tsx` calls `useAuth()` outside a
-     provider and fails 9 `LibraryPage` unit tests (`useAuth must be used inside <AuthProvider>`).
+     *(The temporary `Avatar`-in-`LibraryPage` test failures noted here are gone: that edit was
+     reverted as part of the 14.2 correction above.)*
 4. **Unscannable QR code in the devices menu.** In the **signed-in** state, the QR code displayed in
    the devices menu is **cropped / not fully displayed**, making it unscannable.
 5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
