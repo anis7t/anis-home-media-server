@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HeroSpotlight } from './HeroSpotlight';
 import { LibraryPage } from './LibraryPage';
+import { AuthProvider } from '../../auth/AuthProvider';
 import type { MovieSummaryLive } from './test-fixtures';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -245,5 +246,56 @@ describe('Upload Media placement', () => {
     expect(hero.className).toMatch(/(^|\s)-mt-6(\s|$)/);
     expect(hero.className).toMatch(/rounded-b-3xl/);
     expect(hero.className).not.toMatch(/rounded-3xl(\s|$)/);
+  });
+});
+
+/*
+ * Issue 14.2 was reported as "the account icon is missing across pages", and
+ * the first attempt at it added an `Avatar` to this page's Upload Media row.
+ * The shared `AppShell` header already renders the affordance on every route
+ * (and deliberately hides it on `/watch/*`, where a stray nav click would
+ * interrupt playback), so that addition was a duplicate: signed out the page
+ * showed the header's "Sign in" pill *and* a silhouette user icon on the next
+ * row, and signed in it showed two avatars. This pins the correction: the
+ * header owns the affordance, the page rows do not.
+ */
+describe('LibraryPage account affordance (Issue 14.2 correction)', () => {
+  it('does not render a second account affordance beside Upload Media', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') {
+        return jsonResponse({
+          authenticated: true,
+          email: 'owner@example.com',
+          name: 'Anis Parvez',
+          role: 'admin',
+        });
+      }
+      return jsonResponse({ movies: [], watching: [], total: 0 });
+    });
+
+    /*
+     * Wrapped in `AuthProvider` deliberately: without a provider, a re-added
+     * `Avatar` would crash on `useAuth()` and fail this test for the wrong
+     * reason. With one, it renders and the assertion below is what fails,
+     * which states the actual regression.
+     */
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <LibraryPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/no movies found/i);
+    });
+
+    // `Avatar` renders `role="img"` labelled with the account name when it has
+    // a signed-in identity.
+    expect(screen.queryByRole('img', { name: /anis parvez/i })).toBeNull();
+
+    // The row itself stays - it is the page's Upload Media action.
+    expect(screen.getByRole('button', { name: /upload media/i })).toBeInTheDocument();
   });
 });
