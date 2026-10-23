@@ -53,7 +53,9 @@ After the fix, the same probe reports:
 | 768 px | 218 × 218 | 220 × 220 |
 | 1280 px | 236 × 236 | 240 × 240 |
 
-The canvas is fully inside the card at every width, the card is at least 220 px square, and there is no horizontal page overflow. Screenshots were captured by the probe at each viewport. The plan's fallback of screenshot + bounding boxes was used; a physical phone scan was not performed in this session.
+The canvas is fully inside the card at every width, the card is at least 220 px square, and there is no horizontal page overflow. Screenshots were captured by the probe at each viewport.
+
+A live check against the production server (`http://127.0.0.1:8000/account?intro=off`, real `/api/auth/me` and `POST /api/auth/qr`, one pair session) reproduced the same measurements — **218/220**, **218/220**, **236/240** — and reported `LIVE QR LAYOUT OK`. That proves the built CSS, not only the dev server. The plan's fallback of screenshot + bounding boxes was used; a physical phone scan was not performed in this session.
 
 Also green:
 

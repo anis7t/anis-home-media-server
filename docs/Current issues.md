@@ -412,7 +412,8 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4 and 14.6 are closed; 14.5 
      the TV/Flutter variants are unchanged.
    - **Verified:** `web/e2e/qr-layout.spec.ts` now measures 218 px inside 220 px at 390/768 and
      236 px inside 240 px at 1280; the signed-in state renders no QR and sends no
-     `POST /api/auth/qr`. Web suite **309/309**, production build passes.
+     `POST /api/auth/qr`. A live check against the production server measured the same and
+     reported `LIVE QR LAYOUT OK`. Web suite **309/309**, production build passes.
    - Details and measurements: [`docs/TRIAGE_04_QR_CROPPED_SIGNED_IN.md`](TRIAGE_04_QR_CROPPED_SIGNED_IN.md).
 5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
    sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
