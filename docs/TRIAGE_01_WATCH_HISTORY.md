@@ -3,8 +3,9 @@
 **Date:** 2026-10-23 (IST 03-18)
 **Issue:** [`docs/Current issues.md`](../docs/Current%20issues.md) → Issue 14, fault 1
 **Branch:** `fix/issue-14-user-reported-faults`
-**Status:** ❌ **NOT FIXED** — the change recorded in §7 is behaviour-identical to what it replaced;
-see the correction in §9. Still open.
+**Status:** ✅ **FIXED 2026-10-23 17:50.** The change recorded in §7 was behaviour-identical to what
+it replaced and is retracted in §9. The real cause was **two device identities per browser**; §10 is
+the root cause, the fix and the evidence.
 
 ---
 
@@ -95,3 +96,71 @@ not be cured by it.** `git diff` for the 14.1 slice contains no other code chang
   pause/seek/unload, and whether the device id it writes with is the same one `/api/devices` reads
   back. The claim in §7 that "the backend already correctly persists entries" was itself only
   observed for some path, not for a signed-in web play.
+
+---
+
+## 10. ROOT CAUSE AND FIX (2026-10-23, 17:50) — 14.1 FIXED
+
+Triage restarted one layer earlier than §9 left it, and the answer is **two device identities per
+browser**: the player wrote history under one, and the devices page read the other.
+
+| identity | written by | history (measured 17:20) |
+|---|---|---|
+| `web_4f30657458814841` | `POST /api/progress`, whose `X-Device-Id` comes from `useDeviceId()` | **12 rows** — newest 15:57 that day (*2001: A Space Odyssey*), real titles |
+| `dev_de77b40cf4a45d37` ("Windows PC") | `GET /api/devices`, falling back to `dev_` + SHA-256(ip\|ua) | **0 rows** |
+
+`DeviceService::get_or_create_device_id` accepted only ids beginning `dev_`. The SPA mints `web_…`,
+so the header was **discarded** and the server invented a fingerprint device — and the devices page
+dutifully showed a current device that had never played anything. Reproduced with a live curl before
+the fix: `X-Device-Id: web_4f30657458814841` still answered `current_device_id: dev_60a0c284fae53f44`.
+
+**Second layer: the identity was also being shadowed by a Flask-era cookie.** Flask stamped
+`ms_device_id` (max-age 1 year) on every HTML response (`c5ee97d^:app/__init__.py:269-277`), and the
+Rust resolver checks the cookie **before** the header. Rust never mints or refreshes that cookie, so
+a browser that used the Flask app can keep a stale `dev_…` cookie until 2027 — fixing the prefix
+alone would have left the bug in place for exactly the browser that reported it.
+
+**The §7/§9 expression was neither the cause nor the fix.** It stays only because the boolean form
+reads better.
+
+### Fix
+
+- `rust/src/services/device_service.rs`
+  - `is_client_device_id()`: accept **`dev_` and `web_`**, ASCII body, `<= 64` chars, no separators.
+    This is *narrower* than the old check, which accepted any `dev_`-prefixed string.
+  - Precedence is now **header → cookie → hash**. The header is the live client's own identity; the
+    cookie is legacy. The fallback hash is byte-identical (seed `"{ip}|{ua}"`, SHA-256, first 16 hex),
+    so no existing client is re-keyed.
+- `web/src/features/devices/DevicesPage.tsx`: sends `X-Device-Id` from `useDeviceId()` on
+  `GET /api/devices` and on every mutation (rename, delete, admin calls), so the page asks about the
+  same device the player writes to.
+
+No `/api/*` shape changes. The Flutter client cannot be affected: it has no cookie jar and its ids
+match `^dev_[0-9a-f]{16}$`.
+
+### Evidence
+
+- **Rust:** `cargo test -- --test-threads=1` — 125 lib tests plus every integration binary,
+  **0 failures**; `devices_test` **22/22**, including a new regression test that inserts a `web_`
+  device with a history row and asserts it comes back as `current_device_id` **with that history**,
+  and a rewritten unit test pinning both id families, header-over-cookie, and the rejected shapes.
+- **Web:** **318 tests / 42 files, 0 failures**; `tsc -b` clean; `npm run build` written.
+- **Live** (service restarted; binary `17:47:46` newer than the last commit `16:52:55`):
+  `GET /api/devices` with `X-Device-Id: web_4f30657458814841` →
+  `current_device_id: "web_4f30657458814841"`, **12** history rows, recent *2001: A Space Odyssey*;
+  `/devices` renders "THIS BROWSER", "Recent: 2001: A Space Odyssey 0%" and "Watch History 12".
+  The 0% is truthful — the newest play is 3 s into an 8,931 s film — not a display fault.
+- **Cleanup, approved by the owner:** **374 device rows with no history were deleted** (407 → 33
+  rows; every survivor has history). Only `device_watch_history` references `devices` (FK
+  `ON DELETE CASCADE`), the deleted rows had no children, and every `user_id` was `NULL`, so no
+  ownership was lost. The browser's own row survived with its 12 rows.
+
+### Header consolidation (the other half of the request)
+
+The owner also asked for **Upload Media in the header row**. It is now portalled from `LibraryPage`
+into `#header-page-actions`, a slot `AppShell` renders inside the primary nav (the id lives in
+`web/src/lib/useHeaderActionsTarget.ts` so the two files cannot drift apart). The label hides below
+640 px (icon-only; `aria-label` keeps the accessible name), and the hero is the page's first element
+again, so it takes its original tucked variant (`-mt-6 sm:-mt-8 rounded-b-3xl`). Measured in Edge:
+at 390 / 768 / 1280 px exactly one Upload control exists, it is inside the slot, and the hero is the
+page's first child. No player, upload or PIN-gate code was touched.

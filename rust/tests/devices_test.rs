@@ -19,6 +19,9 @@ use std::net::SocketAddr;
 use tower::ServiceExt;
 
 const TEST_PREFIX: &str = "dev_rustc3a_";
+/// The SPA's id family. `/api/devices` used to reject these outright, which is
+/// Issue 14.1; the regression test needs to own rows under this prefix too.
+const TEST_WEB_PREFIX: &str = "web_rustc3a_";
 /// Phase 2 ownership rows this suite owns. Users and sessions are namespaced
 /// so cleanup can never touch a real account.
 const TEST_USER_SUB_PREFIX: &str = "sub_dev_phase2_";
@@ -46,14 +49,18 @@ async fn harness() -> (axum::Router, PgPool) {
 }
 
 async fn cleanup(pool: &PgPool) {
-    let _ = sqlx::query("DELETE FROM device_watch_history WHERE device_id LIKE $1")
-        .bind(format!("{}%", TEST_PREFIX))
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM devices WHERE device_id LIKE $1")
-        .bind(format!("{}%", TEST_PREFIX))
-        .execute(pool)
-        .await;
+    // Both id families this suite writes: the `dev_` fixtures and the `web_`
+    // regression fixtures from Issue 14.1.
+    for prefix in [TEST_PREFIX, TEST_WEB_PREFIX] {
+        let _ = sqlx::query("DELETE FROM device_watch_history WHERE device_id LIKE $1")
+            .bind(format!("{}%", prefix))
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM devices WHERE device_id LIKE $1")
+            .bind(format!("{}%", prefix))
+            .execute(pool)
+            .await;
+    }
     // Phase 2: sessions reference users, so they go first.
     let _ = sqlx::query("DELETE FROM sessions WHERE id LIKE $1")
         .bind(format!("{}%", TEST_SESSION_PREFIX))
@@ -337,25 +344,89 @@ async fn test_client_hints_reports_not_updated_for_an_unknown_device() {
     assert_eq!(body["success"], true);
 }
 
-#[tokio::test]
-async fn test_device_id_resolution_matches_python() {
-    // Same three inputs the Python helper distinguishes.
-    let (from_cookie, new1) = DeviceService::get_or_create_device_id(
-        Some("dev_cookie_id"), None, "1.2.3.4", "ua",
-    );
+#[test]
+fn test_device_id_resolution_prefers_the_client_id_then_hashes() {
+    // The cookie is still honoured when the client sends no header: legacy
+    // browsers and any cached pre-fix SPA page continue to resolve as before.
+    let (from_cookie, is_new) =
+        DeviceService::get_or_create_device_id(Some("dev_cookie_id"), None, "1.2.3.4", "ua");
     assert_eq!(from_cookie, "dev_cookie_id");
-    assert!(!new1);
+    assert!(!is_new);
 
-    let (from_header, new2) = DeviceService::get_or_create_device_id(
-        Some("not-a-device"), Some("dev_header_id"), "1.2.3.4", "ua",
+    // The header wins over the cookie. `ms_device_id` is Flask-era and Rust
+    // never refreshes it, so a year-long stale cookie must not shadow the live
+    // client (Issue 14.1's second layer).
+    let (from_header, is_new) = DeviceService::get_or_create_device_id(
+        Some("dev_cookie_id"),
+        Some("dev_header_id"),
+        "1.2.3.4",
+        "ua",
     );
-    assert_eq!(from_header, "dev_header_id", "a cookie without the dev_ prefix is ignored");
-    assert!(!new2);
+    assert_eq!(from_header, "dev_header_id");
+    assert!(!is_new);
 
-    let (hashed, is_new) = DeviceService::get_or_create_device_id(None, None, "1.2.3.4", "ua");
+    // The SPA's own id family. The old `dev_`-only filter discarded this and
+    // answered with a fingerprint row, which is the bug this pins.
+    let (web, is_new) = DeviceService::get_or_create_device_id(
+        None,
+        Some("web_4f30657458814841"),
+        "1.2.3.4",
+        "ua",
+    );
+    assert_eq!(web, "web_4f30657458814841");
+    assert!(!is_new);
+    assert_eq!(
+        DeviceService::get_or_create_device_id(
+            Some("web_4f30657458814841"),
+            None,
+            "1.2.3.4",
+            "ua"
+        )
+        .0,
+        "web_4f30657458814841",
+        "a legacy cookie carrying the SPA's id is still its identity"
+    );
+
+    // A cookie that is not a device id is ignored, and the hash matches the
+    // Flask formula: `dev_` + first 16 hex of SHA-256("{ip}|{ua}").
+    let (hashed, is_new) = DeviceService::get_or_create_device_id(
+        Some("not-a-device"),
+        Some("also/not one"),
+        "1.2.3.4",
+        "ua",
+    );
     assert!(is_new);
     assert!(hashed.starts_with("dev_"));
     assert_eq!(hashed.len(), 20);
+
+    // Shapes the app never mints are refused rather than becoming key values.
+    for bad in [
+        "dev_",
+        "web_",
+        "api_123",
+        "dev_abc def",
+        "dev_a/b",
+        "dev_caf\u{e9}",
+    ] {
+        let (id, is_new) = DeviceService::get_or_create_device_id(None, Some(bad), "1.2.3.4", "ua");
+        assert!(is_new, "{bad:?} must not be accepted as a device id");
+        assert!(id.starts_with("dev_"));
+    }
+
+    // The body bound is the one the key is sized for.
+    let too_long = format!("dev_{}", "a".repeat(65));
+    assert!(
+        DeviceService::get_or_create_device_id(None, Some(&too_long), "1.2.3.4", "ua").1,
+        "an over-long id must fall back to the fingerprint hash"
+    );
+    let at_bound = format!("dev_{}", "a".repeat(64));
+    assert!(!DeviceService::get_or_create_device_id(None, Some(&at_bound), "1.2.3.4", "ua").1);
+
+    // Surrounding whitespace is trimmed, not become part of the id.
+    assert_eq!(
+        DeviceService::get_or_create_device_id(None, Some("  web_abc123  "), "1.2.3.4", "ua").0,
+        "web_abc123"
+    );
 }
 
 #[tokio::test]
@@ -449,6 +520,59 @@ async fn test_get_devices_unauthenticated_returns_only_current_device() {
     assert_eq!(devices[0]["is_current"], true);
     assert_eq!(body["current_device_id"], id1.as_str());
     assert_eq!(body["stats"]["total_devices"], 1);
+
+    cleanup(&pool).await;
+}
+
+/// Issue 14.1: the SPA mints `web_...` ids and `/api/progress` writes history
+/// under them. `/api/devices` accepted `dev_` only, discarded that header, and
+/// answered with an IP+UA fingerprint row whose history was always empty - so
+/// the devices page showed a device that had never played anything.
+#[tokio::test]
+async fn test_web_client_id_is_the_device_that_owns_its_history() {
+    let _serial = SERIAL.lock().await;
+    let (app, pool) = harness().await;
+    cleanup(&pool).await;
+
+    let web_id = format!("{}browser", TEST_WEB_PREFIX);
+    insert_device(&pool, &web_id, None).await;
+    insert_history(&pool, &web_id, "web_client_history.mkv").await;
+
+    let (status, body) = call(
+        &app,
+        request(
+            Method::GET,
+            "/api/devices",
+            Some(&web_id),
+            None,
+            Some(UA_WINDOWS),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["current_device_id"], web_id.as_str(),
+        "the client's own id must win over the IP+UA fingerprint"
+    );
+
+    let device = body["devices"]
+        .as_array()
+        .expect("devices array")
+        .iter()
+        .find(|d| d["device_id"] == web_id.as_str())
+        .expect("the web client's own row");
+    assert_eq!(device["is_current"], true);
+
+    let history = device["watch_history"]
+        .as_array()
+        .expect("watch history array");
+    assert!(
+        history
+            .iter()
+            .any(|h| h["filename"] == "web_client_history.mkv"),
+        "the row the player writes to must expose that viewing: {device:?}"
+    );
 
     cleanup(&pool).await;
 }

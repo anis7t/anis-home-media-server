@@ -341,19 +341,28 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: 14.2 and 14.3 are fixed; 14.1, 14.4, 14.5 and 14.6 remain open**
-(14.4–14.6 have a chosen option and await implementation; 14.1's recorded "fix" was retracted — see
-[`docs/TRIAGE_01_WATCH_HISTORY.md`](TRIAGE_01_WATCH_HISTORY.md) §9).
+sign-in was restored. **State: 14.1, 14.2 and 14.3 are fixed; 14.4, 14.5 and 14.6 remain open**
+(14.4–14.6 have a chosen option and await implementation).
 
-1. **Watch history not populated.** While signed in on the web browser and after playing media,
-   **no played entry was listed in the devices menu**. Possibly a device-scoping / progress-source
-   mismatch (`GET /api/devices` returns the caller's current device plus owned devices and embeds
-   `watch_history` from the device/progress tables), or the history UI rendering. Needs a live,
-   signed-in reproduction.
-   - **Open.** The 2026-10-23 attempt recorded in `TRIAGE_01` as a fix is **behaviour-identical** to
-     the code it replaced and is retracted (that document, §9). Re-investigation starts at whether
-     the web player writes `POST /api/progress` at all, and whether the device id it writes with is
-     the one `/api/devices` reads back.
+1. **Watch history not populated — FIXED 2026-10-23 (17:50).** While signed in on the web browser
+   and after playing media, **no played entry was listed in the devices menu**.
+   - **Root cause: two device identities per browser.** The player wrote `POST /api/progress` under
+     the SPA's `web_…` id (`useDeviceId`), while `GET /api/devices` accepted only `dev_…` and fell
+     back to a fingerprint of IP + User-Agent — a *different* row, with no history. A Flask-era
+     year-long `ms_device_id` cookie compounded it: the resolver read the cookie **before** the
+     header, and Rust never refreshes it, so a stale cookie could shadow the browser's own id.
+   - **Fix:** the device-id validator accepts `dev_` **and** `web_` (ASCII, ≤ 64 chars) and the header
+     now wins over the cookie; `DevicesPage` sends `X-Device-Id` on the device list and every
+     mutation. No `/api/*` shape change; the Flutter client has no cookie jar and its
+     `dev_[0-9a-f]{16}` ids are still accepted.
+   - **Verified live:** `curl -H "X-Device-Id: web_4f30657458814841" /api/devices` answers
+     `current_device_id` = that id with **12** history rows, and `/devices` shows "Recent: 2001: A
+     Space Odyssey" plus "Watch History 12". Rust suite 0 failures; web 318 tests 0 failures.
+   - **Approved cleanup:** the **374** device rows with no history were purged (407 → 33; every
+     survivor has history, and the browser's own row kept its 12).
+   - The same request also moved **Upload Media into the header row** — the separate second row above
+     the hero is gone (portalled slot, icon-only below 640 px; verified at 390 / 768 / 1280 px).
+   - Details: [`docs/TRIAGE_01_WATCH_HISTORY.md`](TRIAGE_01_WATCH_HISTORY.md) §10.
 2. **Account icon "missing" across pages — CLOSED 2026-10-23: the report was a misdiagnosis.**
    The account affordance is rendered by the shared `AppShell` header on **every** route (both
    `AuthProvider` and `AppShell` wrap the whole route table in `main.tsx`): **"Sign in"** when

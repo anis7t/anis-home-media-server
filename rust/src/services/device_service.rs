@@ -67,11 +67,45 @@ pub struct ClientHints {
     pub mobile: Option<String>,
 }
 
+/// A client-supplied device id, accepted only in the shapes this app mints.
+///
+/// `dev_` is the server's fingerprint family and the Flutter client's;
+/// `web_` is the SPA's localStorage id (`web/src/lib/useDeviceId.ts`).
+///
+/// The body is restricted to ASCII so a header cannot smuggle a path
+/// separator or an unbounded string into a value used as a primary key, and
+/// bounded so the key stays a key. This is narrower than the `dev_`-only
+/// check it replaces, which accepted any `dev_`-prefixed string at all.
+fn is_client_device_id(id: &str) -> bool {
+    let Some((prefix, body)) = id.split_once('_') else {
+        return false;
+    };
+    matches!(prefix, "dev" | "web")
+        && !body.is_empty()
+        && body.len() <= 64
+        && body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 pub struct DeviceService;
 
 impl DeviceService {
-    /// Device id for this request: cookie, then header, then a deterministic
+    /// Device id for this request: the client's own id, then a deterministic
     /// hash of client IP + User-Agent.
+    ///
+    /// The header wins over the cookie. `ms_device_id` is a Flask-era artefact:
+    /// Flask stamped it on every HTML response for a year
+    /// (`c5ee97d^:app/__init__.py`) and Rust neither mints nor refreshes it, so
+    /// a stale one would otherwise shadow the live client's own id for up to a
+    /// year. Browsers that visited the Flask app still carry one.
+    ///
+    /// Both id families this app mints are accepted: `dev_` (the fingerprint
+    /// and the Flutter client) and `web_` (the SPA's `useDeviceId`). Accepting
+    /// only `dev_` was the whole of Issue 14.1: `/api/progress` wrote history
+    /// under `web_...` while this function discarded that header and answered
+    /// with a fingerprint row, so the devices page listed a device that had
+    /// never played anything.
     ///
     /// The fallback hash MUST match Flask's byte for byte: seed
     /// `"{ip}|{ua}"`, SHA-256, first 16 hex characters, prefixed `dev_`.
@@ -84,11 +118,11 @@ impl DeviceService {
         client_ip: &str,
         user_agent: &str,
     ) -> (String, bool) {
-        if let Some(c) = cookie_id.filter(|c| c.starts_with("dev_")) {
-            return (c.to_string(), false);
-        }
-        if let Some(h) = header_id.filter(|h| h.starts_with("dev_")) {
+        if let Some(h) = header_id.map(str::trim).filter(|h| is_client_device_id(h)) {
             return (h.to_string(), false);
+        }
+        if let Some(c) = cookie_id.map(str::trim).filter(|c| is_client_device_id(c)) {
+            return (c.to_string(), false);
         }
         let seed = format!("{}|{}", client_ip, user_agent);
         let digest = Sha256::digest(seed.as_bytes());
