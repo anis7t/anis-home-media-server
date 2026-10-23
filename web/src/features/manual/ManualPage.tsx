@@ -314,7 +314,9 @@ export function ManualPage() {
               </span>
               <h3 className="font-bold text-sm text-white">Show the Code</h3>
               <p className="text-white/60 leading-relaxed">
-                Open <strong>Account &amp; Devices</strong> on the TV. A QR image and a 5-character code
+                Click <strong>Sign in</strong> in the header and choose{' '}
+                <strong>Sign in with QR code</strong>, or open{' '}
+                <strong>Account &amp; Devices</strong> directly. A QR image and a 5-character code
                 appear automatically, with a 2-minute countdown.
               </p>
             </div>
@@ -344,7 +346,8 @@ export function ManualPage() {
           <p className="text-[11px] text-white/40 leading-relaxed">
             The code omits lookalike characters (<span className="font-mono">0 O 1 I</span>) so it can
             be read aloud without ambiguity. If the countdown finishes, the code rotates
-            automatically — just use the new one.
+            automatically — just use the new one. On a phone browser, the header keeps a direct
+            Google <strong>Sign in</strong> button and hides QR — the phone is the scanner.
           </p>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">

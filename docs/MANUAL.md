@@ -236,7 +236,8 @@ as Netflix's and YouTube TV's *"enter this code on your phone"* screen.
 
 **On the TV or browser (the device that wants to sign in):**
 
-1. Open **Account & Devices** (`/account`). If you are not signed in, the page shows the
+1. Click **Sign in** in the header and choose **Sign in with QR code**, or open
+   **Account & Devices** (`/account`) directly. If you are not signed in, the page shows the
    **QR Device Sign-In** panel automatically.
 2. The panel displays three things at once:
    - a **QR code** (rendered as a canvas image),
@@ -265,6 +266,9 @@ list instead of an anonymous browser row.
 
 - The 5-character code deliberately omits lookalike characters (`0`, `O`, `1`, `I`), so it can be
   read aloud or typed without ambiguity. The unambiguous set is `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+- On a **phone browser**, the header keeps a direct **Sign in** (Google) button and hides the QR
+  option — the phone is the device that scans the TV's code. The `/account` panel is still
+  available if you open it directly.
 - The pairing session is **ephemeral**. It lives for 2 minutes, and the 30-day session it mints is
   bound to the account that authorised it, not to the phone.
 - If the SSE stream is blocked by a network, the TV falls back to polling the status endpoint

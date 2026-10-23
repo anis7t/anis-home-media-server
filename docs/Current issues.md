@@ -345,8 +345,7 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4 and 14.6 are closed; 14.5 remains open**
-(14.5 has a chosen option and awaits implementation).
+sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4, 14.5 and 14.6 are closed.**
 
 1. **Watch history not populated — FIXED 2026-10-23 (17:50).** While signed in on the web browser
    and after playing media, **no played entry was listed in the devices menu**.
@@ -415,9 +414,18 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4 and 14.6 are closed; 14.5 
      `POST /api/auth/qr`. A live check against the production server measured the same and
      reported `LIVE QR LAYOUT OK`. Web suite **309/309**, production build passes.
    - Details and measurements: [`docs/TRIAGE_04_QR_CROPPED_SIGNED_IN.md`](TRIAGE_04_QR_CROPPED_SIGNED_IN.md).
-5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
-   sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
-   scan option should be **disabled only in the TV variant** of the app.
+5. **Header "Sign in" menu — FIXED 2026-10-24.** Clicking "Sign in" in the header used to call
+   `signIn()` directly and land in the Google OAuth flow. It now opens a chooser with
+   **Continue with Google** (when configured) and **Sign in with QR code**. The QR item is a link
+   to `/account`, where the existing QR panel owns the session; opening the menu itself sends no
+   `POST /api/auth/qr`. Desktop, tablet and TV browsers show both options; a phone browser keeps
+   a direct sign-in button (Google when configured) and hides QR, because the phone is the scanner.
+   When OAuth is unconfigured, the menu offers the Admin PIN instead of a mislabelled Google item. The
+   header-only scope leaves the `/account` QR panel unchanged, and the Flutter client is
+   untouched (it has no Google/QR sign-in UI). Verified: web **325/325**, e2e **9/9** (including
+   the 14.4 QR-layout gate), production build passes, Android probe **22/22**, and a live
+   unmocked check at 1280 px and a 412 px phone viewport. Details:
+   [`docs/TRIAGE_05_SIGNIN_MENU_OPTIONS.md`](TRIAGE_05_SIGNIN_MENU_OPTIONS.md).
 6. **Add-device / QR flow confusion — FIXED 2026-10-23 (23:20) by removing the flow.** The
    **"Add device"** form on `/account` minted a CSPRNG `ms_…` token (stored as SHA-256, default
    lifetime **365 days**). Its QR code and URL were the same `https://…/auth/pair#token=…` link;
@@ -435,10 +443,12 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4 and 14.6 are closed; 14.5 
    but does not restore the rows. The QR flow is untouched. Details:
    [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
-- **Open question for triage:** the sign-in menu option set (14.5).
+- **Triage complete:** all Issue 14 faults, including the sign-in menu option set (14.5), are
+  closed. The 14.5 record is [`docs/TRIAGE_05_SIGNIN_MENU_OPTIONS.md`](TRIAGE_05_SIGNIN_MENU_OPTIONS.md).
 - **Context:** the sign-in outage itself was fixed on 2026-10-23 (stale allowlist row cleared; allowlist
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
-  against that restored state and are presumed **unrelated to the allowlist**, pending reproduction.
+  against that restored state and were **unrelated to the allowlist**; their root causes are
+  recorded above.
 
 ---
 

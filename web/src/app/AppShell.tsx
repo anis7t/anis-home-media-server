@@ -8,12 +8,15 @@ import Avatar from '../components/Avatar';
 import BrandIntroOverlay from '../components/brand/BrandIntroOverlay';
 import { Icon } from '../components/icons';
 import LoginScreen from '../components/LoginScreen';
+import { SignInMenu } from '../components/SignInMenu';
 import { useIntroSequence } from '../hooks/useIntroSequence';
 import BrandMark from '../components/BrandMark';
 import { HEADER_ACTIONS_SLOT_ID } from '../lib/useHeaderActionsTarget';
+import { useIsPhoneBrowser } from '../lib/signInPlatform';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { authenticated, email, name, locked, signIn, signOut } = useAuth();
+  const { authenticated, email, name, locked, signIn, signOut, oauthConfigured, openPinSignIn } =
+    useAuth();
   const location = useLocation();
 
   /*
@@ -23,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
    * screen then would be wrong - the app is usable.
    */
   const showLogin = locked && !authenticated;
+  const isPhoneBrowser = useIsPhoneBrowser();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
@@ -350,7 +354,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : isPhoneBrowser ? (
               <button
                 type="button"
                 onClick={signIn}
@@ -358,6 +362,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 Sign in
               </button>
+            ) : (
+              <SignInMenu
+                key={location.pathname}
+                oauthConfigured={oauthConfigured}
+                onGoogleSignIn={signIn}
+                onPinSignIn={openPinSignIn}
+              />
             )}
           </nav>
         </div>
