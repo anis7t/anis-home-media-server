@@ -52,6 +52,10 @@ sign-in feature and the migration cutover. **Two are open:**
 
 ---
 
+> **Retired 2026-10-23:** the pairing-token UI, backend routes, client helpers and `auth_tokens`
+> table described in Issues 5 and 6 no longer exist. QR sign-in is the only pairing path; see
+> Issue 14.6 and [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
+
 ### Issue 5: Admin 403 on Add Device (Admin PIN Token Minting)
 - **Reported:** *In the devices page, when I(admin) try to add a device, I get 403'd.*
 - **Resolution (Phase 3):**
@@ -409,7 +413,12 @@ sign-in was restored. **State: 14.1, 14.2, 14.3 and 14.6 are closed; 14.4 and 14
    `dev_[0-9a-f]{16}`). The panel — form, one-time token display, token list and the "For Android
    TV & Fire TV" copy — was removed, and `web/src/components/PairingQr.tsx` with it. The QR sign-in
    card is the only pairing path. The token pasted into the report (`ms_bbd276…`, row 40) was
-   revoked and `/auth/pair` answers **401** for it; all 25 token rows are now revoked. Details:
+   revoked and `/auth/pair` answered **401** for it; all 25 token rows were revoked.
+   **Backend retired 2026-10-23:** the three token routes, both `/auth/pair` methods, the four
+   service helpers, the `Authorization: Bearer` branch and the web client helpers were deleted,
+   and `auth_tokens` was dropped (the 25 revoked rows went with it, by the owner's choice). Old
+   links now answer **404**; rolling back to a pre-retirement binary re-creates an empty table
+   but does not restore the rows. The QR flow is untouched. Details:
    [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
 - **Open questions for triage:** QR display/scoping (14.4) and the sign-in menu option set (14.5).

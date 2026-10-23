@@ -1,9 +1,7 @@
 use crate::error::AppError;
-use crate::models::auth::{
-    AdminStatusResponse, AdminVerifyResponse, AllowlistResponse, MintedToken, TokenRecord,
-};
+use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse, AllowlistResponse};
 use axum::http::HeaderMap;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
@@ -36,8 +34,8 @@ impl AuthService {
     /// (`nanos ^ counter ^ pid ^ (nanos_low64 ^ const)`). That seed is
     /// guessable to anyone who can narrow the creation time to roughly a
     /// second, and these tokens are session credentials: `sess_` session
-    /// tokens, the `ms_` device tokens, the OAuth `state` and `nonce`, the
-    /// PKCE `verifier`, and the `qr_id` that is the *only* key to the
+    /// tokens, the OAuth `state` and `nonce`, the PKCE `verifier`, and the
+    /// `qr_id` that is the *only* key to the
     /// unauthenticated `/api/auth/qr/{id}/finalize` endpoint. A predictable
     /// one is an account takeover.
     ///
@@ -122,7 +120,7 @@ impl AuthService {
         body_pin: Option<&str>,
     ) -> bool {
         // 1. Check session / bearer token admin role
-        if let Some(identity) = Self::resolve_session_or_token(pool, headers).await {
+        if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
             if identity.role == "admin" || identity.is_admin {
                 return true;
             }
@@ -169,7 +167,7 @@ impl AuthService {
             .map(|p| !p.trim().is_empty())
             .unwrap_or(false);
 
-        let identity = Self::resolve_session_or_token(pool, headers).await;
+        let identity = Self::resolve_session_identity(pool, headers).await;
         let is_pin_authed = Self::is_admin_authorized(pool, headers, None).await;
 
         let is_admin = is_pin_authed
@@ -194,7 +192,7 @@ impl AuthService {
         body_pin: Option<&str>,
     ) -> AdminVerifyResponse {
         // If already recognized via admin session:
-        if let Some(identity) = Self::resolve_session_or_token(pool, headers).await {
+        if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
             if identity.role == "admin" || identity.is_admin {
                 return AdminVerifyResponse {
                     success: true,
@@ -286,11 +284,15 @@ impl AuthService {
 
     // --- Identity Resolution (`/api/auth/me`) ---
 
-    pub async fn resolve_session_or_token(
+    /// Resolve the caller from the session cookie (`session_token` or `media_session`).
+    ///
+    /// There is deliberately no bearer-token path: the long-lived pairing-token
+    /// surface was retired on 2026-10-23. See `AGENTS.md`.
+    pub async fn resolve_session_identity(
         pool: &PgPool,
         headers: &HeaderMap,
     ) -> Option<ResolvedIdentity> {
-        // 1. Session Cookie (`session_token` or `media_session`)
+        // Session cookie (`session_token` or `media_session`)
         if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
             for part in cookie_hdr.split(';') {
                 let mut kv = part.splitn(2, '=');
@@ -328,49 +330,6 @@ impl AuthService {
             }
         }
 
-        // 2. Authorization: Bearer <token> (Personal Access Tokens)
-        if let Some(auth_hdr) = headers.get(axum::http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
-            let trimmed = auth_hdr.trim();
-            if trimmed.to_lowercase().starts_with("bearer ") {
-                let token = &trimmed[7..].trim();
-                let hash = Self::hash_token(token);
-                let row = sqlx::query(
-                    r#"
-                    SELECT t.id, t.user_id, u.email, u.name, u.picture_url, u.role
-                    FROM auth_tokens t
-                    JOIN users u ON t.user_id = u.id
-                    WHERE t.token_hash = $1
-                      AND t.revoked_at IS NULL
-                      AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)
-                    "#,
-                )
-                .bind(&hash)
-                .fetch_optional(pool)
-                .await
-                .ok()?;
-
-                if let Some(r) = row {
-                    let tid: i64 = r.get("id");
-                    // Touch last_used_at
-                    let _ = sqlx::query("UPDATE auth_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1")
-                        .bind(tid)
-                        .execute(pool)
-                        .await;
-
-                    let role: String = r.get("role");
-                    let is_admin = role == "admin";
-                    return Some(ResolvedIdentity {
-                        user_id: r.get("user_id"),
-                        email: r.get("email"),
-                        name: r.try_get("name").ok(),
-                        picture: r.try_get("picture_url").ok(),
-                        role,
-                        is_admin,
-                    });
-                }
-            }
-        }
-
         None
     }
 
@@ -379,7 +338,7 @@ impl AuthService {
         pool: &PgPool,
         headers: &HeaderMap,
     ) -> Option<ResolvedIdentity> {
-        let resolved = Self::resolve_session_or_token(pool, headers).await;
+        let resolved = Self::resolve_session_identity(pool, headers).await;
         if resolved.is_some() {
             return resolved;
         }
@@ -504,143 +463,6 @@ impl AuthService {
         }
         out.sort();
         out
-    }
-
-    // --- Personal Access Tokens (`/api/auth/tokens`) ---
-
-    pub async fn list_tokens(
-        pool: &PgPool,
-        user_id: Option<i64>,
-    ) -> Result<Vec<TokenRecord>, AppError> {
-        let rows = if let Some(uid) = user_id {
-            sqlx::query(
-                r#"
-                SELECT id, user_id, label, created_at, last_used_at, expires_at, revoked_at
-                FROM auth_tokens
-                WHERE user_id = $1 AND revoked_at IS NULL
-                ORDER BY created_at DESC
-                "#,
-            )
-            .bind(uid)
-            .fetch_all(pool)
-            .await?
-        } else {
-            sqlx::query(
-                r#"
-                SELECT id, user_id, label, created_at, last_used_at, expires_at, revoked_at
-                FROM auth_tokens
-                WHERE revoked_at IS NULL
-                ORDER BY created_at DESC
-                "#,
-            )
-            .fetch_all(pool)
-            .await?
-        };
-
-        let mut tokens = Vec::new();
-        for r in rows {
-            let id: i64 = r.get("id");
-            let user_id: i64 = r.get("user_id");
-            let label: String = r.get("label");
-            let created_at: DateTime<Utc> = r.get("created_at");
-            let last_used_at: Option<DateTime<Utc>> = r.try_get("last_used_at").ok();
-            let expires_at: Option<DateTime<Utc>> = r.try_get("expires_at").ok();
-            let revoked_at: Option<DateTime<Utc>> = r.try_get("revoked_at").ok();
-
-            tokens.push(TokenRecord {
-                id,
-                user_id,
-                label,
-                created_at: created_at.timestamp(),
-                last_used_at: last_used_at.map(|t| t.timestamp()),
-                expires_at: expires_at.map(|t| t.timestamp()),
-                revoked_at: revoked_at.map(|t| t.timestamp()),
-            });
-        }
-
-        Ok(tokens)
-    }
-
-    pub async fn create_token(
-        pool: &PgPool,
-        user_id: i64,
-        label: &str,
-        validity_days: Option<i64>,
-        host_url: &str,
-    ) -> Result<MintedToken, AppError> {
-        let clean_label = label.trim();
-        if clean_label.is_empty() {
-            return Err(AppError::BadRequest(
-                "A label is required so the token can be identified later.".to_string(),
-            ));
-        }
-
-        let plaintext = format!("ms_{}", Self::generate_random_token()?);
-        let hash = Self::hash_token(&plaintext);
-
-        let expires_at = validity_days
-            .filter(|&d| d > 0)
-            .map(|days| Utc::now() + Duration::days(days));
-
-        let row = sqlx::query(
-            r#"
-            INSERT INTO auth_tokens (user_id, label, token_hash, expires_at)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, expires_at
-            "#,
-        )
-        .bind(user_id)
-        .bind(clean_label)
-        .bind(&hash)
-        .bind(expires_at)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to mint token: {}", e)))?;
-
-        let id: i64 = row.get("id");
-        let exp: Option<DateTime<Utc>> = row.try_get("expires_at").ok();
-
-        let base = host_url.trim_end_matches('/');
-        let pairing_url = format!("{}/auth/pair#token={}", base, plaintext);
-
-        Ok(MintedToken {
-            token: plaintext,
-            pairing_url,
-            id,
-            label: clean_label.to_string(),
-            expires_at: exp.map(|t| t.timestamp()),
-            warning: "This token is displayed once and cannot be retrieved again.".to_string(),
-        })
-    }
-
-    pub async fn revoke_token(
-        pool: &PgPool,
-        token_id: i64,
-        caller_user_id: Option<i64>,
-        is_admin: bool,
-    ) -> Result<bool, AppError> {
-        let row = sqlx::query("SELECT user_id FROM auth_tokens WHERE id = $1 AND revoked_at IS NULL")
-            .bind(token_id)
-            .fetch_optional(pool)
-            .await?;
-
-        let owner_id: i64 = match row {
-            Some(r) => r.get("user_id"),
-            None => return Err(AppError::NotFound("No such active token.".to_string())),
-        };
-
-        if !is_admin && Some(owner_id) != caller_user_id {
-            return Err(AppError::Forbidden(
-                "Unauthorized: Cannot revoke tokens belonging to other users.".to_string(),
-            ));
-        }
-
-        sqlx::query("UPDATE auth_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1")
-            .bind(token_id)
-            .execute(pool)
-            .await?;
-
-        Ok(true)
     }
 
     // --- Local PIN Login ---
@@ -1007,56 +829,6 @@ impl AuthService {
 
         info!("AUTH: Google sign-in successful sub={} email={}", sub, email);
         Ok((session_token, next_path))
-    }
-
-    pub async fn pair_token(
-        pool: &PgPool,
-        plaintext_token: &str,
-    ) -> Result<String, AppError> {
-        let hash = Self::hash_token(plaintext_token);
-        let row = sqlx::query(
-            r#"
-            SELECT t.id, t.user_id, u.email, u.role
-            FROM auth_tokens t
-            JOIN users u ON t.user_id = u.id
-            WHERE t.token_hash = $1
-              AND t.revoked_at IS NULL
-              AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)
-            "#,
-        )
-        .bind(&hash)
-        .fetch_optional(pool)
-        .await?;
-
-        let r = match row {
-            Some(r) => r,
-            None => return Err(AppError::Unauthorized("That pairing token is not valid.".to_string())),
-        };
-
-        let user_id: i64 = r.get("user_id");
-        let email: String = r.get("email");
-        let role: String = r.get("role");
-
-        let session_token = format!("sess_{}", Self::generate_random_token()?);
-        let expires_at = Utc::now() + Duration::days(30);
-
-        sqlx::query(
-            r#"
-            INSERT INTO sessions (id, user_id, email, role, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-        )
-        .bind(&session_token)
-        .bind(user_id)
-        .bind(&email)
-        .bind(&role)
-        .bind(expires_at)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to store session: {}", e)))?;
-
-        info!("AUTH: device paired uid={} email={} role={}", user_id, email, role);
-        Ok(session_token)
     }
 
     // --- QR Device Pair Sessions ---
@@ -1681,8 +1453,6 @@ mod tests {
     /// process-local key rather than a published constant.
     #[test]
     fn test_pair_signature_is_not_keyed_by_the_published_constant() {
-        use sha2::Sha256;
-
         let published_constant = "changeme-set-MEDIA_SERVER_SECRET-in-env";
         let mut mac = HmacSha256::new_from_slice(published_constant.as_bytes()).unwrap();
         mac.update(b"qr_test:K7R2P");

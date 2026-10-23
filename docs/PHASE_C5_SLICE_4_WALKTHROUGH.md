@@ -12,6 +12,10 @@ With this slice:
   - Accepts PIN only via `X-Admin-Pin` header or JSON body; never accepted via query string (`?pin=`).
   - Gated routes return 403 on unauthenticated/unauthorized access.
 
+> **Postscript (2026-10-23):** the token routes (`/api/auth/tokens`, `/auth/pair`) and the
+> `auth_tokens` table described in this historical walkthrough have been retired. QR sign-in is
+> the only pairing path; see [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md) §8.
+
 ---
 
 ## 2. Key Changes Made

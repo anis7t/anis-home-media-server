@@ -138,7 +138,7 @@ if ($rc -ne 0) {
 
 # --- Verify -----------------------------------------------------------------
 Write-Host "`n[4/4] Verifying the restored database..." -ForegroundColor Cyan
-$checks = @("movies", "users", "sessions", "progress", "devices", "settings", "auth_tokens")
+$checks = @("movies", "users", "sessions", "progress", "devices", "settings", "device_pair_sessions")
 $ok = $true
 foreach ($t in $checks) {
     $count = (& $psql -h $DbHost -p $Port -U $User -d $target -A -t -c "SELECT count(*) FROM $t;" 2>$null)
@@ -155,7 +155,8 @@ if ($ok) {
     if ($isTargetLive) {
         Write-Host "Now start the server:  Start-Service MediaServerRust" -ForegroundColor Green
         Write-Host "The Rust server creates any missing tables at pool creation, so a dump" -ForegroundColor DarkGray
-        Write-Host "taken before a schema change is still safe to restore." -ForegroundColor DarkGray
+        Write-Host "taken before a schema change is still safe to restore. It also drops the" -ForegroundColor DarkGray
+        Write-Host "retired auth_tokens table on boot." -ForegroundColor DarkGray
     }
 } else {
     Write-Host "`nRESTORE COMPLETED BUT VERIFICATION FOUND MISSING TABLES." -ForegroundColor Yellow

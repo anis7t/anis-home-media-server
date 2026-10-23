@@ -2,7 +2,7 @@
 
 Welcome to **Anis' Home Media Server**, a high-performance, self-hosted personal streaming suite designed for private movie collections across local home networks and remote connections.
 
-This document serves as the authoritative, end-to-end operator manual and user guide covering the full feature suite: web streaming, 10-foot TV & Fire TV Stick controls, mobile gestures, hardware-accelerated dual-GPU transcoding, device token pairing, user watch history, subtitle customization, LAN/DLNA casting, dual-drive storage tiering, and Windows service management.
+This document serves as the authoritative, end-to-end operator manual and user guide covering the full feature suite: web streaming, 10-foot TV & Fire TV Stick controls, mobile gestures, hardware-accelerated dual-GPU transcoding, QR device pairing, user watch history, subtitle customization, LAN/DLNA casting, dual-drive storage tiering, and Windows service management.
 
 ---
 
@@ -23,10 +23,8 @@ This document serves as the authoritative, end-to-end operator manual and user g
    - [Administrator PIN Channel](#administrator-pin-channel)
    - [Admin-Only Gated Routes & Protected Capabilities](#admin-only-gated-routes--protected-capabilities)
 4. [Device Pairing & Fleet Privacy](#4-device-pairing--fleet-privacy)
-   - [The Passwordless TV Pairing Model](#the-passwordless-tv-pairing-model)
-   - [How to Pair a TV or Secondary Device (Step-by-Step)](#how-to-pair-a-tv-or-secondary-device-step-by-step)
+   - [The Passwordless Sign-In Model](#the-passwordless-sign-in-model)
    - [OTT QR Device Sign-In (TV & Browser)](#ott-qr-device-sign-in-tv--browser)
-   - [Token Lifespans & Auto-Recovery](#token-lifespans--auto-recovery)
    - [Fleet Presence Privacy Scoping & Admin Unlock](#fleet-presence-privacy-scoping--admin-unlock)
 5. [Watch Progress, Resume Sync & Watch History](#5-watch-progress-resume-sync--watch-history)
    - [Millisecond-Accurate Continuous Progress](#millisecond-accurate-continuous-progress)
@@ -162,9 +160,9 @@ The media server features a flexible, multi-tiered authentication and role syste
 flowchart TD
     Req[Incoming Request] --> AuthCheck{MEDIA_SERVER_AUTH enforced?}
     AuthCheck -- No (Default) --> GuestMode[Guest Mode: Stream, Browse, Watch]
-    AuthCheck -- Yes --> TokenCheck{Valid Token or Session?}
-    TokenCheck -- No --> Deny[401 Unauthorized]
-    TokenCheck -- Yes --> UserMode[User Session]
+    AuthCheck -- Yes --> SessionCheck{Valid Session?}
+    SessionCheck -- No --> Deny[401 Unauthorized]
+    SessionCheck -- Yes --> UserMode[User Session]
 
     GuestMode --> ActionCheck{Destructive or Admin Action?}
     UserMode --> ActionCheck
@@ -183,14 +181,14 @@ flowchart TD
    - In standard household setups, any family member or guest on the network can immediately browse the catalog, stream movies, search, adjust subtitles, and cast to smart TVs without typing credentials.
    - Devices in guest mode are identified by a local hardware device cookie (`ms_device_id`).
 2. **Google Authentication:**
-   - Users can link their Google Account via Google Identity Services (`/api/auth/login`).
-   - Signing in associates watch progress, device tokens, and preferences with your personal user account.
-   - If your Google email is listed in `ADMIN_EMAILS` (defined in `app/config.py`), you are automatically granted the `admin` role.
+   - Users can link their Google Account via Google Identity Services (`/auth/google`).
+   - Signing in associates watch progress and preferences with your personal user account.
+   - If your Google email is listed in `MEDIA_SERVER_ADMIN_EMAILS`, you are automatically granted the `admin` role.
 
 ### The `MEDIA_SERVER_AUTH` Enforcement Flag
 
 - **When `MEDIA_SERVER_AUTH` is unset (default):** Open-door guest mode is active. Read-only streaming endpoints are accessible without login, while destructive administration endpoints remain strictly protected.
-- **When `MEDIA_SERVER_AUTH=1`:** Strict enforcement mode is active. Every request requires an authorized Google session, a valid bearer token, or a pre-shared device token. Unauthorized requests are rejected with `401 Unauthorized`.
+- **When `MEDIA_SERVER_AUTH=1`:** Strict enforcement mode is active. Every request requires an authorized session — created by Google sign-in or by QR device pairing. Unauthorized requests are rejected with `401 Unauthorized`.
 
 ### Administrator PIN Channel
 
@@ -226,7 +224,9 @@ typed on the TV, and no long-lived bearer link is minted.
 
 There is **one** pairing path — the QR Device Sign-In card on `/account`. The old "Add device"
 token form was removed on 2026-10-23: it minted a 365-day, reusable sign-in link that no client
-consumed. See [`Current issues.md`](Current%20issues.md) → Issue 14, fault 6.
+consumed. Its backend (`/api/auth/tokens`, `/auth/pair`) and the `auth_tokens` table were retired
+the same day, so those URLs now return **404**. See
+[`Current issues.md`](Current%20issues.md) → Issue 14, fault 6.
 
 ### OTT QR Device Sign-In (TV & Browser)
 
@@ -270,7 +270,7 @@ list instead of an anonymous browser row.
 - If the SSE stream is blocked by a network, the TV falls back to polling the status endpoint
   automatically — no user-visible difference.
 - The QR flow is the only pairing path. The Android / Fire TV client does not consume a pairing
-  token — it identifies itself with its own device id, and the library is public.
+  link — it identifies itself with its own device id, and the library is public.
 
 ### Fleet Presence Privacy Scoping & Admin Unlock
 

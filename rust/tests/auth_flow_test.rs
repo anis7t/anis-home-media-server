@@ -264,209 +264,43 @@ async fn test_allowlist_endpoints_and_validation() {
 }
 
 #[tokio::test]
-async fn test_tokens_bearer_token_cannot_mint_or_manage_tokens() {
+async fn retired_pairing_token_surface_is_gone() {
     let ctx = TestContext::new().await;
 
-    let bearer = "Bearer ms_fake1234567890abcdef1234567890abcdef";
+    // The long-lived pairing-token surface was retired on 2026-10-23. The
+    // SPA fallback answers 404 for unmatched `/api/*` and `/auth/*` paths, so
+    // these requests must not reach a handler or return the SPA shell.
+    for (method, uri) in [
+        ("GET", "/api/auth/tokens"),
+        ("POST", "/api/auth/tokens"),
+        ("DELETE", "/api/auth/tokens/1"),
+        ("GET", "/auth/pair"),
+        ("POST", "/auth/pair"),
+    ] {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        let resp = ctx.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "{method} {uri} must be retired"
+        );
+    }
 
-    // 1. Bearer cannot list tokens
-    let req_list = Request::builder()
-        .method("GET")
-        .uri("/api/auth/tokens")
-        .header(header::AUTHORIZATION, bearer)
-        .body(Body::empty())
-        .unwrap();
-    let resp_list = ctx.app.clone().oneshot(req_list).await.unwrap();
-    assert_eq!(resp_list.status(), StatusCode::FORBIDDEN);
-
-    // 2. Bearer cannot mint tokens
-    let req_mint = Request::builder()
-        .method("POST")
-        .uri("/api/auth/tokens")
-        .header(header::AUTHORIZATION, bearer)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "label": "Another TV" }).to_string()))
-        .unwrap();
-    let resp_mint = ctx.app.clone().oneshot(req_mint).await.unwrap();
-    assert_eq!(resp_mint.status(), StatusCode::FORBIDDEN);
-
-    // 3. Bearer cannot revoke tokens
-    let req_revoke = Request::builder()
-        .method("DELETE")
-        .uri("/api/auth/tokens/1")
-        .header(header::AUTHORIZATION, bearer)
-        .body(Body::empty())
-        .unwrap();
-    let resp_revoke = ctx.app.clone().oneshot(req_revoke).await.unwrap();
-    assert_eq!(resp_revoke.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn test_tokens_minting_validation_and_lifecycle() {
-    let ctx = TestContext::new().await;
-
-    // A. Label is required
-    let req_no_label = Request::builder()
-        .method("POST")
-        .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "97531")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({}).to_string()))
-        .unwrap();
-    let resp_no_label = ctx.app.clone().oneshot(req_no_label).await.unwrap();
-    assert_eq!(resp_no_label.status(), StatusCode::BAD_REQUEST);
-
-    // B. Negative validity days is rejected
-    let req_bad_validity = Request::builder()
-        .method("POST")
-        .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "97531")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "label": "TV", "validity_days": -10 }).to_string()))
-        .unwrap();
-    let resp_bad_validity = ctx.app.clone().oneshot(req_bad_validity).await.unwrap();
-    assert_eq!(resp_bad_validity.status(), StatusCode::BAD_REQUEST);
-
-    // C. Valid minting with Admin PIN
-    let req_valid = Request::builder()
-        .method("POST")
-        .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "97531")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "label": "Living Room TV" }).to_string()))
-        .unwrap();
-    let resp_valid = ctx.app.clone().oneshot(req_valid).await.unwrap();
-    assert_eq!(resp_valid.status(), StatusCode::CREATED);
-
-    let bytes = resp_valid.into_body().collect().await.unwrap().to_bytes();
-    let body_valid: Value = serde_json::from_slice(&bytes).unwrap();
-    let token_str = body_valid["token"].as_str().unwrap();
-    assert!(token_str.starts_with("ms_"));
-    assert_eq!(body_valid["label"], "Living Room TV");
-    assert!(body_valid["pairing_url"].as_str().unwrap().contains("#token="));
-    let token_id = body_valid["id"].as_i64().unwrap();
-
-    // D. List tokens
-    let req_list = Request::builder()
-        .method("GET")
-        .uri("/api/auth/tokens")
-        .header("X-Admin-Pin", "97531")
-        .body(Body::empty())
-        .unwrap();
-    let resp_list = ctx.app.clone().oneshot(req_list).await.unwrap();
-    assert_eq!(resp_list.status(), StatusCode::OK);
-    let body_list: Value = serde_json::from_slice(&resp_list.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    let tokens = body_list["tokens"].as_array().unwrap();
-    assert!(tokens.iter().any(|t| t["id"] == token_id));
-
-    // E. Revoke token
-    let req_revoke = Request::builder()
-        .method("DELETE")
-        .uri(format!("/api/auth/tokens/{}", token_id))
-        .header("X-Admin-Pin", "97531")
-        .body(Body::empty())
-        .unwrap();
-    let resp_revoke = ctx.app.clone().oneshot(req_revoke).await.unwrap();
-    assert_eq!(resp_revoke.status(), StatusCode::OK);
-    let body_revoke: Value = serde_json::from_slice(&resp_revoke.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body_revoke["revoked"], token_id);
-}
-
-#[tokio::test]
-async fn test_pairing_device_lifecycle() {
-    let ctx = TestContext::new().await;
-
-    // 1. Create a user
-    let user_row = sqlx::query(
-        r#"
-        INSERT INTO users (google_sub, email, name, role, created_at)
-        VALUES ('sub-pair-test', 'pairtest@example.com', 'Pair User', 'viewer', CURRENT_TIMESTAMP)
-        ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email
-        RETURNING id
-        "#,
-    )
-    .fetch_one(&ctx.pool)
-    .await
-    .unwrap();
-    let user_id: i64 = sqlx::Row::get(&user_row, "id");
-
-    // 2. Mint token for this user
-    let minted = media_server_api::services::auth_service::AuthService::create_token(
-        &ctx.pool,
-        user_id,
-        "Bedroom TV",
-        Some(30),
-        "http://localhost:8000",
-    )
-    .await
-    .unwrap();
-
-    // 3. GET /auth/pair returns HTML
-    let req_pair_get = Request::builder()
-        .method("GET")
-        .uri("/auth/pair")
-        .body(Body::empty())
-        .unwrap();
-    let resp_pair_get = ctx.app.clone().oneshot(req_pair_get).await.unwrap();
-    assert_eq!(resp_pair_get.status(), StatusCode::OK);
-
-    // 4. POST /auth/pair with valid token exchanges for session cookie
-    let form_body = format!("token={}", minted.token);
-    let req_pair_post = Request::builder()
-        .method("POST")
-        .uri("/auth/pair")
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(Body::from(form_body))
-        .unwrap();
-    let resp_pair_post = ctx.app.clone().oneshot(req_pair_post).await.unwrap();
-    assert_eq!(resp_pair_post.status(), StatusCode::TEMPORARY_REDIRECT);
-
-    let set_cookie = resp_pair_post
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .expect("Must set session cookie");
-    assert!(set_cookie.contains("session_token=sess_"));
-
-    // Extract cookie value
-    let cookie_val = set_cookie.split(';').next().unwrap();
-
-    // 5. Subsequent GET /api/auth/me with session cookie recognizes user!
-    let req_me = Request::builder()
-        .method("GET")
-        .uri("/api/auth/me")
-        .header(header::COOKIE, cookie_val)
-        .body(Body::empty())
-        .unwrap();
-    let resp_me = ctx.app.clone().oneshot(req_me).await.unwrap();
-    assert_eq!(resp_me.status(), StatusCode::OK);
-    let body_me: Value = serde_json::from_slice(&resp_me.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body_me["authenticated"], true);
-    assert_eq!(body_me["email"], "pairtest@example.com");
-    assert_eq!(body_me["name"], "Pair User");
-    assert_eq!(body_me["role"], "viewer");
-
-    // 6. POST /auth/logout clears cookie
-    let req_logout = Request::builder()
-        .method("POST")
-        .uri("/auth/logout")
-        .header(header::COOKIE, cookie_val)
-        .body(Body::empty())
-        .unwrap();
-    let resp_logout = ctx.app.clone().oneshot(req_logout).await.unwrap();
-    assert_eq!(resp_logout.status(), StatusCode::TEMPORARY_REDIRECT);
-    let clear_cookie = resp_logout
-        .headers()
-        .get(header::SET_COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap();
-    assert!(clear_cookie.contains("Max-Age=0"));
-
-    // Teardown: the user row and everything that cascades from it (the
-    // minted device token and the exchanged session) must not survive.
-    let _ = sqlx::query("DELETE FROM users WHERE google_sub = 'sub-pair-test'")
-        .execute(&ctx.pool)
-        .await;
+    // `ensure_schema()` drops the table on every boot, including this test
+    // database. A restored pre-retirement dump must not resurrect it.
+    let regclass: Option<String> =
+        sqlx::query_scalar("SELECT to_regclass('public.auth_tokens')::text")
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert!(
+        regclass.is_none(),
+        "auth_tokens must be dropped, found {regclass:?}"
+    );
 
     ctx.teardown().await;
 }

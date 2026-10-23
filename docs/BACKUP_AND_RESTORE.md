@@ -10,7 +10,7 @@
 | **Backup Tool** | [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) → `pg_dump -Fc` |
 | **Restore Tool** | [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) → `pg_restore` |
 | **Scheduled Task** | `MediaServerBackup` — daily at 03:00, as `SYSTEM` ([§2.3](#23-the-scheduled-task)) |
-| **Live Database Size** | ~10 MB (13 tables) |
+| **Live Database Size** | ~10 MB (12 tables) |
 | **Last Verified** | **2026-10-20** — full backup → restore → restart drill, all row counts matched |
 
 > **This runbook replaces the SQLite-era document.** The previous version documented
@@ -31,7 +31,7 @@
 | Data directory | `E:\pgdata` |
 | Server binaries | `C:\postgres\pgsql\bin` (`psql`, `pg_dump`, `pg_restore`) |
 | Service | `MediaServerPG` — automatic, restart-x3 recovery actions |
-| Tables (13) | `movies`, `progress`, `users`, `sessions`, `auth_tokens`, `settings`, `devices`, `device_watch_history`, `device_pair_sessions`, `oauth_attempts`, `ip_cache`, `transcode_jobs`, `schema_migrations` |
+| Tables (12) | `movies`, `progress`, `users`, `sessions`, `settings`, `devices`, `device_watch_history`, `device_pair_sessions`, `oauth_attempts`, `ip_cache`, `transcode_jobs`, `schema_migrations` |
 | Size | ~10 MB |
 
 The Rust server owns the schema it needs. `db::ensure_schema()` runs on **every pool creation** and
@@ -241,8 +241,13 @@ after a restore. It applies its DDL inside a transaction guarded by
 
 It creates, with `CREATE TABLE IF NOT EXISTS`:
 
-`transcode_jobs`, `settings`, `users`, `auth_tokens`, `oauth_attempts`, `sessions`,
+`transcode_jobs`, `settings`, `users`, `oauth_attempts`, `sessions`,
 `device_pair_sessions`, `movies`, `progress`, `devices`, `device_watch_history`, `ip_cache`
+
+It also **drops** the retired `auth_tokens` table on every boot
+(`DROP TABLE IF EXISTS auth_tokens`). A dump taken before 2026-10-23 restores the table, and the
+next server start drops it again. This is deliberate: the long-lived pairing-token surface must not
+be resurrected by a restore. Do not re-add the table without removing the drop.
 
 **Practical consequences:**
 
@@ -297,6 +302,10 @@ Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
 | Public tables | 13 → 13 |
 | Service health after restart | `200 {"engine":"rust","status":"healthy"}` |
 | Public API after restart | `200` on `/api/movies` |
+
+> **The drill above predates the retirement.** `auth_tokens` was one of the 13 tables on
+> 2026-10-20; it was retired, with its routes, on **2026-10-23**. A repeat of this drill today
+> expects **12** public tables and no `auth_tokens` row.
 
 ---
 

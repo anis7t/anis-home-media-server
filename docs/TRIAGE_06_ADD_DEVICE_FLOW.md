@@ -3,7 +3,11 @@
 **Date:** 2026-10-23 (IST 03-18; corrected 23:20)
 **Issue:** [`docs/Current issues.md`](Current%20issues.md) → Issue 14, fault 6
 **Branch:** `fix/issue-14-user-reported-faults`
-**Status:** ✅ **Fixed 2026-10-23** — the exposed token was revoked and the panel was removed.
+**Status:** ✅ **Fixed 2026-10-23** — the exposed token was revoked, the panel was removed, and the
+backend and `auth_tokens` table were retired (see §8).
+
+> **Note:** §2–§6 describe the flow as it was before the backend retirement. §8 records what was
+> removed; the current state is QR sign-in only.
 
 ---
 
@@ -75,13 +79,16 @@ phone-confirmed exchange. Nothing consumes `ms_…`, so the panel had no remaini
 - The exposed token is revoked and refused by `/auth/pair` (401).
 - `npm run test`, `npm run lint` and `npm run build` pass.
 
-## 6. Left in place, deliberately
+## 6. Left in place at the time (superseded by §8)
+
+> **Superseded 2026-10-23:** the routes, client helpers and `auth_tokens` table described below
+> were retired the same day. See §8.
 
 - The backend routes (`GET/POST /api/auth/tokens`, `DELETE /api/auth/tokens/{id}`, `/auth/pair`)
-  and the client helpers in `web/src/lib/api/account.ts` remain. They are authenticated/admin
-  surfaces and the client tests cover them; only the UI that encouraged their use is gone.
-- Every token row is kept as an audit record (revoked, not deleted).
-- The default lifetime is still 365 days in `create_token`; if the API is ever surfaced again it
+  and the client helpers in `web/src/lib/api/account.ts` remained. They were authenticated/admin
+  surfaces and the client tests covered them; only the UI that encouraged their use was gone.
+- Every token row was kept as an audit record (revoked, not deleted).
+- The default lifetime was still 365 days in `create_token`; if the API is ever surfaced again it
   should mint short-lived, single-use links instead.
 
 ---
@@ -95,6 +102,51 @@ phone-confirmed exchange. Nothing consumes `ms_…`, so the panel had no remaini
 | 14.3 | Playback stuck at 0:00 | ✅ **Fixed** — `PlayerPage` source-attach effect |
 | 14.4 | Unscannable QR in signed-in menu | ✅ **Option selected** — expand QR code container (option B) |
 | 14.5 | Header sign-in → Google only | ✅ **Option selected** — QR on web/TV; disabled on phone |
-| 14.6 | Add-device QR/URL/token confusion | ✅ **Fixed** — exposed token revoked, panel removed |
+| 14.6 | Add-device QR/URL/token confusion | ✅ **Fixed** — exposed token revoked, panel removed, backend + table retired (2026-10-23) |
 
 **Remaining:** 14.4 and 14.5 have a chosen option and await implementation.
+
+---
+
+## 8. Backend retirement — 2026-10-23
+
+The UI fix above removed the entry point, but the mechanism stayed reachable. The owner chose
+complete retirement, including the table.
+
+### 8.1 Removed
+
+| Surface | Where |
+|---|---|
+| `GET/POST /api/auth/tokens`, `DELETE /api/auth/tokens/{id}`, `GET/POST /auth/pair` | route registrations removed from `rust/src/lib.rs`; handlers deleted from `rust/src/routes/auth.rs` |
+| `AuthService::list_tokens`, `create_token`, `revoke_token`, `pair_token` | deleted from `rust/src/services/auth_service.rs` |
+| `Authorization: Bearer ms_…` identity path | removed from `resolve_session_identity`; the resolver reads only the `session_token` / `media_session` cookie |
+| `TokenRecord`, `TokensResponse`, `CreateTokenRequest`, `MintedToken` | deleted from `rust/src/models/auth.rs` |
+| `listTokens`, `mintToken`, `revokeToken`, `TokenRecord`, `MintedToken` | deleted from `web/src/lib/api/account.ts` |
+| `auth_tokens` table and both indexes | DDL removed; `ensure_schema()` runs `DROP TABLE IF EXISTS auth_tokens` on every boot |
+| 25 revoked rows | dropped with the table; the owner declined a single-table archive |
+
+`AuthService::hash_token` stays: the QR flow uses it for `code_hash` and `secret_hash`.
+
+### 8.2 Verification
+
+- `cargo check` clean, no warnings (the removal left `DateTime` and `is_enforcement_enabled`
+  unused; both were removed).
+- Rust tests: the three token/pair tests were replaced by `retired_pairing_token_surface_is_gone`,
+  which asserts **404** for all five retired route/method pairs and
+  `to_regclass('public.auth_tokens') IS NULL`.
+- Web: `npm run typecheck`, `npm run lint`, `npm run test` and `npm run build` pass
+  (**42 files / 309 tests**; the two deleted token-specific tests account for the 311 → 309
+  change).
+- Live after the service restart (2026-10-24 00:10 IST): all five retired request pairs answer
+  **404 JSON** (`GET/POST /api/auth/tokens`, `DELETE /api/auth/tokens/1`, `GET/POST /auth/pair`);
+  `to_regclass('public.auth_tokens')` is **NULL**; the public schema is **12 tables**;
+  `/api/auth/me` answers **200** with `oauth_configured: true`; both live probes pass
+  (`probe_android_api.py` **22/22**, `probe_phase_8_contracts.py` all passed).
+- The boot log records `auth_tokens retired and dropped`; `media-server-api.exe` is
+  `2026-10-24 00:10:43`, newer than the previous commit `d6d6786` (`2026-10-23 23:40:02`).
+
+### 8.3 Rollback
+
+Rolling back to a pre-retirement binary re-creates `auth_tokens` **empty** because its
+`CREATE TABLE IF NOT EXISTS` runs on boot. The old routes then answer **401** for every token, and
+the 25 revoked rows are not recovered. A pre-drop database dump is the only way to restore them.

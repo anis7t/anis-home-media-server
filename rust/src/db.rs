@@ -108,38 +108,14 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS auth_tokens (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            label TEXT NOT NULL,
-            token_hash TEXT NOT NULL UNIQUE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            last_used_at TIMESTAMPTZ,
-            expires_at TIMESTAMPTZ,
-            revoked_at TIMESTAMPTZ
-        )
-        "#,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id)
-        "#,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash)
-        "#,
-    )
-    .execute(&mut *tx)
-    .await?;
+    // Retired 2026-10-23: the long-lived pairing-token table is gone. The
+    // unconditional drop also heals a database restored from a pre-retirement
+    // dump, which would otherwise bring the retired surface back. Do not
+    // re-add `auth_tokens` without removing this drop. Rolling back to an
+    // older binary re-creates an empty table, but the revoked rows are gone.
+    sqlx::query("DROP TABLE IF EXISTS auth_tokens")
+        .execute(&mut *tx)
+        .await?;
 
     sqlx::query(
         r#"
@@ -430,8 +406,9 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     tx.commit().await?;
 
     tracing::info!(
-        "Rust schema ensured (transcode_jobs, users, auth_tokens, sessions, \
-         device_pair_sessions, movies, progress, devices, device_watch_history, ip_cache)"
+        "Rust schema ensured (transcode_jobs, users, sessions, \
+         device_pair_sessions, movies, progress, devices, device_watch_history, ip_cache; \
+         auth_tokens retired and dropped)"
     );
     Ok(())
 }

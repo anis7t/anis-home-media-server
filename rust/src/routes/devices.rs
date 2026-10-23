@@ -147,7 +147,7 @@ async fn resolve_and_claim(
     headers: &HeaderMap,
     device_id: &str,
 ) -> Option<ResolvedIdentity> {
-    let identity = AuthService::resolve_session_or_token(pool, headers).await;
+    let identity = AuthService::resolve_session_identity(pool, headers).await;
     if let Some(id) = identity.as_ref() {
         if id.user_id > 0 {
             DeviceService::claim_device_for_user(pool, device_id, id.user_id).await;

@@ -51,6 +51,34 @@ server.","status":403}` because `settings.auth_allowlist` in production held the
 
 ---
 
+## 2026-10-23 — Pairing-token API and `auth_tokens` retired
+
+The Add-device panel was removed earlier the same day (Issue 14.6). Its backend was still
+reachable: `GET/POST /api/auth/tokens`, `DELETE /api/auth/tokens/{id}` and `GET/POST /auth/pair`,
+backed by a 365-day, reusable, non-consumed `ms_…` link that signed any browser in as the minting
+account. The owner chose full retirement, including the table.
+
+- **Backend**: the three token routes, both `/auth/pair` methods, the four `AuthService` helpers
+  (`list_tokens`, `create_token`, `revoke_token`, `pair_token`), the now-unused token models and
+  the `Authorization: Bearer` branch were deleted. `resolve_session_or_token` is now
+  `resolve_session_identity` and reads only the session cookie.
+- **Database**: the `auth_tokens` DDL and indexes were removed and `ensure_schema()` now runs
+  `DROP TABLE IF EXISTS auth_tokens` on every boot, so a pre-retirement dump cannot resurrect the
+  surface. The 25 revoked rows were dropped; the owner declined a single-table archive. Rolling
+  back to an old binary re-creates an empty table, not the rows.
+- **Client**: `listTokens`, `mintToken`, `revokeToken`, `TokenRecord` and `MintedToken` were
+  removed from `web/src/lib/api/account.ts`; the generic 401/403 client coverage moved onto
+  `fetchMe`/`loginWithPin`. A new Rust test pins 404 for all five retired route/method pairs and
+  asserts the table is absent.
+- **Docs**: `AGENTS.md` carries the retirement invariant; `docs/TRIAGE_06_ADD_DEVICE_FLOW.md` §8
+  records the surface and rollback; `docs/BACKUP_AND_RESTORE.md` now lists 12 tables,
+  `docs/QR_SIGNIN_WALKTHROUGH.md` and the historical auth plans carry postscripts, and
+  `docs/Current issues.md` records the retirement under Issue 14.6.
+- **Unchanged**: QR sign-in, Google sign-in, Admin PIN, sessions, `/api/auth/me`, devices, media
+  and the Flutter client contract. `probe_android_api.py` is the gate.
+
+---
+
 ## Immediate Active Issues & Work Queue (Reported 2026-10-18) — ✅ ALL RESOLVED
 
 All 4 reported issues were grouped into Slices A–D, implemented, thoroughly verified, and committed (Note: there was no Slice E; all issues are resolved):
@@ -132,7 +160,7 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **A restore tool was missing entirely.** The old restore path was a decommissioned Python script, so the runbook would have had nothing to point at. [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) is new: it verifies the archive is readable *before* touching anything, takes a pre-restore rollback point and **refuses to proceed if it cannot take one**, requires `-Confirm` to act, and reports row counts afterwards.
    - **Nothing ran the backup automatically.** The `MediaServerBackup` Scheduled Task now runs `pg_dump` daily at 03:00 as `SYSTEM`, logging to `E:\MediaServer\logs\backup_postgres.log`. Install with `scripts\install_backup_task.bat`, remove with `scripts\uninstall_backup_task.ps1`. The task calls a dedicated wrapper because `backup_postgres.bat` ends with a `pause` that would hang a non-interactive run.
    - **Rotation split.** Scheduled backups and pre-restore rollback points are pruned on separate budgets, so a rollback point can never displace a scheduled backup.
-   - **Verified by a live drill against the production database:** backup → stop the service → restore over the live database → restart. All eight checked tables matched (movies 33, users 3, sessions 13, progress 8, devices 393, settings 3, auth_tokens 21), 13/13 tables restored, health 200 and the public API 200 afterwards. The task was then triggered manually: *Last Result 0*, a valid 73-object archive produced.
+   - **Verified by a live drill against the production database:** backup → stop the service → restore over the live database → restart. All eight checked tables matched (movies 33, users 3, sessions 13, progress 8, devices 393, settings 3, auth_tokens 21), 13/13 tables restored, health 200 and the public API 200 afterwards. (`auth_tokens` was retired on 2026-10-23; a repeat drill expects 12 public tables.) The task was then triggered manually: *Last Result 0*, a valid 73-object archive produced.
    - **Orphaned bytecode purged.** 168 `.pyc` files whose source modules no longer exist were removed across `app/`, `tests/`, `tests/integration/`, `scripts/` and the repository root; `app/` and `tests/integration/` are now gone entirely. `tests/load/` (7 git-tracked benchmark JSONs) and `tests/screenshots/` (17 verification screenshots) were deliberately kept.
 
 13. **Public Ingress Hardening — TLS-Only Exposure** — ✅ **RESOLVED (2026-10-20)**:
@@ -340,7 +368,7 @@ all 200.
 
 **1. Crash-Safe Online SQLite WAL Backup Engine** *(SQLite-era engine, retired with the Flask backend in Slice 7E — the current mechanism is [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1))*
 - Implemented zero-lock online SQLite database backup using the native SQLite Online Backup API (`source_conn.backup(dest_conn, pages=100)`). Transfers data page-by-page without blocking concurrent HTTP readers or writers, incorporating all committed WAL frames into a defragmented single-file database.
-- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, `auth_tokens`, etc.).
+- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, etc.). The `auth_tokens` table these manifests also counted was retired on 2026-10-23.
 - Integrated configurable retention rotation (`prune_backups()`, default: retain 7 newest) safely pruning older snapshots and matching manifests.
 
 **2. Atomic Database Restoration & Pre-Restore Rollback Points**
@@ -372,7 +400,7 @@ all 200.
 - Replaced confusing "Signed in as Unknown" with an informative obsidian **Guest Mode** card explaining hardware cookie identification (`ms_device_id`), and replaced the unauthenticated Sign Out button with a prominent **Sign in with Google** button.
 
 **3. Device Token Pairing, Admin PIN Support & Watch History Drawer (Issues 4, 5, 6)**
-- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords. *(Retired: the Flask routes were removed in the Rust migration and the Add-device UI was removed on 2026-10-23 — see `docs/Current issues.md` Issue 14, fault 6.)*
+- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords. *(Retired: the Flask routes were removed in the Rust migration, the Add-device UI was removed on 2026-10-23, and the Rust token API and `auth_tokens` table were retired the same day — see `docs/Current issues.md` Issue 14, fault 6.)*
 - Added user-scoped interactive Watch History Drawer on `/account` with poster thumbnails, timestamps, watch percentages, resume points, and a **Clear All History** action.
 - Permitted non-admin authenticated users (`role: 'viewer'`) to pair devices in their own scope.
 - Added Admin PIN authorization support to token minting, eliminating 403 barriers for administrators.
@@ -1694,7 +1722,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Secondary / parked
 1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. **Phase 3 (2026-10-23)** adds admin oversight on `/devices`: admin-only owner attribution on `/api/devices`, `GET /api/admin/users`, device reassignment (the one explicit exception to claim-once) and watch-history deletion (one entry or a whole device, never a media file), with every route admin-gated and covered by the live matrix. Nothing in this phase remains; the library itself is intentionally public. The Cloudflare hostname alone is still not authentication.
+2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); the long-lived device-token API (`/api/auth/tokens`) was retired on 2026-10-23, leaving QR sign-in as the only pairing path. Enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. **Phase 3 (2026-10-23)** adds admin oversight on `/devices`: admin-only owner attribution on `/api/devices`, `GET /api/admin/users`, device reassignment (the one explicit exception to claim-once) and watch-history deletion (one entry or a whole device, never a media file), with every route admin-gated and covered by the live matrix. Nothing in this phase remains; the library itself is intentionally public. The Cloudflare hostname alone is still not authentication.
 3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 

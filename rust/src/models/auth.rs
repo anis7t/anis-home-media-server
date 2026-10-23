@@ -66,35 +66,3 @@ pub struct AllowlistUpdateRequest {
     pub admin_pin: Option<String>,
     pub pin: Option<String>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenRecord {
-    pub id: i64,
-    pub user_id: i64,
-    pub label: String,
-    pub created_at: i64,
-    pub last_used_at: Option<i64>,
-    pub expires_at: Option<i64>,
-    pub revoked_at: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokensResponse {
-    pub tokens: Vec<TokenRecord>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CreateTokenRequest {
-    pub label: Option<String>,
-    pub validity_days: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MintedToken {
-    pub token: String,
-    pub pairing_url: String,
-    pub id: i64,
-    pub label: String,
-    pub expires_at: Option<i64>,
-    pub warning: String,
-}

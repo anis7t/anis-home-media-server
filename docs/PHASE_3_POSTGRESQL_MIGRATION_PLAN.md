@@ -5,6 +5,9 @@
 > **Workspace:** `E:\MediaServer`  
 > **Governing Roadmap:** [`docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`](FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md)  
 > **Exit Gate:** Data transfer and recovery demonstrated; application passes representative regression tests against PostgreSQL; write ownership unambiguous.
+>
+> **Postscript (2026-10-23):** `auth_tokens`, listed in this plan's schema, has since been retired
+> and dropped. See [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md) §8.
 
 ---
 

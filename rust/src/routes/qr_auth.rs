@@ -387,7 +387,7 @@ pub async fn qr_lookup_handler(
     enforce(&state, &headers, "lookup", LIMIT_LOOKUP)?;
 
     // Caller must be signed in on phone
-    let _ = AuthService::resolve_session_or_token(&state.pool, &headers)
+    let _ = AuthService::resolve_session_identity(&state.pool, &headers)
         .await
         .ok_or_else(|| {
             AppError::Unauthorized(
@@ -530,7 +530,7 @@ pub async fn qr_confirm_handler(
     enforce(&state, &headers, "confirm", LIMIT_CONFIRM)?;
 
     // The phone must be signed in
-    let identity = AuthService::resolve_session_or_token(&state.pool, &headers)
+    let identity = AuthService::resolve_session_identity(&state.pool, &headers)
         .await
         .ok_or_else(|| {
             AppError::Unauthorized(
