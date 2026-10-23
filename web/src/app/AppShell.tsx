@@ -10,6 +10,7 @@ import { Icon } from '../components/icons';
 import LoginScreen from '../components/LoginScreen';
 import { useIntroSequence } from '../hooks/useIntroSequence';
 import BrandMark from '../components/BrandMark';
+import { HEADER_ACTIONS_SLOT_ID } from '../lib/useHeaderActionsTarget';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { authenticated, email, name, locked, signIn, signOut } = useAuth();
@@ -217,6 +218,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="devices" className="text-sky-400" />
               <span className="hidden xl:inline">Devices</span>
             </NavLink>
+
+            {/*
+             * Page-owned actions (the library's Upload Media) mount here, so
+             * the header stays one row. Empty on every other route;
+             * `empty:hidden` keeps an unused slot from contributing flex gaps.
+             */}
+            <div
+              id={HEADER_ACTIONS_SLOT_ID}
+              className="empty:hidden flex items-center gap-1.5 sm:gap-2.5"
+            />
 
             {/* Hidden on the player, where a stray nav click would interrupt playback. */}
             {location.pathname.startsWith('/watch/') ? null : authenticated ? (

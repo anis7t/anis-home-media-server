@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HeroSpotlight } from './HeroSpotlight';
 import { LibraryPage } from './LibraryPage';
 import { AuthProvider } from '../../auth/AuthProvider';
+import { HEADER_ACTIONS_SLOT_ID } from '../../lib/useHeaderActionsTarget';
 import type { MovieSummaryLive } from './test-fixtures';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -31,9 +32,31 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  /*
+   * The slot is a real DOM node outside the React tree. Testing Library's
+   * cleanup unmounts the tree but cannot remove it, and a leftover node would
+   * make the next test's `getElementById` return a slot the page is not
+   * rendering into.
+   */
+  document
+    .querySelectorAll(`[id="${HEADER_ACTIONS_SLOT_ID}"]`)
+    .forEach((node) => node.remove());
 });
 
+/**
+ * `LibraryPage` portals Upload Media into the shell's header slot, so the
+ * target must exist before the page mounts. `AppShell` provides it in the app;
+ * a page rendered alone has to bring its own.
+ */
+function installHeaderSlot(): HTMLElement {
+  const slot = document.createElement('div');
+  slot.id = HEADER_ACTIONS_SLOT_ID;
+  document.body.appendChild(slot);
+  return slot;
+}
+
 function renderLibrary() {
+  installHeaderSlot();
   return render(
     <MemoryRouter>
       <LibraryPage />
@@ -182,7 +205,7 @@ describe('Upload Media placement', () => {
     expect(screen.getByRole('button', { name: /upload media/i })).toBeInTheDocument();
   });
 
-  it('never overlaps the hero: the banner row displaces the negative-margin tuck', async () => {
+  it('portals Upload Media into the header row instead of a row above the hero', async () => {
     fetchMock.mockImplementation(async () =>
       jsonResponse({
         movies: [
@@ -206,18 +229,22 @@ describe('Upload Media placement', () => {
     renderLibrary();
 
     const uploadButton = await screen.findByRole('button', { name: /upload media/i });
+    const slot = document.getElementById(HEADER_ACTIONS_SLOT_ID);
+
+    // The button lives in the shell's header slot, outside this page: the
+    // header is the only banner row, so there is no second row to sit above
+    // the hero.
+    expect(slot).not.toBeNull();
+    expect(slot!.contains(uploadButton)).toBe(true);
+    expect(uploadButton.closest('.animate-fade-in')).toBeNull();
+
+    // The hero is the page's first element again, so it takes the tucked
+    // variant: negative top margin under the sticky header, bottom-only
+    // rounding. The banner variant no longer has a caller.
     const hero = screen.getByTestId('hero-spotlight');
-
-    // The button row precedes the hero in document order.
-    expect(
-      uploadButton.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    // The hero is no longer the page's first element, so it must not carry
-    // the tucked variant's negative top margin (which pulled the artwork up
-    // over this button row); it renders the banner variant instead.
-    expect(hero.className).not.toMatch(/(^|\s)-mt-/);
-    expect(hero.className).toMatch(/rounded-3xl/);
+    expect(hero.className).toMatch(/(^|\s)-mt-6(\s|$)/);
+    expect(hero.className).toMatch(/rounded-b-3xl/);
+    expect(hero.className).not.toMatch(/rounded-3xl(\s|$)/);
   });
 
   it('keeps the negative-margin header tuck available for a hero with nothing above it', () => {
@@ -279,6 +306,7 @@ describe('LibraryPage account affordance (Issue 14.2 correction)', () => {
      * reason. With one, it renders and the assertion below is what fails,
      * which states the actual regression.
      */
+    installHeaderSlot();
     render(
       <MemoryRouter>
         <AuthProvider>
@@ -295,7 +323,8 @@ describe('LibraryPage account affordance (Issue 14.2 correction)', () => {
     // a signed-in identity.
     expect(screen.queryByRole('img', { name: /anis parvez/i })).toBeNull();
 
-    // The row itself stays - it is the page's Upload Media action.
-    expect(screen.getByRole('button', { name: /upload media/i })).toBeInTheDocument();
+    // The action itself stays - it renders in the header slot now (asserted by
+    // the placement test above), which is the place this row used to occupy.
+    expect(await screen.findByRole('button', { name: /upload media/i })).toBeInTheDocument();
   });
 });
