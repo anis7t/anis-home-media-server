@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/admin/presentation/screens/admin_hub_screen.dart';
 import '../features/connection/presentation/connection_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../features/library/data/models/movie_item.dart';
@@ -21,6 +22,7 @@ class AppRoutes {
   static const String movieDetails = '/movie-details';
   static const String playerPoc = '/player-poc';
   static const String player = '/player';
+  static const String adminHub = '/admin';
 
   static GoRouter createRouter({String initialLocation = home}) {
     return GoRouter(
@@ -93,6 +95,14 @@ class AppRoutes {
               initialMovie: movie,
               filename: filename,
             );
+          },
+        ),
+
+        // Admin & Server Management Hub
+        GoRoute(
+          path: adminHub,
+          builder: (BuildContext context, GoRouterState state) {
+            return const AdminHubScreen();
           },
         ),
 
