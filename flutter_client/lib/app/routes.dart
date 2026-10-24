@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/admin/presentation/screens/admin_hub_screen.dart';
+import '../features/auth/presentation/providers/auth_providers.dart';
 import '../features/connection/presentation/connection_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../features/library/data/models/movie_item.dart';
@@ -24,10 +26,63 @@ class AppRoutes {
   static const String player = '/player';
   static const String adminHub = '/admin';
 
-  static GoRouter createRouter({String initialLocation = home}) {
+  static GoRouter createRouter({
+    String initialLocation = home,
+    void Function(String token)? onTokenReceived,
+  }) {
     return GoRouter(
       initialLocation: initialLocation,
+      redirect: (BuildContext context, GoRouterState state) {
+        final uri = state.uri;
+        final isAuthCallback = uri.scheme == 'ahms' ||
+            (uri.host == 'auth' && uri.path.contains('callback')) ||
+            uri.path.contains('/auth/callback') ||
+            uri.path == '/callback';
+
+        if (isAuthCallback) {
+          final token = uri.queryParameters['session_token'];
+          if (token != null && token.isNotEmpty) {
+            onTokenReceived?.call(token);
+          }
+          return AppRoutes.settings;
+        }
+        return null;
+      },
+      onException: (BuildContext context, GoRouterState state, GoRouter router) {
+        debugPrint('[AppRoutes] Unhandled navigation exception for ${state.uri}: ${state.error}');
+        final uri = state.uri;
+        if (uri.scheme == 'ahms' || uri.path.contains('callback')) {
+          final token = uri.queryParameters['session_token'];
+          if (token != null && token.isNotEmpty) {
+            onTokenReceived?.call(token);
+          }
+          router.go(AppRoutes.settings);
+          return;
+        }
+        router.go(AppRoutes.home);
+      },
       routes: [
+        // Google OAuth & Custom Scheme Deep-Link Callback Redirection
+        GoRoute(
+          path: '/auth/callback',
+          redirect: (context, state) {
+            final token = state.uri.queryParameters['session_token'];
+            if (token != null && token.isNotEmpty) {
+              onTokenReceived?.call(token);
+            }
+            return AppRoutes.settings;
+          },
+        ),
+        GoRoute(
+          path: '/callback',
+          redirect: (context, state) {
+            final token = state.uri.queryParameters['session_token'];
+            if (token != null && token.isNotEmpty) {
+              onTokenReceived?.call(token);
+            }
+            return AppRoutes.settings;
+          },
+        ),
         // Connection & Server Setup (Standalone route)
         GoRoute(
           path: connection,
@@ -154,3 +209,13 @@ class AppRoutes {
 
   static final GoRouter router = createRouter();
 }
+
+/// Central Riverpod provider for application routing and deep-link handling.
+final routerProvider = Provider<GoRouter>((ref) {
+  return AppRoutes.createRouter(
+    onTokenReceived: (token) {
+      ref.read(authNotifierProvider.notifier).setSessionToken(token);
+    },
+  );
+});
+

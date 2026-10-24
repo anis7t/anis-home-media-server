@@ -27,7 +27,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
-| 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
+| 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified; v1.3.1 Hotfix) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
+
+## 2026-10-25 — Phase 12.6 Hotfix: Google OAuth Deep-Link Routing Fix & Android Release v1.3.1
+
+Resolved GoRouter unhandled location exception (`GoException: no routes for location: ahms://auth/callback?session_token=...`) on Android mobile devices during Google OAuth sign-in, published Production Release v1.3.1 (versionCode 144), and verified directly on connected device:
+- **GoRouter Custom Scheme Interception:** In `flutter_client/lib/app/routes.dart`, added top-level `redirect` detecting `ahms://auth/callback` (alongside `/auth/callback` and `/callback` fallback routes) to seamlessly extract `session_token`, trigger user profile hydration, and route to `AppRoutes.settings` with zero unhandled route exceptions.
+- **Navigation Exception Safety Net:** Added `onException` handler in `GoRouter` to gracefully recover and redirect to Settings if any malformed or unhandled intent URI is delivered.
+- **Idempotent Token Processing:** Guarded `AuthNotifier.setSessionToken` with an active token match check to eliminate redundant remote calls and race conditions between GoRouter and `OAuthLauncherService` / `app_links`.
+- **Centralized Riverpod Router Provider:** Replaced ad-hoc router instantiation with persistent `routerProvider` in `routes.dart` and `app.dart`.
+- **Live Device Verification:** Tested on physical phone (`192.168.1.6:40283`) via ADB; dispatched `ahms://auth/callback?session_token=...` intent, captured logcat confirming `[OAuthLauncherService] Captured session token from deep link!`, and verified Settings renders authenticated Admin profile with zero errors.
+- **Production APK v1.3.1 Released:** Published signed release APK `updates/production/media-server-1.3.1.apk` (versionCode 144, SHA-256 `a20de9f209e5c1d012177430e5955d93fd9ab18c9bd4ea50f8fd1b4c9dab8569`) to the production update channel.
+- **Verification:** 78/78 auth and admin tests passed, 0 issues in `flutter analyze`, and live device verified via ADB.
 
 ## 2026-10-24 — Phase 12: Mobile & TV Auth Parity, Native Admin Hub & Android Release v1.3.0
 

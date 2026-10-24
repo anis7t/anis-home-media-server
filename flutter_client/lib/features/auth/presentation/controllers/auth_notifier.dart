@@ -94,6 +94,10 @@ class AuthNotifier extends Notifier<AuthState> {
   /// Sets an externally minted session token (e.g. from Google OAuth deep link
   /// or Android TV QR code confirmation) and hydrates user profile.
   Future<bool> setSessionToken(String token) async {
+    if (state.sessionToken == token && state.isAuthenticated) {
+      return true;
+    }
+
     state = state.copyWith(status: AuthStatus.authenticating, errorMessage: null);
 
     try {

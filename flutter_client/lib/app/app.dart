@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/navigation/tv_spatial_focus_traversal_policy.dart';
+import '../features/auth/presentation/providers/auth_providers.dart';
 import 'routes.dart';
 import 'theme/app_theme.dart';
 
@@ -22,8 +23,13 @@ class MediaServerApp extends ConsumerWidget {
       theme: AppTheme.darkTheme,
       routerConfig: routerConfig ??
           (initialRoute != null
-              ? AppRoutes.createRouter(initialLocation: initialRoute!)
-              : AppRoutes.createRouter(initialLocation: AppRoutes.home)),
+              ? AppRoutes.createRouter(
+                  initialLocation: initialRoute!,
+                  onTokenReceived: (token) {
+                    ref.read(authNotifierProvider.notifier).setSessionToken(token);
+                  },
+                )
+              : ref.watch(routerProvider)),
       builder: (context, child) {
         return FocusTraversalGroup(
           policy: TvSpatialFocusTraversalPolicy(),
