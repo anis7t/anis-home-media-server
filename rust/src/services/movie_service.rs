@@ -10,11 +10,41 @@ impl MovieService {
     pub async fn list_movies(
         pool: &PgPool,
         device_id: Option<&str>,
+        user_id: Option<i64>,
         search_query: Option<&str>,
         sort_by: Option<&str>,
     ) -> Result<MovieListResponse, AppError> {
-        // Query movies joining device_watch_history if device_id provided, otherwise progress
-        let rows = if let Some(dev_id) = device_id.filter(|id| !id.trim().is_empty()) {
+        // Option A precedence:
+        // 1. If user_id is provided, join user-scoped progress
+        // 2. Else if device_id is provided, join device_watch_history
+        // 3. Otherwise join guest progress (user_id IS NULL)
+        let rows = if let Some(uid) = user_id {
+            sqlx::query(
+                r#"
+                SELECT
+                    m.filename,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.overview,
+                    m.poster_path,
+                    m.backdrop_path,
+                    m.runtime,
+                    m.genres,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
+                    m.release_date,
+                    m.updated_at,
+                    COALESCE(p.position, 0.0) as position,
+                    COALESCE(p.duration, 0.0) as duration,
+                    p.updated_at as watch_updated_at
+                FROM movies m
+                LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $1
+                ORDER BY m.title ASC
+                "#)
+            .bind(uid)
+            .fetch_all(pool)
+            .await?
+        } else if let Some(dev_id) = device_id.filter(|id| !id.trim().is_empty()) {
             sqlx::query(
                 r#"
                 SELECT
@@ -60,7 +90,7 @@ impl MovieService {
                     COALESCE(p.duration, 0.0) as duration,
                     p.updated_at as watch_updated_at
                 FROM movies m
-                LEFT JOIN progress p ON m.filename = p.filename
+                LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 ORDER BY m.title ASC
                 "#)
             .fetch_all(pool)
@@ -213,34 +243,93 @@ impl MovieService {
         pool: &PgPool,
         filename: &str,
         device_id: Option<&str>,
+        user_id: Option<i64>,
     ) -> Result<MovieDetailsResponse, AppError> {
-        let row = sqlx::query(
-            r#"
-            SELECT
-                m.filename,
-                m.title,
-                m.year,
-                m.tmdb_id::BIGINT as tmdb_id,
-                m.overview,
-                m.poster_path,
-                m.backdrop_path,
-                m.runtime,
-                m.genres,
-                m.vote_average::DOUBLE PRECISION as vote_average,
-                m.release_date,
-                m.details_json,
-                m.updated_at,
-                COALESCE(h.position, 0.0) as position,
-                COALESCE(h.duration, 0.0) as duration
-            FROM movies m
-            LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $2
-            WHERE m.filename = $1
-            "#
-        )
-        .bind(filename)
-        .bind(device_id.unwrap_or(""))
-        .fetch_optional(pool)
-        .await?;
+        let row = if let Some(uid) = user_id {
+            sqlx::query(
+                r#"
+                SELECT
+                    m.filename,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.overview,
+                    m.poster_path,
+                    m.backdrop_path,
+                    m.runtime,
+                    m.genres,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
+                    m.release_date,
+                    m.details_json,
+                    m.updated_at,
+                    COALESCE(p.position, 0.0) as position,
+                    COALESCE(p.duration, 0.0) as duration
+                FROM movies m
+                LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $2
+                WHERE m.filename = $1
+                "#
+            )
+            .bind(filename)
+            .bind(uid)
+            .fetch_optional(pool)
+            .await?
+        } else if let Some(dev) = device_id.filter(|d| !d.trim().is_empty()) {
+            sqlx::query(
+                r#"
+                SELECT
+                    m.filename,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.overview,
+                    m.poster_path,
+                    m.backdrop_path,
+                    m.runtime,
+                    m.genres,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
+                    m.release_date,
+                    m.details_json,
+                    m.updated_at,
+                    COALESCE(h.position, p.position, 0.0) as position,
+                    COALESCE(h.duration, p.duration, 0.0) as duration
+                FROM movies m
+                LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $2
+                LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
+                WHERE m.filename = $1
+                "#
+            )
+            .bind(filename)
+            .bind(dev)
+            .fetch_optional(pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                SELECT
+                    m.filename,
+                    m.title,
+                    m.year,
+                    m.tmdb_id::BIGINT as tmdb_id,
+                    m.overview,
+                    m.poster_path,
+                    m.backdrop_path,
+                    m.runtime,
+                    m.genres,
+                    m.vote_average::DOUBLE PRECISION as vote_average,
+                    m.release_date,
+                    m.details_json,
+                    m.updated_at,
+                    COALESCE(p.position, 0.0) as position,
+                    COALESCE(p.duration, 0.0) as duration
+                FROM movies m
+                LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
+                WHERE m.filename = $1
+                "#
+            )
+            .bind(filename)
+            .fetch_optional(pool)
+            .await?
+        };
 
         let r = match row {
             Some(r) => r,

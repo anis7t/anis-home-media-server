@@ -3,6 +3,7 @@ use crate::models::storage::{
     PurgeOrphansRequest, PurgeOrphansResponse, StorageAuditResponse, StorageSettingsResponse,
     StorageSettingsUpdateRequest,
 };
+use crate::services::audit_service::AuditService;
 use crate::services::auth_service::AuthService;
 use crate::services::storage_service::{StorageService, ALLOWED_RETENTION_POLICIES};
 use crate::services::system_service::SystemService;
@@ -83,7 +84,7 @@ pub async fn storage_purge_orphans_handler(
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
         .unwrap_or(false);
 
-    let dry_run = query_dry_run || body_req.and_then(|b| b.dry_run).unwrap_or(false);
+    let dry_run = query_dry_run || body_req.as_ref().and_then(|b| b.dry_run).unwrap_or(false);
 
     let res = StorageService::purge_orphaned_caches(
         &state.pool,
@@ -91,6 +92,25 @@ pub async fn storage_purge_orphans_handler(
         &state.cache_dir,
         &state.system_service,
         dry_run,
+    )
+    .await;
+
+    let ip = AuditService::extract_client_ip(&headers);
+    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, body_pin).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "cache_purge",
+        Some("cache"),
+        None,
+        Some(serde_json::json!({
+            "dry_run": dry_run,
+            "refused": res.refused,
+            "freed_bytes": res.freed_bytes,
+            "purged_directories": res.purged_dirs.len(),
+        })),
+        ip.as_deref(),
     )
     .await;
 
@@ -134,7 +154,7 @@ pub async fn storage_post_settings_handler(
         ));
     }
 
-    let policy = match body_req.and_then(|b| b.retention_policy) {
+    let policy = match body_req.as_ref().and_then(|b| b.retention_policy.clone()) {
         Some(p) => p,
         None => {
             return Err((
@@ -148,10 +168,26 @@ pub async fn storage_post_settings_handler(
     };
 
     match StorageService::set_settings(&state.pool, &policy).await {
-        Ok(saved_policy) => Ok(Json(serde_json::json!({
-            "success": true,
-            "retention_policy": saved_policy
-        }))),
+        Ok(saved_policy) => {
+            let ip = AuditService::extract_client_ip(&headers);
+            let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, body_pin).await;
+            AuditService::record_event(
+                &state.pool,
+                actor_type,
+                &actor_id,
+                "storage_policy_update",
+                Some("settings"),
+                Some("retention_policy"),
+                Some(serde_json::json!({ "policy": saved_policy })),
+                ip.as_deref(),
+            )
+            .await;
+
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "retention_policy": saved_policy
+            })))
+        }
         Err(AppError::BadRequest(msg)) => Err((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -241,7 +277,23 @@ pub async fn storage_delete_media_handler(
     }
 
     match StorageService::purge_media(&state.pool, &filename, &state.media_roots, &state.cache_dir).await {
-        Ok(res) => Ok(Json(res)),
+        Ok(res) => {
+            let ip = AuditService::extract_client_ip(&headers);
+            let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, None).await;
+            AuditService::record_event(
+                &state.pool,
+                actor_type,
+                &actor_id,
+                "media_delete",
+                Some("media"),
+                Some(&filename),
+                Some(res.clone()),
+                ip.as_deref(),
+            )
+            .await;
+
+            Ok(Json(res))
+        }
         Err(AppError::BadRequest(msg)) => Err((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({

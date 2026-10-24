@@ -8,3 +8,5 @@ pub mod subtitle;
 pub mod system;
 pub mod transcode;
 pub mod upload;
+pub mod audit;
+

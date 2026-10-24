@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::models::auth::{AccountResponse, AllowlistResponse};
+use crate::services::audit_service::AuditService;
 use crate::services::auth_service::AuthService;
 use axum::{
     extract::{Query, State},
@@ -151,6 +152,25 @@ pub async fn post_allowlist_handler(
     };
 
     let updated = AuthService::set_allowlist(&state.pool, &email_list).await?;
+
+    let ip = AuditService::extract_client_ip(&headers);
+    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, None).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "allowlist_update",
+        Some("settings"),
+        Some("auth_allowlist"),
+        Some(serde_json::json!({
+            "emails": email_list,
+            "stored": updated.stored,
+            "effective_count": updated.effective.len(),
+        })),
+        ip.as_deref(),
+    )
+    .await;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "stored": updated.stored,

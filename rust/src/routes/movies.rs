@@ -9,6 +9,8 @@ use axum::{
 use serde::Deserialize;
 use sqlx::PgPool;
 
+use crate::services::auth_service::AuthService;
+
 #[derive(Debug, Deserialize)]
 pub struct MovieListQuery {
     pub q: Option<String>,
@@ -24,9 +26,12 @@ pub async fn list_movies_handler(
         .get("x-device-id")
         .and_then(|v| v.to_str().ok());
 
+    let user_id = AuthService::resolve_effective_user_id(&pool, &headers, device_id).await;
+
     let res = MovieService::list_movies(
         &pool,
         device_id,
+        user_id,
         query.q.as_deref(),
         query.sort.as_deref(),
     )
@@ -44,7 +49,9 @@ pub async fn get_movie_details_handler(
         .get("x-device-id")
         .and_then(|v| v.to_str().ok());
 
-    let res = MovieService::get_movie_details(&pool, &filename, device_id).await?;
+    let user_id = AuthService::resolve_effective_user_id(&pool, &headers, device_id).await;
+
+    let res = MovieService::get_movie_details(&pool, &filename, device_id, user_id).await?;
 
     Ok(Json(res))
 }

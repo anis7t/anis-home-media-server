@@ -26,4 +26,6 @@ pub mod gpu_service;
 pub mod chunk_transcode;
 pub mod transcode_worker;
 pub mod upload_service;
+pub mod audit_service;
+
 

@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse};
+use crate::models::audit::{AuditLogQuery, AuditLogResponse};
 use crate::services::auth_service::AuthService;
+use crate::services::audit_service::AuditService;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -10,6 +12,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
+
+fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
+    AuditService::extract_client_ip(headers)
+}
+
+async fn extract_actor(pool: &PgPool, headers: &HeaderMap) -> (&'static str, String) {
+    AuditService::extract_actor(pool, headers, None).await
+}
 
 #[derive(Clone)]
 pub struct AdminState {
@@ -214,6 +224,20 @@ pub async fn admin_pin_handler(
     )
     .await?;
 
+    let ip = extract_client_ip(&headers);
+    let (actor_type, actor_id) = extract_actor(&state.pool, &headers).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "pin_change",
+        Some("settings"),
+        Some("admin_pin"),
+        None,
+        ip.as_deref(),
+    )
+    .await;
+
     Ok((StatusCode::OK, Json(serde_json::json!({ "success": true }))))
 }
 
@@ -277,6 +301,20 @@ pub async fn admin_assign_device_handler(
         .execute(state.pool.as_ref())
         .await?;
 
+    let ip = extract_client_ip(&headers);
+    let (actor_type, actor_id) = extract_actor(&state.pool, &headers).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "device_assign",
+        Some("device"),
+        Some(&device_id),
+        Some(serde_json::json!({ "assigned_user_id": target_user })),
+        ip.as_deref(),
+    )
+    .await;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "device_id": device_id,
@@ -325,12 +363,12 @@ pub async fn admin_delete_device_history_handler(
         .filter(|f| !f.is_empty());
 
     let deleted = match filename {
-        Some(f) => {
+        Some(ref f) => {
             let result = sqlx::query(
                 "DELETE FROM device_watch_history WHERE device_id = $1 AND filename = $2",
             )
             .bind(&device_id)
-            .bind(&f)
+            .bind(f)
             .execute(state.pool.as_ref())
             .await?;
             if result.rows_affected() == 0 {
@@ -349,9 +387,47 @@ pub async fn admin_delete_device_history_handler(
         }
     };
 
+    let ip = extract_client_ip(&headers);
+    let (actor_type, actor_id) = extract_actor(&state.pool, &headers).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "device_history_delete",
+        Some("device"),
+        Some(&device_id),
+        Some(serde_json::json!({ "filename": filename, "deleted": deleted })),
+        ip.as_deref(),
+    )
+    .await;
+
     Ok(Json(serde_json::json!({
         "success": true,
         "device_id": device_id,
         "deleted": deleted,
     })))
+}
+
+/// `GET /api/admin/audit-logs`
+pub async fn admin_audit_logs_handler(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<AuditLogQuery>,
+) -> Result<Json<AuditLogResponse>, AppError> {
+    if !AuthService::is_admin_authorized(&state.pool, &headers, None).await {
+        return Err(AppError::Unauthorized(
+            "Admin authorization required".to_string(),
+        ));
+    }
+
+    let resp = AuditService::list_logs(
+        state.pool.as_ref(),
+        query.limit,
+        query.offset,
+        query.action.as_deref(),
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to retrieve audit logs: {}", e)))?;
+
+    Ok(Json(resp))
 }

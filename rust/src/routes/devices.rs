@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::services::audit_service::AuditService;
 use crate::services::auth_service::{AuthService, ResolvedIdentity};
 use crate::services::device_service::{
     ClientHints, ConnectionInfo, DeviceService, RequestFacts,
@@ -329,6 +330,20 @@ pub async fn rename_device_handler(
 
     DeviceService::rename_device(&state.pool, &target_id, payload.name.as_deref()).await?;
 
+    let ip = AuditService::extract_client_ip(&headers);
+    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "device_rename",
+        Some("device"),
+        Some(&target_id),
+        Some(json!({ "new_name": payload.name })),
+        ip.as_deref(),
+    )
+    .await;
+
     Ok(json_response(json!({ "success": true })))
 }
 
@@ -390,6 +405,20 @@ pub async fn delete_device_handler(
     }
 
     DeviceService::delete_device(&state.pool, &target_id).await?;
+
+    let ip = AuditService::extract_client_ip(&headers);
+    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
+    AuditService::record_event(
+        &state.pool,
+        actor_type,
+        &actor_id,
+        "device_delete",
+        Some("device"),
+        Some(&target_id),
+        None,
+        ip.as_deref(),
+    )
+    .await;
 
     let mut res = json_response(json!({ "success": true }));
     if cookie_value(&headers, "ms_device_id").as_deref() == Some(&target_id) {
