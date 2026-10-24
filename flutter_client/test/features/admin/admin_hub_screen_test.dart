@@ -7,7 +7,7 @@ import 'package:media_server_client/features/admin/domain/models/connected_devic
 import 'package:media_server_client/features/admin/domain/models/library_scan_model.dart';
 import 'package:media_server_client/features/admin/domain/models/storage_audit_model.dart';
 import 'package:media_server_client/features/admin/domain/models/transcode_dashboard_model.dart';
-import 'package:media_server_client/features/admin/infrastructure/admin_repository.dart';
+import 'package:media_server_client/features/admin/data/admin_repository.dart';
 import 'package:media_server_client/features/admin/presentation/controllers/connected_devices_controller.dart';
 import 'package:media_server_client/features/admin/presentation/controllers/library_maintenance_controller.dart';
 import 'package:media_server_client/features/admin/presentation/controllers/storage_controller.dart';

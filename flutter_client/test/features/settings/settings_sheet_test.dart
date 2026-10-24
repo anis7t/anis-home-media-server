@@ -3,14 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/models/app_channel.dart';
 import 'package:media_server_client/core/storage/settings_service.dart';
-import 'package:media_server_client/features/updater/data/models/update_manifest.dart';
-import 'package:media_server_client/features/updater/infrastructure/app_installer_bridge.dart';
+import 'package:media_server_client/features/updater/domain/models/update_manifest.dart';
+import 'package:media_server_client/features/updater/data/bridges/app_installer_bridge.dart';
 import 'package:media_server_client/features/updater/presentation/controllers/update_controller.dart';
-import 'package:media_server_client/features/updater/presentation/widgets/settings_sheet.dart';
+import 'package:media_server_client/features/settings/presentation/widgets/settings_sheet.dart';
 import 'package:media_server_client/features/updater/presentation/widgets/update_prompt_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'update_controller_test.dart';
+import '../updater/update_controller_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

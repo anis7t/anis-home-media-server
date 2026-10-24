@@ -8,7 +8,7 @@ import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../../../library/data/models/movie_item.dart';
+import '../../../library/domain/models/movie_item.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../../../library/presentation/widgets/continue_watching_rail.dart';
 import '../controllers/home_feed_controller.dart';

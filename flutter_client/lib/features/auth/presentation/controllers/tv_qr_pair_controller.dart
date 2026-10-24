@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/qr_pair_session.dart';
-import '../../infrastructure/qr_auth_repository.dart';
+import '../../data/qr_auth_repository.dart';
 import '../providers/auth_providers.dart';
 import 'auth_notifier.dart';
 

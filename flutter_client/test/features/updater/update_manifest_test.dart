@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/models/app_channel.dart';
-import 'package:media_server_client/features/updater/data/models/update_manifest.dart';
+import 'package:media_server_client/features/updater/domain/models/update_manifest.dart';
 
 void main() {
   group('UpdateManifest Fail-Closed Validation Tests', () {

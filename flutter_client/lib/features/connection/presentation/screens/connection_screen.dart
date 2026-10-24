@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../app/routes.dart';
-import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_typography.dart';
-import '../../../core/storage/settings_service.dart';
-import '../../../core/widgets/tv_focusable.dart';
+import '../../../../app/routes.dart';
+import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_typography.dart';
+import '../../../../core/storage/settings_service.dart';
+import '../../../../core/widgets/tv_focusable.dart';
 import '../controllers/connection_controller.dart';
-import '../models/connection_state.dart';
+import '../../domain/models/connection_state.dart';
 
 class ConnectionScreen extends ConsumerStatefulWidget {
   const ConnectionScreen({super.key});

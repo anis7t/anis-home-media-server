@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/cast/data/models/cast_device.dart';
+import 'package:media_server_client/features/cast/domain/models/cast_device.dart';
 import 'package:media_server_client/features/cast/presentation/controllers/cast_controller.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 
 import 'player_screen_test.dart' show FakePlayerController;
 

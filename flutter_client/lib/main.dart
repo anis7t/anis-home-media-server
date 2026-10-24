@@ -8,7 +8,7 @@ import 'app/routes.dart';
 import 'core/device/domain/device_capabilities.dart';
 import 'core/device/infrastructure/device_capability_service.dart';
 import 'features/devices/presentation/widgets/device_presence_scope.dart';
-import 'features/intro/infrastructure/audioplayers_score.dart';
+import 'features/intro/data/audioplayers_score.dart';
 import 'features/intro/presentation/providers/intro_score_provider.dart';
 
 Future<void> main(List<String> args) async {

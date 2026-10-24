@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../../library/data/models/movie_item.dart';
+import '../../../library/domain/models/movie_item.dart';
 
 /// Represents a distinct genre section/rail on the endless home feed.
 @immutable

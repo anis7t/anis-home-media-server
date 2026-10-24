@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/transcode_dashboard_model.dart';
-import '../../infrastructure/admin_repository.dart';
+import '../../data/admin_repository.dart';
 import '../providers/admin_providers.dart';
 
 @immutable

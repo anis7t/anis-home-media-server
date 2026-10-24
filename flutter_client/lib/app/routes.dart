@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../features/admin/presentation/screens/admin_hub_screen.dart';
 import '../features/auth/presentation/providers/auth_providers.dart';
-import '../features/connection/presentation/connection_screen.dart';
+import '../features/connection/presentation/screens/connection_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
-import '../features/library/data/models/movie_item.dart';
+import '../features/library/domain/models/movie_item.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/library/presentation/screens/movie_details_screen.dart';
-import '../features/player/presentation/player_screen.dart';
+import '../features/player/presentation/screens/player_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/shell/presentation/screens/app_shell.dart';
 

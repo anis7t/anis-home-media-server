@@ -82,10 +82,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    # The brand opening sequence's score - the canonical's offline render,
-    # byte for byte. It REPLACES `assets/videos/intro-demo-portrait.mp4`,
-    # which was declared here, never played, and cost 2.4 MB in every APK.
-    - assets/audio/intro-theme.wav
+    # The brand opening sequence's score - compressed AAC-LC audio.
+    # It replaces the uncompressed WAV to minimize APK/bundle size.
+    - assets/audio/intro-theme.m4a
     # The television's pre-rendered brand opening sequence. It is rendered
     # from the canonical (the shipped web application) by
     # `scripts/capture-intro-video.mjs`, and verified against the canonical's

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_client.dart';
-import '../../infrastructure/admin_repository.dart';
+import '../../data/admin_repository.dart';
 import '../controllers/connected_devices_controller.dart';
 import '../controllers/library_maintenance_controller.dart';
 import '../controllers/storage_controller.dart';

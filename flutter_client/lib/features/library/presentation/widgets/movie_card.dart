@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 
 /// Reusable obsidian movie card displaying poster artwork, playback progress, and metadata.
 /// Includes high-contrast focus state and subtle scaling for TV remote / D-pad navigation.

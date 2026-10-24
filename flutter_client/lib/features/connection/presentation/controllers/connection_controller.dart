@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/api/api_client.dart';
-import '../../../core/storage/device_identity_service.dart';
-import '../../../core/storage/settings_service.dart';
-import '../models/connection_state.dart';
+import '../../../../core/api/api_client.dart';
+import '../../../../core/storage/device_identity_service.dart';
+import '../../../../core/storage/settings_service.dart';
+import '../../domain/models/connection_state.dart';
 
 class ConnectionController extends Notifier<ServerConnectionState> {
   late final ApiClient _apiClient;

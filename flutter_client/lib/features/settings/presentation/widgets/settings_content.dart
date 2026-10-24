@@ -10,8 +10,8 @@ import '../../../../core/models/app_channel.dart';
 import '../../../../core/storage/settings_service.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../controllers/update_controller.dart';
-import 'update_prompt_dialog.dart';
+import '../../../updater/presentation/controllers/update_controller.dart';
+import '../../../updater/presentation/widgets/update_prompt_dialog.dart';
 
 /// Reusable settings content displaying server origin, device identity,
 /// application version, update channel selector, and live update checks.

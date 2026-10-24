@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/library/data/models/library_response.dart';
-import 'package:media_server_client/features/library/data/models/movie_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_extended_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
-import 'package:media_server_client/features/library/data/models/movie_specs.dart';
+import 'package:media_server_client/features/library/domain/models/library_response.dart';
+import 'package:media_server_client/features/library/domain/models/movie_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_extended_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_specs.dart';
 
 void main() {
   group('MovieItem Model', () {

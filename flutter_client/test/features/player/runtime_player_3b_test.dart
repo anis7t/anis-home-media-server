@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
 import 'package:media_server_client/features/player/domain/seek_preview_controller.dart';
-import 'package:media_server_client/features/player/infrastructure/media_kit_player_adapter.dart';
+import 'package:media_server_client/features/player/data/media_kit_player_adapter.dart';
 
 import '../../support/live_server_gate.dart';
 

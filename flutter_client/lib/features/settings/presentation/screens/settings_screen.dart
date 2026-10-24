@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
-import '../../../updater/presentation/widgets/settings_content.dart';
+import '../widgets/settings_content.dart';
 
 import '../../../admin/presentation/widgets/admin_hub_tile.dart';
 import '../../../auth/presentation/widgets/account_profile_card.dart';

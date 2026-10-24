@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/storage/settings_service.dart';
-import '../models/cast_device.dart';
+import '../../domain/models/cast_device.dart';
 
 /// Network access to the server's casting API.
 ///

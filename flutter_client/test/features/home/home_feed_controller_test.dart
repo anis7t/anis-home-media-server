@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/home/presentation/controllers/home_feed_controller.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
 import 'package:media_server_client/features/library/presentation/controllers/library_controller.dart';
 
 void main() {

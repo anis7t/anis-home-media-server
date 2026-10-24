@@ -10,7 +10,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../domain/intro_frame.dart';
 import '../../domain/intro_score.dart';
 import '../../domain/intro_timeline.dart';
-import '../../infrastructure/intro_video_player.dart';
+import '../../data/intro_video_player.dart';
 import '../controllers/intro_score_controller.dart';
 import '../painters/intro_fx_painter.dart';
 import '../painters/intro_veil_painter.dart';

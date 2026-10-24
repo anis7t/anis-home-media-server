@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import 'movie_card.dart';
 
 /// Responsive grid displaying library movie cards with dynamic column calculation.

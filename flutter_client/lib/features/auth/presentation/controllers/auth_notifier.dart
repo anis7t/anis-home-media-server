@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/auth_state.dart';
-import '../../infrastructure/auth_repository.dart';
-import '../../infrastructure/auth_secure_storage.dart';
+import '../../data/auth_repository.dart';
+import '../../data/auth_secure_storage.dart';
 
 import '../providers/auth_providers.dart';
 

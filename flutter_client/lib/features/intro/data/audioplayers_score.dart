@@ -23,7 +23,7 @@ class AudioplayersIntroScore implements IntroScore {
       : _player = player ?? AudioPlayer();
 
   /// The asset's path, relative to the pubspec's `assets` root.
-  static const String assetPath = 'audio/intro-theme.wav';
+  static const String assetPath = 'audio/intro-theme.m4a';
 
   final AudioPlayer _player;
   Future<void>? _preparing;

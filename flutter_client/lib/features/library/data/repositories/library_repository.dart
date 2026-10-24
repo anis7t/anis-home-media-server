@@ -4,8 +4,8 @@ import '../../../../core/api/api_client.dart';
 import '../../../../core/api/api_endpoints.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/storage/settings_service.dart';
-import '../models/library_response.dart';
-import '../models/movie_details.dart';
+import '../../domain/models/library_response.dart';
+import '../../domain/models/movie_details.dart';
 
 /// Repository responsible for movie library catalog and details network operations.
 class LibraryRepository {
