@@ -224,6 +224,28 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // Phase 5.3: QR Expiry & Finalize Status Race Condition
+    sqlx::query(
+        "ALTER TABLE device_pair_sessions ADD COLUMN IF NOT EXISTS finalized BOOLEAN NOT NULL DEFAULT FALSE",
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "ALTER TABLE device_pair_sessions ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ",
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_device_pair_sessions_lookup
+            ON device_pair_sessions (id, expires_at, confirmed, finalized)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // `POST /api/auth/qr/lookup` resolves a pair code to a live session, so
     // the hash is read on every manual code entry. The table holds only
     // unexpired sessions, but the index is free and makes the lookup a
@@ -282,11 +304,57 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS progress (
-            filename   TEXT PRIMARY KEY,
+            id         BIGSERIAL PRIMARY KEY,
+            user_id    BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            filename   TEXT        NOT NULL,
             "position" REAL        NOT NULL DEFAULT 0,
             duration   REAL        NOT NULL DEFAULT 0,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_progress_user_filename UNIQUE NULLS NOT DISTINCT (user_id, filename)
         )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Migrate existing single-user progress table to support per-user scoping
+    sqlx::query(
+        r#"
+        ALTER TABLE progress
+            ADD COLUMN IF NOT EXISTS id BIGSERIAL,
+            ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE CASCADE
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_schema = kcu.table_schema
+                WHERE tc.table_name = 'progress'
+                  AND tc.constraint_type = 'PRIMARY KEY'
+                  AND kcu.column_name = 'filename'
+            ) THEN
+                ALTER TABLE progress DROP CONSTRAINT progress_pkey;
+                ALTER TABLE progress ADD CONSTRAINT progress_pkey PRIMARY KEY (id);
+            END IF;
+        END $$;
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_progress_user_filename
+            ON progress (user_id, filename) NULLS NOT DISTINCT
         "#,
     )
     .execute(&mut *tx)
@@ -296,6 +364,15 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         r#"
         CREATE INDEX IF NOT EXISTS idx_progress_updated
             ON progress (updated_at DESC)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_progress_user_updated
+            ON progress (user_id, updated_at DESC)
         "#,
     )
     .execute(&mut *tx)
@@ -403,11 +480,56 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id          BIGSERIAL PRIMARY KEY,
+            actor_type  TEXT        NOT NULL,
+            actor_id    TEXT        NOT NULL,
+            action      TEXT        NOT NULL,
+            target_type TEXT,
+            target_id   TEXT,
+            details     JSONB,
+            ip_address  TEXT,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
+            ON audit_logs (created_at DESC)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_action
+            ON audit_logs (action)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_actor
+            ON audit_logs (actor_type, actor_id)
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     tracing::info!(
         "Rust schema ensured (transcode_jobs, users, sessions, \
-         device_pair_sessions, movies, progress, devices, device_watch_history, ip_cache; \
+         device_pair_sessions, movies, progress, devices, device_watch_history, ip_cache, audit_logs; \
          auth_tokens retired and dropped)"
     );
     Ok(())

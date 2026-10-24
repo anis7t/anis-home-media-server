@@ -23,6 +23,7 @@ param(
     [string]$DbHost = "127.0.0.1",
     [int]$Port = 5432,
     [string]$DestDir = "E:\MediaServer\backups\postgres",
+    [string]$SecondaryDestDir = "D:\Flicks\.backups\postgres",
 
     # Skip the pre-restore rollback point (only sensible for a scratch target).
     [switch]$NoRollbackPoint,
@@ -59,10 +60,26 @@ $env:PGPASSWORD = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { "postgres" }
 if (-not $DumpFile) {
     $newest = Get-ChildItem -Path $DestDir -Filter "${Database}_*.dump" -ErrorAction SilentlyContinue |
         Sort-Object CreationTime -Descending | Select-Object -First 1
-    if (-not $newest) { $newest = Get-ChildItem -Path $DestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
-        Sort-Object CreationTime -Descending | Select-Object -First 1 }
     if (-not $newest) {
-        Write-Host "ERROR: no .dump archive found in $DestDir. Pass -DumpFile explicitly." -ForegroundColor Red
+        $newest = Get-ChildItem -Path $DestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
+            Sort-Object CreationTime -Descending | Select-Object -First 1
+    }
+
+    if (-not $newest -and $SecondaryDestDir -and (Test-Path $SecondaryDestDir)) {
+        Write-Host "NOTE: No dumps found in primary $DestDir. Checking secondary storage: $SecondaryDestDir ..." -ForegroundColor Yellow
+        $newest = Get-ChildItem -Path $SecondaryDestDir -Filter "${Database}_*.dump" -ErrorAction SilentlyContinue |
+            Sort-Object CreationTime -Descending | Select-Object -First 1
+        if (-not $newest) {
+            $newest = Get-ChildItem -Path $SecondaryDestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
+                Sort-Object CreationTime -Descending | Select-Object -First 1
+        }
+        if ($newest) {
+            Write-Host "DISASTER RECOVERY FALLBACK: Selected backup from secondary storage ($($newest.FullName))" -ForegroundColor Cyan
+        }
+    }
+
+    if (-not $newest) {
+        Write-Host "ERROR: no .dump archive found in $DestDir (or $SecondaryDestDir). Pass -DumpFile explicitly." -ForegroundColor Red
         exit 1
     }
     $DumpFile = $newest.FullName

@@ -129,7 +129,7 @@ impl PreviewService {
 
         // 1. Check progress table for exact duration in seconds
         let row_prog = sqlx::query_as::<_, (f64,)>(
-            "SELECT duration::double precision FROM progress WHERE filename = $1 OR filename = $2",
+            "SELECT duration::double precision FROM progress WHERE filename = $1 OR filename = $2 LIMIT 1",
         )
         .bind(rel_filename)
         .bind(bare_name)

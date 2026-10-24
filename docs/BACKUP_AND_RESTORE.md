@@ -6,12 +6,13 @@
 | **System** | Anis' Home Media Server (`E:\MediaServer`) |
 | **Database Engine** | **PostgreSQL 18.4** |
 | **Primary Database** | `media_server` — data directory `E:\pgdata`, server binaries `C:\postgres` |
-| **Default Backup Store** | `E:\MediaServer\backups\postgres\` (gitignored) |
-| **Backup Tool** | [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) → `pg_dump -Fc` |
-| **Restore Tool** | [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) → `pg_restore` |
+| **Primary Backup Store** | `E:\MediaServer\backups\postgres\` (fast SSD, 7 days retention) |
+| **Secondary Backup Store** | `D:\Flicks\.backups\postgres\` (high-capacity HDD, 14 days cold disaster recovery) |
+| **Backup Tool** | [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1) → `pg_dump -Fc` with `pg_restore --list` verification |
+| **Restore Tool** | [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) → `pg_restore` with automatic `D:` disaster fallback |
 | **Scheduled Task** | `MediaServerBackup` — daily at 03:00, as `SYSTEM` ([§2.3](#23-the-scheduled-task)) |
-| **Live Database Size** | ~10 MB (12 tables) |
-| **Last Verified** | **2026-10-20** — full backup → restore → restart drill, all row counts matched |
+| **Live Database Size** | ~10 MB (13 tables including `audit_logs`) |
+| **Last Verified** | **2026-10-24** — cross-volume replication & disaster recovery drill verified |
 
 > **This runbook replaces the SQLite-era document.** The previous version documented
 > `app/services/backup_service.py`, `scripts/backup_database.py` and `scripts/restore_database.py`
@@ -74,9 +75,12 @@ pg_dump -h 127.0.0.1 -p 5432 -U postgres -d media_server -F c -b -v -f <dest>
 | `-Database` | `media_server` | Database to dump. |
 | `-User` | `postgres` | Connecting role. |
 | `-DbHost` / `-Port` | `127.0.0.1` / `5432` | Server address. |
-| `-DestDir` | `E:\MediaServer\backups\postgres` | Where the archive is written. |
-| `-Keep` | `7` | Retention for **scheduled** backups. **Prunes the oldest beyond this count. `0` disables pruning entirely** (the guard is `if ($Keep -gt 0)`), so `-Keep 0` means *keep everything*, not *keep none*. |
+| `-DestDir` | `E:\MediaServer\backups\postgres` | Primary backup directory (fast SSD). |
+| `-Keep` | `7` | Retention for **primary scheduled** backups on `E:`. Prunes the oldest beyond this count. `0` disables pruning entirely. |
 | `-KeepRollbacks` | `3` | Retention for **pre-restore rollback points**, pruned on their own budget. |
+| `-SecondaryDestDir` | `D:\Flicks\.backups\postgres` | Cross-volume secondary mirror destination (high-capacity HDD cold disaster recovery). |
+| `-KeepSecondary` | `14` | Retention for **secondary mirror** backups on `D:`. Independent from primary retention. |
+| `-PostBackupCommand` | `""` | Optional command hook executed after backup and verification (e.g. `rclone` or S3 upload). Also reads from `MEDIA_SERVER_POST_BACKUP_CMD`. |
 
 ### 2.3 The scheduled task
 
@@ -135,20 +139,18 @@ Each archive records its own provenance in its header:
 ;     Dumped by pg_dump version: 18.4
 ```
 
-### 2.5 Rotation
+### 2.5 Rotation & Dual-Tier Storage
 
-The script prunes on each run, on **two separate budgets**:
+The script prunes on each run across **independent storage budgets**:
 
-- **Scheduled backups** — the newest `-Keep` (default 7) of `media_server_<timestamp>.dump`.
-- **Pre-restore rollback points** — the newest `-KeepRollbacks` (default 3) of
-  `media_server_prerestore_<timestamp>.dump`.
+- **Primary scheduled backups (`E:\MediaServer\backups\postgres`)** — newest `-Keep` (default 7) of `media_server_<timestamp>.dump`.
+- **Pre-restore rollback points (`E:\MediaServer\backups\postgres`)** — newest `-KeepRollbacks` (default 3) of `media_server_prerestore_<timestamp>.dump`.
+- **Secondary mirror backups (`D:\Flicks\.backups\postgres`)** — newest `-KeepSecondary` (default 14) of `media_server_<timestamp>.dump`.
 
-They are pruned separately on purpose. A rollback point *is* a full dump of the database, so
-without the split it would occupy a slot in the scheduled rotation and could displace a scheduled
-backup.
-
-Seven daily backups cover **one week**. If a restore is ever needed, the newest usable archive is
-at most 24 hours old.
+They are pruned separately on purpose:
+1. Rollback points *are* full dumps taken prior to restore operations; without their separate budget they could displace scheduled daily backups.
+2. The secondary mirror lives on physical disk `D:` (high-capacity HDD). Retaining 14 days on `D:` provides **two full weeks** of cold disaster recovery history, protecting against host drive failure where SSD `E:` (`E:\pgdata` and primary backups) is lost.
+3. If Drive `D:` is temporarily full or asleep, the replication failure is logged as a non-fatal warning, guaranteeing the primary backup on `E:` completes safely.
 
 ---
 
@@ -185,8 +187,10 @@ Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-DumpFile` | newest `media_server_*.dump` in `-DestDir` | Archive to restore. |
+| `-DumpFile` | newest `media_server_*.dump` in `-DestDir` | Archive to restore. If `-DestDir` is empty or missing, automatically falls back to `-SecondaryDestDir`. |
 | `-TargetDatabase` | *(none — restore over the live database)* | Restore into a different database instead. This is the **safe way to validate a dump**. |
+| `-DestDir` | `E:\MediaServer\backups\postgres` | Primary backup directory searched for dumps. |
+| `-SecondaryDestDir` | `D:\Flicks\.backups\postgres` | Secondary disaster-recovery directory searched if primary has no dumps. |
 | `-NoRollbackPoint` | off | Skip the pre-restore dump. Only sensible for a scratch target. |
 | `-Confirm` | off | **Required to actually restore.** Without it the script only inspects and prints what it would do. |
 

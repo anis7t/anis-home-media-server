@@ -480,6 +480,10 @@ pub fn create_app_full(
             "/api/admin/pin",
             axum::routing::post(routes::admin::admin_pin_handler),
         )
+        .route(
+            "/api/admin/audit-logs",
+            get(routes::admin::admin_audit_logs_handler),
+        )
         .with_state(admin_state);
 
     // Phase C5 Slice 4: Authentication, Google OAuth, Tokens, Allowlist, 100% native.

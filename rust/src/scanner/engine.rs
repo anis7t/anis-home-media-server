@@ -4,6 +4,7 @@ use super::tmdb_client::TmdbClient;
 use crate::error::AppError;
 use crate::services::path_resolver::PathResolver;
 use crate::services::probe_service::ProbeService;
+use crate::services::subtitle_service::SubtitleService;
 use crate::services::tmdb_artwork::{ArtworkKind, TmdbArtworkService};
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -21,6 +22,7 @@ pub struct ScannerReport {
     pub movies_indexed: usize,
     pub movies_updated: usize,
     pub orphans_pruned: usize,
+    pub subtitles_acquired: usize,
     pub errors: usize,
 }
 
@@ -75,9 +77,10 @@ impl ScannerEngine {
                 .into_iter()
                 .filter_entry(|e| {
                     let file_name = e.file_name().to_string_lossy();
-                    // Skip temporary uploads, deleted bins, caches, node modules, build targets, and git
+                    // Skip temporary uploads, deleted bins, caches, backups, node modules, build targets, and git
                     file_name != ".uploads"
                         && file_name != ".deleted"
+                        && file_name != ".backups"
                         && file_name != "cache"
                         && file_name != ".git"
                         && file_name != "target"
@@ -193,7 +196,13 @@ impl ScannerEngine {
 
         report.unindexed_discovered = unindexed.len();
         if unindexed.is_empty() {
-            info!("All discovered media files are already indexed. Scan complete.");
+            info!("All discovered media files are already indexed. Sweeping subtitles for existing movies...");
+            let swept = Self::proactive_subtitle_sweep(pool, roots, &cache_dir_buf).await;
+            report.subtitles_acquired += swept;
+            info!(
+                "Scan complete. Discovered: {}, Swept Subtitles: {}, Pruned: {}, Errors: {}",
+                report.files_discovered, report.subtitles_acquired, report.orphans_pruned, report.errors
+            );
             return Ok(report);
         }
 
@@ -364,6 +373,11 @@ impl ScannerEngine {
                             let _ = TmdbArtworkService::get(pool, &cache_dir_buf, id, ArtworkKind::Backdrop).await;
                         }
                     }
+
+                    // Proactively acquire subtitles if movie lacks English subtitles
+                    if SubtitleService::ensure_subtitles_for_movie(&path, &relative, &final_title, roots, &cache_dir_buf).await {
+                        report.subtitles_acquired += 1;
+                    }
                 }
                 Err(err) => {
                     error!("Database error indexing '{}': {}", relative, err);
@@ -377,11 +391,78 @@ impl ScannerEngine {
             }
         }
 
+        // Polite proactive sweep for remaining library movies lacking subtitles (Option A)
+        let swept = Self::proactive_subtitle_sweep(pool, roots, &cache_dir_buf).await;
+        report.subtitles_acquired += swept;
+
         info!(
-            "Scan complete. Discovered: {}, Indexed: {}, Pruned: {}, Errors: {}",
-            report.files_discovered, report.movies_indexed, report.orphans_pruned, report.errors
+            "Scan complete. Discovered: {}, Indexed: {}, Subtitles Acquired: {}, Pruned: {}, Errors: {}",
+            report.files_discovered, report.movies_indexed, report.subtitles_acquired, report.orphans_pruned, report.errors
         );
 
         Ok(report)
+    }
+
+    /// Polite background sweep to proactively acquire missing English subtitles
+    /// for existing movies in the database (Option A).
+    pub async fn proactive_subtitle_sweep(
+        pool: &PgPool,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+    ) -> usize {
+        let rows = match sqlx::query_as::<_, (String, String)>(
+            "SELECT filename, title FROM movies ORDER BY updated_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Proactive subtitle sweep: failed to query movies: {}", e);
+                return 0;
+            }
+        };
+
+        let mut acquired = 0;
+        let total = rows.len();
+        debug!(
+            "Proactive subtitle sweep: checking {} existing movies for missing English subtitles",
+            total
+        );
+
+        for (filename, title) in rows {
+            let Ok(video_path) = PathResolver::resolve_media_path(&filename, roots) else {
+                continue;
+            };
+
+            // Fast-path: check if English subtitles already exist
+            if SubtitleService::has_english_subtitles(&video_path, &filename, roots, cache_dir).await {
+                continue;
+            }
+
+            // Missing English subtitles: attempt proactive acquisition
+            if SubtitleService::ensure_subtitles_for_movie(
+                &video_path,
+                &filename,
+                &title,
+                roots,
+                cache_dir,
+            )
+            .await
+            {
+                acquired += 1;
+            }
+
+            // Polite delay between consecutive OpenSubtitles calls (Option A: 500ms)
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        if acquired > 0 {
+            info!(
+                "Proactive subtitle sweep completed: cached subtitles for {} movie(s)",
+                acquired
+            );
+        }
+        acquired
     }
 }
