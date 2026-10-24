@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
+use tracing::{debug, info};
 
 pub struct SubtitleService;
 
@@ -397,7 +398,16 @@ impl SubtitleService {
 
                     // Read content for language detection
                     let text = fs::read_to_string(&sub_path).unwrap_or_default();
-                    let lang = Self::detect_subtitle_language(&text);
+                    let mut lang = Self::detect_subtitle_language(&text);
+                    if lang == "und" {
+                        if sub_stem.ends_with(".en")
+                            || sub_stem.ends_with(".eng")
+                            || sub_stem.contains("_en_")
+                            || sub_stem.ends_with("_en")
+                        {
+                            lang = "en".to_string();
+                        }
+                    }
 
                     let label = match lang.as_str() {
                         "en" => "English",
@@ -471,6 +481,9 @@ impl SubtitleService {
     }
 
     /// Fetch online English subtitles from OpenSubtitles via hash or movie title, saving to cache.
+    ///
+    /// Implements 24-hour negative match caching via `{short_hash}.nomatch` so titles without
+    /// online subtitles do not repeatedly suffer an 8-second network delay on every playback or scan.
     pub async fn fetch_online_subtitle(
         video_path: &Path,
         title: &str,
@@ -492,6 +505,24 @@ impl SubtitleService {
             if let Ok(m) = target.metadata() {
                 if m.len() > 0 {
                     return Some(target);
+                }
+            }
+        }
+
+        // Check 24-hour negative-match cache marker
+        let nomatch_target = online_cache_dir.join(format!("{}.nomatch", short_hash));
+        if nomatch_target.is_file() {
+            if let Ok(m) = nomatch_target.metadata() {
+                if let Ok(modified) = m.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed < Duration::from_secs(24 * 3600) {
+                            debug!(
+                                "Proactive subtitles: 24h negative cache active for {} ('{}')",
+                                short_hash, title
+                            );
+                            return None;
+                        }
+                    }
                 }
             }
         }
@@ -568,17 +599,21 @@ impl SubtitleService {
         }
 
         // 3. Download & decompress
-        let dl = download_url?;
-        let dl_res = client
+        let Some(dl) = download_url else {
+            // Write 24h negative-match cache marker
+            let _ = tokio::fs::write(&nomatch_target, b"no_match").await;
+            return None;
+        };
+
+        let dl_res = match client
             .get(&dl)
             .header("User-Agent", "TemporaryUserAgent")
             .send()
             .await
-            .ok()?;
-
-        if !dl_res.status().is_success() {
-            return None;
-        }
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => return None,
+        };
 
         let raw_bytes = dl_res.bytes().await.ok()?;
 
@@ -598,7 +633,80 @@ impl SubtitleService {
         tokio::fs::write(&temp_target, vtt.as_bytes()).await.ok()?;
         tokio::fs::rename(&temp_target, &target).await.ok()?;
 
+        // Remove negative cache marker if present
+        let _ = tokio::fs::remove_file(&nomatch_target).await;
+
         Some(target)
+    }
+
+    /// Check whether a movie already has English subtitles available
+    /// (via local sidecars, embedded container tracks, or cached online subtitles).
+    pub async fn has_english_subtitles(
+        video_path: &Path,
+        rel_filename: &str,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+    ) -> bool {
+        // 1. Check local sidecars
+        let local_tracks = Self::list_tracks(video_path, rel_filename, roots);
+        if local_tracks.iter().any(|t| t.lang == "en") {
+            return true;
+        }
+
+        // 2. Check if already cached from OpenSubtitles
+        if let Ok(meta) = fs::metadata(video_path) {
+            let size = meta.len();
+            let path_str = video_path.to_string_lossy();
+            let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+            let stamp = format!("{}:{}", clean_path, size);
+            let mut hasher = Sha256::new();
+            hasher.update(stamp.as_bytes());
+            let short_hash = &hex::encode(hasher.finalize())[..16];
+            let online_target = cache_dir.join("subtitles").join("online").join(format!("{}.vtt", short_hash));
+            if online_target.is_file() {
+                if let Ok(m) = online_target.metadata() {
+                    if m.len() > 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 3. Check embedded tracks
+        let embedded = Self::probe_embedded_subtitles(video_path).await;
+        embedded.iter().any(|s| {
+            s.language == "eng"
+                || s.language == "en"
+                || s.title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains("english")
+        })
+    }
+
+    /// Proactively acquire online subtitles for a movie if it lacks English subtitles.
+    /// Returns Ok(true) if a new subtitle was downloaded, Ok(false) if already present or not found.
+    pub async fn ensure_subtitles_for_movie(
+        video_path: &Path,
+        rel_filename: &str,
+        title: &str,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+    ) -> bool {
+        if Self::has_english_subtitles(video_path, rel_filename, roots, cache_dir).await {
+            return false;
+        }
+
+        info!("Proactive subtitles: acquiring English subtitles for '{}' (rel: '{}')", title, rel_filename);
+        let result = Self::fetch_online_subtitle(video_path, title, cache_dir).await;
+        if result.is_some() {
+            info!("Proactive subtitles: successfully cached English subtitles for '{}'", title);
+            true
+        } else {
+            debug!("Proactive subtitles: no OpenSubtitles match for '{}'", title);
+            false
+        }
     }
 
     /// Probe container media streams via ffprobe for embedded subtitle tracks.

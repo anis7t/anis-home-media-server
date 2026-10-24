@@ -22,6 +22,7 @@ pub struct ScanResponse {
     pub unindexed_discovered: usize,
     pub movies_indexed: usize,
     pub orphans_pruned: usize,
+    pub subtitles_acquired: usize,
     pub errors: usize,
     pub transcodes_queued: u64,
     pub transcodes_started: u64,

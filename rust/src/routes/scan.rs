@@ -51,6 +51,7 @@ pub async fn get_scan_handler(
         unindexed_discovered: last.unindexed_discovered,
         movies_indexed: last.movies_indexed,
         orphans_pruned: last.orphans_pruned,
+        subtitles_acquired: last.subtitles_acquired,
         errors: last.errors,
         transcodes_queued: 0,
         transcodes_started: 0,
