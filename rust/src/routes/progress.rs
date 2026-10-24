@@ -15,6 +15,8 @@ pub struct ProgressQuery {
     pub filename: Option<String>,
 }
 
+use crate::services::auth_service::AuthService;
+
 fn extract_device_id(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-device-id")
@@ -32,6 +34,10 @@ fn extract_device_id(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
+async fn extract_user_id(pool: &PgPool, headers: &HeaderMap, device_id: Option<&str>) -> Option<i64> {
+    AuthService::resolve_effective_user_id(pool, headers, device_id).await
+}
+
 pub async fn get_progress_handler(
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -43,7 +49,8 @@ pub async fn get_progress_handler(
         .ok_or_else(|| AppError::BadRequest("Filename query parameter is required".to_string()))?;
 
     let device_id = extract_device_id(&headers);
-    let progress = ProgressService::get_progress(&pool, &filename, device_id).await?;
+    let user_id = extract_user_id(&pool, &headers, device_id).await;
+    let progress = ProgressService::get_progress(&pool, &filename, device_id, user_id).await?;
 
     Ok(Json(progress))
 }
@@ -54,7 +61,8 @@ pub async fn post_progress_handler(
     Json(payload): Json<UpdateProgressRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let device_id = extract_device_id(&headers);
-    ProgressService::update_progress(&pool, payload, device_id).await?;
+    let user_id = extract_user_id(&pool, &headers, device_id).await;
+    ProgressService::update_progress(&pool, payload, device_id, user_id).await?;
 
     Ok((StatusCode::OK, Json(SuccessResponse { success: true })))
 }
