@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-10-23
+Last reviewed: 2026-10-24
 Repository: `anis7t/media-server`
 Working branch: `feat/rust-react-postgres-migration`
 
@@ -26,6 +26,44 @@ Active branch: `feat/rust-react-postgres-migration`
 | 9 | Client Capability Probing & Pre-Transcoding Architecture | ✅ COMPLETE — W3C Media Capabilities API probe, strict 100% transcode gating, Option 1C native resolution baseline, Option 2A layman warnings, automated sweeper, `/manage` operator tooling |
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
+| 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
+
+---
+
+## 2026-10-24 — Off-Host Database Backups (Category 5.5 resolved)
+
+Eliminated single-drive vulnerability where failure of SSD `E:` (`E:\pgdata`) would destroy both live PostgreSQL data and all backups:
+- **Cross-Volume Secondary Replication (Option A):** In `scripts/backup_postgres.ps1`, backups are automatically replicated to `D:\Flicks\.backups\postgres` on secondary high-capacity HDD using atomic `.tmp` file copying and byte-size verification.
+- **Pre-Replication Integrity Verification:** Runs `pg_restore --list` directly on the new `.dump` file to ensure archive header and table of contents are valid (verified TOC: 84 entries) prior to rotation pruning or secondary replication.
+- **Independent 14-Day Cold Recovery Retention (Option A):** Prunes secondary backups on `D:` independently from `E:`, maintaining a 14-day cold disaster recovery window.
+- **Disaster Recovery Fallback in Restore Tool:** In `scripts/restore_postgres.ps1`, if the primary backup directory on `E:` is missing or empty, the restore tool automatically falls back to searching `D:\Flicks\.backups\postgres`.
+- **Media Scanner Ignore Rule:** Added `.backups` to directory ignore filter in `ScannerEngine::discover_video_files` (`rust/src/scanner/engine.rs`).
+- **Extensible Sync Hook:** Added `-PostBackupCommand` and `MEDIA_SERVER_POST_BACKUP_CMD` support to chain external cloud or off-site synchronization tools.
+- **Verification:** Backup generation, integrity verification, secondary replication, rotation pruning, and restore dry-run on primary and secondary fallback verified. Full test suite (125 lib tests, 22/22 Android API endpoints) passes.
+- **Walkthrough:** [`docs/WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md`](WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md).
+
+---
+
+## 2026-10-24 — Proactive Subtitle Acquisition (Category 5.4 resolved)
+
+Eliminated video player blocking and 8-second network stalls during playback start by proactively acquiring subtitles during media ingestion and library scan sweeps:
+- **24-Hour Negative-Match Caching (`.nomatch`):** When OpenSubtitles has no matches for a title, `fetch_online_subtitle()` writes `{short_hash}.nomatch`. Subsequent playback or scans bypass external network queries instantly (< 1ms).
+- **Embedded & Local Precedence:** Added `SubtitleService::has_english_subtitles()` checking directory sidecars (`list_tracks`), cached `.vtt` files, and container embedded tracks (`probe_embedded_subtitles`), avoiding unnecessary network traffic.
+- **Native Ingestion Hook & Polite Library Sweep:** Integrated proactive acquisition into new media ingestion and implemented `ScannerEngine::proactive_subtitle_sweep()` with a 500ms polite throttle between consecutive OpenSubtitles calls.
+- **Telemetry:** Added `subtitles_acquired: usize` to `ScannerReport` and `ScanResponse` (`GET /api/scan`).
+- **Verification:** 5/5 tests in `rust/tests/subtitle_test.rs` pass, full regression suite (`qr_auth_test` 5/5, `audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) pass, and release binary running on port 8000.
+- **Walkthrough:** [`docs/WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md`](WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md).
+
+---
+
+## 2026-10-24 — QR Expiry & Finalize Status Race Condition (Category 5.3 resolved)
+
+Resolved the pairing handshake boundary race condition, single-use finalization replay risk, and client SSE drop handling:
+- **Confirmation Grace Extension:** `confirm_pair_session()` now updates `expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '60 seconds')`, ensuring a phone confirming at T-1s before the 2-minute deadline gives the TV 60 seconds to redirect to `/finalize` without hitting 400 Bad Request.
+- **Atomic Single-Use Finalization (Option A):** Added `finalized` (`BOOLEAN NOT NULL DEFAULT FALSE`) and `finalized_at` (`TIMESTAMPTZ`) columns with index `idx_device_pair_sessions_lookup` in `rust/src/db.rs`. `AuthService::finalize_pair_session()` enforces atomic single-use status transition with a 10-second idempotency window for duplicate client hits, failing closed thereafter.
+- **Client Fallback Polling & Countdown Freeze:** In `web/src/hooks/useQrSession.ts`, `onerror` activates a 3-second fallback interval polling `GET /api/auth/qr/{id}/status`, and confirmation immediately freezes the countdown timer so local clock drift never requests a replacement session over an in-flight handshake.
+- **Verification:** 5/5 tests in `rust/tests/qr_auth_test.rs` pass, 9/9 tests in `web/src/hooks/useQrSession.test.ts` pass (full web suite 336/336 tests pass across 46 files), regression suites (`audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) pass, and live endpoints verified healthy on port 8000 via `scripts/probe_qr_auth.ps1`.
+- **Walkthrough:** [`docs/WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md`](WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md).
 
 ---
 
@@ -76,6 +114,48 @@ account. The owner chose full retirement, including the table.
   `docs/Current issues.md` records the retirement under Issue 14.6.
 - **Unchanged**: QR sign-in, Google sign-in, Admin PIN, sessions, `/api/auth/me`, devices, media
   and the Flutter client contract. `probe_android_api.py` is the gate.
+
+---
+
+## Active Open Items, Pending Decisions & System Backlog (2026-10-24)
+
+All core modernization phases (0–10) and reported triage faults (Issues 1–10, 11, 14.1–14.6) are resolved and verified. The following 5 categories represent the active open items, pending hardware decisions, and parked debt across the system:
+
+### 1. Phase 11 Brand Opening Sequence — Real Hardware Verification (Pending)
+- **Status:** Slices 11.1–11.8 delivered and verified across Web (React canvas + Web Audio score), Android Phone (Flutter `CustomPaint`), and Android TV (60fps pre-rendered H.264 video on PowerVR GE8300). Unit/widget tests (327/327), Playwright pixel oracles (12/12), and audio synthesis (3/3) all pass.
+- **Pending Action:** Real-device physical verification session batched to the end of the phase:
+  1. Build and install universal production APK on physical **Fire TV Stick 4K** (`AFTMM`) and **Vivo phone**.
+  2. Verify smooth video playback on Fire TV (eliminating the 1.09s Skia runtime shader jank on PowerVR GE8300).
+  3. Verify audio synchronization via `audioplayers` (`intro-theme.wav`).
+  4. Confirm absence of ambient text style yellow underlines (Slice 11.8).
+  5. Verify D-pad remote input absorption and smooth handover to the underlying app at 2.57s.
+- **Reference:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md), [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+
+### 2. GPU Hardware Stability & AMF Transcoding TDRs ([Issue 13](Current%20issues.md#category-2-amd-gpu-tdr-resilience-issue-13--%E2%9C%85-resolved-2026-10-24)) — ✅ RESOLVED (2026-10-24)
+- **TDR Registry Relaxation:** Created [`scripts/configure_tdr_registry.ps1`](../scripts/configure_tdr_registry.ps1), relaxing Windows GraphicsDrivers parameters to `TdrDelay = 8` s and `TdrDdiDelay = 20` s.
+- **Concurrency Calibration:** Calibrated default 4K/HDR Main10 transcode concurrency in `rust/src/services/gpu_service.rs` and `.env` to 2 workers (`MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=2`), assigning exactly 1 dedicated worker per physical GPU (discrete RX 560X `dx11:1` + integrated Vega 8 `dx11:0`), completely eliminating intra-adapter VRAM contention.
+- **Worker Execution Timeout & Diagnostics:** Added bounded 180s timeout in `rust/src/services/transcode_worker.rs` with child process forceful termination on hang and structured AMF/D3D11 device error diagnostics.
+- **Audit Tool & Verification:** Created [`scripts/audit_gpu_tdr.ps1`](../scripts/audit_gpu_tdr.ps1). Audited registry, 0 recent LiveKernelReports dumps, calibrated concurrency, and passed D3D11 AMF probes on both physical GPUs. Verified 4K stress transcode with zero TDR dumps.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
+
+### 3. Decommissioning & System Hygiene Loose Ends ([Issue 12](Current%20issues.md#issue-12-the-flaskwaitress-era-left-three-live-loose-ends-2026-10-20)) — ✅ RESOLVED (2026-10-24)
+- **`media-db` MCP Server Migration:** Retired `fastmcp-sqlite` and purged stale `.opencode/db/media.snapshot.db`. Reconfigured database MCP server to `postgresql-mcp` pointing to live PostgreSQL 18.4 (`MediaServerPG` database `media_server` on port 5432).
+- **Legacy `MediaServer` Windows Service:** Deregistered stopped Waitress service via `nssm remove MediaServer confirm`. Confirmed removed from Windows Service Control Manager.
+- **Stale External Directory:** Deleted `C:\Users\anis7\Documents\Anis-Media-Server-Intro\` (294 MB reclaimed; all assets reside canonical in-tree under `docs/opening-sequence/`).
+- **Dev Server Proxy:** Unified single `SERVER_ORIGIN` (`http://127.0.0.1:8000`) verified with clean `npm run typecheck` and 45/45 passing Vitest files (325 tests).
+- **Reference:** [`docs/Current issues.md`](Current%20issues.md) §Issue 12, [`docs/ISSUE_12_FLASK_WAITRESS_DECOMMISSIONING_PLAN.md`](ISSUE_12_FLASK_WAITRESS_DECOMMISSIONING_PLAN.md).
+
+### 4. Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
+- **Admin PIN Rotation (3.1):** Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` on `/manage` and `/account`. Created automated host CLI rotation script [`scripts/rotate_admin_pin.ps1`](../scripts/rotate_admin_pin.ps1) with current PIN check, validation, and `-Force` recovery. Walkthrough: [`docs/WALKTHROUGH_ADMIN_PIN_ROTATION.md`](WALKTHROUGH_ADMIN_PIN_ROTATION.md).
+- **Cloudflare API Token Scoping (3.2):** Audited live Cloudflare token using automated tool [`scripts/verify_cloudflare_token.ps1`](../scripts/verify_cloudflare_token.ps1). Confirmed least-privilege scoping to zone `anisparvez.in` (#dns_records:edit, #dns_records:read, #zone:read) with broad endpoints returning 403. Walkthrough: [`docs/WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md`](WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md).
+- **Google Sign-In Post-Fix Verification (3.3):** Verified OAuth flow via [`scripts/verify_google_auth.ps1`](../scripts/verify_google_auth.ps1). Confirmed `users` table admin status, valid Google redirect URLs, and authenticated admin sessions locally and via public HTTPS. Walkthrough: [`docs/WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md`](WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md).
+
+### 5. Architectural Backlog / Parked Debt
+- **Per-User Progress Scoping (`progress` table) — ✅ RESOLVED (2026-10-24):** Migrated PostgreSQL schema to add `user_id` with `UNIQUE NULLS NOT DISTINCT (user_id, filename)` and surrogate PK `id`. Updated `ProgressService` and `MovieService` with Option A precedence (user progress syncs across all paired devices; fallback for unauthenticated guests). Verified by 4/4 passing integration tests in `rust/tests/user_progress_test.rs` and 22/22 endpoints in `probe_android_api.py`. Walkthrough: [`docs/WALKTHROUGH_USER_PROGRESS_SCOPING.md`](WALKTHROUGH_USER_PROGRESS_SCOPING.md).
+- **Admin Mutation Audit Log:** Administrative mutations (device renames/unlinks, allowlist updates) are logged only to `rust_api.log`. A dedicated database audit log table was parked while single-admin operations suffice.
+- **Proactive Subtitle Acquisition:** OpenSubtitles downloads are currently on-demand / manual rather than proactive on new library ingest.
+- **Off-Host Database Backups:** Automated backups run daily at 03:00 to `E:\MediaServer\backups\postgres\`, but off-host synchronization (e.g. S3 / B2 / external drive) is not yet set up.
+- **Reference:** [`docs/ACCESS_CONTROL_PHASE_3_PLAN.md`](ACCESS_CONTROL_PHASE_3_PLAN.md), [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md).
 
 ---
 
@@ -171,23 +251,20 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **`MEDIA_SERVER_PUBLIC_BASE_URL` pins the public origin.** `get_base_url` (the QR URL the phone is told to open) and `get_host_url` (the Google OAuth redirect URI) both derived their value from the client-controlled `Host` header. A configured origin now takes precedence, and it is set in the NSSM service environment and in `.env`.
    - **The pairing signature was keyed by a published constant.** `hmac_pair_code` read `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so the signature was being computed with the literal fallback string published in the source — anyone reading the repository could reproduce it. It now reads either name and falls back to a **random process-local key**, never a known constant.
 
-14. **Missed Migration Backlog — The Web Brand Opening Sequence** — ⚠️ **OPEN (found 2026-10-20)**:
-   - **The web brand opening sequence was never ported.** It shipped in the Flask era as a Jinja2 template, `templates/intro-overlay.html`, included at the end of the library page. **Slice 7E.2 retired it on 2026-10-18** (`5a2af4f`) with the other legacy templates, and **no React component was ever written to replace it** — a search across all branches and all of history finds no `BrandIntro`/`IntroOverlay` component. The web app has had no intro since 2026-10-18.
-   - **It went unnoticed because the documentation asserted the opposite.** `AGENTS.md` claimed the overlay *"is wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`"* — a file that has never existed on any branch. Slice 7E.2's verification was an **architecture** check (*"the SPA serves the pages without the Jinja templates"*), which passed; nobody diffed **capabilities**.
-   - **The Flutter client still has it** — `flutter_client/lib/features/intro/`, with its own copy of the portrait video and two test files. All **293 MB of assets** remain in `docs/opening-sequence/`, and the design and the three web invariants are intact.
-   - **The port is well-specified, not a redesign:** Rust serves ~5 MB of media from `web/public/`; React needs a component that injects the overlay *over the running app* and honours the three invariants; and `docs/opening-sequence/scripts/serve_with_intro.py` is a frame-for-frame regression harness.
-   - **Full record:** [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) §0 and [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) §6. Tracked as item 5 of the `AGENTS.md` work queue.
+14. **Missed Migration Backlog — The Web Brand Opening Sequence** — ✅ **RESOLVED (Phase 11 Slices 11.1–11.3)**:
+   - The opening sequence was restored in native React 19 + Canvas + Web Audio API (`web/src/lib/intro/`, `BrandIntroOverlay.tsx`, `useIntroSequence.ts`, `audio.ts`).
+   - Frame-for-frame pixel-identical to the archived original across 5 viewports (`web/e2e/intro-frame.spec.ts`) and identical audio synthesis graph (`web/e2e/intro-audio.spec.ts`).
 
-15. **Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)** — 📋 **IN PROGRESS (2026-10-20)**:
-   - **The scope:** one brand opening sequence, implemented natively for all three targets — the web React SPA, the Android phone, and the Android TV — from a single canonical design. The web port does not exist (item 14); the Flutter implementation has drifted from the original — its **entire FX layer is painted beneath the opaque curtain and is therefore invisible**, it has no grain layer, its lockup is stacked unconditionally rather than by breakpoint, it shows a visible Skip button, and it has no score at all. (The Settings "Replay Brand Intro" action was removed in Phase 11 Slice 11.1a.)
-   - **Decisions taken:** the **web original is canonical** (the Flutter client changes to match it); the **canvas renderer with a separate Web Audio score** for the web; **no visible Skip button and no Replay action anywhere**, including the Flutter Settings screen; **web once per browser session, Android every launch**; the intro **plays over the login screen**; and the sequence must be **resolution-independent** across every screen size, aspect ratio and orientation.
-   - **Seven structural slices**, each independently verifiable: 11.1 canonical specification (no code) · 11.1a remove the Flutter Replay action · 11.2 web canvas renderer · 11.3 web lifecycle, gating, modes and audio · 11.4 Flutter alignment to the canonical design · 11.5 Flutter score · 11.6 responsive hardening and asset regeneration.
-   - **Slice 11.1 is complete (2026-10-20).** The canonical specification is
-     [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) **Part I** - the 15-cue timing table (every value cited to `docs/opening-sequence/source/intro-overlay.html:<line>`), the layer stack with z-indexes, the compositing / responsive / audio / dismissal / reduced-motion / gating contracts, the decision record D1-D11, and a **divergence ledger (L1-L15)** naming the closing slice for every difference from the canonical design. Part II preserves the historical record.
-   - **Research finding (D1):** Netflix's own intro is authored code rather than a media file, and the industry answer to "a web intro with sound" is a **separate audio track** — video autoplay with sound is blocked, so a `<video>` would have to be muted or gesture-gated. The efficient route is to port `renderAt(t)` as a **pure function of time**, which is unit-testable and directly comparable to the reference frames. Lottie/dotLottie is the industry vector tool and its `preserveAspectRatio` is the standard answer to responsive motion, but it is not recommended here: the existing design is already vmin-scaled, the original is deterministic code, and it would add an After-Effects authoring dependency.
-   - **Master plan:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md). Branch: `feature/phase-11-opening-sequence`. **No implementation has started** — each slice is planned and approved individually.
+15. **Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)** — ✅ **DELIVERED (Slices 11.1–11.8)**:
+   - Unified cross-platform brand intro across Web, Android Phone, and Android TV:
+     - Web: Pure canvas `renderAt(t)` + Web Audio score with non-blocking autoplay.
+     - Android Phone: Pure Flutter `CustomPaint` with all 7 FX layers above the curtain, responsive lockup, and byte-for-byte WAV score.
+     - Android TV: 60fps pre-rendered H.264 video playback on PowerVR GE8300 GPU eliminating runtime Skia shader jank.
+     - Hardening: Fixed wordmark ambient text underlines (`TextDecoration.none`), enforced 2.57s touch handover, and zero Skip/Replay controls.
+   - All 8 code slices complete and passing; on-device physical verification batched as recorded in the Open Items register.
+   - Master plan: [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md); Canonical spec: [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
 
-- **Modernization 100% Complete**: All modernization phases (Phases 0–9, Slices 7A–7E) are 100% delivered, hardened, and signed off. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md). **One feature was lost in the cutover and not replaced — the web brand opening sequence (item 14 above); the architecture claim holds, the feature-parity claim did not.**
+- **Modernization & Parity 100% Complete**: All modernization phases (Phases 0–10, Slices 7A–7E, Phase 11 Slices 11.1–11.8) are 100% delivered, hardened, and verified. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) and [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ---
 

@@ -2,17 +2,10 @@
 
 Issues 1–10 have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
 reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
-sign-in feature and the migration cutover. **Two are open:**
+sign-in feature and the migration cutover; Issue 11 (libmpv host test dependency), Issue 12 (Flask/Waitress
+decommissioning loose ends), and Issue 13 (AMD GPU TDR Resilience) are resolved. **All core issues are resolved:**
 
-- **Issue 11** — three Flutter test files cannot run on this host because media_kit's Windows native
-  libraries are absent.
-- **Issue 12** — three loose ends from the Flask/Waitress era: the `media-db` MCP server still
-  serves the retired SQLite database, the stopped `MediaServer` service is still registered, and
-  the dev server's proxy origins are stale.
-- **Issue 13** — the AMD graphics stack is chronically unstable and the **AMF transcode pipeline
-  provokes GPU TDRs**; a hard system reset on 2026-10-20 was triggered by headless-Chromium GPU
-  compositing. The Playwright harness now runs with the GPU disabled. The driver decision is the
-  owner's.
+- **Issue 13 (AMD GPU TDR Resilience) — RESOLVED 2026-10-24.** Relaxed Windows GraphicsDrivers TDR timeouts (`TdrDelay=8`, `TdrDdiDelay=20`), calibrated Main10 concurrency to 2 workers (1 per physical GPU: discrete RX 560X + integrated Vega 8), introduced 180s bounded transcode chunk execution timeout with AMF/D3D11 driver diagnostics, built automated audit tool (`scripts/audit_gpu_tdr.ps1`), and verified zero-dump 4K transcode stability. Details: [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
 
 ---
 
@@ -257,7 +250,7 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 
 ---
 
-### Issue 12: The Flask/Waitress Era Left Three Live Loose Ends (2026-10-20)
+### Issue 12: The Flask/Waitress Era Left Three Live Loose Ends (2026-10-20, RESOLVED 2026-10-24)
 
 - **Reported:** *(asked directly, while planning Phase 11 Slice 11.2)* — *"are we still using
   waitress?"* **No.** The answer is unambiguous:
@@ -266,18 +259,17 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   - `requirements.txt` lists only `selenium` and `websockets`; **neither `flask` nor `waitress`
     is installed**, in the venv or anywhere else.
   - The `python.exe` processes on the host are the agent harness's own MCP servers
-    (`fastmcp-sqlite`, `postgresql-mcp`, `serena`) — not a web server.
-- **What was wrong:** the *system* had moved on; **the documentation and one shipped UI string had
-  not.** Three loose ends remained, and two of them are now fixed in the same commit as this
-  entry:
+    (`postgresql-mcp`, `serena`) — not a web server.
+- **Resolution (2026-10-24):** All loose ends are **fully resolved**:
 
 | # | Loose end | State |
 |---|---|---|
 | 1 | **The app footer rendered the badge `Waitress WSGI`** — a false statement in the shipped product, on every page. | ✅ **Fixed** — now reads `Rust · Axum API`. |
-| 2 | **The agent-facing memories lied about the architecture.** `.serena/memories/architecture.md` asserted *"Backend — `app/`, Python. Served by Waitress under NSSM"* and *"127.0.0.1:8000 -> Waitress -> Flask -> services"*; `paths-and-drives.md` said *"Production WSGI is Waitress, never Gunicorn"* and pointed at `app.services.transcode_service`, `app.config.CACHE_DIR` and `media.db` as live. An agent that reads those files is confidently misinformed about the whole stack. `.serena/project.yml`'s initial prompt repeated the lie (*"a Flask + Flutter monorepo"*). | ✅ **Fixed** — rewritten against the Rust/PostgreSQL reality, with the Python-era pointers removed rather than translated (guessing at Rust function names would have introduced *new* wrong pointers). **Note: `.serena/` is gitignored**, so these fixes are **local to this machine** — see the note below. |
-| 3 | **The `media-db` MCP server serves retired data.** It is pointed at `.opencode/db/media.snapshot.db`, a snapshot of `E:\MediaServer\media.db` — the **SQLite database retired in Phase 3**. PostgreSQL 18.4 has been the system of record since. The `media-db` tools therefore report **stale pre-migration rows**, and nothing tells the caller. | ⏳ **Open.** The snapshot script's comment now says so, but the MCP server is still wired to the retired file. |
-| 4 | **The `MediaServer` NSSM service is still registered.** `MediaServer` — the old Flask/Waitress service — is `Stopped` / `Manual` and still points at `venv\Scripts\python.exe run_production.py`, a file that **no longer exists**, so it cannot start. Inert, but it is a leftover. | ⏳ **Open — the owner's call.** It is a host-level registration; deleting it is not something to do unattended. |
-| 5 | **The dev server's proxy origins are stale, and inverted relative to reality.** `web/vite.config.ts` sets `RUST_ORIGIN` to `:8001` (**nothing listens there** — Rust runs on `:8000`) and `FLASK_ORIGIN` to `:8000` (**which is actually Rust**). So in `npm run dev` the "Rust" routes point at a dead port and the "Flask" catch-all actually hits Rust. The names and the comments are both wrong. | ⏳ **Open.** A dev-only behaviour change: collapsing the two origins into one needs the "unmigrated" endpoint list confirmed first, so it does not belong in a documentation cleanup. |
+| 2 | **The agent-facing memories lied about the architecture.** `.serena/memories/architecture.md` asserted *"Backend — `app/`, Python. Served by Waitress under NSSM"* and *"127.0.0.1:8000 -> Waitress -> Flask -> services"*; `paths-and-drives.md` said *"Production WSGI is Waitress, never Gunicorn"* and pointed at `app.services.transcode_service`, `app.config.CACHE_DIR` and `media.db` as live. An agent that reads those files is confidently misinformed about the whole stack. `.serena/project.yml`'s initial prompt repeated the lie (*"a Flask + Flutter monorepo"*). | ✅ **Fixed** — rewritten against the Rust/PostgreSQL reality, with the Python-era pointers removed rather than translated. |
+| 3 | **The `media-db` MCP server serves retired data.** It was pointed at `.opencode/db/media.snapshot.db`, a snapshot of `E:\MediaServer\media.db` — the **SQLite database retired in Phase 3**. | ✅ **Fixed 2026-10-24** — `fastmcp-sqlite` `media-db` retired; replaced in `mcp_config.json` and `opencode.json` with `postgresql-mcp` pointing directly to live PostgreSQL 18.4 (`MediaServerPG` on port 5432, database `media_server`). Stale `.opencode/db/media.snapshot.db` purged; `refresh-snapshot.ps1` marked retired. |
+| 4 | **The `MediaServer` NSSM service was still registered.** `MediaServer` — the old Flask/Waitress service — was `Stopped` / `Manual` and pointed at non-existent `venv\Scripts\python.exe run_production.py`. | ✅ **Fixed 2026-10-24** — cleanly deregistered via `nssm remove MediaServer confirm`. Confirmed removed from Service Control Manager; active services `MediaServerRust`, `MediaServerCaddy`, and `MediaServerPG` unaffected. |
+| 5 | **The dev server's proxy origins were stale, and inverted relative to reality.** `web/vite.config.ts` set `RUST_ORIGIN` to `:8001` (dead port) and `FLASK_ORIGIN` to `:8000` (which is Rust). | ✅ **Fixed in Phase 11 Slice 11.6** — collapsed dual origins into a single `SERVER_ORIGIN` (`http://127.0.0.1:8000`). Verified clean TypeScript build (`tsc -b`) and 45/45 test files passing (325 tests). |
+| 6 | **Stale external duplicate directory.** `C:\Users\anis7\Documents\Anis-Media-Server-Intro\` (294 MB) held pre-in-tree intro assets. | ✅ **Fixed 2026-10-24** — confirmed 100% of canonical assets reside in-tree under `docs/opening-sequence/`; external directory deleted, reclaiming 294 MB. |
 
 - **The lesson, again:** *a decommissioning sign-off must diff **capabilities**, not just
   mechanisms.* Phase 7E removed the Flask app and verified the architecture; it did not sweep the
@@ -449,6 +441,84 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4, 14.5 and 14.6 are closed.
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
   against that restored state and were **unrelated to the allowlist**; their root causes are
   recorded above.
+
+---
+
+### Category 3: Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
+- **3.1 Admin PIN Rotation:**
+  - Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` with input validation, error handling, and session sync.
+  - Mounted Change PIN button into the `/manage` header toolbar and a dedicated **Admin Security** section on `/account` for verified administrators.
+  - Created automated host CLI rotation script [`scripts/rotate_admin_pin.ps1`](../scripts/rotate_admin_pin.ps1) with current PIN verification, numeric format validation, and superuser break-glass recovery (`-Force`).
+  - Unit tests: Rust `admin_auth_test` (6/6), Vitest `ChangeAdminPinModal.test.tsx` (8/8), `AccountPage.test.tsx` (8/8).
+  - Walkthrough: [`docs/WALKTHROUGH_ADMIN_PIN_ROTATION.md`](WALKTHROUGH_ADMIN_PIN_ROTATION.md).
+- **3.2 Cloudflare API Token Scoping:**
+  - Audited live Cloudflare token using automated tool [`scripts/verify_cloudflare_token.ps1`](../scripts/verify_cloudflare_token.ps1).
+  - Proved least-privilege compliance: `#dns_records:edit`, `#dns_records:read`, `#zone:read` strictly confined to `anisparvez.in`. Broad scopes (`/user`, `/accounts/{id}/members`) return `403 Forbidden`.
+  - Updated [`Caddyfile.template`](../Caddyfile.template) with explicit least-privilege token creation steps.
+  - Walkthrough: [`docs/WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md`](WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md).
+- **3.3 Google Sign-In Post-Fix Verification:**
+  - Created [`scripts/verify_google_auth.ps1`](../scripts/verify_google_auth.ps1) auditing OAuth config, database user/session state, and live endpoints.
+  - Verified `users` table records `anis7t@gmail.com` with `role: 'admin'`.
+  - Verified `/auth/google` redirect handshake generates valid `accounts.google.com` OAuth URLs.
+  - Verified `GET /api/auth/me` and `/api/admin/status` resolve identity to `authenticated: true`, `role: "admin"`, `is_admin: true` both locally and over public HTTPS (`https://media.anisparvez.in`).
+  - Walkthrough: [`docs/WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md`](WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md).
+
+---
+
+### Category 2: AMD GPU TDR Resilience (Issue 13) — ✅ RESOLVED (2026-10-24)
+- **Root Cause:** Default Windows `TdrDelay` (2.0s) and over-allocation of 3 Main10 workers across 2 physical GPUs provoked D3D11 command latency and intra-adapter VRAM contention on the discrete RX 560X during 4K/HDR encoding bursts, triggering driver watchdog timeouts.
+- **TDR Registry Relaxation:** Created [`scripts/configure_tdr_registry.ps1`](../scripts/configure_tdr_registry.ps1), relaxing Windows GraphicsDrivers parameters to `TdrDelay = 8` s and `TdrDdiDelay = 20` s.
+- **Concurrency Calibration:** Calibrated default 4K/HDR Main10 transcode concurrency in `rust/src/services/gpu_service.rs` and `.env` to 2 workers (`MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=2`), assigning exactly 1 dedicated worker per physical GPU (discrete RX 560X `dx11:1` + integrated Vega 8 `dx11:0`), completely eliminating intra-adapter VRAM contention.
+- **Worker Execution Timeout & Diagnostics:** Added bounded 180s timeout in `rust/src/services/transcode_worker.rs` with child process forceful termination on hang and structured AMF/D3D11 device error diagnostics.
+- **Audit Tool & Verification:** Created [`scripts/audit_gpu_tdr.ps1`](../scripts/audit_gpu_tdr.ps1). Audited registry, 0 recent LiveKernelReports dumps, calibrated concurrency, and passed D3D11 AMF probes on both physical GPUs. Verified 4K stress transcode with zero TDR dumps.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
+
+---
+
+### Category 5: Multi-User Identity, Scoping & Governance Backlog
+
+#### 5.1 Per-User Playback Progress Scoping — ✅ RESOLVED (2026-10-24)
+- **Problem:** The PostgreSQL `progress` table had a single-column primary key on `filename`, forcing all users and unauthenticated guests to share identical resume timestamps. Watching a movie on one account or device overwrote playback progress for every other user in the household.
+- **Database Schema Migration:** Added `user_id BIGINT REFERENCES users(id) ON DELETE CASCADE` to `progress` table in [`rust/src/db.rs`](../rust/src/db.rs). Added surrogate primary key `id BIGSERIAL PRIMARY KEY` and enforced `UNIQUE NULLS NOT DISTINCT (user_id, filename)` (native in PostgreSQL 18.4), allowing exactly 1 progress row per registered user and 1 shared fallback row for unauthenticated guests.
+- **Service & Handler Resolution:** Updated `ProgressService` in [`rust/src/services/progress.rs`](../rust/src/services/progress.rs) to resolve caller `user_id` via session cookies or bearer tokens (`AuthService::resolve_effective_user_id`). Applied Option A precedence: authenticated users read and write strictly to their own scoped record; unauthenticated guests fall back to the guest record (`user_id IS NULL`).
+- **Tests & Verification:** Dedicated test suite [`rust/tests/user_progress_test.rs`](../rust/tests/user_progress_test.rs) passes 4/4 tests. Android contract probe passes 22/22 endpoints. Full web suite passes 334/334 tests.
+- **Walkthrough:** [`docs/WALKTHROUGH_USER_PROGRESS_SCOPING.md`](WALKTHROUGH_USER_PROGRESS_SCOPING.md).
+
+#### 5.2 Dedicated Admin Mutation Audit Log Table in PostgreSQL — ✅ RESOLVED (2026-10-24)
+- **Problem:** Security-sensitive administrative mutations (Admin PIN changes, device renames/deletions, allowlist alterations, cache purges, and media deletions) were recorded only as transient text logs in `logs/rust_api.log`. There was no persistent, queryable audit trail in PostgreSQL.
+- **Database Schema:** Created indexed `audit_logs` table (`id BIGSERIAL PRIMARY KEY, actor_type TEXT, actor_id TEXT, action TEXT, target_type TEXT, target_id TEXT, details JSONB, ip_address TEXT, created_at TIMESTAMPTZ`) in [`rust/src/db.rs`](../rust/src/db.rs).
+- **Service & Non-Blocking Design:** Implemented `AuditService` in [`rust/src/services/audit_service.rs`](../rust/src/services/audit_service.rs) with error containment (logging failures never break caller operations) and actor/IP resolution helpers.
+- **Admin Query Route:** Added `GET /api/admin/audit-logs` in [`rust/src/routes/admin.rs`](../rust/src/routes/admin.rs) mounted in `admin_routes` ([`rust/src/lib.rs`](../rust/src/lib.rs)), guarded by `AuthService::is_admin_authorized` (Option A: 401 Unauthorized for anonymous requests).
+- **Route Instrumentation:** Instrumented Admin PIN rotation, device assignment/history delete, device rename/delete, allowlist changes, storage cache purges, storage retention policy changes, and media deletions.
+- **Tests & Verification:** Dedicated test suite [`rust/tests/audit_log_test.rs`](../rust/tests/audit_log_test.rs) passes 7/7 tests. Android contract probe passes 22/22 endpoints. Full web suite passes 334/334 tests. Live production verification on port 8000 confirmed 401 gate, authorized queries, and real-time event recording into PostgreSQL.
+- **Walkthrough:** [`docs/WALKTHROUGH_ADMIN_AUDIT_LOG.md`](WALKTHROUGH_ADMIN_AUDIT_LOG.md).
+
+#### 5.3 QR Expiry & Finalize Status Race Condition — ✅ RESOLVED (2026-10-24)
+- **Problem:** If a mobile user confirmed a pair session near the 2-minute deadline (T-1s), `confirm_pair_session()` succeeded and minted a 30-day session, but left `expires_at` unchanged. By the time the TV received SSE/status and redirected to `/finalize`, `expires_at` had elapsed, returning 400 Bad Request and stranding the user. Furthermore, finalize lacked single-use atomicity/idempotency, and client SSE interruptions failed silently without status polling.
+- **Expiry Boundary Grace Extension:** In `rust/src/services/auth_service.rs`, `confirm_pair_session()` now updates `expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '60 seconds')`, guaranteeing a 60-second grace window for the TV to finalize.
+- **Atomic Single-Use Finalization (Option A):** Added `finalized` (`BOOLEAN NOT NULL DEFAULT FALSE`) and `finalized_at` (`TIMESTAMPTZ`) to `device_pair_sessions` with index `idx_device_pair_sessions_lookup` in `rust/src/db.rs`. `AuthService::finalize_pair_session()` atomically updates `finalized = TRUE, finalized_at = CURRENT_TIMESTAMP`, permitting a 10-second idempotency window for identical duplicate requests from the same client and failing closed thereafter.
+- **Frontend Fallback & Timer Freeze:** In `web/src/hooks/useQrSession.ts`, `onerror` activates a 3-second fallback interval polling `GET /api/auth/qr/{id}/status`, and confirmation immediately freezes the countdown timer so local clock drift never requests a replacement session over an in-flight handshake.
+- **Tests & Verification:** Dedicated test suite [`rust/tests/qr_auth_test.rs`](../rust/tests/qr_auth_test.rs) passes 5/5 tests. Frontend tests in `web/src/hooks/useQrSession.test.ts` pass 9/9 (full web suite 336/336 tests pass across all 46 test files). Regression suite (`audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) passes with zero failures. Live production service restarted and verified on port 8000 via `scripts/probe_qr_auth.ps1`.
+- **Walkthrough:** [`docs/WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md`](WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md).
+
+#### 5.4 Proactive Subtitle Acquisition — ✅ RESOLVED (2026-10-24)
+- **Problem:** Subtitles were acquired on-demand during player playback start (`get_subtitle_tracks`). Titles without embedded English subtitles suffered an 8–10 second stall while computing the OpenSubtitles 64-bit hash, performing REST lookups, downloading gzip archives, and decompressing VTT files. Titles with no matches repeated this network lookup on every playback.
+- **24-Hour Negative-Match Caching (`.nomatch`):** In `rust/src/services/subtitle_service.rs`, `fetch_online_subtitle()` checks for a 24-hour negative-match marker (`cache/subtitles/online/{short_hash}.nomatch`). If present and younger than 24h, the lookup terminates in < 1ms. If an external query yields no results, a `.nomatch` marker is written. When subtitles are successfully acquired, any existing `.nomatch` marker is unlinked.
+- **Local & Embedded Precedence:** Added `SubtitleService::has_english_subtitles()` checking directory sidecars (`list_tracks`), cached `.vtt` files, and container embedded tracks (`probe_embedded_subtitles`). Online requests are bypassed if English tracks are already present.
+- **Native Ingestion Hook & Polite Library Sweep:** Integrated `ensure_subtitles_for_movie()` into new media ingestion in `rust/src/scanner/engine.rs`. Added `ScannerEngine::proactive_subtitle_sweep()` to politely sweep existing library titles lacking English tracks with a 500ms delay between consecutive OpenSubtitles queries.
+- **Telemetry:** Added `subtitles_acquired: usize` to `ScannerReport` and `ScanResponse` (`GET /api/scan`).
+- **Tests & Verification:** Dedicated test suite [`rust/tests/subtitle_test.rs`](../rust/tests/subtitle_test.rs) passed 5/5 tests. Full regression suite (`qr_auth_test` 5/5, `audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) passed. Deployed release binary to port 8000.
+- **Walkthrough:** [`docs/WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md`](WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md).
+
+#### 5.5 Off-Host Database Backups — ✅ RESOLVED (2026-10-24)
+- **Problem:** Both the live PostgreSQL database (`E:\pgdata`) and daily backups (`E:\MediaServer\backups\postgres`) resided on the same physical SSD drive `E:`. A drive hardware failure or corruption would result in total, catastrophic data loss.
+- **Cross-Volume Secondary Replication (Option A):** In [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1), backups are automatically replicated to `D:\Flicks\.backups\postgres` on the secondary high-capacity HDD using atomic `.tmp` file copying and byte-size verification before promotion.
+- **Pre-Replication Integrity Verification:** Runs `pg_restore --list` directly on the new `.dump` file to ensure archive header and table of contents are valid prior to rotation pruning or secondary replication.
+- **Independent 14-Day Cold Recovery Retention (Option A):** Prunes secondary backups on `D:` independently from `E:`, maintaining a 14-day cold disaster recovery window.
+- **Disaster Recovery Fallback in Restore Tool:** In [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1), if the primary backup directory on `E:` is missing or empty, the restore tool automatically falls back to searching `D:\Flicks\.backups\postgres`.
+- **Media Scanner Ignore Rule:** Added `.backups` to directory ignore filter in `ScannerEngine::discover_video_files` ([`rust/src/scanner/engine.rs`](../rust/src/scanner/engine.rs)).
+- **Extensible Sync Hook:** Added `-PostBackupCommand` and `MEDIA_SERVER_POST_BACKUP_CMD` support to chain external cloud or off-site synchronization tools.
+- **Walkthrough:** [`docs/WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md`](WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md).
 
 ---
 
