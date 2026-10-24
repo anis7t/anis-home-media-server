@@ -11,25 +11,67 @@ import '../../../../core/widgets/tv_focusable.dart';
 import '../../../library/data/models/movie_item.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../../../library/presentation/widgets/continue_watching_rail.dart';
-import '../../../library/presentation/widgets/movie_card.dart';
+import '../controllers/home_feed_controller.dart';
+import '../widgets/frosted_tree_drawer.dart';
+import '../widgets/genre_rail_widget.dart';
 
-/// Primary landing and dashboard screen in the persistent bottom navigation shell.
-/// Highlights in-progress Continue Watching media, recently added library titles,
-/// and direct access to full library catalog and scan capabilities.
-class HomeScreen extends ConsumerWidget {
+/// Primary landing and dashboard screen featuring an endless discovery feed.
+/// Combines Continue Watching, Recently Added, and dynamic lazy-loaded genre rails,
+/// with instant access to the hierarchical Frosted Obsidian Tree Drawer.
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 450) {
+      ref.read(homeFeedControllerProvider.notifier).loadMoreRails();
+    }
+  }
 
   void _onMovieSelected(BuildContext context, MovieItem movie) {
     context.push(AppRoutes.movieDetails, extra: movie);
   }
 
   void _navigateToLibrary(BuildContext context) {
-    // Navigate to the Library tab branch in the shell
     try {
       StatefulNavigationShell.of(context).goBranch(1);
     } catch (_) {
       context.go(AppRoutes.library);
     }
+  }
+
+  void _onGenreSelectedFromTree(String genre) {
+    ref.read(libraryControllerProvider.notifier).setSelectedGenre(genre);
+    _navigateToLibrary(context);
+  }
+
+  void _onDecadeSelectedFromTree(String decade) {
+    final query = decade.replaceAll(RegExp(r'[^0-9]'), '');
+    final prefix = query.length >= 3 ? query.substring(0, 3) : query;
+    ref.read(libraryControllerProvider.notifier).setSearchQuery(prefix);
+    _navigateToLibrary(context);
   }
 
   Future<void> _handleScan(BuildContext context, WidgetRef ref) async {
@@ -62,17 +104,24 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(libraryControllerProvider);
+  Widget build(BuildContext context) {
+    final libraryState = ref.watch(libraryControllerProvider);
+    final feedState = ref.watch(homeFeedControllerProvider);
     final baseUrl = ref.watch(serverBaseUrlProvider);
     final isTv = ref.watch(isTvModeProvider);
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
+      drawerEnableOpenDragGesture: true,
+      drawer: FrostedTreeDrawer(
+        onGenreSelected: _onGenreSelectedFromTree,
+        onDecadeSelected: _onDecadeSelectedFromTree,
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildFrostedHeader(context, ref, state, isTv),
+            _buildFrostedHeader(context, libraryState, isTv),
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.brandRed,
@@ -80,7 +129,7 @@ class HomeScreen extends ConsumerWidget {
                 onRefresh: () => ref
                     .read(libraryControllerProvider.notifier)
                     .loadLibrary(isRefresh: true),
-                child: _buildBody(context, ref, state, baseUrl, isTv),
+                child: _buildBody(context, libraryState, feedState, baseUrl, isTv),
               ),
             ),
           ],
@@ -91,7 +140,6 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildFrostedHeader(
     BuildContext context,
-    WidgetRef ref,
     LibraryState state,
     bool isTv,
   ) {
@@ -104,6 +152,38 @@ class HomeScreen extends ConsumerWidget {
         ),
         child: Row(
           children: [
+            TvFocusable(
+              borderRadius: BorderRadius.circular(8),
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.account_tree_rounded,
+                      color: AppColors.brandRedLight,
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Catalog Tree',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
             Text(
               'Home',
               style: AppTypography.titleLarge.copyWith(
@@ -165,28 +245,42 @@ class HomeScreen extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.borderMedium),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.brandRedGlow,
-                  blurRadius: 16,
-                  spreadRadius: 1,
+          // Frosted Tree Drawer Button
+          TvFocusable(
+            borderRadius: BorderRadius.circular(10),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            builder: (context, isFocused, _) {
+              return Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isFocused
+                      ? AppColors.surfaceHighlight
+                      : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isFocused ? AppColors.brandRed : AppColors.borderMedium,
+                    width: isFocused ? 1.8 : 1.0,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: AppColors.brandRedGlow,
+                      blurRadius: 16,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.play_arrow_rounded,
-                color: AppColors.brandRed,
-                size: 24,
-              ),
-            ),
+                child: Center(
+                  child: Icon(
+                    Icons.account_tree_rounded,
+                    color: isFocused
+                        ? AppColors.brandRedLight
+                        : AppColors.brandRedLight,
+                    size: 20,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -252,8 +346,8 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildBody(
     BuildContext context,
-    WidgetRef ref,
     LibraryState state,
+    HomeFeedState feedState,
     String baseUrl,
     bool isTv,
   ) {
@@ -404,22 +498,23 @@ class HomeScreen extends ConsumerWidget {
     }
 
     return ListView(
+      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.only(bottom: 32),
       children: [
-        // Continue Watching rail if present
-        if (state.continueWatching.isNotEmpty) ...[
+        // Section 0: Continue Watching rail if present
+        if (feedState.continueWatching.isNotEmpty) ...[
           const SizedBox(height: 10),
           ContinueWatchingRail(
-            movies: state.continueWatching,
+            movies: feedState.continueWatching,
             baseUrl: baseUrl,
             onMovieTap: (m) => _onMovieSelected(context, m),
           ),
         ],
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-        // Quick Library Banner / Shortcut
+        // Quick Browse Banner / Tree Action Shortcut
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: TvFocusable(
@@ -484,7 +579,7 @@ class HomeScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${state.movies.length} movies available with instant search & filters',
+                            '${state.movies.length} movies available • Tap left menu for tree view',
                             style: AppTypography.labelSmall.copyWith(
                               color: isFocused
                                   ? AppColors.textSecondary
@@ -508,193 +603,110 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
 
-        const SizedBox(height: 20),
-
-        // Recently Added / Library Section Header
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: AppColors.brandRed,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.brandRedGlow,
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Recently Added',
-                style: AppTypography.titleLarge,
-              ),
-              const Spacer(),
-              TvFocusable(
-                borderRadius: BorderRadius.circular(8),
-                onPressed: () => _navigateToLibrary(context),
-                builder: (context, isFocused, _) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isFocused
-                          ? AppColors.brandRed.withValues(alpha: 0.22)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isFocused
-                            ? AppColors.brandRed
-                            : Colors.transparent,
-                        width: isFocused ? 2.0 : 1.0,
-                      ),
-                      boxShadow: isFocused
-                          ? [
-                              BoxShadow(
-                                color: AppColors.brandRedGlow.withValues(alpha: 0.6),
-                                blurRadius: 12,
-                                spreadRadius: 1,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'View All (${state.movies.length})',
-                          style: TextStyle(
-                            color: isFocused
-                                ? AppColors.brandRedLight
-                                : AppColors.brandRedLight,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          color: AppColors.brandRedLight,
-                          size: 14,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // Responsive Recent Movies Grid (displaying up to 8 movies)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final crossAxisCount = constraints.maxWidth < 420
-                  ? 2
-                  : constraints.maxWidth < 700
-                      ? 3
-                      : 4;
-              final recentMovies = state.movies.take(8).toList();
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 0.62,
-                ),
-                itemCount: recentMovies.length,
-                itemBuilder: (context, index) {
-                  final movie = recentMovies[index];
-                  return MovieCard(
-                    movie: movie,
-                    baseUrl: baseUrl,
-                    onTap: () => _onMovieSelected(context, movie),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-
         const SizedBox(height: 18),
 
-        // Bottom explore CTA
-        Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: isTv ? 14 : 0,
+        // Section 1: Recently Added Discovery Rail
+        if (feedState.recentlyAdded.isNotEmpty) ...[
+          GenreRailWidget(
+            title: 'Recently Added',
+            dotColor: AppColors.brandRed,
+            movies: feedState.recentlyAdded,
+            baseUrl: baseUrl,
+            exploreLabel: 'View All (${state.movies.length})',
+            onExploreTap: () => _navigateToLibrary(context),
+            onMovieTap: (m) => _onMovieSelected(context, m),
           ),
-          child: SizedBox(
-            width: double.infinity,
-            child: TvFocusable(
-              borderRadius: BorderRadius.circular(10),
-              onPressed: () => _navigateToLibrary(context),
-              builder: (context, isFocused, _) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  decoration: BoxDecoration(
-                    color: isFocused
-                        ? AppColors.surfaceHighlight
-                        : AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isFocused
-                          ? AppColors.brandRed
-                          : AppColors.borderMedium,
-                      width: isFocused ? 2.5 : 1.0,
-                    ),
-                    boxShadow: isFocused
-                        ? [
-                            BoxShadow(
-                              color: AppColors.brandRedGlow.withValues(alpha: 0.6),
-                              blurRadius: 16,
-                              spreadRadius: 2,
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.explore_outlined,
-                        size: 18,
-                        color: isFocused
-                            ? AppColors.brandRedLight
-                            : AppColors.textPrimary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Explore All ${state.movies.length} Movies in Catalog',
-                        style: TextStyle(
-                          color: isFocused
-                              ? AppColors.textPrimary
-                              : AppColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+          const SizedBox(height: 22),
+        ],
+
+        // Sections 2..N: Endless Visible Genre Rails
+        for (final section in feedState.visibleGenreSections) ...[
+          GenreRailWidget(
+            title: section.genre,
+            dotColor: AppColors.statusInfo,
+            movies: section.movies,
+            baseUrl: baseUrl,
+            exploreLabel: 'Explore',
+            onExploreTap: () {
+              ref
+                  .read(libraryControllerProvider.notifier)
+                  .setSelectedGenre(section.genre);
+              _navigateToLibrary(context);
+            },
+            onMovieTap: (m) => _onMovieSelected(context, m),
+          ),
+          const SizedBox(height: 22),
+        ],
+
+        // Lazy-Loading Progress Indicator
+        if (feedState.hasMoreRails) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.brandRed,
+                ),
+              ),
             ),
           ),
-        ),
+        ] else if (feedState.allGenreSections.isNotEmpty) ...[
+          // End-of-Feed Discovery Footer
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderSubtle),
+              ),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: AppColors.brandRedLight,
+                    size: 24,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "You've Explored All Categories",
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Explore the complete catalog with custom filters and search.',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.surfaceHighlight,
+                      foregroundColor: AppColors.textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => _navigateToLibrary(context),
+                    icon: const Icon(Icons.explore_outlined, size: 16),
+                    label: const Text('Open Library Catalog'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
         if (isTv) const SizedBox(height: 64),
       ],
     );

@@ -27,15 +27,20 @@ Active branch: `feat/rust-react-postgres-migration`
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
-| 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified; v1.3.1 Hotfix) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
-| 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ⏳ IN PLANNING — [`docs/PHASE_13_HOME_FEED_NAVIGATION_PLAN.md`](PHASE_13_HOME_FEED_NAVIGATION_PLAN.md) |
+| 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 
 ## 2026-10-25 — Phase 13: Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation (Flutter Mobile & TV)
 
-Initiated Phase 13 on dedicated branch `feat/phase-13-flutter-home-feed-navigation`:
-- **Endless Discovery Feed:** Dynamic multi-section feed for Phone and Android TV starting with *Continue Watching*, followed by *Recently Added*, dynamically transitioning into endless lazy-loaded genre rails (Action, Sci-Fi, Thriller, Drama, Animation, etc.).
-- **Modern Transparent Tree Navigation:** Translucent frosted obsidian glass navigation menu / hierarchical category tree replacing traditional static menus, providing instant filtering across Movies, Genres, and Recently Added with ultra-smooth transitions.
-- **TV & Mobile Focus Parity:** Bidirectional D-pad navigation across horizontal rails and vertical feed traversal on Android TV / Fire TV Stick 4K alongside fluid inertia-driven touch gestures on mobile phones.
+Delivered a complete discovery and navigation overhaul to the Flutter client on Android Phone and Android TV / Fire TV Stick 4K, published Production Release v1.4.0 (versionCode 146), and verified live on physical hardware (`192.168.1.6:40283`):
+- **Endless Discovery Feed:** Replaced static 8-item recent movies grid with dynamic, multi-category horizontal discovery rails: Continue Watching rail, Recently Added collection rail with "View All (N) →", density-sorted Genre Rails (Comedy, Sci-Fi, Thriller, Action, Horror, Drama, Animation, etc.) lazily loaded on scroll threshold via Riverpod `HomeFeedController`, and an elegant end-of-feed exploration card.
+- **Modern Frosted Obsidian Tree Navigation:** Replaced traditional hamburger menus with an ultra-translucent `FrostedTreeDrawer` with 25px Gaussian backdrop blur over live movie artwork. Features an interactive hierarchical tree: 🎬 All Movies `[33]`, 🕒 Recently Added `[NEW]`, 🏷️ Genres `[14]` with expandable branch and leaf count chips, 📅 Release Eras `[5]`, ⚙️ Settings and Admin Hub shortcuts, with rotating chevrons, neon-red active indicators, and one-tap filtered navigation.
+- **TV & Mobile Focus Parity:** Full `TvFocusable` integration across all rails and tree leaves for 2D D-pad remote navigation alongside fluid inertia-driven touch gestures and left-edge swipe drawer activation on mobile.
+- **Production APK v1.4.0 Released:** Published signed release APK `updates/production/media-server-1.4.0.apk` (versionCode 146, SHA-256 `5832f2953110ba7783bcbe8fb1e8d2e6c9b09cbc979d3cb6919335576502f4d0`).
+- **Live Device Verification:** Installed onto physical phone via ADB; verified endless feed lazy-loading, tree drawer expansion, and one-tap Science Fiction genre filter navigation.
+- **Verification:** 12/12 home tests passed in `flutter test`, zero issues in `flutter analyze`.
+- **Walkthrough:** [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md).
+- **Roadmap / Plan:** [`docs/PHASE_13_HOME_FEED_NAVIGATION_PLAN.md`](PHASE_13_HOME_FEED_NAVIGATION_PLAN.md).
+- **Session Handoff:** [`Handoffs/2026-10-25_01-20_antigravity_phase-13-endless-feed-and-tree-navigation-v1.4.0.md`](../Handoffs/2026-10-25_01-20_antigravity_phase-13-endless-feed-and-tree-navigation-v1.4.0.md).
 
 ## 2026-10-25 — Phase 12.7 Hotfix: Storage Audit Timeout & Library Scan Reliability Fix & Android Release v1.3.2
 
