@@ -1,0 +1,433 @@
+# Media Server Project Guidelines & Invariants
+
+## 0. Implementation Planning, User Approval & Walkthrough Protocol (Strict Guardrail)
+- **Always Ask Before Drafting a Plan**: ALWAYS explicitly ask the user for confirmation/permission BEFORE drafting an implementation plan. Do not begin writing an implementation plan document until the user has agreed to plan the task.
+- **Implementation Plan Markdown Document**: Once authorized, formulate the implementation plan in a dedicated Markdown (`.md`) file before modifying code, altering databases, or applying system changes.
+- **In-Chat Plan Presentation**: The full content of the implementation plan `.md` file MUST be presented and rendered directly in the conversational chat response as well for user review.
+- **Strict Approval Gate**: Under no circumstances should the agent begin writing production implementation code, modifying files, or executing migration actions without first presenting the implementation plan `.md` file and obtaining explicit user confirmation and sign-off.
+- **Post-Completion Walkthrough Document**: After implementation and verification are completed, the agent MUST present a comprehensive walkthrough Markdown (`.md`) file detailing all deliverables, changes, test outcomes, and verification results, with its full content rendered directly in the chat.
+
+## 1. Process Safety & Task Management (Strict Guardrail)
+- **Zero Lingering Test Tasks**: Under no circumstances should background automation tasks (Selenium, WebDriver, FFmpeg) be left running indefinitely or orphaned.
+- **Selenium Cleanup**: All browser automation scripts must wrap driver lifecycles in `try ... finally: if driver: driver.quit()`.
+- **Bounded Wait Times**: Scripts must use bounded polling (max 15–20s) and explicitly exit. Never run blocking polling loops that hang conversational turns or force IDE restarts.
+
+## 2. Browser Testing & Automation Protocol
+- **Autonomous Browser Automation Permitted**: The agent may use Selenium / WebDriver automation to inspect DOM state, test interactions, and capture screenshots for its own analysis and verification.
+- **No Interactive User Expectation**: Do not wait for the user to interact with the automated test browser, and do not expect browser windows to appear in the user's desktop session. Automated browser scripts must execute entirely autonomously and terminate promptly.
+- **Strict Process Safety & Teardown**: Always wrap driver instances in `try ... finally: if driver: driver.quit()` to ensure zero orphaned WebDriver or browser background processes.
+
+## 3. Media Playback & Transcoding Invariants
+- **Multi-Format Regression Checks**: When updating HLS segmentation for MKV/HEVC or seek handling, verify that:
+  - Both MKV (HLS) and direct MP4/AAC streams (*Oculus*, *Spider-Man*, *GTA VI*, *Ghost in the Cell*) remain playable.
+  - Seeking to time `0:00` functions smoothly without freezing or indefinite "Preparing media" states.
+- **In-Progress Transcode HLS Timeline Synchronization**:
+  - Dynamic chunk-based HLS playlists must specify `#EXT-X-START:TIME-OFFSET=0` and `#EXT-X-PLAYLIST-TYPE:EVENT` while transcoding is active. This prevents HLS.js and native video elements from treating the stream as a live sliding window and skipping forward to the live edge.
+  - Chunk worker encoders must apply `-output_ts_offset <start_time>` corresponding to each chunk's timeline offset to maintain monotonic presentation timestamps (PTS) across chunk transitions.
+  - Master playlist assembly must parse actual `#EXTINF:<duration>,` segment durations from individual chunk playlists (`chunk_{id}.m3u8`) rather than assuming constant segment lengths, preventing cumulative timeline drift.
+
+## 4. Video Player & Subtitle Viewport Invariants
+- **Viewport Clamping**: In CSS, never allow `<video>` to expand container height via intrinsic aspect ratio or unconstrained CSS Grid rows. Use:
+  ```css
+  video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+  ```
+  This guarantees that in non-fullscreen or tiled windows (e.g. 1024×424), the video element never overflows below the viewport.
+- **Player Shell Container Isolation**: The `#shell` element uses `display: grid; place-items: center; overflow: hidden`. Supplementary page sections (such as `<main class="watch-info">`) MUST be placed outside `#shell` following its closing `</div>` (`</div><main class="watch-info">`). Never allow `#shell` to remain unclosed, as CSS grid placement will center supplementary content (such as movie posters and synopsis cards) directly over the `<video>` canvas.
+- **Dual-Axis Subtitle Positioning & Cue Elevation**:
+  - Subtitle settings must support both **Horizontal Alignment** (`center`, `left`, `right`) and **Vertical Position** (`lowered`, `bottom`, `raised`, `middle`, `top`).
+  - WebVTT cues must be elevated to prevent overlapping playback controls:
+    - `lowered`: `c.snapToLines = true; c.line = isHuge ? -2.8 : -2.2`
+    - `bottom` (Default): `c.snapToLines = true; c.line = isHuge ? -4.8 : -4`
+    - `raised`: `c.snapToLines = true; c.line = isHuge ? -6.2 : -5.5`
+    - `middle`: `c.snapToLines = false; c.line = 50`
+    - `top`: `c.snapToLines = true; c.line = 2`
+  - Subtitle preview elements (`#subPreviewBox`) must synchronize both `justifyContent` (horizontal) and `alignItems` (vertical).
+- **Timestamp Regex**: When converting or parsing WebVTT timestamps, match both `HH:MM:SS.mmm` and `MM:SS.mmm` (`r'((?:\d\d:)?\d\d:\d\d\.\d{3}\s*-->\s*(?:\d\d:)?\d\d:\d\d\.\d{3})'`).
+
+## 5. Mobile Responsive & Viewport Clamping Invariants
+- **Root Viewport Clamping**: On mobile-targeted pages, both `html` and `body` must explicitly declare:
+  ```css
+  html.details-html, body.details-page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    touch-action: pan-y;
+  }
+  ```
+  Never rely solely on `body { overflow-x: hidden }`, as mobile rendering engines (WebKit, Blink, Gecko) treat `html` as the root scrolling canvas.
+- **Grid & Flex Child Track Clamping (`min-width: 0`)**: Any element relying on `text-overflow: ellipsis` or variable-length metadata (e.g. subtitle track listings, audio codecs, long titles) MUST have `min-width: 0; max-width: 100%;` applied to its container and all ancestor grid/flex tracks (e.g. `minmax(0, 1fr)`). Without `min-width: 0`, `auto` tracks expand to the intrinsic text width and blow out mobile viewports.
+- **Sub-Scroll Gesture Isolation**: Horizontally swipeable rails (such as cast lists or carousel strips) must specify:
+  ```css
+  .cast-rail {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+  ```
+  This prevents internal swipe gestures from bubbling up and causing accidental page-level horizontal panning.
+- **Header Multi-Action Wrapping**: Top navigation forms containing a search input alongside multiple action buttons must declare:
+  ```css
+  @media(max-width: 768px) {
+    header form {
+      max-width: 100%;
+      width: 100%;
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    header input {
+      min-width: 0;
+      flex: 1 1 100%;
+    }
+    header select, header button, header .header-nav-btn {
+      flex: 1 1 auto;
+      justify-content: center;
+      text-align: center;
+      min-width: 0;
+    }
+  }
+  ```
+  This prevents rightmost navigation elements (such as `📁 My Library`) from overflowing off-screen on phones.
+
+## 6. Git Operations & Index Recovery Protocol
+- **Zero Data Loss Index Recovery**: If Git fails with `fatal: .git/index: index file smaller than expected` (due to `.git/index` being truncated to 0 bytes), NEVER run `git reset --hard` or `git clean`. Run the non-destructive recovery:
+  ```bash
+  rm -f .git/index && git reset
+  ```
+  This immediately regenerates `.git/index` from `HEAD` and leaves all modified files and untracked assets completely intact.
+- **Non-Interactive Push Guardrail**: Do not run `git push` commands that prompt for credentials in non-interactive background terminals. Instruct the user to use VS Code's Source Control Sync button (`⟳ 1 ↑`) or provide explicit credentials.
+
+## 7. Modular Architecture & Package Import Invariants
+- **Package Precedence (`app/` vs `app.py`)**: When `app/` directory and root `app.py` coexist, Python resolves `import app` to `app/__init__.py`.
+  - `app/__init__.py` must export `app = create_app()` and all public interfaces (`init_db`, `get_db`, `CSS`, `DETAILS_HTML`, `video_paths`, `_paths`, etc.) to maintain 100% compatibility with test imports and external scripts.
+  - Root `app.py` must remain lightweight and executable as the systemd entrypoint (`/usr/bin/python3 /home/iamroot/media-server-1/app.py`).
+- **Dual Blueprint Endpoint Aliasing**: In `create_app()`, all blueprint endpoints must also be registered as bare route names (e.g. `details` alongside `pages.details`, `poster` alongside `api.poster`) so that `url_for('details')` calls in templates and helpers resolve cleanly without blueprint prefix requirements.
+
+## 8. Player Gestures, Navigation & Telemetry Invariants
+- **Tap-to-Reveal Playback Interaction**:
+  - When controls are hidden during active playback, a tap/click on `#shell` must FIRST reveal controls without toggling play/pause.
+  - Play/pause should only toggle if the controls were already visible when the user initiated the interaction.
+- **Non-Redundant Navigation & Title Alignment**:
+  - The in-player back button (`.watch-back`) must use concise text (`← Details` or `← Back`) to avoid duplicating title text alongside `.watch-title-badge`.
+  - `.watch-title-badge` must declare an explicit horizontal offset (`left: calc(1.2rem + 95px)`) and `max-width` clamping so it sits adjacent to the back button without visual clipping or overlap.
+- **Stats for Nerds (Telemetry HUD)**:
+  - Technical telemetry buttons in `.controls-row` must be direct child buttons (preserving `#restartBtn` as the first element and no nested `<div>`s in `.controls-row`).
+  - Live stats HUD (`#nerdStatsHud`) must track `v.getVideoPlaybackQuality()` (dropped/total frames), native vs viewport resolution, forward buffer calculation, and stream transcode state, accessible via button, close button, and keyboard shortcut `n` / `N`.
+
+## 9. Modal Dialog Safety & Touch Dismissal Invariants
+- **Destructive/Critical Modal Outside-Touch Immunity**:
+  - Confirmation modals for irreversible or destructive actions (such as `#purgeModal`) must NEVER dismiss on backdrop touch or click.
+  - Omit native `closedby="any"` and do NOT register backdrop bounding-box dismissal listeners (`if (e.target !== dialog) close()`).
+  - Destruction or permanent deletion modals must require explicit user action via a dedicated close cross button (`✕`), Cancel button, or the Escape key.
+- **Zero Vertical Scrolling on Mobile Modals**:
+  - Mobile modals must be designed with compact vertical footprints (total height \(\le 260\text{px}\)) using `max-height: min(90vh, 90dvh)`, reduced padding (\(\le 1\text{rem}\)), and concise checklist copy (\(\le 3\) items).
+  - Modals must fit within compact 375×667 mobile viewports without forcing vertical scrolling.
+- **Modal Dialog Portaling & CSS Transform Isolation**:
+  - All modal dialogs, confirmation popups, backdrops, and full-screen overlays with `position: fixed` MUST be portaled to `document.body` via `createPortal(..., document.body)` (or a dedicated root `#portal-root`).
+  - Never render `position: fixed` modals inline within deep component trees or page layouts, as ancestor `transform`, `filter`, `perspective`, or `contain` properties will trap the modal's containing block.
+  - Keyframes for page-level or container entrance animations using `animation-fill-mode: forwards` (such as `fadeIn`) must terminate on `transform: none;` rather than `transform: translateY(0)` or `transform: translateZ(0)`. Any non-none computed transform permanently traps fixed-position children inside that container.
+  - Modal overlay backdrops must declare `className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"`.
+  - Modal content cards must declare `my-auto` so they center vertically when height permits and scroll naturally without top clipping when the viewport height is smaller than the modal.
+
+## 10. Upload Telemetry & Post-Upload Ingestion Invariants
+- **Post-Upload Abort Concealment**:
+  - In `XMLHttpRequest` upload workflows, immediately hide the Abort/Cancel button (`cb.style.display = 'none'`) upon `xhr.upload` completion (`load` event).
+  - Once file bytes are written to disk, client abort is invalid because server-side background ingestion (TMDb querying, ffprobe stream analysis, transcode profiling) has begun.
+- **Dynamic In-Progress Processing Indicator**:
+  - Post-upload backend processing must NOT display a static checklist of tasks.
+  - Implement an animated dynamic processing card with an active spinner and cycling status labels (e.g. *Probing video stream...*, *Querying TMDb...*, *Caching posters...*, *Synchronizing subtitles...*) to give continuous visual feedback while the server finishes indexing.
+- **Exponentially Smoothed Upload ETA**:
+  - Upload progress handlers must apply exponential moving average smoothing to transfer speed (`smoothSpeed = smoothSpeed * 0.7 + instSpeed * 0.3`) and render human-readable remaining time (`ETA: Xm Ys` or `ETA: Xs`).
+
+## 11. Jinja Template Safety & DOM Attribute Invariants
+- **Data Attributes for Dynamic Values**: Never pass dynamic Jinja expressions directly into inline JavaScript function arguments (e.g., `onclick="fn('{{ dev.name }}')"`). Unescaped quotes or apostrophes (such as `Anis' iPhone`) cause JavaScript `SyntaxError: missing ) after argument list`. Always bind values to HTML5 data attributes with HTML escaping (`data-name="{{ dev.name|e }}"`) and retrieve them via `this.dataset.name` or `element.dataset.*`.
+- **Defensive NoneType Containment Checks**: Jinja's `in` operator raises `TypeError: argument of type 'NoneType' is not a container or iterable` when checking containment against a variable that can be `None`. Always guard with an explicit truthiness check:
+  ```jinja2
+  {% if dev.mac_address and 'WAN' in dev.mac_address %}
+  ```
+
+## 12. Client Telemetry, User-Agent Reduction & Heartbeats
+- **Chromium High-Entropy Client Hints**: To identify Android device make, model, and OS versions accurately despite Chromium User-Agent Reduction (which freezes UAs to `Linux; Android 10; K`):
+  - In `create_app()`, set response headers:
+    ```python
+    response.headers['Accept-CH'] = 'Sec-CH-UA-Model, Sec-CH-UA-Platform-Version, Sec-CH-UA-Platform, Sec-CH-UA-Mobile, Sec-CH-UA-Arch, Sec-CH-UA-Bitness'
+    response.headers['Permissions-Policy'] = 'ch-ua-model=*, ch-ua-platform-version=*'
+    ```
+  - Use `navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion'])` on the client to report real hardware models and Android releases to `POST /api/devices/client-hints`.
+  - Maintain a brand/model decoding dictionary in `device_service.py` to translate OEM model codes (e.g., `I2011`, `SM-S928B`, `Pixel 8`) into human-readable consumer names.
+- **Client Heartbeat & Active State Lifecycle**:
+  - Implement periodic client keepalive pings (`POST /api/devices/heartbeat` every 40s) only when `document.visibilityState === 'visible'`.
+  - Dispatch a `navigator.sendBeacon('/api/devices/heartbeat')` on the `pagehide` event to immediately mark the client's departure or final active timestamp.
+  - Active threshold must be bounded (e.g. 3 minutes) with distinct status indicators (🟢 Active now vs ⚪ Offline) and top-level filter tabs.
+
+## 13. Single-Script Block & Dynamic Asset Injection Invariants
+- **Single Script Block on Player View**: In `templates/player.html`, automated test invariants strictly assert that the template contains exactly one `<script>` block (`html.count('</script>') == 1`). Never add auxiliary `<script src="...">` or `<script>` tags to `player.html`.
+- **Dynamic Script Loading**: When external JavaScript modules (such as navigation transitions, telemetry, or third-party libraries) must be included on the player page, inject them dynamically from within the existing `<script>` block:
+  ```javascript
+  const s = document.createElement('script');
+  s.src = '/static/js/nav.js';
+  s.defer = true;
+  document.head.appendChild(s);
+  ```
+
+## 14. Navigation Transitions, Canvas Isolation & Motion Accessibility
+- **Player Canvas Isolation**: Video playback containers (`#shell`, `<video>`, `.watch-info`) must remain strictly isolated from page-enter and cross-document transition animations (e.g. `main:not(#shell):not(.watch-info)`). Never apply layout transforms or translate keyframes to `#shell`.
+- **Motion Accessibility**: All view transitions, progress bars, and page enter animations must provide `@media (prefers-reduced-motion: reduce)` overrides (`animation: none !important; transition: none !important; display: none !important;`).
+- **bfcache (Back/Forward Cache) Resilience**: Navigation progress indicators must bind to the `pageshow` event and check `e.persisted` to immediately reset animation and dimming states when users navigate with browser Back/Forward gestures.
+
+## 15. HTML5 Media Seeking, Range Streaming & Slider Invariants
+- **Direct Stream Isolation**: Never invoke transcode status polling (`checkPreparing`) or display transcoding overlay cards on native direct streams (`!source.dataset.transcoded`). Transcode status endpoints return `status: "idle"` for direct files, which must never set seek locks or leave `currentSeekTarget` frozen.
+- **Decoupled Seek Scrubbing & Commit**:
+  - Dragging/scrubbing gestures (`seek.oninput`) must only update visual seek fills and time HUD indicators (`isScrubbing = true`).
+  - Do NOT set `v.currentTime` synchronously on micro-pixel movements during drag, which floods the server with aborted HTTP range requests.
+  - Commit seeks (`v.currentTime = target`) strictly on gesture completion (`pointerup`, `touchend`, `change`, and window fallback listeners) and resume playback cleanly if the video was active prior to scrubbing.
+- **In-Flight Seek Snapback Prevention**:
+  - In `timeupdate` listeners, guard seek bar value updates with `!isScrubbing && !v.seeking`.
+  - Never allow `timeupdate` to overwrite `seek.value` back to old timestamps while the browser is actively fulfilling a byte-range seek request (`v.seeking === true`).
+- **Range Slider Keyboard Focus Immunity**:
+  - Interacting with range sliders (`<input id="seek" type="range">`) gives them DOM focus. Never use naive `e.target.matches('input,select')` in `keydown` listeners, as this disables all playback shortcuts (`Space`, `k`, `j`, `l`, `1`–`9`, arrow keys).
+  - Guard only text-entry inputs (`input:not([type="range"])`), and explicitly blur range sliders (`seek.blur()`) upon seek commit.
+- **Zero-Copy RFC 7233 Range Streaming**:
+  - In raw media streaming routes (`/media/<path:filename>`), use Flask/Werkzeug `send_file(path, mimetype=mimetype(path), conditional=True, etag=True, max_age=3600)` rather than custom file chunk generators.
+  - This guarantees OS zero-copy streaming (`sendfile(2)`), RFC 7233 byte-range parsing, `If-Range` support, and clean socket closure upon client disconnect without blocking worker threads.
+
+## 16. Windows Process Probing & Test Harness Safety (Strict Guardrail)
+- **Zero Console Signal Broadcasting via `os.kill(pid, 0)`**:
+  - In Python on Windows, `signal.CTRL_C_EVENT == 0`.
+  - Calling `os.kill(pid, 0)` on Windows invokes `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`, broadcasting a `CTRL_C_EVENT` interrupt across the shared console process group.
+  - In IDE/agent execution sessions, this Ctrl+C interrupt terminates the IDE language server / Antigravity agent process (`agy.exe`), triggering sudden `"Action cancelled by user"` and `"Lost connection to the language server. Agent features may not work."`.
+  - **Strict Invariant**: NEVER call `os.kill(pid, 0)` to check process liveness on Windows. Always use `is_pid_alive(pid)` from `app.services.transcode_service` (exported in `app`), which safely queries process status using the Win32 API (`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)` + `GetExitCodeProcess`).
+- **TemporaryDirectory File Locks in Windows Pytest**:
+  - SQLite databases or temporary fixtures created during tests may trigger `[WinError 32] The process cannot access the file because it is being used by another process` on teardown due to Windows file-locking semantics.
+  - When creating `tempfile.TemporaryDirectory()`, always pass `ignore_cleanup_errors=True` on Python 3.10+.
+- **Terminal Environment Relaunch Settings**:
+  - Keep `"terminal.integrated.environmentChangesRelaunch": true` and `"python.terminal.shellIntegration.enabled": false` in `.vscode/settings.json` to prevent VS Code extension environment contributions (e.g. `ms-python.debugpy`, `copilot-chat`) from stalling terminals or showing blocking relaunch prompt banners.
+
+## 17. Subdirectory Routing & Subtitle Language Auto-Detection Invariants
+- **Werkzeug Multi-Path Greedy Collision**:
+  - Never configure consecutive `<path:...>` parameters separated by slashes (e.g. `@subtitles_bp.route('/subtitles/<path:filename>/<path:name>')`). Werkzeug's first path parameter captures non-greedily up to the first slash, which breaks whenever files reside in subdirectories (such as `Folder/Video.mkv`), matching only the directory and returning a 404.
+  - Always terminate multi-segment paths with a single component: `@subtitles_bp.route('/subtitles/<path:filename>/<name>')`.
+- **Subtitle Language Auto-Detection & Priority**:
+  - Subtitle files without language suffixes (e.g., `movie.srt`) must not be left unclassified (`und`).
+  - Use `detect_subtitle_language()` to analyze script unicode characters (Devanagari, Cyrillic, Hanzi, Hiragana, Hangul, Arabic, Bengali) and vocabulary stop-word frequency before defaulting to unknown.
+  - Local subtitles must always take priority over external API lookups (e.g. OpenSubtitles) when verified to match language, setting `default: True` and preventing redundant network requests.
+- **Windows Service Privileges & NSSM Management**:
+  - The production `MediaServer` service runs under `NT AUTHORITY\SYSTEM`. Stopping or restarting it requires elevated privileges. Use `scripts/restart_service.bat` (which requests UAC elevation via `Start-Process ... -Verb RunAs`) or an elevated PowerShell terminal (`Restart-Service MediaServer`).
+
+## 18. Storage Retention & Cross-Drive File Operations (Strict Guardrail)
+- **Cross-Drive File Moves (any volume pair, in practice `E:` ↔ `D:`)**:
+  - Never invoke `os.rename()` for moving files across disk volumes on Windows; it fails with `[WinError 17] The system cannot move the file to a different disk drive`.
+  - Always use `shutil.move(src, dst)`. Ensure the target directory exists (`parent.mkdir(parents=True, exist_ok=True)`) and unlink any pre-existing collision targets (`target_path.unlink(missing_ok=True)`) prior to moving.
+- **Canonical Cache Directory Resolution**:
+  - Never reference `app.config.CACHE_DIR` directly in tests or cache reconciliation logic. Always call `get_cache_dir()` from `app.services.transcode_service`, as test harnesses dynamically redirect `app.CACHE_DIR` to temporary fixtures (`TMP`).
+- **Dual-Drive Storage Tiering & Headroom Prioritization**:
+  - **Drive `E:` (Primary Fast SSD):** Reserved for the application and runtime (`E:\MediaServer`), the PostgreSQL data directory (`E:\pgdata`), in-progress transcode scratch, seek thumbnails (`E:\MediaServer\cache\previews`), and completed multi-GPU HLS streams (`E:\MediaServer\cache\hls`) for zero-stutter playback. Raw multi-gigabyte video files must not live here.
+  - **Drive `D:` (Mass Secondary Storage):** Hosts raw library media (`D:\Flicks`), upload chunk staging (`D:\Flicks\.uploads`), cold archives (`D:\Flicks\.archive`), and deleted-source staging (`D:\Flicks\.deleted`).
+  - **Drive `C:` is not part of this project's storage.** Do not create, read, or assume project paths on `C:`; historical `C:\Flicks` references in older notes are obsolete.
+  - `config.get_media_roots()` returns `[MEDIA_ROOT, UPLOAD_TARGET_DIR, ARCHIVE_DIR]`. All media discovery, route authorization, and path validation must check all roots returned by `get_media_roots()`.
+- **Cross-Volume Deterministic Cache Key Continuity**:
+  - Both `hls_cache_dir(path)` and `preview_dir(path)` must compute relative paths across all roots in `config.get_media_roots()` (`alt_path = root / rel`).
+  - When a media file is moved or archived between any two roots (today: `D:\Flicks` → `D:\Flicks\.archive`, and in principle across volumes), its deterministic cache directory must remain identical and active, preventing stream 404s and false-positive cache orphan classification.
+- **Cross-Volume Subtitle Discovery & Route Authorization**:
+  - `tracks(path)` in `subtitles_service.py` must compute `rel_filename` dynamically by matching against `get_media_roots()` rather than assuming `MEDIA_ROOT`.
+  - Subtitle search must inspect both `path.parent` and `config.MEDIA_ROOT`.
+  - Subtitle delivery routes (`/subtitles/<path:filename>/<name>`) must authorize parent directory containment across all roots returned by `get_media_roots()`.
+  - `safe_path(name)` must provide fallback resolution to discovered `video_paths()` filenames to cleanly resolve videos in subdirectories across any active drive root.
+
+## 19. Player Mobile Controls & Seekbar HUD Invariants
+- **Selective Mobile Controls Display**:
+  - In mobile views (`@media (max-width: 768px), (max-height: 500px)`), do NOT hide all controls arbitrarily.
+  - `#restartBtn`, `#mute`, `#pipBtn`, `#nerdStatsBtn`, `#rotateBtn`, and `#aspectBtn` MUST remain visible and accessible (`display: inline-flex !important;`).
+  - `#volume` slider is hidden on mobile (handled by touch gestures/hardware volume buttons).
+  - `#shortcutsBtn` cheat-sheet is hidden on mobile (desktop physical keyboard-specific).
+  - Seek increment buttons (`#skipBackBtn` -10s and `#skipForwardBtn` +10s) MUST be explicitly hidden on mobile (`display: none !important;`) as seeking is handled via the seekbar and native double-tap left/right ripple gestures.
+  - The `.controls-row` container on mobile must use `gap: 0.42rem !important; justify-content: flex-start !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; scrollbar-width: none !important;` to ensure smooth horizontal swipeability without clipping or page blowout.
+- **Seek Time Elapsed & Remaining Vertical Snugness**:
+  - The `.seek-time-row` timestamp HUD must sit directly above the YouTube-style seekbar track without excessive dead space.
+  - Because `#seekTrack` has transparent touch padding above its centered rail (`.seek-rail`), apply `margin-bottom: -9px !important; position: relative !important; z-index: 60 !important;` to `.seek-time-row` across both desktop and mobile to ensure timestamps hover snugly above the red/gray track.
+
+## 20. Library Navigation & Home Page Hierarchy Invariants
+- **Sort Dropdown Removal**:
+  - The redundant A-Z title sort dropdown has been removed across both desktop and mobile views in favor of natural library browsing and direct search bar filtering.
+- **Home Page Content Hierarchy (Telemetry at End)**:
+  - The System Telemetry HUD (`#systemTelemetryCard`) must appear at the BOTTOM of the home page (`templates/index.html`), positioned strictly after the `#allMoviesSection` ("All Movies" grid), rather than between "Continue watching" and "All Movies".
+  - This ensures users immediately see their media library content and continue watching rails upon loading the home page, with technical hardware telemetry placed unobtrusively at the footer.
+
+## 21. Flutter Client Player UI & Rapid Device Testing Invariants
+
+- **Player Controls Transparency & Canvas Visibility**:
+  - The bottom controls overlay container in `player_controls_overlay.dart` must NEVER be opaque (`0xEE...` or solid obsidian blocks).
+  - Use a subtle translucent vignette gradient (`Colors.black.withValues(alpha: 0.50)` fading to `Colors.transparent`) so that video frames, action scenes, and subtitle text behind the controls remain 100% visible during playback.
+
+- **Equidistant Timeline Spacing & Dual-Time Anchors**:
+  - **Symmetrical Vertical Gap**: In `VideoTimelineBar`, vertical clearance above and below the seekbar rail must be balanced equally (~6dp) using compact `touchTargetHeight: isCompact ? 16.0 : 22.0`.
+  - **Dual-Time Anchors**: In the timeline time row, elapsed time is anchored on the LEFT (`0:00`), and total runtime / remaining time is anchored on the RIGHT (`MainAxisAlignment.spaceBetween`).
+  - **Tap-to-Toggle Duration**: Tapping the right-hand duration toggles between total runtime and remaining time (`-remaining`), with generous touch padding for mobile fingers.
+  - **Thumb Styling**: The scrubber thumb must render as a solid white circle (`Colors.white`) with subtle elevation shadow, without competing colored borders.
+
+- **Controls Button Sequence**:
+  - Primary bottom controls must follow the canonical web-aligned sequence: Replay `↺` (Restart to `0:00`) first, followed by Play/Pause (`⏸`/`▶`), Mute (`🔊`), Speed (`1×`), Audio track selector, Subtitles, and Fullscreen.
+
+- **Vertical-Swipe Volume & Brightness Gestures**:
+  - Swiping up/down on the video surface: **left half = brightness** (`screen_brightness` channel → `WindowManager.LayoutParams.screenBrightness`, clamped `0.01-1.0`; `-1` hands control back to the system), **right half = system media volume** (`media_volume` channel → `AudioManager.STREAM_MUSIC`, 0-100). The app's own player volume stays at full — the swipe drives the stream the volume keys control, so the HUD matches what is audible.
+  - Drags are **opt-in** on `DoubleTapSeekDetector` (`onVerticalDragBegin/Delta/End`) and the reported fraction is **cumulative** — `(dragStartY - currentY) / surfaceHeight`, positive = up — never one frame's movement. A drag must never satisfy the tap or double-tap recognizers (tap toggles the controls, double-tap seeks ±10 s).
+  - The value at drag start is captured and the fraction applied as an offset; a volume drag re-reads the system volume at drag start, because the phone's volume keys move it independently.
+  - The gesture HUD (`PlayerHudToast`) must render **outside `PlayerControlsOverlay`** — that overlay fades to opacity 0 when the controls auto-hide and the readout would vanish with it. Anything overlaying the surface must not swallow gestures: keep `IgnorePointer` on the loading/buffering indicator, and never place an opaque full-screen layer above the surface (it kills swipes silently).
+  - Watch progress writes belong to `PlaybackProgressReporter` (10 s playback delta, pause, debounced seek, end, back path) — `dispose()` never flushes; the exit save lives in `_handleBack`, before `controller.stop()` resets the position.
+
+- **Rapid Physical Device Testing & Intent Routing**:
+  - **Zero Multi-Turn Manual Navigations**: Never use sequential multi-turn conversational tool roundtrips to manually navigate intermediate screens (e.g. Connection -> Test Connection -> Scroll -> Launch Player).
+  - **Direct Intent Routing**: Use direct cold-boot intents via `am start`:
+    ```bash
+    adb shell am start -n in.anisparvez.media_server_client/.MainActivity --es route "/player"
+    ```
+    This boots the app directly into the video player in under 1.5 seconds. To target a specific movie directly, use `--es route '/movie-details?filename=<name>'` (passing raw URLs via `--es mediaUrl` gets mangled in shell transit).
+  - **Single-Shot Chained Pipelines**: Execute multi-action ADB commands (launch + wait + screencap) in single chained commands (`am start ... && sleep 1 && screencap ...`) to eliminate turn latency.
+  - **Desktop Screen Mirroring (`run_scrcpy.bat`)**: Windows session isolation prevents background agent subprocesses from rendering GUI windows on the user's interactive desktop. Always preserve and recommend the desktop script `run_scrcpy.bat` for user-facing mirroring.
+
+## 22. Android Release Manifest Networking & Cleartext Traffic Invariants
+- **Release Manifest Internet Permissions**:
+  - In Flutter, `src/debug/AndroidManifest.xml` (which includes internet debug permissions) is excluded when compiling release builds (`flutter build apk --release`).
+  - `flutter_client/android/app/src/main/AndroidManifest.xml` MUST explicitly declare:
+    ```xml
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    ```
+    Without this, Android blocks all socket creation in release APKs with `Operation not permitted` (`EACCES`).
+- **Cleartext (HTTP) Local Traffic Authorization**:
+  - Modern Android releases (Android 9 / API 28+) strictly forbid unencrypted HTTP traffic by default.
+  - To support LAN media server connections (`http://192.168.x.x:8000`), `<application>` in `src/main/AndroidManifest.xml` MUST specify:
+    ```xml
+    android:usesCleartextTraffic="true"
+    ```
+- **Server Origin Scheme Sanitization**:
+  - Raw user inputs for server addresses often omit URI schemes (e.g. `192.168.1.16:8000`).
+  - All networking layers (`ConnectionController`, `ApiClient`, `SettingsService`, and `LibraryRepository`) must invoke `SettingsService.sanitizeUrl()` to prepend `http://` and strip trailing slashes before issuing HTTP queries.
+
+## 23. Library Action Icon Disambiguation Invariants
+- **Distinct Action & Settings Semantics**:
+  - Screens with multiple utility controls (such as top navigation headers vs search input rows) must NEVER reuse the same icon (e.g. `Icons.tune_rounded`).
+  - **Global / App Settings**: Top frosted navigation header must use `Icons.settings_rounded` (⚙️ gear icon) with tooltip `"Settings & Updates"`, reserved strictly for server origin, device identity, update channel switching, and update checks.
+  - **Catalog Sorting & Filtering**: The search bar row must use `Icons.filter_list_rounded` (☰⌵ filter/list icon), with an active badge indicator (`AppColors.brandRed`) whenever non-default filters or sorts are active.
+
+## 24. Universal Android APK, TV Remote Navigation & Player Modularization Invariants
+- **Universal Single-APK Architecture & TV Mode Isolation**:
+  - The Android client compiles to a single universal APK (`in.anisparvez.media_server_client`) serving both mobile touch devices and 10-foot TV displays (Amazon Fire TV Stick 4K, Android TV) without flavor divergence.
+  - In `PlayerScreen`, `isTvModeProvider` (`isTv`) automatically forces 100% borderless fullscreen, completely omitting mobile portrait split-view headers, synopsis cards, and bottom navigation.
+  - Redundant mobile actions (such as Cast sheet button and Fullscreen toggle button) MUST remain hidden on TV (`isTv == true`).
+- **10-Foot TV D-Pad Remote Transport (2-Zone Focus Model)**:
+  - Transport navigation is divided into 2 discrete zones: **Zone 1** (Timeline seekbar scrubber) and **Zone 2** (Playback controls row).
+  - Audio volume on TV remotes is managed exclusively via hardware HDMI-CEC or dedicated TV remote buttons. D-pad Up and Down MUST strictly navigate between Zone 1 and Zone 2, and must NEVER manipulate software volume levels.
+- **TV Remote Player Back Key Invariant (2-Step Model)**:
+  - When playback is active and player controls are hidden: the 1st Back press (`LogicalKeyboardKey.escape`, `LogicalKeyboardKey.goBack`, or `PopScope`) MUST reveal player controls (`_controlsVisible = true`), restore/re-establish player focus on the timeline scrubber (`_tvFocusZone = TvPlayerFocusZone.timeline`), reset the controls auto-hide timer, and consume the event without stopping playback or exiting.
+  - When player controls are visible: the 2nd Back press MUST execute normal player exit (cancel auto-hide timers, flush/dispose watch progress, stop player controller, and pop the player route).
+  - Never bypass controls visibility with `forceExit: isTv` or immediately exit when controls are hidden.
+- **2D Weighted Spatial Focus Traversal (`TvSpatialFocusTraversalPolicy`)**:
+  - Flutter's default `DirectionalFocusTraversalPolicyMixin` culls candidates to strict 1D geometric bands, which skips visually adjacent focusable elements on D-pad Up/Down when items do not overlap horizontally.
+  - Directional focus navigation across the application (registered at `MediaServerApp` root builder and `tvContentFocusScopeProvider`) enforces `TvSpatialFocusTraversalPolicy`: a 2D weighted vector distance policy (`score = Δprimary * 4.0 + Δorthogonal * 1.0 + Δalign * 0.25`) with a 60% row/column overlap gate, guaranteeing intuitive D-pad transitions between cards, rails, and buttons.
+- **TV Remote Exit Debouncing & Focus Trapping**:
+  - Hardware Fire TV remotes frequently emit duplicate back events (key down + activity pop dispatch).
+  - In `AppShell._handleBack()`, back events must be timestamp-debounced (`_lastBackTime`, 350ms) to prevent exit dialog flicker.
+  - `TvExitDialog` must enforce `barrierDismissible: false` with a 350ms dismissal gate (`_canDismissOnBack`). The initial focus must be locked to "Cancel" in obsidian glass with brand red glow; D-pad Right navigates to "Exit".
+- **Directional Traversal Bridge (`TvDirectionalFocusAction`)**:
+  - Wrap content area in `DirectionalFocusAction` in `AppShell`. Pressing D-pad Left from the leftmost card of any horizontal rail or grid collapses content focus and smoothly transfers focus to the active `TvSideNavigationRail` item.
+  - Navigating D-pad Right from an expanded rail item collapses the rail back to 68dp and restores focus cleanly to the first visible content card without losing scroll position.
+- **Player Screen Segregation & Backward Compatibility Invariants**:
+  - `player_screen.dart` exports `TvPlayerFocusZone` from `domain/tv_player_focus.dart` to preserve existing test imports without requiring path rewrites.
+  - **Non-GoRouter Context Navigation Guard**: In `_handleBack()`, ALWAYS test `Navigator.of(context).canPop()` before evaluating `context.canPop()`. In tests or non-GoRouter widget contexts, calling `context.canPop()` throws `No GoRouter found in context`.
+  - **Injected Controller URL Resolution Guard**: In `_resolveEffectiveMediaUrl()`, check `widget.customController != null` at the immediate start of the function and return `widget.mediaUrl` immediately. Never await `settingsServiceProvider.getServerBaseUrl()` when an injected controller is present, as SharedPreferences asynchronous access in unit tests stalls widget pump cycles.
+  - **Playback Progress Sealing**: In `_handleBack()`, invoke `_progress?.flush()` followed immediately by `_progress?.dispose()` prior to `await _controller.stop()`. This prevents media engines (such as media_kit/libmpv) from resetting position to 0 and overwriting the saved resume point.
+
+## 25. Android Hardware Video Playback Hardening, Driver Lock Prevention & Remote Control Etiquette
+- **Remote Input Takeover Protocol (Strict Invariant)**:
+  - Whenever taking over inputs or sending ADB remote control key events to a connected Fire TV Stick or Android TV, ALWAYS notify the user beforehand:
+    `"Please do not touch the remote..."`
+  - Once finished interacting or testing, ALWAYS release control by stating:
+    `"The app is free from your control."`
+- **MediaTek Display Processor (MDP) & PowerVR Driver Lock Prevention**:
+  - Zero-copy `hwdec: mediacodec` on Android passes decoded video hardware buffers directly to `SurfaceTexture` / `ANativeWindow` as EGLImages.
+  - On SoCs with MediaTek MDP and PowerVR GPUs (e.g. Amazon Fire TV Stick 4K `AFTMM`), non-16-byte-aligned frame dimensions (such as *Scary Movie* at 1916×800) cause PowerVR texture rejection (`E IMGSRV : IsTextureConsistent: IMGEGLImage is not consistent`), leaving display sync fences unsignaled. The kernel driver then deadlocks waiting for `fence[353]` timeout, resulting in a complete video pipeline freeze across the entire device until reboot.
+  - **Strict Solution — `mediacodec-copy`**: On Android, always configure `VideoControllerConfiguration(hwdec: 'mediacodec-copy')` in `MediaKitPlayerAdapter`. This reads back and renders frames via standard OpenGL ES texture shaders (`vo=gpu`), completely decoupling decoded frames from direct ANativeWindow hardware composer sync fences.
+- **Automatic Dynamic Software Fallback (`fallbackToSoftwareDecoder`)**:
+  - If hardware decoding errors occur or if the first video frame fails to render within 4 seconds (`_firstFrameRendered` tracking via `videoController.waitUntilFirstFrameRendered`), the adapter dynamically invokes `fallbackToSoftwareDecoder()`.
+  - It sets `(player.platform as dynamic).setProperty('hwdec', 'no')` (libavcodec CPU decoding) and triggers a position seek to flush decoder pipeline buffers cleanly without terminating playback or resetting audio.
+- **Expanded Decoder Error Matching**:
+  - The stream error listener must catch and trigger fallback on keywords: `video`, `codec`, `mediacodec`, `vd`, `decoder`, `hwdec`, and `surface`.
+
+## 26. Coordinated Playback Overlay State Management Invariants
+- **Mutually Exclusive Domain State Model (`PlaybackOverlayStatus`)**:
+  - Center canvas status overlays (`PlayerLoadingIndicator`, `PlayerHudToast`, and center Play/Pause) MUST NOT evaluate independent disconnected boolean flags that cause stacking collisions (e.g. `Buffering Stream` + `+10 sec` + Center Play/Pause rendering simultaneously).
+  - All transient visual states are coordinated via `PlaybackOverlayStatus` with discrete types (`PlaybackOverlayType`: `none`, `opening`, `buffering`, `seeking`, `toast`).
+- **Deterministic Overlay Priority Ordering**:
+  - Priority 1: User-initiated transient actions (`seeking` with accumulated delta, `toast` for volume/brightness/speed/aspect/track changes).
+  - Priority 2: Cold start loading (`opening` / `idle`).
+  - Priority 3: Stream underrun (`buffering`), automatically suppressed during active relative seek settle windows (1000ms) and timeline scrubbing gestures (`_isScrubbing`).
+  - Priority 4: Normal playback (`none`).
+- **Center Play/Pause Suppression**:
+  - In `PlayerControlsOverlay`, the prominent center Play/Pause button is strictly suppressed whenever an overlay is active (`!widget.isBuffering && !widget.isDoubleTapSeeking && !widget.isOverlayActive`), eliminating vertical overlap and visual noise over seek/toast indicators.
+- **Rapid Seek Delta Accumulation**:
+  - Relative seek commands (D-pad Left/Right, Media Rewind/Fast-Forward) accumulate delta in real time (`+10 sec` → `+20 sec` → `+30 sec`) and refresh a 1000ms settle timer in a single unified HUD toast, eliminating timer races and buffer flashes.
+- **Immediate Buffering Dismissal**:
+  - Buffering indicators dismiss immediately when `bufferingStream` emits `false`, leaving zero lingering loading spinners on the viewport once video frames resume.
+
+## 27. Google Cast & DLNA Remote Playback Invariants
+- **Google Cast Receiver Lifecycle & App Quit**:
+  - Halting playback via `media_controller.stop()` only pauses/stops the stream; it leaves the Google Cast Default Media Receiver running as an empty black screen on the TV.
+  - To release the TV back to its native dashboard, ambient backdrop, or previous input (matching DLNA behavior), the disconnect sequence MUST invoke `cast.quit_app()` (`socket_client.receiver_controller.stop_app()`), `cast.disconnect()`, and evict cached connections from `_cast_connections`.
+- **Receiver Master Volume & Anti-Reset Synchronization**:
+  - Cast receivers manage master volume via `cast.status.volume_level` (float `0.0`–`1.0`) and `cast.status.volume_muted` (boolean).
+  - Backend status endpoints must always populate `volume` (`round(volume_level * 100, 1)`) and `muted`. Omitting them causes UI clients to fall back to `100%`, jerking the volume slider on every status poll tick.
+  - Frontend remote controllers (`CastBar`) must maintain scrub isolation (`scrubVolume` state) and progressive bold red track fills (`#e50914`) matching the primary web player slider.
+- **In-Cast Subtitle Track Delivery & Full LAN Origins**:
+  - Google Cast receivers cannot resolve relative paths like `/subtitles/...`.
+  - When loading media with sidecar subtitles on Cast receivers, construct `media_info['tracks']` with fully-qualified LAN URLs (`http://<lan_ip>:<port>/subtitles/...`), `trackContentType: 'text/vtt'`, and high-contrast `textTrackStyle`.
+  - The in-cast remote HUD must provide a live subtitle selector (`#castSubBtn` and `#castSubMenu`) dispatching `action: 'subtitle'` (`controller.enable_subtitle(id)` / `controller.disable_subtitle()`) without interrupting playback.
+- **Multi-Adapter LAN SSDP & mDNS Discovery Resilience**:
+  - On Windows hosts with multiple network adapters (Ethernet, Wi-Fi, Tailscale, virtual adapters), mDNS multicast packets can be dropped.
+  - Pair SSDP multi-interface search with an ARP cache scan and concurrent HTTP probes against the Google Cast Eureka endpoint (`http://<ip>:8008/setup/eureka_info`), ensuring reliable discovery across all local subnets.
+
+## 28. Native Rust Axum Streaming Engine, Windows Path Resolution & Test Harness Invariants
+- **Windows Verbatim Path Stripping (`\\?\`) for Deterministic Hashing**:
+  - In Rust on Windows, `std::fs::canonicalize()` prefixes verbatim paths with `\\?\`.
+  - When computing deterministic SHA-256 cache signatures for HLS cache directories, preview thumbnails, and transcoded MP4s matching Python (`preview:{path}:{size}:{mtime_ns}` and `hls:{path}:{size}:{mtime_ns}`), always strip `\\?\` prefix via `strip_verbatim()`.
+  - Always bind `path.to_string_lossy()` to a `let` variable before taking a reference (`let path_lossy = path.to_string_lossy(); let path_str = strip_verbatim(&path_lossy);`) to satisfy borrow lifetimes across statements.
+- **Tower-HTTP CORS Wildcard Matching in Contract Tests**:
+  - When `CorsLayer` is configured with `allow_methods(Any)`, Tower-HTTP emits `access-control-allow-methods: *`.
+  - Contract and integration tests asserting allowed HTTP methods must accept either wildcard or explicit lists:
+    ```rust
+    let allow_methods = res.headers().get("access-control-allow-methods").unwrap().to_str().unwrap();
+    assert!(allow_methods == "*" || allow_methods.contains("GET"));
+    ```
+- **Axum Integration Test Harnesses with RAII `Drop`**:
+  - When an integration test harness struct implements `Drop` for filesystem cleanup, calling `harness.app.oneshot(req)` fails with compiler error `E0509: cannot move out of type which implements the Drop trait`.
+  - Always call `harness.app.clone().oneshot(req)`, as Axum's `Router` is cheaply cloneable.
+- **RFC 8216 Target Duration Healing (`honest_target_duration`)**:
+  - Always parse `#EXTINF:<duration>` labels across all playlist segments and elevate `#EXT-X-TARGETDURATION:N` to `ceil(max(durations))` if any segment exceeds the declared duration, preventing player timeline drift and HLS.js sliding window skips.
+
+## 29. Native Rust Subtitle Engine, Database Test Isolation & Routing Guardrails
+- **Native Independence Invariant (Zero Proxy Shims During Migration)**:
+  - When implementing or migrating features to the Rust API foundation (port 8001), always build 100% native Rust implementations directly (e.g. native gzip decompression via `flate2`, HTTP requests via `reqwest`, media probing via `ffprobe`, container extraction via `ffmpeg`).
+  - Do not create temporary reverse-proxy shims or delegators to the legacy Flask backend unless a specific migration phase explicitly mandates an interim fallback. The architectural goal is full decommission of Flask.
+- **Database Test Isolation & Teardown Guardrail**:
+  - Any test suite or harness in Rust or Python that inserts test movie or progress rows into `media_server` (PostgreSQL 18.4 - the only production database; the SQLite `media.db` was retired in the Phase 3 migration) MUST:
+    1. Clean up lingering test records during setup (e.g. `DELETE FROM movies WHERE filename LIKE 'rust_test_movie_%'`).
+    2. Implement an explicit teardown hook (`harness.teardown().await` or pytest fixture teardown) that unconditionally deletes test rows upon test completion or failure.
+    3. Ensure zero phantom test movies remain in development or production databases.
+- **Axum Wildcard Routing & Internal Prefix Dispatcher**:
+  - In Axum routing, never register overlapping wildcard routes under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`), as this triggers a route collision panic at server startup.
+  - Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
+- **Recursive Media Path Resolution Fallback**:
+  - Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, while preserving strict directory traversal (`..`) security defenses.
+
+

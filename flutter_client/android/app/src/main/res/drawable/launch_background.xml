@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launch window, shown while the Flutter engine starts.
+     It is the CURTAIN's colour, not white: the brand opening sequence opens on
+     an opaque obsidian curtain, and a white launch screen in front of it is a
+     flash of the wrong colour on every cold launch. On a television, where
+     the engine takes seconds to come up, that flash is what the viewer sees
+     first. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/intro_obsidian" />
+</layer-list>

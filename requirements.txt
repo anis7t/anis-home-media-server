@@ -1,0 +1,41 @@
+# Python is NOT a runtime dependency of the media server.
+#
+# The backend is 100% native Rust (rust/), the frontend is a React 19 SPA
+# (web/), and the database is PostgreSQL 18.4. Nothing here is needed to
+# BUILD or RUN the service.
+#
+# This file covers the OPERATIONAL TOOLING only - the live probe scripts,
+# the release helpers, and the browser-driven verification scripts.
+#
+# Most of those scripts are deliberately standard-library only, and need
+# nothing installed at all:
+#
+#   scripts/probe_android_api.py          stdlib only
+#   scripts/probe_phase_8_contracts.py    stdlib only
+#   scripts/verify_cast_live.py           stdlib only
+#   scripts/verify_phase_8_live_fmp4.py   stdlib only
+#   scripts/publish_update.py             stdlib only
+#   scripts/release_android.py            stdlib only
+#   scripts/update_intro_doc.py           stdlib only
+#   tests/load/load_test.py               stdlib only
+#
+# The exceptions are listed below. Install them into a virtual environment
+# if you need the scripts that use them:
+#
+#   python -m venv .venv
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# The scripts that need each package:
+#   selenium   scripts/live_player_seek_check.py, scripts/verify_rust_spa_live.py
+#   websockets docs/opening-sequence/scripts/cdp_local.py (and the three
+#              scripts that import it)
+#
+# Note on the removed trees: the untracked `.agents/` skill tree and the
+# untracked `Hermes-agent-android-PC-companion-app/` were deleted on
+# 2026-10-20. They were the only consumers of playwright, pillow, pynacl,
+# pystray, pytest, qrcode and zeroconf, so those pins went with them. The
+# project skill at `.opencode/skills/media-server-verify/` is unaffected.
+
+# --- Browser-driven verification -------------------------------------------------
+selenium>=4.0,<5
+websockets>=12.0,<16

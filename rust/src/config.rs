@@ -1,0 +1,226 @@
+use std::env;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Normalise a configured public origin: trim whitespace and any trailing
+/// slash, and treat an empty value as unset.
+fn normalise_public_base_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+/// The externally visible origin of this server, e.g. `https://media.anisparvez.in`.
+///
+/// Set `MEDIA_SERVER_PUBLIC_BASE_URL` to pin it. **This matters for security,
+/// not just for cosmetics.** The QR sign-in flow builds the URL the phone is
+/// told to open, and the Google OAuth callback builds the redirect URI - and
+/// both used to derive those from the request's `Host` header, which any
+/// client controls. A request with a forged `Host` could therefore point the
+/// phone at an attacker-controlled host, or redirect an OAuth authorization
+/// code to one.
+///
+/// When the variable is unset the request headers are still used, so the
+/// server keeps working without configuration - but the value is then
+/// attacker-influenced, and the deployment should pin it.
+pub fn public_base_url() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            std::env::var("MEDIA_SERVER_PUBLIC_BASE_URL")
+                .ok()
+                .and_then(|v| normalise_public_base_url(&v))
+        })
+        .clone()
+}
+
+pub fn admin_emails() -> Vec<String> {
+    let raw = std::env::var("MEDIA_SERVER_ADMIN_EMAILS").unwrap_or_default();
+    let mut out: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalise_public_base_url;
+
+    #[test]
+    fn test_public_base_url_normalisation() {
+        assert_eq!(
+            normalise_public_base_url("https://media.anisparvez.in"),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        // A trailing slash would produce a double slash in every built URL.
+        assert_eq!(
+            normalise_public_base_url("https://media.anisparvez.in/"),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        assert_eq!(
+            normalise_public_base_url("  https://media.anisparvez.in  "),
+            Some("https://media.anisparvez.in".to_string())
+        );
+        // An empty or whitespace-only value is "unset", not an empty origin.
+        assert_eq!(normalise_public_base_url(""), None);
+        assert_eq!(normalise_public_base_url("   "), None);
+        assert_eq!(normalise_public_base_url("/"), None);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AppConfig {
+    pub database_url: String,
+    pub host: String,
+    pub port: u16,
+    pub media_root: PathBuf,
+    pub media_roots: Vec<PathBuf>,
+    pub cache_dir: PathBuf,
+    pub static_dir: PathBuf,
+    pub flask_origin: String,
+    pub base_dir: PathBuf,
+    pub tmdb_api_token: Option<String>,
+    /// Staging directory for resumable uploads. Defaults to `<media_root>/.uploads`.
+    pub upload_tmp: PathBuf,
+    /// Final directory for completed media uploads. Defaults to `<media_root>`.
+    pub upload_target_dir: PathBuf,
+    /// The pinned public origin, when `MEDIA_SERVER_PUBLIC_BASE_URL` is set.
+    pub public_base_url: Option<String>,
+}
+
+impl AppConfig {
+    pub fn from_env() -> Self {
+        dotenvy::dotenv().ok();
+        if let Ok(base) = env::var("MEDIA_SERVER_BASE_DIR") {
+            let p = PathBuf::from(base).join(".env");
+            if p.exists() {
+                let _ = dotenvy::from_path(&p);
+            }
+        }
+        let default_env = PathBuf::from("E:\\MediaServer\\.env");
+        if default_env.exists() {
+            let _ = dotenvy::from_path(&default_env);
+        }
+
+        // Defensive manual fallback in case dotenvy encounters escape syntax on Windows
+        if let Ok(content) = std::fs::read_to_string("E:\\MediaServer\\.env") {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || !trimmed.contains('=') {
+                    continue;
+                }
+                if let Some((k, v)) = trimmed.split_once('=') {
+                    let k = k.trim();
+                    let v = v.trim().trim_matches(|c| c == '\'' || c == '"');
+                    if !k.is_empty() && env::var(k).is_err() {
+                        env::set_var(k, v);
+                    }
+                }
+            }
+        }
+
+        let database_url = env::var("MEDIA_SERVER_DATABASE_URL")
+            .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string());
+
+        // 0.0.0.0, not 127.0.0.1.
+        //
+        // A loopback bind makes this service invisible to the LAN, which
+        // breaks two things that are both load-bearing: a cast receiver has
+        // to fetch media from this host (it answers `SetAVTransportURI` with an
+        // empty HTTP 500 when it cannot), and the Cloudflare tunnel cannot
+        // reach it once this service takes ownership of :8000.
+        //
+        // This default was wrong and the symptom was invisible from the
+        // development host, because every test goes through 127.0.0.1.
+        let host = env::var("RUST_HOST")
+            .or_else(|_| env::var("HOST"))
+            .unwrap_or_else(|_| "0.0.0.0".to_string());
+
+        let port = env::var("RUST_PORT")
+            .or_else(|_| env::var("PORT"))
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(8000);
+
+        let media_root = env::var("MEDIA_SERVER_MEDIA_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("D:\\Flicks"));
+
+        let mut media_roots = Vec::new();
+        if let Ok(roots_env) = env::var("MEDIA_SERVER_MEDIA_ROOTS") {
+            for r in roots_env.split(',') {
+                let trimmed = r.trim();
+                if !trimmed.is_empty() {
+                    media_roots.push(PathBuf::from(trimmed));
+                }
+            }
+        }
+        if media_roots.is_empty() {
+            media_roots.push(media_root.clone());
+            let archive_dir = media_root.join(".archive");
+            if archive_dir.exists() {
+                media_roots.push(archive_dir);
+            }
+        }
+
+        let upload_tmp = env::var("MEDIA_SERVER_UPLOAD_TMP")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| media_root.join(".uploads"));
+        let upload_target_dir = env::var("MEDIA_SERVER_UPLOAD_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| media_root.clone());
+
+        let cache_dir = env::var("MEDIA_SERVER_CACHE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("E:\\MediaServer\\cache"));
+
+        let static_dir = env::var("MEDIA_SERVER_STATIC_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let rel_dist = PathBuf::from("web/dist");
+                if rel_dist.exists() {
+                    rel_dist
+                } else {
+                    PathBuf::from("E:\\MediaServer\\web\\dist")
+                }
+            });
+
+        let flask_origin = env::var("FLASK_ORIGIN")
+            .or_else(|_| env::var("MEDIA_SERVER_FLASK_ORIGIN"))
+            .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
+
+        let base_dir = env::var("MEDIA_SERVER_BASE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
+            });
+
+        let tmdb_api_token = env::var("TMDB_API_TOKEN")
+            .ok()
+            .map(|t| t.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+            .filter(|t| !t.is_empty());
+
+        Self {
+            database_url,
+            host,
+            port,
+            media_root,
+            media_roots,
+            cache_dir,
+            static_dir,
+            flask_origin,
+            base_dir,
+            tmdb_api_token,
+            upload_tmp,
+            upload_target_dir,
+            public_base_url: public_base_url(),
+        }
+    }
+}

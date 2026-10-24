@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launch window, shown while the Flutter engine starts.
+
+     This is the -v21 variant of the drawable, and it is the one that is
+     actually used: Android picks the -v21 resource on API 21 and above, and
+     the Fire TV is API 25. The plain drawable/ variant - which was changed to
+     the curtain's colour - was therefore never shown on that television at
+     all, and the launch window was white for the whole of the engine's
+     startup: 4.6 seconds of white in front of an obsidian curtain.
+
+     The colour is the sequence's own curtain, #05060a, so the cold start
+     opens on the colour the sequence opens on. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/intro_obsidian" />
+
+    <!-- You can insert your own image assets here -->
+    <!-- <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/launch_image" />
+    </item> -->
+</layer-list>

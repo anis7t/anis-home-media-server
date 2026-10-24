@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-10-14T16:17:22.198281+00:00",
+  "waitress_pid": 17644,
+  "direct_media": "2001 A Space Odyssey (1968) [BluRay] [1080p] [YTS.AM]/2001.A.Space.Odyssey.1968.1080p.BluRay.x264-[YTS.AM].mp4",
+  "hls_key": "03a9602b1cdf0b50b9b9d2c720876334d5833290578fb450ab1eb963c0efac7b",
+  "reports": [
+    {
+      "target": "Local Origin",
+      "workload": "direct",
+      "concurrency": 1,
+      "total_sessions": 1,
+      "success_sessions": 1,
+      "failed_sessions": 0,
+      "success_rate_percent": 100.0,
+      "ttfb_min_ms": 86.6,
+      "ttfb_p50_ms": 86.6,
+      "ttfb_p95_ms": 86.60199999940232,
+      "ttfb_max_ms": 86.6,
+      "avg_stream_throughput_mbps": 63.16,
+      "min_stream_throughput_mbps": 63.16,
+      "aggregate_bandwidth_mbps": 63.08,
+      "total_bytes_transferred": 8388608,
+      "duration_s": 1.06,
+      "telemetry": {
+        "samples": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "mem_used_mb_avg": 8974.9,
+        "mem_percent_avg": 62.9,
+        "waitress_mem_mb": 79.4,
+        "waitress_threads": 24,
+        "disk_read_mbps": 23.34,
+        "disk_write_mbps": 0.44,
+        "net_sent_mbps": 0.01,
+        "net_recv_mbps": 0.01
+      },
+      "status_distribution": {
+        "206": 4
+      },
+      "error_summary": []
+    },
+    {
+      "target": "Local Origin",
+      "workload": "direct",
+      "concurrency": 2,
+      "total_sessions": 2,
+      "success_sessions": 2,
+      "failed_sessions": 0,
+      "success_rate_percent": 100.0,
+      "ttfb_min_ms": 31.8,
+      "ttfb_p50_ms": 85.7,
+      "ttfb_p95_ms": 139.53480000054697,
+      "ttfb_max_ms": 139.5,
+      "avg_stream_throughput_mbps": 84.38,
+      "min_stream_throughput_mbps": 76.92,
+      "aggregate_bandwidth_mbps": 153.41,
+      "total_bytes_transferred": 16777216,
+      "duration_s": 0.87,
+      "telemetry": {
+        "samples": 0,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "mem_used_mb_avg": 0.0,
+        "mem_percent_avg": 0.0,
+        "waitress_mem_mb": 0.0,
+        "waitress_threads": 0,
+        "disk_read_mbps": 0.0,
+        "disk_write_mbps": 0.0,
+        "net_sent_mbps": 0.0,
+        "net_recv_mbps": 0.0
+      },
+      "status_distribution": {
+        "206": 8
+      },
+      "error_summary": []
+    }
+  ]
+}

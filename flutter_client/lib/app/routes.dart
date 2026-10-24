@@ -1,0 +1,221 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../features/admin/presentation/screens/admin_hub_screen.dart';
+import '../features/auth/presentation/providers/auth_providers.dart';
+import '../features/connection/presentation/connection_screen.dart';
+import '../features/home/presentation/screens/home_screen.dart';
+import '../features/library/data/models/movie_item.dart';
+import '../features/library/presentation/screens/library_screen.dart';
+import '../features/library/presentation/screens/movie_details_screen.dart';
+import '../features/player/presentation/player_screen.dart';
+import '../features/player_poc/presentation/player_poc_screen.dart';
+import '../features/settings/presentation/screens/settings_screen.dart';
+import '../features/shell/presentation/screens/app_shell.dart';
+
+class AppRoutes {
+  AppRoutes._();
+
+  static const String home = '/home';
+  static const String library = '/library';
+  static const String settings = '/settings';
+  static const String connection = '/connection';
+  static const String movieDetails = '/movie-details';
+  static const String playerPoc = '/player-poc';
+  static const String player = '/player';
+  static const String adminHub = '/admin';
+
+  static GoRouter createRouter({
+    String initialLocation = home,
+    void Function(String token)? onTokenReceived,
+  }) {
+    return GoRouter(
+      initialLocation: initialLocation,
+      redirect: (BuildContext context, GoRouterState state) {
+        final uri = state.uri;
+        final isAuthCallback = uri.scheme == 'ahms' ||
+            (uri.host == 'auth' && uri.path.contains('callback')) ||
+            uri.path.contains('/auth/callback') ||
+            uri.path == '/callback';
+
+        if (isAuthCallback) {
+          final token = uri.queryParameters['session_token'];
+          if (token != null && token.isNotEmpty) {
+            onTokenReceived?.call(token);
+          }
+          return AppRoutes.settings;
+        }
+        return null;
+      },
+      onException: (BuildContext context, GoRouterState state, GoRouter router) {
+        debugPrint('[AppRoutes] Unhandled navigation exception for ${state.uri}: ${state.error}');
+        final uri = state.uri;
+        if (uri.scheme == 'ahms' || uri.path.contains('callback')) {
+          final token = uri.queryParameters['session_token'];
+          if (token != null && token.isNotEmpty) {
+            onTokenReceived?.call(token);
+          }
+          router.go(AppRoutes.settings);
+          return;
+        }
+        router.go(AppRoutes.home);
+      },
+      routes: [
+        // Google OAuth & Custom Scheme Deep-Link Callback Redirection
+        GoRoute(
+          path: '/auth/callback',
+          redirect: (context, state) {
+            final token = state.uri.queryParameters['session_token'];
+            if (token != null && token.isNotEmpty) {
+              onTokenReceived?.call(token);
+            }
+            return AppRoutes.settings;
+          },
+        ),
+        GoRoute(
+          path: '/callback',
+          redirect: (context, state) {
+            final token = state.uri.queryParameters['session_token'];
+            if (token != null && token.isNotEmpty) {
+              onTokenReceived?.call(token);
+            }
+            return AppRoutes.settings;
+          },
+        ),
+        // Connection & Server Setup (Standalone route)
+        GoRoute(
+          path: connection,
+          builder: (BuildContext context, GoRouterState state) {
+            return const ConnectionScreen();
+          },
+        ),
+
+        // Persistent Mobile Navigation Shell (Home, Library, Settings)
+        StatefulShellRoute.indexedStack(
+          builder: (
+            BuildContext context,
+            GoRouterState state,
+            StatefulNavigationShell navigationShell,
+          ) {
+            return AppShell(navigationShell: navigationShell);
+          },
+          branches: [
+            // Branch 0: Home Dashboard
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: home,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const HomeScreen();
+                  },
+                ),
+              ],
+            ),
+
+            // Branch 1: Library Catalog & Browsing
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: library,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const LibraryScreen();
+                  },
+                ),
+              ],
+            ),
+
+            // Branch 2: Settings & In-App Updates
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: settings,
+                  builder: (BuildContext context, GoRouterState state) {
+                    return const SettingsScreen();
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+
+        // Movie Details (Top-level destination outside shell)
+        GoRoute(
+          path: movieDetails,
+          builder: (BuildContext context, GoRouterState state) {
+            final movie =
+                state.extra is MovieItem ? state.extra as MovieItem : null;
+            final filename = state.uri.queryParameters['filename'];
+            return MovieDetailsScreen(
+              initialMovie: movie,
+              filename: filename,
+            );
+          },
+        ),
+
+        // Admin & Server Management Hub
+        GoRoute(
+          path: adminHub,
+          builder: (BuildContext context, GoRouterState state) {
+            return const AdminHubScreen();
+          },
+        ),
+
+        // Player POC Harness
+        GoRoute(
+          path: playerPoc,
+          builder: (BuildContext context, GoRouterState state) {
+            return const PlayerPocScreen();
+          },
+        ),
+
+        // Production Video Player (Strictly top-level fullscreen outside shell)
+        GoRoute(
+          path: player,
+          builder: (BuildContext context, GoRouterState state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            final query = state.uri.queryParameters;
+            final providedUrl =
+                (extra?['mediaUrl'] as String?) ?? query['mediaUrl'];
+            final serverParam =
+                (extra?['server'] as String?) ?? query['server'];
+
+            const filename =
+                'Batman%20Knightfall%20Part%201%202026%201080p%20WEBRip%20x264%20AAC5%201-%5BYTS%20GG%20-%20YTS%20BZ%5D.mp4';
+            final defaultUrl = (serverParam != null && serverParam.isNotEmpty)
+                ? '${serverParam.endsWith('/') ? serverParam.substring(0, serverParam.length - 1) : serverParam}/media/$filename'
+                : 'https://media.anisparvez.in/media/$filename';
+
+            return PlayerScreen(
+              mediaUrl: (providedUrl != null && providedUrl.isNotEmpty)
+                  ? providedUrl
+                  : defaultUrl,
+              title: extra?['title'] as String? ??
+                  query['title'] ??
+                  'Batman Knightfall Part 1 (2026)',
+              subtitle: extra?['subtitle'] as String? ??
+                  query['subtitle'] ??
+                  'Direct MP4 • 1080p • AAC 5.1',
+              startPosition: extra?['startPosition'] as Duration?,
+              mediaFilename: extra?['mediaFilename'] as String?,
+              externalSubtitleUrl: extra?['externalSubtitleUrl'] as String? ??
+                  query['externalSubtitleUrl'],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  static final GoRouter router = createRouter();
+}
+
+/// Central Riverpod provider for application routing and deep-link handling.
+final routerProvider = Provider<GoRouter>((ref) {
+  return AppRoutes.createRouter(
+    onTokenReceived: (token) {
+      ref.read(authNotifierProvider.notifier).setSessionToken(token);
+    },
+  );
+});
+

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Theme applied to the Android Window as soon as the process has started.
+         This theme determines the color of the Android Window while your
+         Flutter UI initializes, as well as behind your Flutter UI while its
+         running.
+
+         This Theme is only used starting with V2 of Flutter's Android embedding.
+
+         The window background is the sequence's curtain colour, NOT
+         ?android:colorBackground. Under Theme.Light that attribute is WHITE,
+         and the engine swaps this theme in as soon as it attaches - which is
+         BEFORE the first Flutter frame is presented. So the cold start showed
+         a white window for as long as the engine took to come up: on the Fire
+         TV, four and a half seconds of white in front of an obsidian
+         curtain. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@color/intro_obsidian</item>
+    </style>
+</resources>

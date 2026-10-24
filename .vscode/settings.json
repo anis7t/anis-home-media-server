@@ -1,0 +1,114 @@
+{
+  "html.validate.styles": false,
+  "html.validate.scripts": false,
+  "css.lint.vendorPrefix": "ignore",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell"
+    },
+    "Command Prompt": {
+      "path": [
+        "${env:windir}\\Sysnative\\cmd.exe",
+        "${env:windir}\\System32\\cmd.exe"
+      ],
+      "args": [],
+      "icon": "terminal-cmd"
+    },
+    "Git Bash": {
+      "source": "Git Bash"
+    },
+    "zsh": {
+      "path": "C:\\msys64\\usr\\bin\\zsh.exe",
+      "args": [
+        "-l"
+      ],
+      "env": {
+        "CHERE_INVOKING": "1",
+        "MSYSTEM": "MSYS"
+      },
+      "icon": "terminal-bash"
+    }
+  },
+  "workbench.editor.enablePreviewFromCodeNavigation": true,
+  "workbench.editor.enablePreviewFromQuickOpen": true,
+  "terminal.integrated.environmentChangesRelaunch": true,
+  "python.terminal.shellIntegration.enabled": false,
+  "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
+  "python.useEnvironmentsExtension": false,
+  "bloc.languageServer.enabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "yaml.schemas": {
+    "https://spec.openapis.org/oas/3.1/schema/2026-10-09": [
+      "docs/openapi.yaml"
+    ]
+  },
+  "yaml.format.enable": true,
+  "yaml.validate": true,
+
+  "// Rust": "Added with the Rust toolchain (rustup 1.99.0, x86_64-pc-windows-msvc)",
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.onSave": true,
+  "rust-analyzer.cargo.allTargets": true,
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true,
+    "editor.rustfmt.onSave": true
+  },
+
+  "// React / TypeScript": "Added with typescript-language-server 6.0.2, prettier 3.9.9, eslint 10.12.0 (global npm)",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.useFlatConfig": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[sql]": {
+    "editor.formatOnSave": true
+  },
+
+  "// SQLTools Database Connections": "Configured for local PostgreSQL instance (media_server and media_integration_test)",
+  "sqltools.connections": [
+    {
+      "name": "Media Server (PostgreSQL)",
+      "driver": "PostgreSQL",
+      "server": "127.0.0.1",
+      "port": 5432,
+      "database": "media_server",
+      "username": "postgres",
+      "password": "postgres",
+      "connectionTimeout": 15,
+      "previewLimit": 50
+    },
+    {
+      "name": "Media Server Integration Test (PostgreSQL)",
+      "driver": "PostgreSQL",
+      "server": "127.0.0.1",
+      "port": 5432,
+      "database": "media_integration_test",
+      "username": "postgres",
+      "password": "postgres",
+      "connectionTimeout": 15,
+      "previewLimit": 50
+    }
+  ]
+}

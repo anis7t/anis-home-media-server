@@ -1,0 +1,127 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "lsp": {
+    "pyright": {
+      "command": ["pyright", "--stdio"],
+      "extensions": [".py", ".pyi"],
+      "initialization": {
+        "python": {
+          "analysis": {
+            "typeCheckingMode": "basic",
+            "autoSearchPaths": true,
+            "useLibraryCodeForTypes": true,
+            "diagnosticMode": "workspace"
+          }
+        }
+      }
+    },
+    "dart": {
+      "command": ["dart", "language-server", "--protocol=lsp"],
+      "extensions": [".dart"],
+      "initialization": {
+        "closingNotifier": true,
+        "flutterEnabled": true
+      }
+    },
+    "rust-analyzer": {
+      "command": ["rust-analyzer"],
+      "extensions": [".rs"]
+    },
+    "typescript": {
+      "command": ["typescript-language-server.cmd", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
+    }
+  },
+
+  "mcp": {
+    "timeout": { "startup": 120000 },
+    "servers": {
+      "cloudflare-api": {
+        "type": "remote",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "enabled": true
+      },
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "enabled": true
+      },
+      "mobile": {
+        "type": "local",
+        "command": ["npx", "-y", "@mobilenext/mobile-mcp@latest"],
+        "enabled": true
+      },
+      "postgres": {
+        "type": "local",
+        "command": ["uvx", "postgresql-mcp"],
+        "environment": {
+          "POSTGRES_HOST": "127.0.0.1",
+          "POSTGRES_PORT": "5432",
+          "POSTGRES_USER": "postgres",
+          "POSTGRES_PASSWORD": "postgres",
+          "POSTGRES_DB": "media_server",
+          "POSTGRES_SSLMODE": "disable",
+          "ALLOW_WRITE_OPERATIONS": "true",
+          "QUERY_TIMEOUT": "30",
+          "MAX_ROWS": "1000"
+        }
+      },
+      "serena": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "--from",
+          "git+https://github.com/oraios/serena",
+          "serena",
+          "start-mcp-server",
+          "--context",
+          "desktop-app",
+          "--project",
+          "E:/MediaServer",
+          "--tool-timeout",
+          "240"
+        ],
+        "enabled": true
+      }
+    }
+  },
+
+  "instructions": [
+    "https://raw.githubusercontent.com/JRedeker/opencode-shell-strategy/trunk/shell_strategy.md"
+  ],
+
+  "permissions": {
+    "read": [
+      { "action": "read", "resource": "E:/MediaServer/media.db", "effect": "deny" },
+      { "action": "read", "resource": "D:/Flicks/**", "effect": "ask" }
+    ],
+    "edit": [
+      { "action": "edit", "resource": "E:/MediaServer/media.db", "effect": "deny" }
+    ],
+    "bash": [
+      { "action": "shell", "resource": "nssm *", "effect": "ask" },
+      { "action": "shell", "resource": "cloudflared *", "effect": "ask" },
+      { "action": "shell", "resource": "adb *", "effect": "ask" },
+      { "action": "shell", "resource": "taskkill *", "effect": "ask" }
+    ],
+    "webfetch": [{ "action": "webfetch", "resource": "*", "effect": "allow" }]
+  },
+
+  "watcher": {
+    "ignore": [
+      "cache/**",
+      "venv/**",
+      "flutter_client/build/**",
+      "flutter_client/.dart_tool/**",
+      "flutter_client/android/.gradle/**",
+      "flutter_client/android/build/**",
+      "logs/**",
+      "updates/**",
+      "media.db*",
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/target/**"
+    ]
+  }
+}

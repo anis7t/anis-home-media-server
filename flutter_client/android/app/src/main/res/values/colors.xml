@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The brand opening sequence's curtain: opaque obsidian, #05060a.
+         It is the same colour the canonical uses for the curtain on the web
+         (docs/OPENING_SEQUENCE.md, section 5), and the launch window is
+         painted with it so that the cold start does not flash white. -->
+    <color name="intro_obsidian">#FF05060A</color>
+</resources>

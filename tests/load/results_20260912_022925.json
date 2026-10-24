@@ -1,0 +1,263 @@
+{
+  "test_metadata": {
+    "timestamp": "2026-09-11T20:57:11.903368+00:00",
+    "media_file": "Oculus (2013) [1080p]/Oculus.2013.1080p.BluRay.x264.YIFY.mp4",
+    "chunk_size_bytes": 2097152,
+    "chunks_per_stream": 5,
+    "inter_chunk_delay_s": 0.3,
+    "data_per_stream_mb": 10.0,
+    "failure_thresholds": {
+      "max_failure_rate": 0.2,
+      "max_ttfb_s": 10.0,
+      "min_throughput_mbps": 0.5
+    }
+  },
+  "results": {
+    "prod": {
+      "base_url": "https://media.anisparvez.in",
+      "baseline_ttfb_s": 0.861227,
+      "levels": [
+        {
+          "concurrency": 1,
+          "streams_total": 1,
+          "streams_success": 1,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 1.3902,
+          "ttfb_p50_s": 1.3902,
+          "ttfb_p95_s": 1.3902,
+          "ttfb_max_s": 1.3902,
+          "throughput_avg_mbps": 10.69,
+          "throughput_min_mbps": 10.69,
+          "aggregate_throughput_mbps": 10.69,
+          "total_bytes": 10485760,
+          "duration_s": 7.89,
+          "system": {
+            "samples": 7,
+            "cpu_avg": 13.3,
+            "cpu_max": 15.1,
+            "mem_used_avg_mb": 4631.0,
+            "mem_max_mb": 4632.0,
+            "mem_percent_avg": 33.3,
+            "load_1m_avg": 2.98,
+            "load_1m_max": 3.08,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 63.0
+          },
+          "http_codes": {
+            "206": 5
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 2,
+          "streams_total": 2,
+          "streams_success": 2,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 1.1712,
+          "ttfb_p50_s": 1.2314,
+          "ttfb_p95_s": 1.2314,
+          "ttfb_max_s": 1.2314,
+          "throughput_avg_mbps": 9.96,
+          "throughput_min_mbps": 9.71,
+          "aggregate_throughput_mbps": 19.91,
+          "total_bytes": 20971520,
+          "duration_s": 8.66,
+          "system": {
+            "samples": 8,
+            "cpu_avg": 18.4,
+            "cpu_max": 24.0,
+            "mem_used_avg_mb": 4651.0,
+            "mem_max_mb": 4656.0,
+            "mem_percent_avg": 33.4,
+            "load_1m_avg": 2.79,
+            "load_1m_max": 2.88,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 21.0
+          },
+          "http_codes": {
+            "206": 10
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 3,
+          "streams_total": 3,
+          "streams_success": 3,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 2.9535,
+          "ttfb_p50_s": 2.9785,
+          "ttfb_p95_s": 2.9835,
+          "ttfb_max_s": 2.9835,
+          "throughput_avg_mbps": 7.53,
+          "throughput_min_mbps": 6.7,
+          "aggregate_throughput_mbps": 22.6,
+          "total_bytes": 31457280,
+          "duration_s": 12.54,
+          "system": {
+            "samples": 12,
+            "cpu_avg": 19.3,
+            "cpu_max": 28.5,
+            "mem_used_avg_mb": 4693.0,
+            "mem_max_mb": 4717.0,
+            "mem_percent_avg": 33.7,
+            "load_1m_avg": 2.71,
+            "load_1m_max": 2.81,
+            "disk_read_avg_kbps": 1.0,
+            "disk_read_max_kbps": 8.0,
+            "disk_write_avg_kbps": 257.0
+          },
+          "http_codes": {
+            "206": 15
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 5,
+          "streams_total": 5,
+          "streams_success": 5,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 1.8502,
+          "ttfb_p50_s": 1.8329,
+          "ttfb_p95_s": 2.0318,
+          "ttfb_max_s": 2.0318,
+          "throughput_avg_mbps": 8.83,
+          "throughput_min_mbps": 8.55,
+          "aggregate_throughput_mbps": 44.16,
+          "total_bytes": 52428800,
+          "duration_s": 9.83,
+          "system": {
+            "samples": 9,
+            "cpu_avg": 22.1,
+            "cpu_max": 38.0,
+            "mem_used_avg_mb": 4673.0,
+            "mem_max_mb": 4688.0,
+            "mem_percent_avg": 33.6,
+            "load_1m_avg": 2.43,
+            "load_1m_max": 2.48,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 44.0
+          },
+          "http_codes": {
+            "206": 25
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 8,
+          "streams_total": 8,
+          "streams_success": 8,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 2.6918,
+          "ttfb_p50_s": 2.8383,
+          "ttfb_p95_s": 3.1268,
+          "ttfb_max_s": 3.1268,
+          "throughput_avg_mbps": 5.4,
+          "throughput_min_mbps": 4.3,
+          "aggregate_throughput_mbps": 43.2,
+          "total_bytes": 83886080,
+          "duration_s": 19.5,
+          "system": {
+            "samples": 19,
+            "cpu_avg": 21.3,
+            "cpu_max": 34.1,
+            "mem_used_avg_mb": 4700.0,
+            "mem_max_mb": 4742.0,
+            "mem_percent_avg": 33.8,
+            "load_1m_avg": 2.2,
+            "load_1m_max": 2.41,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 111.0
+          },
+          "http_codes": {
+            "206": 40
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 10,
+          "streams_total": 10,
+          "streams_success": 10,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 7.4068,
+          "ttfb_p50_s": 7.562,
+          "ttfb_p95_s": 7.7427,
+          "ttfb_max_s": 7.7427,
+          "throughput_avg_mbps": 3.72,
+          "throughput_min_mbps": 3.2,
+          "aggregate_throughput_mbps": 37.24,
+          "total_bytes": 104857600,
+          "duration_s": 26.27,
+          "system": {
+            "samples": 26,
+            "cpu_avg": 23.4,
+            "cpu_max": 37.6,
+            "mem_used_avg_mb": 4719.0,
+            "mem_max_mb": 4788.0,
+            "mem_percent_avg": 33.9,
+            "load_1m_avg": 2.1,
+            "load_1m_max": 2.25,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 225.0
+          },
+          "http_codes": {
+            "206": 50
+          },
+          "errors": [],
+          "verdict": "PASS"
+        },
+        {
+          "concurrency": 15,
+          "streams_total": 15,
+          "streams_success": 15,
+          "streams_failed": 0,
+          "success_rate": 100.0,
+          "ttfb_avg_s": 11.5754,
+          "ttfb_p50_s": 11.7956,
+          "ttfb_p95_s": 11.9086,
+          "ttfb_max_s": 11.9086,
+          "throughput_avg_mbps": 3.25,
+          "throughput_min_mbps": 2.81,
+          "aggregate_throughput_mbps": 48.79,
+          "total_bytes": 157286400,
+          "duration_s": 29.92,
+          "system": {
+            "samples": 29,
+            "cpu_avg": 26.5,
+            "cpu_max": 48.2,
+            "mem_used_avg_mb": 4743.0,
+            "mem_max_mb": 4806.0,
+            "mem_percent_avg": 34.1,
+            "load_1m_avg": 2.05,
+            "load_1m_max": 2.12,
+            "disk_read_avg_kbps": 0.0,
+            "disk_read_max_kbps": 0.0,
+            "disk_write_avg_kbps": 156.0
+          },
+          "http_codes": {
+            "206": 75
+          },
+          "errors": [],
+          "verdict": "FAIL \u2014 TTFB too high"
+        }
+      ],
+      "max_sustainable_streams": 10,
+      "first_degradation_at": 15
+    }
+  }
+}

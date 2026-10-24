@@ -1,0 +1,1975 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router';
+import { Icon } from '../../components/icons';
+import { PlayerSeekbar } from './PlayerSeekbar';
+import {
+  getMediaInfo,
+  getMovieDetails,
+  getProgress,
+  getTranscodeStatus,
+  setProgress,
+  encodePathSegments,
+  startTranscode,
+} from '../../lib/api/client';
+import { playbackModeFor, playbackUrlFor, type PlaybackMode } from '../../lib/api/media';
+import { useDeviceId } from '../../lib/useDeviceId';
+import type { MediaInfoResponse, TranscodeStatusResponse, QualityOption } from '../../lib/api/types';
+import type { MovieSummary } from '../../lib/api/spec-drift';
+import { posterUrl } from '../../lib/api/poster';
+import { PosterImage } from '../../components/PosterImage';
+import { useSubtitles } from './useSubtitles';
+import { SubtitleSettingsModal } from './SubtitleSettingsModal';
+import { QualitySelectorModal } from './QualitySelectorModal';
+import { probeClientMediaCapabilities, type CapabilityVerdict } from '../../lib/capabilities/mediaCapabilities';
+import { NerdStatsHud } from './NerdStatsHud';
+import { ShortcutsModal } from './ShortcutsModal';
+import { PlayerPreloader } from './PlayerPreloader';
+import { SeekRipples } from './SeekRipples';
+import { TranscodeCard, CacheStatusDialog, ShellTranscodePill } from './TranscodeCard';
+import { TranscodeGate } from './TranscodeGate';
+import { CastModal } from './CastModal';
+import { CastBar } from './CastBar';
+import {
+  startCastPlay,
+  sendCastControl,
+  getCastStatus,
+  stopCast,
+  type CastDevice,
+  type CastStatusResponse,
+} from '../../lib/api/cast';
+
+export const ASPECT_MODES = [
+  { id: 'fit', label: 'Fit', name: 'Best Fit' },
+  { id: 'crop', label: 'Crop', name: 'Crop (Zoom)' },
+  { id: 'stretch', label: 'Stretch', name: 'Stretch' },
+  { id: '16-9', label: '16:9', name: '16:9' },
+  { id: '4-3', label: '4:3', name: '4:3' },
+  { id: 'orig', label: 'Orig', name: 'Original' },
+] as const;
+
+export type AspectMode = (typeof ASPECT_MODES)[number]['id'];
+const ASPECT_KEY = 'media_aspect_mode';
+
+/**
+ * Minimum playback advance, in SECONDS, between persisted resume points.
+ *
+ * The unit is in the name on purpose. This constant was originally `_MS` and
+ * was compared against `video.currentTime`, which is in seconds - so the
+ * throttle demanded a 5000 *second* (83 minute) advance and watch progress was
+ * silently never written during an ordinary viewing session. The unit tests
+ * missed it because they stubbed `currentTime` and never ran this interval
+ * against real media.
+ */
+const PROGRESS_INTERVAL_SECONDS = 5;
+
+/**
+ * Resume guards. Below `RESUME_MIN_SECONDS` the viewer has barely started and is
+ * better off at zero; within `RESUME_TAIL_RATIO` of the end the title is
+ * finished. Without these, a completed film reopens on its final frame, which
+ * reads as a broken player rather than a watched one.
+ */
+const RESUME_MIN_SECONDS = 30;
+const RESUME_TAIL_RATIO = 0.97;
+
+function formatReleaseDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+export function PlayerPage() {
+  // Splat route: the filename is a relative path and contains slashes.
+  const params = useParams();
+  const decoded = decodeURIComponent(params['*'] ?? '');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  /*
+   * The <video> is only mounted once the probe resolves, so `videoRef.current` is
+   * still null on the commit that first flips `mode` / `isPlaybackReady`. An
+   * effect that gates on the ref therefore runs once into a null and never runs
+   * again: nothing in its dependency array changes when the element arrives.
+   * Mirroring the node into state makes the mount itself observable, which is the
+   * dependency those effects actually have. (Issue 14.3: no source was ever
+   * attached to a direct-play title, so playback sat at 0:00 with no error.)
+   */
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    setVideoEl(node);
+  }, []);
+
+  const [info, setInfo] = useState<MediaInfoResponse | undefined>();
+  const [clientCapability, setClientCapability] = useState<CapabilityVerdict | undefined>();
+  const [movieDetails, setMovieDetails] = useState<MovieSummary | undefined>();
+  const [error, setError] = useState<Error | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [transcode, setTranscode] = useState<TranscodeStatusResponse | undefined>();
+
+  const [position, setPosition] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [bufferedRanges, setBufferedRanges] = useState<{ start: number; end: number }[]>([]);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showRemainingTime, setShowRemainingTime] = useState(() => {
+    try {
+      return localStorage.getItem('media_show_remaining') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [aspectMode, setAspectMode] = useState<AspectMode>(() => {
+    try {
+      const saved = localStorage.getItem(ASPECT_KEY);
+      if (saved && ASPECT_MODES.some((m) => m.id === saved)) {
+        return saved as AspectMode;
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return 'fit';
+  });
+  const [isPipActive, setIsPipActive] = useState(false);
+  const [isNerdStatsOpen, setIsNerdStatsOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isQualityModalOpen, setIsQualityModalOpen] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState('auto');
+  const pendingQualityRestoreRef = useRef<{ seekTime: number; shouldPlay: boolean } | null>(null);
+
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [isControlsHovered, setIsControlsHovered] = useState(false);
+  const [isSeekbarHovered, setIsSeekbarHovered] = useState(false);
+  const isControlsHoveredRef = useRef(false);
+  const isSeekbarHoveredRef = useRef(false);
+  isControlsHoveredRef.current = isControlsHovered;
+  isSeekbarHoveredRef.current = isSeekbarHovered;
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cast state
+  const [castModalOpen, setCastModalOpen] = useState(false);
+  const [activeCastDevice, setActiveCastDevice] = useState<CastDevice | null>(null);
+  const [connectingCastDeviceId, setConnectingCastDeviceId] = useState<string | null>(null);
+  const [castStatus, setCastStatus] = useState<CastStatusResponse | null>(null);
+
+  const [preloaderVisible, setPreloaderVisible] = useState(true);
+  const [rippleLeft, setRippleLeft] = useState(false);
+  const [rippleRight, setRippleRight] = useState(false);
+  const [rippleLeftSec, setRippleLeftSec] = useState(10);
+  const [rippleRightSec, setRippleRightSec] = useState(10);
+  const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerRipple = useCallback((side: 'left' | 'right', sec: number) => {
+    if (side === 'left') {
+      setRippleLeft(true);
+      setRippleRight(false);
+      setRippleLeftSec(sec);
+    } else {
+      setRippleRight(true);
+      setRippleLeft(false);
+      setRippleRightSec(sec);
+    }
+    if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current);
+    rippleTimerRef.current = setTimeout(() => {
+      setRippleLeft(false);
+      setRippleRight(false);
+    }, 650);
+  }, []);
+
+  // Preloader auto-dismiss fallback timer
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPreloaderVisible(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const resetControlsTimer = useCallback(() => {
+    setControlsVisible(true);
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    // Never auto-hide while the user's pointer is over the controls overlay, hovering the seekbar, or actively scrubbing
+    if (isControlsHoveredRef.current || isSeekbarHoveredRef.current || isScrubbing) {
+      return;
+    }
+    if (playing) {
+      controlsTimerRef.current = setTimeout(() => {
+        if (!isControlsHoveredRef.current && !isSeekbarHoveredRef.current && !isScrubbing) {
+          setControlsVisible(false);
+        }
+      }, 3000);
+    }
+  }, [playing, isScrubbing]);
+
+  const lastReportedRef = useRef(0);
+  /** Mirrored position/duration, readable at teardown when the node is gone. */
+  const lastPositionRef = useRef(0);
+  const lastDurationRef = useRef(0);
+  const resumePositionRef = useRef(0);
+  const deviceId = useDeviceId();
+
+  const [hudMessage, setHudMessage] = useState<string | null>(null);
+  const hudTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showHud = useCallback((text: string) => {
+    setHudMessage(text);
+    if (hudTimerRef.current) clearTimeout(hudTimerRef.current);
+    hudTimerRef.current = setTimeout(() => {
+      setHudMessage(null);
+    }, 1600);
+  }, []);
+
+  const {
+    tracks,
+    activeTrackIndex,
+    prefs: subPrefs,
+    isSettingsOpen: isSubModalOpen,
+    setIsSettingsOpen: setIsSubModalOpen,
+    selectTrack,
+    toggleCC,
+    updatePref: updateSubPref,
+    adjustOffset,
+    uploadSubtitle,
+    elevateCues,
+  } = useSubtitles(videoRef, decoded, showHud);
+
+  // Elevate WebVTT cues when controls appear/hide
+  useEffect(() => {
+    elevateCues();
+  }, [controlsVisible, isScrubbing, playing, elevateCues]);
+
+  // --- Load the saved resume point ----------------------------------------
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    resumePositionRef.current = 0;
+
+    getProgress(decoded, { signal: controller.signal, deviceId })
+      .then((saved) => {
+        if (active) resumePositionRef.current = saved.position ?? 0;
+      })
+      .catch(() => {
+        // No saved progress, or the endpoint is unavailable: start at zero.
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [decoded, deviceId]);
+
+  // --- Probe: decide direct play vs HLS -----------------------------------
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setLoading(true);
+    setError(undefined);
+    setInfo(undefined);
+
+    getMediaInfo(decoded, { signal: controller.signal })
+      .then(async (result) => {
+        if (!active) return;
+        setInfo(result);
+
+        // Probe browser capabilities to detect container demuxing & codec decoding support
+        try {
+          const verdict = await probeClientMediaCapabilities(
+            result.container,
+            result.video_codec,
+            result.audio_codec,
+            {
+              width: result.width,
+              height: result.height,
+            },
+          );
+          if (active) {
+            setClientCapability(verdict);
+          }
+        } catch {
+          // Graceful fallback to server direct_play evaluation if client probe fails
+        }
+
+        setLoading(false);
+      })
+      .catch((cause: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        setError(cause instanceof Error ? cause : new Error(String(cause)));
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [decoded]);
+
+  // --- Fetch detailed movie metadata for details section below player ----
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    getMovieDetails(decoded, { signal: controller.signal, deviceId })
+      .then((res) => {
+        if (active && res.movie) {
+          setMovieDetails(res.movie);
+        }
+      })
+      .catch(() => {
+        // Degrade gracefully; if endpoint fails, title/metadata fall back to info
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [decoded, deviceId]);
+
+  // --- Track Fullscreen Changes -------------------------------------------
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  const directPlay = Boolean(
+    info?.direct_play && (clientCapability ? clientCapability.canDirectPlay : true),
+  );
+  const directPlayReason =
+    clientCapability?.reason ||
+    (info && !info.direct_play
+      ? `${info.container.toUpperCase()} with ${info.video_codec?.toUpperCase() || 'codec'} requires adaptive streaming on web`
+      : undefined);
+
+  const mode: PlaybackMode | undefined = info ? playbackModeFor(directPlay) : undefined;
+  const effectiveMode: PlaybackMode =
+    selectedQuality === 'source' && directPlay
+      ? 'direct'
+      : selectedQuality !== 'auto' && selectedQuality !== 'source'
+        ? 'hls'
+        : (mode ?? 'direct');
+
+  /**
+   * 100% Transcode Completion & Playback Ready Gate:
+   * Playback and frame previews require 100% ready files (direct stream or 100% transcoded).
+   * Incomplete transcoded videos MUST NOT play to prevent playback issues, stalls, and timeline drift.
+   */
+  const isTranscodeComplete = Boolean(
+    directPlay ||
+    info?.is_transcode_ready ||
+    (transcode?.status === 'ready' && (transcode?.percent ?? 0) >= 100),
+  );
+  const isPlaybackReady = directPlay || isTranscodeComplete;
+
+  /**
+   * Gate F / AGENTS.md: "Direct streams must remain isolated from transcoding
+   * status/polling logic." A direct play has no transcode to wait for, so this
+   * effect must not exist for it - not merely render an empty badge.
+   */
+  useEffect(() => {
+    if (!info || directPlay || isTranscodeComplete) return;
+
+    const controller = new AbortController();
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const status = await getTranscodeStatus(decoded, { signal: controller.signal });
+        if (!active) return;
+        setTranscode(status);
+        if (status.status === 'ready' && (status.percent ?? 0) >= 100) {
+          showHud('Transcode 100% complete — Ready to play');
+          return;
+        }
+      } catch {
+        // Transient poll failure: keep the last known status and try again.
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(poll, 1500);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [decoded, info, directPlay, isTranscodeComplete, showHud]);
+
+  // Poll Cast status when casting is active
+  useEffect(() => {
+    if (!activeCastDevice) return;
+
+    const controller = new AbortController();
+    let active = true;
+
+    const poll = async () => {
+      try {
+        const res = await getCastStatus(activeCastDevice.id, { signal: controller.signal });
+        if (!active) return;
+        setCastStatus(res);
+      } catch {
+        // Status polling transient failure
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(poll, 1500);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [activeCastDevice]);
+
+  const handleSelectCastDevice = async (device: CastDevice) => {
+    setConnectingCastDeviceId(device.id);
+    try {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        setPlaying(false);
+      }
+      const currentPos = position;
+      const res = await startCastPlay(device.id, decoded, {
+        position: currentPos,
+        subtitle_offset: subPrefs.offset || 0,
+      });
+      if (res.ok) {
+        setActiveCastDevice(device);
+        setCastModalOpen(false);
+        showHud(`Casting to ${device.name}`);
+      } else {
+        showHud(res.error || `Could not cast to ${device.name}`);
+      }
+    } catch (err) {
+      showHud(err instanceof Error ? err.message : 'Cast connection failed');
+    } finally {
+      setConnectingCastDeviceId(null);
+    }
+  };
+
+  const handleCastControl = async (
+    action: 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'mute' | 'subtitle' | 'subtitle_offset',
+    value?: number | boolean,
+  ) => {
+    if (!activeCastDevice) return;
+    try {
+      await sendCastControl(activeCastDevice.id, action, value);
+      if (action === 'play') setCastStatus((s) => (s ? { ...s, state: 'playing' } : null));
+      if (action === 'pause') setCastStatus((s) => (s ? { ...s, state: 'paused' } : null));
+      if (action === 'seek' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, position: value } : null));
+      if (action === 'volume' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, volume: value, muted: false } : null));
+      if (action === 'mute') setCastStatus((s) => (s ? { ...s, muted: Boolean(value) } : null));
+      if (action === 'subtitle' && typeof value === 'number') setCastStatus((s) => (s ? { ...s, active_subtitle_id: value } : null));
+      if (action === 'subtitle_offset' && typeof value === 'number') {
+        setCastStatus((s) => (s ? { ...s, subtitle_offset: value } : null));
+        updateSubPref('offset', value);
+      }
+    } catch (err) {
+      showHud(err instanceof Error ? err.message : 'Remote control failed');
+    }
+  };
+
+  const activeCastDeviceRef = useRef(activeCastDevice);
+  activeCastDeviceRef.current = activeCastDevice;
+  const handleCastControlRef = useRef(handleCastControl);
+  handleCastControlRef.current = handleCastControl;
+
+  const handleDisconnectCast = async () => {
+    if (!activeCastDevice) return;
+    const deviceName = activeCastDevice.name;
+    const resumePos = castStatus?.position ?? position;
+    try {
+      await stopCast(activeCastDevice.id);
+    } catch {
+      // Disconnect non-fatal
+    }
+    setActiveCastDevice(null);
+    setCastStatus(null);
+    showHud(`Disconnected from ${deviceName}`);
+    if (videoRef.current) {
+      videoRef.current.currentTime = resumePos;
+      setPosition(resumePos);
+    }
+  };
+
+  // --- Attach the media source (strictly locked until 100% ready) -----------
+  useEffect(() => {
+    const video = videoEl;
+    if (!video || !mode || !isPlaybackReady) return;
+
+    const src = playbackUrlFor(decoded, effectiveMode, selectedQuality);
+    let destroyed = false;
+    // Type is inferred at runtime from the dynamic import below; declared
+    // structurally so the cleanup can call `destroy()` without a static import.
+    let hls: { destroy: () => void } | undefined;
+
+    const teardown = () => {
+      destroyed = true;
+      hls?.destroy();
+      // Leave no media resource behind when navigating away mid-playback.
+      video.removeAttribute('src');
+      video.load();
+    };
+
+    if (effectiveMode === 'hls') {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari plays HLS natively; instantiating Hls.js there would
+        // double-load the playlist for no benefit.
+        video.src = src;
+        return teardown;
+      }
+
+      /*
+       * hls.js is ~400 kB and only needed for MKV/HEVC titles. Importing it
+       * statically put it in the initial chunk and blew the Gate E budget for
+       * every user, including the majority whose direct-play MP4s never touch
+       * it. The dynamic import keeps it in a separate chunk that a direct-play
+       * viewer never downloads.
+       */
+      void import('hls.js')
+        .then(({ default: HlsCtor }) => {
+          if (destroyed) return;
+          if (!HlsCtor.isSupported()) {
+            setError(new Error('This browser cannot play adaptive streams.'));
+            return;
+          }
+          const instance = new HlsCtor({ lowLatencyMode: true });
+          hls = instance;
+          instance.loadSource(src);
+          instance.attachMedia(video);
+          instance.on(HlsCtor.Events.ERROR, (_event, data) => {
+            if (!data.fatal) return;
+            if (data.type === HlsCtor.ErrorTypes.NETWORK_ERROR) instance.startLoad();
+            else if (data.type === HlsCtor.ErrorTypes.MEDIA_ERROR) instance.recoverMediaError();
+            else setError(new Error(`Adaptive playback failed: ${data.details}`));
+          });
+        })
+        .catch(() => {
+          if (!destroyed) setError(new Error('Failed to load the adaptive playback engine.'));
+        });
+    } else {
+      // Direct play: the browser issues RFC 7233 range requests itself.
+      video.src = src;
+    }
+
+    return teardown;
+  }, [videoEl, decoded, effectiveMode, selectedQuality, isPlaybackReady, mode]);
+
+  // --- Persist resume progress --------------------------------------------
+  const reportProgress = useCallback(
+    (next: number, total: number) => {
+      if (!total || !Number.isFinite(next)) return;
+      /*
+       * Best-effort by design. A failed resume write must never surface as an
+       * unhandled rejection - progress is telemetry, and playback must not be
+       * affected by whether the POST succeeded.
+       */
+      void setProgress({
+        filename: decoded,
+        position: Math.floor(next),
+        duration: Math.floor(total),
+      }, { deviceId }).catch(() => undefined);
+    },
+    [decoded, deviceId],
+  );
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      // Throttle so a 2x speed-up or a 5-minute seek cannot spam the endpoint.
+      // Both sides of this comparison are seconds.
+      if (video.currentTime - lastReportedRef.current < PROGRESS_INTERVAL_SECONDS) return;
+      lastReportedRef.current = video.currentTime;
+      reportProgress(video.currentTime, video.duration || duration);
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [playing, reportProgress, duration]);
+
+  /*
+   * Flush on unmount so navigating away does not lose the last position.
+   *
+   * The position is mirrored into plain refs rather than read back off the DOM
+   * node during cleanup. Two things make reading the node at teardown
+   * unreliable:
+   *   - the <video> does not exist on the first render (it appears once the
+   *     probe resolves), so a ref captured at effect-setup time is `null`; and
+   *   - React detaches refs during unmount *before* running effect cleanups, so
+   *     `videoRef.current` is already `null` by the time the cleanup runs.
+   *
+   * Both failure modes look identical: the flush never fires and the final
+   * position of every session is silently lost. `timeupdate` keeps these refs
+   * current during playback, which is exactly when the value matters.
+   */
+  useEffect(() => {
+    return () => {
+      if (lastDurationRef.current > 0 && lastPositionRef.current > 0) {
+        reportProgress(lastPositionRef.current, lastDurationRef.current);
+      }
+    };
+  }, [reportProgress]);
+
+  const onLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setDuration(video.duration);
+    lastDurationRef.current = video.duration || info?.duration || 0;
+
+    if (pendingQualityRestoreRef.current) {
+      const { seekTime, shouldPlay } = pendingQualityRestoreRef.current;
+      pendingQualityRestoreRef.current = null;
+      if (seekTime > 0) {
+        video.currentTime = seekTime;
+        lastPositionRef.current = seekTime;
+        setPosition(seekTime);
+      }
+      if (shouldPlay && typeof video.play === 'function') {
+        const p = video.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {});
+        }
+      }
+      return;
+    }
+
+    /*
+     * Resume, but only when there is something worth resuming. Two guards:
+     *   - below 30s, the viewer has barely started and is better off at 0;
+     *   - within the last 3%, the title is effectively finished.
+     * Without these, a finished film reopens on its final frame, which reads
+     * as a broken player rather than a completed one.
+     */
+    const resumeAt = resumePositionRef.current;
+    if (
+      resumeAt > RESUME_MIN_SECONDS &&
+      video.duration > 0 &&
+      resumeAt < video.duration * RESUME_TAIL_RATIO
+    ) {
+      video.currentTime = resumeAt;
+      lastPositionRef.current = resumeAt;
+      setPosition(resumeAt);
+    }
+
+    // Automatically start playback on open (Play or Resume)
+    if (typeof video.play === 'function') {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          // Handled defensively: browser autoplay policies may require user gesture
+        });
+      }
+    }
+  };
+
+  const handleCanPlay = (v: HTMLVideoElement) => {
+    setPreloaderVisible(false);
+    if (v.paused && typeof v.play === 'function') {
+      const playPromise = v.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
+    }
+  };
+
+  const updateBuffered = (v: HTMLVideoElement) => {
+    if (!v.buffered || v.buffered.length === 0) return;
+    const ranges: { start: number; end: number }[] = [];
+    for (let i = 0; i < v.buffered.length; i++) {
+      ranges.push({ start: v.buffered.start(i), end: v.buffered.end(i) });
+    }
+    setBufferedRanges(ranges);
+  };
+
+  /** Keep the mirrored refs in step with playback. */
+  const handleTimeUpdate = (time: number) => {
+    lastPositionRef.current = time;
+    setPosition(time);
+    if (videoRef.current) {
+      updateBuffered(videoRef.current);
+    }
+  };
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      /*
+       * Silently discarding this rejection is how Issue 14.3 stayed invisible:
+       * the element had no source at all, play() resolved, and nothing moved.
+       * A rejection is always worth one line of feedback - but it must never be
+       * `setError`, which replaces the whole player for what is usually only the
+       * autoplay policy asking for a gesture.
+       */
+      void video.play().catch(() => {
+        showHud('Playback could not start');
+      });
+    } else {
+      video.pause();
+    }
+    resetControlsTimer();
+  };
+
+  const handleSelectQuality = useCallback(
+    async (quality: string, option?: QualityOption) => {
+      if (option?.is_direct && !directPlay) {
+        showHud(directPlayReason || 'Direct stream unsupported on this browser');
+        return;
+      }
+      if (option && !option.is_direct && !option.is_ready) {
+        showHud(`${option.label} requires pre-transcode on server`);
+        return;
+      }
+
+      const video = videoRef.current;
+      const seekTime = video ? video.currentTime : position;
+      const shouldPlay = video ? !video.paused : playing;
+
+      pendingQualityRestoreRef.current = { seekTime, shouldPlay };
+      setSelectedQuality(quality);
+      setIsQualityModalOpen(false);
+
+      const label = option ? option.label : quality === 'auto' ? 'Auto (Adaptive)' : quality;
+      showHud(`Quality: ${label}`);
+
+      if (video) {
+        let restored = false;
+        const restore = () => {
+          if (restored) return;
+          restored = true;
+          if (seekTime > 0) {
+            video.currentTime = seekTime;
+            lastPositionRef.current = seekTime;
+            setPosition(seekTime);
+          }
+          if (shouldPlay && typeof video.play === 'function') {
+            void video.play()?.catch?.(() => {});
+          }
+        };
+        video.addEventListener('loadedmetadata', restore, { once: true });
+        video.addEventListener('canplay', restore, { once: true });
+      }
+    },
+    [directPlay, directPlayReason, position, playing, showHud],
+  );
+
+  /**
+   * Commit the seek on change (the native range control fires continuously).
+   * AGENTS.md forbids synchronously assigning `currentTime` on every
+   * seek-bar drag event; the range input's own value drives the UI and the
+   * assignment happens here, on the committed event.
+   */
+  const onSeek = (value: number) => {
+    const video = videoRef.current;
+    lastPositionRef.current = value;
+    setPosition(value);
+    if (video) video.currentTime = value;
+    resetControlsTimer();
+  };
+
+  const handleSkip = useCallback(
+    (deltaSeconds: number) => {
+      const total = duration || info?.duration || 0;
+      const current = position;
+      const target = Math.max(0, Math.min(total, current + deltaSeconds));
+      onSeek(target);
+      if (deltaSeconds < 0) {
+        triggerRipple('left', Math.abs(deltaSeconds));
+      } else if (deltaSeconds > 0) {
+        triggerRipple('right', deltaSeconds);
+      }
+    },
+    [duration, info?.duration, position, onSeek, triggerRipple],
+  );
+
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+    showHud(v.muted ? '🔇 Muted' : `🔊 ${Math.round(v.volume * 100)}%`);
+    resetControlsTimer();
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.volume = newVol;
+    v.muted = false;
+    setVolume(newVol);
+    setMuted(false);
+    showHud(`🔊 ${Math.round(newVol * 100)}%`);
+    resetControlsTimer();
+  };
+
+  const handleSpeedChange = (newSpeed: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.playbackRate = newSpeed;
+    setSpeed(newSpeed);
+    resetControlsTimer();
+  };
+
+  const toggleRemainingTime = () => {
+    setShowRemainingTime((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('media_show_remaining', next ? '1' : '0');
+      } catch {
+        // Ignore localStorage errors
+      }
+      return next;
+    });
+  };
+
+  const nextAspect = useCallback(() => {
+    setAspectMode((prev) => {
+      const curIdx = ASPECT_MODES.findIndex((m) => m.id === prev);
+      const nextIdx = (curIdx + 1) % ASPECT_MODES.length;
+      const nextMode = ASPECT_MODES[nextIdx];
+      try {
+        localStorage.setItem(ASPECT_KEY, nextMode.id);
+      } catch {
+        // Ignore localStorage errors
+      }
+      showHud(`Aspect: ${nextMode.name}`);
+      return nextMode.id;
+    });
+    resetControlsTimer();
+  }, [resetControlsTimer, showHud]);
+
+  const togglePip = useCallback(async () => {
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        showHud('Exited Picture-in-Picture');
+      } else if (videoRef.current?.requestPictureInPicture) {
+        await videoRef.current.requestPictureInPicture();
+        showHud('📺 Picture-in-Picture');
+      }
+    } catch {
+      // Ignore PiP errors
+    }
+    resetControlsTimer();
+  }, [resetControlsTimer, showHud]);
+
+  const toggleFullscreen = useCallback(() => {
+    const shell = document.getElementById('shell');
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else if (shell) {
+      void shell.requestFullscreen().catch(() => {});
+    }
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
+  useEffect(() => {
+    const v = videoEl;
+    if (!v) return;
+    const onEnter = () => setIsPipActive(true);
+    const onLeave = () => setIsPipActive(false);
+    v.addEventListener('enterpictureinpicture', onEnter);
+    v.addEventListener('leavepictureinpicture', onLeave);
+    return () => {
+      v.removeEventListener('enterpictureinpicture', onEnter);
+      v.removeEventListener('leavepictureinpicture', onLeave);
+    };
+  }, [videoEl]);
+
+  const controlsVisibleAtInteractionStart = useRef(true);
+  const lastTapTimeRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accumulatedSideRef = useRef<'left' | 'right' | null>(null);
+  const accumulatedSecRef = useRef(0);
+
+  const handleShellPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (
+      target.closest(
+        '#controls, .player-controls-overlay, .sub-modal, .quality-modal, .nerd-stats-hud, #nerdStatsBtn, #qualityBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
+      )
+    ) {
+      return;
+    }
+    const shellEl = e.currentTarget;
+    const isShown = shellEl.classList.contains('show') && controlsVisible;
+    controlsVisibleAtInteractionStart.current = isShown;
+    if (isShown) {
+      resetControlsTimer();
+    }
+  }, [controlsVisible, resetControlsTimer]);
+
+  const handleShellClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (
+      target.closest(
+        '#controls, .player-controls-overlay, .sub-modal, .quality-modal, .nerd-stats-hud, #nerdStatsBtn, #qualityBtn, .watch-back, #full, #restartBtn, #center, #skipBackBtn, #skipForwardBtn, #shortcutsBtn, #ccMergedPill, #aspectBtn, #pipBtn, button, input, select, label, a',
+      )
+    ) {
+      return;
+    }
+
+    // Dismiss any active modals on outside click
+    if (isQualityModalOpen) {
+      setIsQualityModalOpen(false);
+      return;
+    }
+    if (isSubModalOpen) {
+      setIsSubModalOpen(false);
+      return;
+    }
+    if (isShortcutsOpen) {
+      setIsShortcutsOpen(false);
+      return;
+    }
+    if (isNerdStatsOpen) {
+      setIsNerdStatsOpen(false);
+      return;
+    }
+
+    const shellEl = e.currentTarget;
+    const rect = shellEl.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const now = Date.now();
+
+    const isLeftZone = relX < 0.4;
+    const isRightZone = relX > 0.6;
+    const isDoubleTap = now - lastTapTimeRef.current < 300;
+
+    if (isDoubleTap && isLeftZone) {
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
+      const nextSec = accumulatedSideRef.current === 'left' ? accumulatedSecRef.current + 10 : 10;
+      accumulatedSideRef.current = 'left';
+      accumulatedSecRef.current = nextSec;
+      handleSkip(-10);
+      triggerRipple('left', nextSec);
+      lastTapTimeRef.current = now;
+      resetControlsTimer();
+      return;
+    }
+
+    if (isDoubleTap && isRightZone) {
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
+      const nextSec = accumulatedSideRef.current === 'right' ? accumulatedSecRef.current + 10 : 10;
+      accumulatedSideRef.current = 'right';
+      accumulatedSecRef.current = nextSec;
+      handleSkip(10);
+      triggerRipple('right', nextSec);
+      lastTapTimeRef.current = now;
+      resetControlsTimer();
+      return;
+    }
+
+    // Not a double-tap: reset accumulator and queue single-tap action
+    lastTapTimeRef.current = now;
+    accumulatedSideRef.current = null;
+    accumulatedSecRef.current = 0;
+
+    const wasVisible = controlsVisibleAtInteractionStart.current;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+
+    tapTimerRef.current = setTimeout(() => {
+      tapTimerRef.current = null;
+      if (!wasVisible) {
+        // Tap-to-reveal: reveal controls only, do NOT toggle playback
+        setControlsVisible(true);
+        shellEl.classList.add('show');
+        resetControlsTimer();
+      } else {
+        // Controls were already visible: toggle play/pause
+        togglePlay();
+      }
+    }, 280);
+  }, [
+    isQualityModalOpen,
+    isSubModalOpen,
+    isShortcutsOpen,
+    isNerdStatsOpen,
+    setIsQualityModalOpen,
+    setIsSubModalOpen,
+    handleSkip,
+    triggerRipple,
+    resetControlsTimer,
+    togglePlay,
+  ]);
+
+  // Comprehensive keyboard shortcuts (Space, k, arrows, j, l, 0-9, m, f, p/i, a, r, n, c, <, >, ?, Escape)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.target instanceof HTMLInputElement && e.target.type !== 'range') ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        if (e.key === 'Escape') {
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+
+      // Escape dismisses any open modal first
+      if (e.key === 'Escape') {
+        if (isQualityModalOpen) {
+          setIsQualityModalOpen(false);
+          return;
+        }
+        if (isNerdStatsOpen) {
+          setIsNerdStatsOpen(false);
+          return;
+        }
+        if (isShortcutsOpen) {
+          setIsShortcutsOpen(false);
+          return;
+        }
+        if (isSubModalOpen) {
+          setIsSubModalOpen(false);
+          return;
+        }
+        return;
+      }
+
+      // Play / Pause
+      if (e.code === 'Space' || e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        togglePlay();
+        return;
+      }
+
+      // Replay from start
+      if (e.key === 'Home' || e.key === '0') {
+        e.preventDefault();
+        onSeek(0);
+        showHud('↺ Played from start');
+        return;
+      }
+
+      // Seeks: ±5s via arrows, ±10s via j/l
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        handleSkip(-5);
+        return;
+      }
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        handleSkip(5);
+        return;
+      }
+      if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        handleSkip(-10);
+        return;
+      }
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        handleSkip(10);
+        return;
+      }
+
+      // Percentage seek 1-9 (10%-90%)
+      if (/^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const total = duration || info?.duration || 0;
+        if (total > 0) {
+          const pct = Number(e.key) * 0.1;
+          onSeek(total * pct);
+          showHud(`Seek: ${Math.round(pct * 100)}%`);
+        }
+        return;
+      }
+
+      // Volume: ↑ / ↓ (±5%)
+      if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        const newVol = Math.min(1, volume + 0.05);
+        handleVolumeChange(newVol);
+        showHud(`🔊 ${Math.round(newVol * 100)}%`);
+        return;
+      }
+      if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        const newVol = Math.max(0, volume - 0.05);
+        handleVolumeChange(newVol);
+        showHud(`🔊 ${Math.round(newVol * 100)}%`);
+        return;
+      }
+
+      // Mute
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        toggleMute();
+        showHud(!muted ? '🔇 Muted' : `🔊 ${Math.round(volume * 100)}%`);
+        return;
+      }
+
+      // Fullscreen
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Picture-in-Picture
+      if (e.key === 'p' || e.key === 'P' || e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        void togglePip();
+        return;
+      }
+
+      // Aspect ratio
+      if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        nextAspect();
+        return;
+      }
+
+      // Stats for nerds
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setIsNerdStatsOpen((prev) => !prev);
+        resetControlsTimer();
+        return;
+      }
+
+      // Subtitles
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        toggleCC();
+        return;
+      }
+
+      // Subtitle Delay & Sync: z/Z (delay +50ms/+250ms), x/X (advance -50ms/-250ms)
+      if (e.key === 'z') {
+        e.preventDefault();
+        const next = adjustOffset(0.05);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
+        return;
+      }
+      if (e.key === 'Z') {
+        e.preventDefault();
+        const next = adjustOffset(0.25);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
+        return;
+      }
+      if (e.key === 'x') {
+        e.preventDefault();
+        const next = adjustOffset(-0.05);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
+        return;
+      }
+      if (e.key === 'X') {
+        e.preventDefault();
+        const next = adjustOffset(-0.25);
+        if (activeCastDeviceRef.current) {
+          void handleCastControlRef.current('subtitle_offset', next);
+        }
+        return;
+      }
+
+      // Speed adjustment
+      const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+      if (e.key === '<' || e.key === ',') {
+        e.preventDefault();
+        const curIdx = SPEEDS.indexOf(speed);
+        if (curIdx > 0) {
+          const nextSpd = SPEEDS[curIdx - 1];
+          handleSpeedChange(nextSpd);
+          showHud(`▶ ${nextSpd}× Speed`);
+        }
+        return;
+      }
+      if (e.key === '>' || e.key === '.') {
+        e.preventDefault();
+        const curIdx = SPEEDS.indexOf(speed);
+        if (curIdx >= 0 && curIdx < SPEEDS.length - 1) {
+          const nextSpd = SPEEDS[curIdx + 1];
+          handleSpeedChange(nextSpd);
+          showHud(`▶ ${nextSpd}× Speed`);
+        }
+        return;
+      }
+
+      // Quality modal
+      if (e.key === 'q' || e.key === 'Q') {
+        e.preventDefault();
+        setIsQualityModalOpen((prev) => !prev);
+        resetControlsTimer();
+        return;
+      }
+
+      // Cheat sheet
+      if (e.key === '?' || (e.key === '/' && !e.shiftKey)) {
+        e.preventDefault();
+        setIsShortcutsOpen((prev) => !prev);
+        resetControlsTimer();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    isQualityModalOpen,
+    isNerdStatsOpen,
+    isShortcutsOpen,
+    isSubModalOpen,
+    togglePlay,
+    onSeek,
+    handleSkip,
+    duration,
+    info,
+    volume,
+    muted,
+    speed,
+    handleVolumeChange,
+    handleSpeedChange,
+    toggleMute,
+    toggleFullscreen,
+    togglePip,
+    nextAspect,
+    toggleCC,
+    resetControlsTimer,
+    showHud,
+    setIsQualityModalOpen,
+    setIsSubModalOpen,
+  ]);
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-brand-500/40 bg-brand-500/10 p-6" role="alert">
+        <p className="text-sm font-semibold text-brand-400">Playback unavailable</p>
+        <p className="mt-1 text-xs text-white/60">{error.message}</p>
+      </div>
+    );
+  }
+
+  if (loading || !info || !mode) {
+    return (
+      <div className="space-y-4 animate-fade-in" role="status" aria-label="Probing media">
+        <div className="flex items-center justify-between px-1">
+          <div className="h-8 w-32 rounded-full bg-white/10 shimmer" />
+          <div className="h-5 w-24 rounded-full bg-white/10 shimmer" />
+        </div>
+        <div className="relative aspect-video w-full rounded-2xl sm:rounded-3xl bg-black ring-1 ring-white/10 shadow-2xl flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative mb-5 flex items-center justify-center">
+            <div className="absolute h-16 w-16 rounded-full bg-brand-500/20 blur-xl animate-pulse" />
+            <div className="h-12 w-12 rounded-full border-2 border-white/10 border-t-brand-500 animate-spin" />
+            <div className="absolute h-4 w-4 rounded-full bg-brand-500/80 blur-xs" />
+          </div>
+          <p className="text-sm font-semibold tracking-wide text-white/90 animate-pulse">
+            Probing media…
+          </p>
+          <p className="mt-1 text-xs text-white/40 max-w-sm">
+            Initializing video stream & hardware decoder
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const ready = isPlaybackReady;
+
+  const title = decoded.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? decoded;
+
+  return (
+    <div className="space-y-4 animate-fade-in" data-testid="player" data-mode={mode}>
+      {/* Player Top Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <Link
+          to={`/movie/${decoded.split('/').map(encodeURIComponent).join('/')}`}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold text-white/80 shadow-sm transition hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+        >
+          <Icon name="arrow-left" size={13} />
+          <span>Back to Movie</span>
+        </Link>
+
+        <div className="flex items-center gap-2">
+          <span className="truncate max-w-xs sm:max-w-md text-xs font-medium text-white/60">
+            {title}
+          </span>
+          <ShellTranscodePill
+            transcode={transcode}
+            isReady={isPlaybackReady}
+            needsTranscode={mode === 'hls' && !isPlaybackReady}
+          />
+          <span className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider ${
+            mode === 'direct'
+              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+              : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+          }`}>
+            {mode === 'direct' ? 'Direct Play' : 'Adaptive Stream'}
+          </span>
+        </div>
+      </div>
+
+      {/* 100% Transcode Completion Staging Gate (Strict Lock for Non-100% Ready Transcodes) */}
+      {!isPlaybackReady ? (
+        <TranscodeGate
+          filename={decoded}
+          transcode={transcode}
+          diagnosticReason={directPlayReason}
+          onRefresh={() => {
+            void getTranscodeStatus(decoded).then((res) => setTranscode(res)).catch(() => {});
+          }}
+          onQueuePreTranscode={async () => {
+            showHud('Queueing baseline pre-transcode...');
+            try {
+              const res = await startTranscode(decoded);
+              showHud(res.message || 'Pre-transcode queued on server');
+              const status = await getTranscodeStatus(decoded);
+              setTranscode(status);
+            } catch (err) {
+              showHud(err instanceof Error ? err.message : 'Failed to queue pre-transcode');
+            }
+          }}
+        />
+      ) : activeCastDevice ? (
+        <CastBar
+          device={activeCastDevice}
+          filename={decoded}
+          status={castStatus}
+          onControl={handleCastControl}
+          onDisconnect={handleDisconnectCast}
+        />
+      ) : null}
+
+      {/* Video Container Shell (strictly hidden until 100% transcode ready and not casting) */}
+      <div
+        id="shell"
+        className={`relative overflow-hidden rounded-2xl sm:rounded-3xl bg-black ring-1 ring-white/10 shadow-2xl group ${
+          controlsVisible || isScrubbing || !playing ? 'show' : ''
+        } ${!isPlaybackReady || activeCastDevice ? 'hidden' : ''}`}
+        style={!isPlaybackReady || activeCastDevice ? { display: 'none' } : undefined}
+        onPointerMove={resetControlsTimer}
+        onPointerDown={handleShellPointerDown}
+        onClick={handleShellClick}
+      >
+        <video
+          id="video"
+          ref={attachVideo}
+          className={`aspect-video w-full bg-black cursor-pointer aspect-${aspectMode}`}
+          playsInline
+          preload="metadata"
+          data-filename={decoded}
+          onLoadedMetadata={onLoadedMetadata}
+          onLoadedData={() => setPreloaderVisible(false)}
+          onCanPlay={(e) => handleCanPlay(e.currentTarget)}
+          onPlay={() => {
+            setPlaying(true);
+            setPreloaderVisible(false);
+            resetControlsTimer();
+          }}
+          onPause={() => {
+            setPlaying(false);
+            setControlsVisible(true);
+          }}
+          onTimeUpdate={(event) => handleTimeUpdate(event.currentTarget.currentTime)}
+          onProgress={(event) => updateBuffered(event.currentTarget)}
+        >
+          {tracks.map((t, idx) => (
+            <track
+              key={t.id || t.src || idx}
+              kind="subtitles"
+              label={t.label}
+              srcLang={t.lang}
+              src={t.src}
+              default={t.default}
+            />
+          ))}
+        </video>
+
+        {/* Top-Right Fullscreen Button */}
+        <button
+          id="full"
+          type="button"
+          onClick={toggleFullscreen}
+          onPointerEnter={() => {
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+          }}
+          onPointerLeave={resetControlsTimer}
+          disabled={!ready}
+          title={isFullscreen ? 'Exit Fullscreen (f)' : 'Fullscreen (f)'}
+          aria-label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          className={`absolute top-3 right-3 sm:top-5 sm:right-5 z-30 flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-30 ${
+            controlsVisible || isScrubbing || !playing ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {isFullscreen ? (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+            </svg>
+          )}
+        </button>
+
+        {/* Media Preloader Overlay */}
+        <PlayerPreloader
+          visible={preloaderVisible}
+          onDismiss={() => setPreloaderVisible(false)}
+        />
+
+        {/* Cache Status Preparation Dialog */}
+        <CacheStatusDialog
+          transcode={transcode}
+          isReady={info.is_transcode_ready}
+          needsTranscode={mode === 'hls' && !info.is_transcode_ready}
+        />
+
+        {/* Animated Seek Ripples */}
+        <SeekRipples
+          leftVisible={rippleLeft}
+          rightVisible={rippleRight}
+          leftSec={rippleLeftSec}
+          rightSec={rippleRightSec}
+        />
+
+        {/* Live HUD Notification */}
+        {hudMessage && (
+          <div id="playerHud" className="player-hud">
+            {hudMessage}
+          </div>
+        )}
+
+        {/* Center Big Play/Pause Button */}
+        {!playing && ready && (
+          <button
+            id="center"
+            type="button"
+            onClick={togglePlay}
+            aria-label="Play"
+            className="absolute inset-0 m-auto flex h-20 w-20 items-center justify-center rounded-full bg-black/60 text-white shadow-2xl backdrop-blur-md transition-all duration-300 hover:scale-110 hover:bg-brand-600/80 active:scale-95"
+          >
+            <Icon name="play" size={32} className="ml-1 text-white" />
+          </button>
+        )}
+
+        {/* Controls Overlay Ribbon */}
+        <div
+          id="controls"
+          className="player-controls-overlay absolute inset-x-0 bottom-0 z-30 p-3 sm:p-5 bg-gradient-to-t from-black/95 via-black/70 to-transparent"
+          onPointerEnter={() => {
+            setIsControlsHovered(true);
+            isControlsHoveredRef.current = true;
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            setControlsVisible(true);
+          }}
+          onPointerLeave={() => {
+            setIsControlsHovered(false);
+            isControlsHoveredRef.current = false;
+            resetControlsTimer();
+          }}
+        >
+          {/* YouTube Seekbar */}
+          <div className="mb-3">
+            <PlayerSeekbar
+              filename={decoded}
+              duration={duration || info.duration || 0}
+              currentTime={position}
+              buffered={bufferedRanges}
+              onSeek={onSeek}
+              onScrubbingChange={(scrub) => {
+                setIsScrubbing(scrub);
+                if (scrub) {
+                  setControlsVisible(true);
+                  if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+                } else {
+                  resetControlsTimer();
+                }
+              }}
+              onHoverChange={(hovered) => {
+                setIsSeekbarHovered(hovered);
+                isSeekbarHoveredRef.current = hovered;
+                if (hovered) {
+                  setControlsVisible(true);
+                  if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+                } else {
+                  resetControlsTimer();
+                }
+              }}
+              canPreview={isPlaybackReady}
+              disabled={!ready}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 text-white">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Play / Pause button */}
+              <button
+                id="play"
+                type="button"
+                onClick={togglePlay}
+                disabled={!ready}
+                title="Play / Pause (Space / k)"
+                aria-label="Play / Pause"
+                className="brand-gradient brand-glow-sm flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full text-white shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-40"
+              >
+                {playing ? (
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" className="ml-0.5">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Restart button */}
+              <button
+                id="restartBtn"
+                type="button"
+                onClick={() => onSeek(0)}
+                disabled={!ready}
+                title="Play from beginning"
+                aria-label="Play from beginning"
+                className="group/restart flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="transition-transform duration-200 group-hover/restart:-rotate-45 group-active/restart:-rotate-90">
+                  <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                </svg>
+              </button>
+
+              {/* Skip Back 10s */}
+              <button
+                id="skipBackBtn"
+                type="button"
+                onClick={() => handleSkip(-10)}
+                disabled={!ready}
+                title="Rewind 10s (j / ←)"
+                aria-label="Rewind 10 seconds"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                  <text x="12" y="15.5" fontSize="7" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
+                </svg>
+              </button>
+
+              {/* Skip Forward 10s */}
+              <button
+                id="skipForwardBtn"
+                type="button"
+                onClick={() => handleSkip(10)}
+                disabled={!ready}
+                title="Fast Forward 10s (l / →)"
+                aria-label="Fast forward 10 seconds"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 disabled:opacity-40"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 8-8 8-8z" />
+                  <text x="12" y="15.5" fontSize="7" fontWeight="800" textAnchor="middle" fill="currentColor">10</text>
+                </svg>
+              </button>
+
+              {/* Time display */}
+              <div className="flex items-center gap-1 font-mono text-xs text-white/70 tracking-tight ml-1">
+                <span id="timeElapsed" className="text-white font-semibold seek-time-val">
+                  {formatClock(position)}
+                </span>
+                <span>/</span>
+                <span
+                  id="timeTotal"
+                  className="seek-time-val cursor-pointer hover:text-white transition"
+                  title="Click to toggle remaining time"
+                  onClick={toggleRemainingTime}
+                >
+                  {showRemainingTime
+                    ? `-${formatClock(Math.max(0, (duration || info?.duration || 0) - position))}`
+                    : formatClock(duration || info?.duration || 0)}
+                </span>
+                <span id="time" hidden>
+                  {formatClock(position)} / {formatClock(duration || info?.duration || 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Volume & Mute */}
+              <div className="flex items-center gap-2 group/vol">
+                <button
+                  id="mute"
+                  type="button"
+                  onClick={toggleMute}
+                  title="Mute (m)"
+                  aria-label="Mute"
+                  className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95"
+                >
+                  {muted || volume === 0 ? (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                      <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                    </svg>
+                  ) : volume < 0.5 ? (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                      <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                    </svg>
+                  )}
+                </button>
+                <input
+                  id="volume"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={muted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  aria-label="Volume"
+                  style={{
+                    background: `linear-gradient(to right, #e50914 0%, #e50914 ${Math.round((muted ? 0 : volume) * 100)}%, rgba(255,255,255,0.25) ${Math.round((muted ? 0 : volume) * 100)}%, rgba(255,255,255,0.25) 100%)`,
+                  }}
+                  className="w-16 sm:w-24 h-1.5 rounded-full appearance-none cursor-pointer accent-brand-500 transition-all"
+                />
+                <span
+                  id="volumePercent"
+                  className="font-mono text-xs font-semibold text-white/90 min-w-[34px] select-none text-left"
+                >
+                  {Math.round((muted ? 0 : volume) * 100)}%
+                </span>
+              </div>
+
+              {/* Playback Speed */}
+              <select
+                id="speed"
+                value={speed}
+                onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                title="Speed (< / >)"
+                aria-label="Playback speed"
+                className="h-9 sm:h-10 rounded-full border border-white/20 bg-black/60 px-3 text-xs font-semibold text-white shadow-md backdrop-blur-md transition-all hover:bg-black/80 hover:border-white/40 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
+              >
+                <option value="0.75">.75×</option>
+                <option value="1">1×</option>
+                <option value="1.25">1.25×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+              </select>
+
+              {/* Playback Quality Selector Button */}
+              <button
+                id="qualityBtn"
+                type="button"
+                onClick={() => {
+                  setIsQualityModalOpen((prev) => !prev);
+                  resetControlsTimer();
+                }}
+                disabled={!ready}
+                title="Quality (q)"
+                aria-label="Playback quality"
+                className={`flex h-9 sm:h-10 items-center justify-center gap-1 px-2.5 sm:px-3 rounded-full border text-xs font-bold shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-40 ${
+                  selectedQuality !== 'auto'
+                    ? 'border-brand-500/80 bg-brand-500/30 text-brand-300 shadow-brand-500/20'
+                    : 'border-white/20 bg-black/60 text-white/90 hover:border-white/40 hover:bg-black/80 hover:text-white'
+                }`}
+              >
+                <span className="font-mono tracking-wider">
+                  {selectedQuality === 'auto'
+                    ? 'HD'
+                    : selectedQuality === 'source'
+                      ? 'SRC'
+                      : selectedQuality.toUpperCase()}
+                </span>
+              </button>
+
+              {/* Subtitles & Settings Pill */}
+              <span
+                id="ccMergedPill"
+                className="cc-merged-pill"
+                title="Subtitles & Settings (c)"
+              >
+                <button
+                  id="ccBtn"
+                  type="button"
+                  className={activeTrackIndex >= 0 ? 'active' : ''}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCC();
+                  }}
+                  title="Toggle subtitles (c)"
+                >
+                  CC
+                </button>
+                <span className="cc-sep" />
+                <button
+                  id="subSettingsBtn"
+                  type="button"
+                  className={isSubModalOpen ? 'active' : ''}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsSubModalOpen((prev) => !prev);
+                  }}
+                  title="Subtitle settings"
+                  aria-label="Subtitle settings"
+                >
+                  ⚙
+                </button>
+              </span>
+
+              {/* Aspect Ratio */}
+              <button
+                id="aspectBtn"
+                type="button"
+                onClick={nextAspect}
+                title="Aspect ratio (a)"
+                aria-label="Aspect ratio"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z" />
+                </svg>
+              </button>
+
+              {/* Picture-in-Picture */}
+              <button
+                id="pipBtn"
+                type="button"
+                onClick={togglePip}
+                title="Picture-in-Picture (p / i)"
+                aria-label="Picture-in-Picture"
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isPipActive ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
+                }`}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 2-1.98V5c0-1.1-.9-2-2-2zm0 16.01H3V4.98h18v14.03z" />
+                </svg>
+              </button>
+
+              {/* Cast to Smart TV / Chromecast */}
+              <button
+                id="castBtn"
+                type="button"
+                onClick={() => {
+                  setCastModalOpen(true);
+                  resetControlsTimer();
+                }}
+                disabled={!ready}
+                title="Cast to Smart TV / Chromecast"
+                aria-label="Cast to Smart TV or Chromecast"
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border transition-all duration-200 shadow-md backdrop-blur-md active:scale-95 ${
+                  activeCastDevice
+                    ? 'border-brand-500/80 bg-brand-500/30 text-brand-400'
+                    : 'border-white/20 bg-black/60 text-white/90 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white'
+                } disabled:opacity-40`}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" />
+                </svg>
+              </button>
+
+              {/* Stats for Nerds */}
+              <button
+                id="nerdStatsBtn"
+                type="button"
+                onClick={() => {
+                  setIsNerdStatsOpen((prev) => !prev);
+                  resetControlsTimer();
+                }}
+                title="Stats for nerds (n)"
+                aria-label="Stats for nerds"
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isNerdStatsOpen ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
+                }`}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-5h2v5zm4 0h-2v-9h2v9zm4 0h-2v-4h2v4z" />
+                </svg>
+              </button>
+
+              {/* Keyboard Shortcuts */}
+              <button
+                id="shortcutsBtn"
+                type="button"
+                onClick={() => {
+                  setIsShortcutsOpen((prev) => !prev);
+                  resetControlsTimer();
+                }}
+                title="Keyboard Shortcuts (?)"
+                aria-label="Keyboard Shortcuts"
+                className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/90 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 ${
+                  isShortcutsOpen ? 'border-brand-500/80 bg-brand-500/30 text-brand-300' : ''
+                }`}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Quality Selector Modal */}
+        <QualitySelectorModal
+          isOpen={isQualityModalOpen}
+          onClose={() => setIsQualityModalOpen(false)}
+          qualityLadder={info.quality_ladder ?? []}
+          selectedQuality={selectedQuality}
+          onSelectQuality={handleSelectQuality}
+          supportsDirectPlay={directPlay}
+          directPlayReason={directPlayReason}
+        />
+
+        {/* Subtitle Settings Modal */}
+        <SubtitleSettingsModal
+          isOpen={isSubModalOpen}
+          onClose={() => setIsSubModalOpen(false)}
+          tracks={tracks}
+          activeTrackIndex={activeTrackIndex}
+          onSelectTrack={selectTrack}
+          prefs={subPrefs}
+          onUpdatePref={updateSubPref}
+          onUploadSubtitle={uploadSubtitle}
+        />
+
+        {/* Nerd Stats HUD */}
+        <NerdStatsHud
+          isOpen={isNerdStatsOpen}
+          onClose={() => setIsNerdStatsOpen(false)}
+          videoRef={videoRef}
+          filename={decoded}
+          mode={mode}
+          directPlay={directPlay}
+          isTranscodeReady={info.is_transcode_ready}
+          transcodePercent={transcode?.percent}
+          selectedQuality={selectedQuality}
+        />
+
+        {/* Shortcuts Modal */}
+        <ShortcutsModal
+          isOpen={isShortcutsOpen}
+          onClose={() => setIsShortcutsOpen(false)}
+        />
+
+        {/* Cast Picker Modal */}
+        <CastModal
+          open={castModalOpen}
+          onClose={() => setCastModalOpen(false)}
+          onSelectDevice={handleSelectCastDevice}
+          onDisconnectDevice={handleDisconnectCast}
+          activeDeviceId={activeCastDevice?.id}
+          connectingDeviceId={connectingCastDeviceId}
+        />
+      </div>
+
+      {/* Movie Details Section Below Player (Strict Container Isolation Outside #shell) */}
+      <main className="watch-info max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {transcode && mode === 'hls' && !info?.is_transcode_ready && (
+          <TranscodeCard
+            transcode={transcode}
+            isReady={info?.is_transcode_ready}
+            needsTranscode={true}
+          />
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] lg:grid-cols-[240px_1fr] gap-6 sm:gap-8 items-start">
+          {/* Poster Artwork */}
+          <div className="aspect-[2/3] w-full max-w-[240px] mx-auto md:mx-0 rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-2xl bg-obsidian-850">
+            <PosterImage
+              src={posterUrl(movieDetails?.poster)}
+              alt={movieDetails?.title ?? title}
+              priority="normal"
+            />
+          </div>
+
+          {/* Metadata Information */}
+          <div className="space-y-4">
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              {movieDetails?.title ?? title}
+            </h1>
+
+            <p className="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-medium text-white/60">
+              <span>
+                {movieDetails?.release_date
+                  ? formatReleaseDate(movieDetails.release_date)
+                  : movieDetails?.year ?? ''}
+              </span>
+              {movieDetails?.runtime ? <span>· {movieDetails.runtime} min</span> : null}
+              {movieDetails?.rating ? (
+                <span className="text-amber-400 font-semibold">
+                  · ★ {movieDetails.rating.toFixed(1)}/10
+                </span>
+              ) : null}
+            </p>
+
+            {movieDetails?.genres && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {movieDetails.genres.split(',').map((g) => (
+                  <span
+                    key={g.trim()}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm"
+                  >
+                    {g.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <p className="text-sm sm:text-base leading-relaxed text-white/70 max-w-3xl pt-2">
+              {movieDetails?.overview || 'No synopsis is available for this title.'}
+            </p>
+
+            <div className="flex flex-wrap gap-3 pt-4">
+              <Link
+                to={`/movie/${encodePathSegments(decoded)}`}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs sm:text-sm font-semibold text-white/90 shadow-sm transition-all hover:bg-white/10 hover:border-white/30 hover:text-white active:scale-95"
+              >
+                ← Back to Details
+              </Link>
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs sm:text-sm font-semibold text-white/90 shadow-sm transition-all hover:bg-white/10 hover:border-white/30 hover:text-white active:scale-95"
+              >
+                ← Anis' Home Media Server
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default PlayerPage;

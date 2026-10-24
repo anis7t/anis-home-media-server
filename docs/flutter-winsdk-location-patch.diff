@@ -1,0 +1,53 @@
+﻿diff --git a/packages/flutter_tools/lib/src/windows/visual_studio.dart b/packages/flutter_tools/lib/src/windows/visual_studio.dart
+index 153da848802..869e04fb2df 100644
+--- a/packages/flutter_tools/lib/src/windows/visual_studio.dart
++++ b/packages/flutter_tools/lib/src/windows/visual_studio.dart
+@@ -464,6 +464,32 @@ class VisualStudio {
+   /// Returns the installation location of the Windows 10 SDKs, or null if the
+   /// registry doesn't contain that information.
+   String? _getWindows10SdkLocation() {
++    if (_platform.environment.containsKey('WindowsSdkDir')) {
++      final String envPath = _platform.environment['WindowsSdkDir']!;
++      if (_fileSystem.directory(envPath).existsSync()) {
++        return envPath;
++      }
++    }
++    try {
++      final RunResult hkcuResult = _processUtils.runSync(<String>[
++        'reg',
++        'query',
++        r'HKEY_CURRENT_USER\SOFTWARE\Microsoft\Microsoft SDKs\Windows\v10.0',
++        '/v',
++        _windows10SdkRegistryKey,
++      ]);
++      if (hkcuResult.exitCode == 0) {
++        final pattern = RegExp(r'InstallationFolder\s+REG_SZ\s+(.+)');
++        final RegExpMatch? match = pattern.firstMatch(hkcuResult.stdout);
++        if (match != null) {
++          return match.group(1)!.trim();
++        }
++      }
++    } on ArgumentError {
++      // Ignored
++    } on ProcessException {
++      // Ignored
++    }
+     try {
+       final RunResult result = _processUtils.runSync(<String>[
+         'reg',
+@@ -484,6 +510,15 @@ class VisualStudio {
+     } on ProcessException {
+       // Ignored, return null below.
+     }
++    const defaultPaths = <String>[
++      r'D:\WindowsKits\10',
++      r'C:\Program Files (x86)\Windows Kits\10',
++    ];
++    for (final String path in defaultPaths) {
++      if (_fileSystem.directory(path).existsSync()) {
++        return path;
++      }
++    }
+     return null;
+   }
+ 
