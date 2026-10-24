@@ -29,6 +29,20 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
 
+## 2026-10-24 — Phase 12: Mobile & TV Auth Parity, Native Admin Hub & Android Release v1.3.0
+
+Delivered 100% feature and authentication parity to the Flutter client on Android Phone and Android TV / Fire TV, published Production Release v1.3.0 (versionCode 141), and verified end-to-end integration:
+- **Mobile Phone Auth Views:** Google OAuth CustomTab sign-in (`ahms://auth/callback`), Admin PIN bottom sheet, and Account Profile Card in Settings.
+- **Android TV Remote Auth:** 240px high-contrast QR code display with 5-char pair code, live SSE & polling sync, and TV on-screen D-pad numeric keypad for direct Admin PIN login.
+- **Native Admin Hub:** Embedded role-gated settings hub with Dual-drive Storage Pool HUD (Drive `D:`/`E:`), transcode dashboard with live AMD RX 560X & Vega 8 telemetry, connected devices registry with presence chips, and TMDb library scan triggers.
+- **Production APK v1.3.0 Released:** Compiled and published signed release APK `updates/production/media-server-1.3.0.apk` (versionCode 141, SHA-256 `8997b2cf9e6cf559fc9cb38acdfc7a20f64326df17f43f73d943cc557be16c28`). Verified via `GET /api/app/update?channel=production` and `HEAD /api/app/download?channel=production`.
+- **Verification:** 408/408 tests passed in `flutter test` (51 Auth, 24 Admin, 333 core), zero issues in `flutter analyze`, and 22/22 endpoints verified in `python scripts/probe_android_api.py`.
+- **Walkthrough:** [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md).
+- **Roadmap:** [`docs/PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md`](PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md).
+- **Session Handoff:** [`Handoffs/2026-10-24_23-15_antigravity_phase-12-auth-admin-parity-and-release-1.3.0.md`](../Handoffs/2026-10-24_23-15_antigravity_phase-12-auth-admin-parity-and-release-1.3.0.md).
+
+---
+
 ## 2026-10-24 — 4K GPU Transcode Stability & Dashboard Telemetry Fix (Category 5.7 resolved)
 
 Resolved unexpected hard system resets (Kernel-Power Event 41) caused by dual-GPU 4K HEVC contention, eliminated background sweeper retry loops, and fixed the Transcode Dashboard active job visibility blindspot:
