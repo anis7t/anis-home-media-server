@@ -163,6 +163,9 @@ async fn test_movie_details_endpoint() {
         details.specs.container.is_some(),
         "the real media file must be probed, so the container is known"
     );
+    // Assert synchronized TechnicalSpecs fields
+    assert!(details.specs.resolution_badge.is_some(), "resolution_badge must be populated");
+    assert!(!details.specs.subtitles.is_empty(), "subtitles list must be populated");
 
     // Query non-existent movie -> expect 404
     let req_not_found = Request::builder()
@@ -174,5 +177,48 @@ async fn test_movie_details_endpoint() {
     assert_eq!(res_not_found.status(), StatusCode::NOT_FOUND);
 
     // Teardown: leave no phantom catalog row behind.
+    media_server_api::test_support::remove_seeded_media_row(&t.pool, &seeded).await;
+}
+
+#[tokio::test]
+async fn test_media_info_quality_ladder_contract() {
+    let t = setup_test_app().await;
+    let seeded = seed_real_movie(&t.pool, &t.media_roots).await;
+    let app = t.app;
+
+    let encoded_filename = seeded.replace(' ', "%20");
+    let req = Request::builder()
+        .uri(format!("/api/media-info/{}", encoded_filename))
+        .body(Body::empty())
+        .unwrap();
+
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes)
+        .expect("Response must be valid JSON matching MediaInfoResponse");
+
+    // Contract shape asserts
+    assert!(json["container"].is_string());
+    assert!(json["duration"].is_number());
+    assert!(json["direct_play"].is_boolean());
+    assert!(json["needs_transcode"].is_boolean());
+
+    // Quality ladder contract assert
+    let ladder = json["quality_ladder"].as_array().expect("quality_ladder must be an array");
+    assert!(!ladder.is_empty(), "quality_ladder must have at least Direct Play option");
+
+    for opt in ladder {
+        assert!(opt["label"].is_string());
+        assert!(opt["quality"].is_string());
+        assert!(opt["height"].is_number());
+        assert!(opt["width"].is_number());
+        assert!(opt["bitrate"].is_number());
+        assert!(opt["is_direct"].is_boolean());
+        assert!(opt["is_ready"].is_boolean());
+    }
+
+    // Teardown
     media_server_api::test_support::remove_seeded_media_row(&t.pool, &seeded).await;
 }
