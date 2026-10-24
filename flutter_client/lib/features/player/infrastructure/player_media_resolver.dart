@@ -140,6 +140,7 @@ class PlayerMediaResolver {
     required String filename,
     required String quality,
     required PlaybackMode mode,
+    bool isNative4K = false,
   }) {
     final origin = serverOrigin.endsWith('/')
         ? serverOrigin.substring(0, serverOrigin.length - 1)
@@ -147,6 +148,11 @@ class PlayerMediaResolver {
     final encoded = Uri.encodeComponent(filename);
 
     if (quality == 'source' || (quality == 'auto' && mode == PlaybackMode.directPlay)) {
+      return '$origin/media/$encoded';
+    }
+    // If the movie is native 4K and the client supports Direct Play, selecting 2160p (or 4k)
+    // cleanly routes to Direct Play to preserve uncompressed bitstream quality with zero transcode overhead.
+    if ((quality == '2160p' || quality == '4k') && mode == PlaybackMode.directPlay && isNative4K) {
       return '$origin/media/$encoded';
     }
     if (quality == 'auto' || quality == 'default') {

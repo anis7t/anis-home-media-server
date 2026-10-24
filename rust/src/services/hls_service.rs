@@ -251,7 +251,7 @@ impl HlsService {
 
     /// Standard quality tiers with resolution, bitrate, and codecs matching Apple HLS authoring specs.
     pub const STANDARD_QUALITIES: &'static [(&'static str, u32, u32, u64, &'static str)] = &[
-        ("2160p", 3840, 2160, 14000000, "avc1.640033,mp4a.40.2"),
+        ("2160p", 3840, 2160, 14000000, "hvc1.1.6.L153.B0,mp4a.40.2"),
         ("1440p", 2560, 1440, 8000000, "avc1.640032,mp4a.40.2"),
         ("1080p", 1920, 1080, 4500000, "avc1.640028,mp4a.40.2"),
         ("720p", 1280, 720, 2200000, "avc1.64001f,mp4a.40.2"),

@@ -28,6 +28,16 @@ Active branch: `feat/rust-react-postgres-migration`
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 
+## 2026-10-24 — 4K HEVC Streaming & Smart Direct Play (Category 5.6 resolved)
+
+Resolved 4K streaming stall on Android mobile clients (*Ghost in the Cell*):
+- **Root Cause:** Mobile SoCs lack hardware decoding blocks for 4K H.264 (AVC) and reject AMF SPS tags. The server previously used `h264_amf` for all tiers, causing MediaCodec failure and unaccelerated CPU decoding stalls on phones. Furthermore, selecting 4K in the player triggered an unneeded 4K-to-4K re-transcode instead of utilizing native 4K Direct Play.
+- **Backend Dual-Codec HLS Transcoding:** `GPUWorkerConfig::get_ffmpeg_video_args()` switches to **HEVC** (`hevc_amf`, `hevc_vaapi`, `libx265`) with `-tag:v hvc1` for tiers \(\ge 2160\text{p}\), while keeping universal H.264 (`h264_amf`) for \(\le 1440\text{p}\). `STANDARD_QUALITIES` advertises `CODECS="hvc1.1.6.L153.B0,mp4a.40.2"` for 2160p. `start_transcode_handler()` reopens purged or missing cache tiers with `force = true`.
+- **Smart 4K Direct Play Routing in Flutter Client:** `resolveQualityUrl()` detects native 4K titles and `PlaybackMode.directPlay`, routing 2160p quality selections directly to `/media/<filename>` RFC 7233 byte-range stream for instantaneous start and zero GPU overhead. In `player_screen.dart`, added `_isNative4k` dimension check and `'4K DIRECT'` badge. In `quality_selector_sheet.dart`, clarified option titles and badges (`Original (4K Direct Play - Lossless)` vs `2160p (4K HEVC Stream)`).
+- **Verification:** Unit tests in `rust/src/services/gpu_service.rs` (4/4), Flutter resolver tests (6/6), Flutter quality sheet tests (4/4), full Rust lib test suite (125/125), and Android API contract probes (22/22) pass. Live 2160p transcode chunk probe verified `hevc_amf` with FourCC `hvc1` at 3840x2160.
+- **Walkthrough:** [`docs/WALKTHROUGH_4K_HEVC_STREAMING_FIX.md`](WALKTHROUGH_4K_HEVC_STREAMING_FIX.md).
+- **Plan:** [`docs/PLAN_4K_HEVC_STREAMING_FIX.md`](PLAN_4K_HEVC_STREAMING_FIX.md).
+
 ---
 
 ## 2026-10-24 — Off-Host Database Backups (Category 5.5 resolved)

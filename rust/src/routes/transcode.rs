@@ -300,7 +300,7 @@ pub async fn transcode_start_handler(
                 pool,
                 &rel_key,
                 &mode,
-                false,
+                true,
                 crate::services::job_service::PRIORITY_INTERACTIVE,
             )
             .await?;
@@ -347,7 +347,7 @@ pub async fn transcode_start_handler(
             pool,
             &rel_key,
             "hls",
-            false,
+            true,
             crate::services::job_service::PRIORITY_INTERACTIVE,
         )
         .await?;

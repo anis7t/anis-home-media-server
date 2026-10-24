@@ -597,6 +597,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Dio _apiDio() => widget.customDio ?? ref.read(apiClientProvider).dio;
 
+  bool get _isNative4k {
+    final h = _movieMeta?['height'];
+    final w = _movieMeta?['width'];
+    if (h is num && h >= 2160) return true;
+    if (w is num && w >= 3840) return true;
+    return false;
+  }
+
   String _applyAuthoritativeMode(String url) {
     if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto') return url;
     final filename = _resolveFilename();
@@ -608,6 +616,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       filename: filename,
       quality: _selectedQuality,
       mode: _playbackMode,
+      isNative4K: _isNative4k,
     );
   }
 
@@ -789,6 +798,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   String get _selectedQualityBadge {
     if (_selectedQuality == 'source') return 'DIRECT';
+    if (_selectedQuality == '2160p' || _selectedQuality == '4k') {
+      return (_playbackMode == PlaybackMode.directPlay && _isNative4k) ? '4K DIRECT' : '4K';
+    }
     if (_selectedQuality == 'auto') {
       return _playbackMode == PlaybackMode.directPlay ? 'DIRECT' : 'HD';
     }
@@ -820,8 +832,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final serverOrigin = _apiServerOrigin();
     if (filename == null || serverOrigin == null) return;
 
-    // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto
-    if (!option.isReady && !option.isDirect && option.quality != 'auto') {
+    final isDirect4kRouting = (option.quality == '2160p' || option.quality == '4k') &&
+        _playbackMode == PlaybackMode.directPlay &&
+        _isNative4k;
+
+    // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto, and not direct-routed
+    if (!option.isReady && !option.isDirect && option.quality != 'auto' && !isDirect4kRouting) {
       try {
         final encoded = Uri.encodeComponent(filename);
         _showHudToast('Starting ${option.label}...', icon: Icons.high_quality_rounded);
@@ -840,10 +856,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       filename: filename,
       quality: option.quality,
       mode: _playbackMode,
+      isNative4K: _isNative4k,
     );
 
     _effectiveMediaUrl = newUrl;
-    _showHudToast('Quality: ${option.label}', icon: Icons.high_quality_rounded);
+    final toastLabel = isDirect4kRouting ? '4K Direct Play (Lossless)' : option.label;
+    _showHudToast('Quality: $toastLabel', icon: Icons.high_quality_rounded);
 
     try {
       await _controller.open(newUrl, startPosition: currentPos);

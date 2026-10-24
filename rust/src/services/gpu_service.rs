@@ -65,6 +65,7 @@ impl GPUWorkerConfig {
     /// and a source taller than the target profile would be emitted at full height.
     pub fn get_ffmpeg_video_args(&self, use_vpp_amf: bool, target_height: Option<u32>) -> Vec<String> {
         let height = target_height.unwrap_or(HLS_MAX_HEIGHT as u32);
+        let is_4k = height >= 2160;
         match self.backend {
             GpuBackend::Amf => {
                 let vf = if use_vpp_amf {
@@ -78,11 +79,18 @@ impl GPUWorkerConfig {
                     .unwrap_or_else(|_| "22".into());
                 let qp_p = std::env::var("MEDIA_SERVER_AMF_QP_P")
                     .unwrap_or_else(|_| "24".into());
-                vec![
+
+                let mut args = vec![
                     "-vf".into(),
                     vf,
                     "-c:v".into(),
-                    "h264_amf".into(),
+                    if is_4k { "hevc_amf".into() } else { "h264_amf".into() },
+                ];
+                if is_4k {
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+                args.extend([
                     "-quality".into(),
                     quality,
                     "-rc".into(),
@@ -91,39 +99,54 @@ impl GPUWorkerConfig {
                     qp_i,
                     "-qp_p".into(),
                     qp_p,
-                ]
+                ]);
+                args
             }
             GpuBackend::Vaapi => {
                 let qp = std::env::var("MEDIA_SERVER_VAAPI_QP")
                     .unwrap_or_else(|_| "24".into());
-                vec![
+                let mut args = vec![
                     "-vf".into(),
                     format!("format=nv12,hwupload,scale_vaapi=w=-2:h={}", height),
                     "-c:v".into(),
-                    "h264_vaapi".into(),
+                    if is_4k { "hevc_vaapi".into() } else { "h264_vaapi".into() },
+                ];
+                if is_4k {
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+                args.extend([
                     "-qp".into(),
                     qp,
                     "-pix_fmt".into(),
                     "nv12".into(),
-                ]
+                ]);
+                args
             }
             GpuBackend::Cpu => {
                 let preset = std::env::var("MEDIA_SERVER_TRANSCODE_PRESET")
                     .unwrap_or_else(|_| "superfast".into());
                 let crf = std::env::var("MEDIA_SERVER_TRANSCODE_CRF")
                     .unwrap_or_else(|_| "23".into());
-                vec![
+                let mut args = vec![
                     "-vf".into(),
                     format!("scale=-2:'min(ih,{})',format=yuv420p", height),
                     "-c:v".into(),
-                    "libx264".into(),
+                    if is_4k { "libx265".into() } else { "libx264".into() },
+                ];
+                if is_4k {
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+                args.extend([
                     "-preset".into(),
                     preset,
                     "-crf".into(),
                     crf,
                     "-pix_fmt".into(),
                     "yuv420p".into(),
-                ]
+                ]);
+                args
             }
         }
     }
@@ -400,3 +423,80 @@ impl GpuService {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::hls_service::HlsService;
+
+    #[test]
+    fn test_get_ffmpeg_video_args_amf_2160p_uses_hevc_and_hvc1_tag() {
+        let worker = GPUWorkerConfig {
+            adapter_id: 1,
+            name: "AMD Radeon RX 560X".into(),
+            backend: GpuBackend::Amf,
+            is_discrete: true,
+        };
+
+        let args = worker.get_ffmpeg_video_args(true, Some(2160));
+        assert!(args.contains(&"-c:v".to_string()));
+        let cv_idx = args.iter().position(|a| a == "-c:v").unwrap();
+        assert_eq!(args[cv_idx + 1], "hevc_amf");
+        assert!(args.contains(&"-tag:v".to_string()));
+        let tag_idx = args.iter().position(|a| a == "-tag:v").unwrap();
+        assert_eq!(args[tag_idx + 1], "hvc1");
+    }
+
+    #[test]
+    fn test_get_ffmpeg_video_args_amf_1080p_and_1440p_remain_h264() {
+        let worker = GPUWorkerConfig {
+            adapter_id: 1,
+            name: "AMD Radeon RX 560X".into(),
+            backend: GpuBackend::Amf,
+            is_discrete: true,
+        };
+
+        for height in [1080, 1440, 720] {
+            let args = worker.get_ffmpeg_video_args(true, Some(height));
+            let cv_idx = args.iter().position(|a| a == "-c:v").unwrap();
+            assert_eq!(args[cv_idx + 1], "h264_amf");
+            assert!(!args.contains(&"-tag:v".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_get_ffmpeg_video_args_cpu_2160p_uses_libx265() {
+        let worker = GPUWorkerConfig {
+            adapter_id: 0,
+            name: "CPU fallback".into(),
+            backend: GpuBackend::Cpu,
+            is_discrete: false,
+        };
+
+        let args_4k = worker.get_ffmpeg_video_args(false, Some(2160));
+        let cv_idx = args_4k.iter().position(|a| a == "-c:v").unwrap();
+        assert_eq!(args_4k[cv_idx + 1], "libx265");
+        assert!(args_4k.contains(&"-tag:v".to_string()));
+
+        let args_1080 = worker.get_ffmpeg_video_args(false, Some(1080));
+        let cv_1080 = args_1080.iter().position(|a| a == "-c:v").unwrap();
+        assert_eq!(args_1080[cv_1080 + 1], "libx264");
+        assert!(!args_1080.contains(&"-tag:v".to_string()));
+    }
+
+    #[test]
+    fn test_hls_standard_qualities_2160p_declares_hvc1() {
+        let q_2160 = HlsService::STANDARD_QUALITIES
+            .iter()
+            .find(|(label, _, _, _, _)| *label == "2160p")
+            .expect("2160p tier must exist");
+        assert!(q_2160.4.contains("hvc1"), "2160p must declare hvc1 codec: {}", q_2160.4);
+
+        let q_1440 = HlsService::STANDARD_QUALITIES
+            .iter()
+            .find(|(label, _, _, _, _)| *label == "1440p")
+            .expect("1440p tier must exist");
+        assert!(q_1440.4.contains("avc1"), "1440p must declare avc1 codec: {}", q_1440.4);
+    }
+}
+
