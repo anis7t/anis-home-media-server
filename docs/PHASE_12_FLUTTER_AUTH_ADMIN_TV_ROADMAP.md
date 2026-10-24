@@ -1,6 +1,6 @@
 # Phase 12 Roadmap — Mobile & TV Authentication Parity & Native Admin Management (Flutter)
 
-**Status:** In Progress (Branch: `feat/phase-12-flutter-auth-admin-tv-parity`)  
+**Status:** ✅ COMPLETE (Branch: `feat/phase-12-flutter-auth-admin-tv-parity`)  
 **Targets:** Flutter Client (`flutter_client/` — Android Phone & Android TV / Fire TV) + Rust Axum Backend (`rust/`)  
 **Design Decisions:**
 - **Mobile Google OAuth:** In-app Custom Tabs / Chrome Custom Tabs via `/auth/google` with deep-link redirect (`ahms://auth/callback`), reusing server-configured Google OAuth Web Client credentials without requiring Android keystore SHA-1 / Google Play Console configuration.
@@ -115,7 +115,7 @@
 
 ---
 
-### Slice 12.5: Full End-to-End Verification, Performance & Documentation
+### Slice 12.5: Full End-to-End Verification, Performance & Documentation — ✅ COMPLETE & VERIFIED
 - **12.5a — Automated Test Suite & API Parity:**
   - Run full Flutter unit and widget test suites (`flutter test`).
   - Run backend regression suites (`cargo test --lib`, `cargo test --test qr_auth_test`, etc.).
