@@ -78,8 +78,13 @@ class LibraryRepository {
   Future<bool> triggerScan() async {
     await _ensureBaseUrl();
     try {
-      final response = await _dio.post(ApiEndpoints.scan);
-      return response.statusCode == 200;
+      final response = await _dio.post(
+        ApiEndpoints.scan,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      return response.statusCode == 200 || response.statusCode == 202;
     } on DioException catch (e) {
       throw NetworkException(
         e.message ?? 'Failed to trigger library scan',

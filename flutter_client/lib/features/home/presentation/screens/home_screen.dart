@@ -50,8 +50,8 @@ class HomeScreen extends ConsumerWidget {
         SnackBar(
           content: Text(
             success
-                ? 'Library scan completed successfully'
-                : 'Failed to trigger library scan',
+                ? 'Library scan started successfully'
+                : 'Could not start scan (check connection or admin access)',
           ),
           backgroundColor:
               success ? AppColors.statusSuccess : AppColors.statusError,

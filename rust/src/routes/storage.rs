@@ -29,9 +29,11 @@ pub struct StorageState {
 ///
 /// Audit HLS and preview cache directories for active vs orphaned status.
 /// Administrator-gated: requires valid `X-Admin-Pin` header or body PIN.
+/// Supports `?force=true` query parameter to bypass 60s in-memory TTL cache.
 pub async fn storage_audit_handler(
     State(state): State<StorageState>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<StorageAuditResponse>, (StatusCode, Json<serde_json::Value>)> {
     if !AuthService::is_admin_authorized(&state.pool, &headers, None).await {
         return Err((
@@ -43,11 +45,17 @@ pub async fn storage_audit_handler(
         ));
     }
 
+    let force = query
+        .get("force")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false);
+
     let report = StorageService::audit_caches(
         &state.pool,
         &state.media_roots,
         &state.cache_dir,
         &state.system_service,
+        force,
     )
     .await;
 
@@ -94,6 +102,10 @@ pub async fn storage_purge_orphans_handler(
         dry_run,
     )
     .await;
+
+    if !dry_run {
+        StorageService::invalidate_audit_cache();
+    }
 
     let ip = AuditService::extract_client_ip(&headers);
     let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, body_pin).await;

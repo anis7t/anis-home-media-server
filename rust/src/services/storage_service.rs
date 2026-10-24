@@ -13,17 +13,27 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
 pub const ALLOWED_RETENTION_POLICIES: &[&str] = &["archive", "keep", "purge_cache"];
 pub const DEFAULT_RETENTION_POLICY: &str = "keep";
 pub const RECENT_CACHE_GRACE_SECONDS: f64 = 600.0;
+pub const AUDIT_CACHE_TTL: Duration = Duration::from_secs(60);
+
+static AUDIT_CACHE: RwLock<Option<(Instant, StorageAuditResponse)>> = RwLock::new(None);
 
 pub struct StorageService;
 
 impl StorageService {
+    /// Invalidate the in-memory storage audit cache.
+    pub fn invalidate_audit_cache() {
+        if let Ok(mut lock) = AUDIT_CACHE.write() {
+            *lock = None;
+        }
+    }
+
     /// Read current storage settings from PostgreSQL `settings` table.
     pub async fn get_settings(
         pool: &PgPool,
@@ -88,7 +98,18 @@ impl StorageService {
         media_roots: &[PathBuf],
         cache_dir: &Path,
         system_service: &SystemService,
+        force_refresh: bool,
     ) -> StorageAuditResponse {
+        if !force_refresh {
+            if let Ok(lock) = AUDIT_CACHE.read() {
+                if let Some((timestamp, ref cached_report)) = *lock {
+                    if timestamp.elapsed() < AUDIT_CACHE_TTL {
+                        return cached_report.clone();
+                    }
+                }
+            }
+        }
+
         let hls_base = cache_dir.join("hls");
         let previews_base = cache_dir.join("previews");
 
@@ -106,8 +127,8 @@ impl StorageService {
             }
         }
 
-        // 2. Discover active video files from database and filesystem
-        let mut active_videos: Vec<PathBuf> = Vec::new();
+        // 2. Discover active video files from database and filesystem (using HashSet for O(1) membership)
+        let mut active_videos: HashSet<PathBuf> = HashSet::new();
 
         // From movies table
         if let Ok(rows) = sqlx::query_scalar::<_, String>("SELECT filename FROM movies")
@@ -116,8 +137,8 @@ impl StorageService {
         {
             for filename in rows {
                 if let Ok(p) = PathResolver::resolve_media_path(&filename, media_roots) {
-                    if p.is_file() && !active_videos.contains(&p) {
-                        active_videos.push(p);
+                    if p.is_file() {
+                        active_videos.insert(p);
                     }
                 }
             }
@@ -280,7 +301,7 @@ impl StorageService {
 
         let telemetry = system_service.get_telemetry();
 
-        StorageAuditResponse {
+        let response = StorageAuditResponse {
             storage: telemetry.storage,
             audit: CacheAuditData {
                 total_orphaned_dirs: orphaned_hls.len() + orphaned_previews.len(),
@@ -295,7 +316,13 @@ impl StorageService {
                 degraded_reasons,
                 media_roots_missing,
             },
+        };
+
+        if let Ok(mut lock) = AUDIT_CACHE.write() {
+            *lock = Some((Instant::now(), response.clone()));
         }
+
+        response
     }
 
     /// Purge orphaned cache directories with safety checks and Windows retry resilience.
@@ -330,8 +357,8 @@ impl StorageService {
             };
         }
 
-        // Audit current cache state
-        let audit_res = Self::audit_caches(pool, media_roots, cache_dir, system_service).await;
+        // Audit current cache state (force refresh)
+        let audit_res = Self::audit_caches(pool, media_roots, cache_dir, system_service, true).await;
         let audit = audit_res.audit;
 
         if audit.degraded {
@@ -820,7 +847,7 @@ impl StorageService {
         }
     }
 
-    fn walk_videos(dir: &Path, out: &mut Vec<PathBuf>) {
+    fn walk_videos(dir: &Path, out: &mut HashSet<PathBuf>) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -836,9 +863,7 @@ impl StorageService {
                         ext.as_str(),
                         "mp4" | "m4v" | "mkv" | "webm" | "avi" | "mov"
                     ) {
-                        if !out.contains(&p) {
-                            out.push(p);
-                        }
+                        out.insert(p);
                     }
                 }
             }

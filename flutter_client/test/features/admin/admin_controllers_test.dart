@@ -14,7 +14,7 @@ import 'package:media_server_client/features/admin/presentation/providers/admin_
 
 class _FakeAdminRepository extends Fake implements AdminRepository {
   @override
-  Future<StorageAuditReport> getStorageAudit() async {
+  Future<StorageAuditReport> getStorageAudit({bool force = false}) async {
     return const StorageAuditReport(
       storage: ServerStorageInfo(
         percent: 50.0,

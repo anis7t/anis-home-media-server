@@ -57,10 +57,10 @@ class StorageNotifier extends Notifier<StorageState> {
     return const StorageState(isLoading: true);
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool force = false}) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
-      final audit = await _repo.getStorageAudit();
+      final audit = await _repo.getStorageAudit(force: force);
       final settings = await _repo.getStorageSettings();
       state = state.copyWith(
         isLoading: false,

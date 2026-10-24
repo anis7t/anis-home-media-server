@@ -23,10 +23,13 @@ class AdminRepository {
   // ==========================================
 
   /// Audit active vs orphaned cache directories across storage pools.
-  Future<StorageAuditReport> getStorageAudit() async {
+  Future<StorageAuditReport> getStorageAudit({bool force = false}) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(
-        ApiEndpoints.storageAudit,
+        force ? '${ApiEndpoints.storageAudit}?force=true' : ApiEndpoints.storageAudit,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
       if (res.statusCode == 200 && res.data != null) {
         return StorageAuditReport.fromJson(res.data!);
@@ -91,6 +94,9 @@ class AdminRepository {
       final res = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.storagePurgeOrphans,
         data: payload,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
       if (res.statusCode == 200 && res.data != null) {
         final resultJson = res.data!['result'] as Map<String, dynamic>? ?? {};
@@ -230,6 +236,9 @@ class AdminRepository {
       final res = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.scan,
         data: payload,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
       return res.statusCode == 200 || res.statusCode == 202;
     } on DioException catch (e) {

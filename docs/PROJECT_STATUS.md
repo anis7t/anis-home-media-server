@@ -29,6 +29,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified; v1.3.1 Hotfix) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
 
+## 2026-10-25 — Phase 12.7 Hotfix: Storage Audit Timeout & Library Scan Reliability Fix & Android Release v1.3.2
+
+Resolved Storage & Retention audit timeout (`DioExceptionType.receiveTimeout: 5000ms`) and Home screen library scan button intermittent failures, published Production Release v1.3.2 (versionCode 145), and verified on physical Android device (`192.168.1.6:40283`):
+- **Server-Side In-Memory TTL Audit Cache:** In `rust/src/services/storage_service.rs`, added 60-second in-memory TTL cache (`AUDIT_CACHE`) reducing repeated query latency from 25.9s to 9.5ms (2,700x speedup), optimized `walk_videos` to $O(1)$ `HashSet`, and added `invalidate_audit_cache()` on orphan cache purge.
+- **Client Network Timeout Extension:** In `flutter_client/lib/core/api/api_client.dart`, increased default timeouts from 5s to 15s connect / 30s receive & send, with dedicated 60s timeout in `AdminRepository` for disk and cache auditing.
+- **Decoupled Home Scan Trigger:** In `LibraryController.triggerScan()`, decoupled `loadLibrary(isRefresh: true)` with `unawaited(...)` so background library refreshes do not cause false-negative scan failure toasts; updated `LibraryRepository` to accept HTTP 200 and 202.
+- **Live Device Verification:** Verified on physical phone via ADB; Storage & Retention Hub renders full storage pool breakdown (D: 1022.6 GB / 1170.0 GB, E: 90.2% free, 148.6 GB active cache) with zero timeouts, and Home scan button triggers scan with green toast confirmation ("Library scan started successfully").
+- **Production APK v1.3.2 Released:** Published signed release APK `updates/production/media-server-1.3.2.apk` (versionCode 145, SHA-256 `478f864d9c5cbde710513ee7ccd36871069a717ca274e121631e1d1c4d8d2cf0`).
+- **Verification:** 72/72 tests passed in `flutter test`, zero issues in `flutter analyze`, and 22/22 endpoints verified in `python scripts/probe_android_api.py`.
+- **Walkthrough:** [`docs/WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md`](WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md).
+- **Session Handoff:** [`Handoffs/2026-10-25_00-40_antigravity_storage-audit-timeout-and-scan-button-fix-v1.3.2.md`](../Handoffs/2026-10-25_00-40_antigravity_storage-audit-timeout-and-scan-button-fix-v1.3.2.md).
+
 ## 2026-10-25 — Phase 12.6 Hotfix: Google OAuth Deep-Link Routing Fix & Android Release v1.3.1
 
 Resolved GoRouter unhandled location exception (`GoException: no routes for location: ahms://auth/callback?session_token=...`) on Android mobile devices during Google OAuth sign-in, published Production Release v1.3.1 (versionCode 144), and verified directly on connected device:
