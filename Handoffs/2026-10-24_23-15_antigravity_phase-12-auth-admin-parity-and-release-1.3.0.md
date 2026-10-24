@@ -44,14 +44,14 @@
 ## 2. Production Release Build v1.3.0 (versionCode 141)
 
 - **Compilation Pipeline:** Built via canonical release script `python scripts/release_android.py`.
-- **Target Version:** `1.3.0` (versionCode `141`, exceeding `lastVersionCode 140`).
+- **Target Version:** `1.3.0` (versionCode `143`, automatically exceeding connected test phone's `142`).
 - **Binary Path:** `updates/production/media-server-1.3.0.apk` (and `flutter_client/build/app/outputs/flutter-apk/app-release.apk`).
 - **Package ID:** `in.anisparvez.media_server_client`
 - **SDK Targets:** `minSdk 24`, `targetSdk 36`
 - **File Size:** 103,474,561 bytes (98.7 MB)
-- **SHA-256 Digest:** `8997b2cf9e6cf559fc9cb38acdfc7a20f64326df17f43f73d943cc557be16c28`
+- **SHA-256 Digest:** `ec0e3cb434a967a7b2711452e48345e031b60bc733c3a02c6760c39de6015d5a`
 - **Live Distribution Feed Verified:**
-  - `GET /api/app/update?channel=production` returns HTTP 200 with matching version 1.3.0, versionCode 141, and SHA-256 hash.
+  - `GET /api/app/update?channel=production` returns HTTP 200 with matching version 1.3.0, versionCode 143, and SHA-256 hash.
   - `HEAD /api/app/download?channel=production` returns HTTP 200 with `content-length: 103474561`.
 
 ---

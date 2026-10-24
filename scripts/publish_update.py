@@ -183,6 +183,9 @@ def publish_release(
     # 1. Allocate / Validate Monotonic VersionCode
     registry = load_registry(registry_path)
     last_code = int(registry.get("lastVersionCode", 100))
+    for channel_data in registry.get("channels", {}).values():
+        if isinstance(channel_data, dict) and "versionCode" in channel_data:
+            last_code = max(last_code, int(channel_data["versionCode"]))
 
     if explicit_version_code is not None:
         if explicit_version_code <= last_code:

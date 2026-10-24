@@ -31,11 +31,11 @@ Active branch: `feat/rust-react-postgres-migration`
 
 ## 2026-10-24 — Phase 12: Mobile & TV Auth Parity, Native Admin Hub & Android Release v1.3.0
 
-Delivered 100% feature and authentication parity to the Flutter client on Android Phone and Android TV / Fire TV, published Production Release v1.3.0 (versionCode 141), and verified end-to-end integration:
+Delivered 100% feature and authentication parity to the Flutter client on Android Phone and Android TV / Fire TV, published Production Release v1.3.0 (versionCode 143), and verified end-to-end integration:
 - **Mobile Phone Auth Views:** Google OAuth CustomTab sign-in (`ahms://auth/callback`), Admin PIN bottom sheet, and Account Profile Card in Settings.
 - **Android TV Remote Auth:** 240px high-contrast QR code display with 5-char pair code, live SSE & polling sync, and TV on-screen D-pad numeric keypad for direct Admin PIN login.
 - **Native Admin Hub:** Embedded role-gated settings hub with Dual-drive Storage Pool HUD (Drive `D:`/`E:`), transcode dashboard with live AMD RX 560X & Vega 8 telemetry, connected devices registry with presence chips, and TMDb library scan triggers.
-- **Production APK v1.3.0 Released:** Compiled and published signed release APK `updates/production/media-server-1.3.0.apk` (versionCode 141, SHA-256 `8997b2cf9e6cf559fc9cb38acdfc7a20f64326df17f43f73d943cc557be16c28`). Verified via `GET /api/app/update?channel=production` and `HEAD /api/app/download?channel=production`.
+- **Production APK v1.3.0 Released:** Compiled and published signed release APK `updates/production/media-server-1.3.0.apk` (versionCode 143, SHA-256 `ec0e3cb434a967a7b2711452e48345e031b60bc733c3a02c6760c39de6015d5a`). Verified via `GET /api/app/update?channel=production` and `HEAD /api/app/download?channel=production`. Automatically prevents registry drift via connected ADB device detection in `scripts/release_android.py`.
 - **Verification:** 408/408 tests passed in `flutter test` (51 Auth, 24 Admin, 333 core), zero issues in `flutter analyze`, and 22/22 endpoints verified in `python scripts/probe_android_api.py`.
 - **Walkthrough:** [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md).
 - **Roadmap:** [`docs/PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md`](PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md).

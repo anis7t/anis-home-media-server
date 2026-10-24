@@ -72,14 +72,61 @@ def find_flutter(explicit: str | None = None) -> str:
     raise SystemExit(f"flutter not found - pass --flutter, set {FLUTTER_ENV_VAR}, or put flutter on PATH")
 
 
+def probe_connected_device_max_version_code() -> int:
+    """If an adb device is connected, check its installed versionCode to prevent stale registry drift."""
+    try:
+        adb = shutil.which("adb")
+        if not adb:
+            return 0
+        devices_out = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=5)
+        if devices_out.returncode != 0:
+            return 0
+        lines = [l.strip() for l in devices_out.stdout.splitlines()[1:] if l.strip() and not l.startswith("*")]
+        device_ids = [l.split()[0] for l in lines if len(l.split()) >= 2 and l.split()[1] == "device"]
+        max_installed = 0
+        for dev in device_ids:
+            pkg_out = subprocess.run(
+                [adb, "-s", dev, "shell", "dumpsys", "package", "in.anisparvez.media_server_client"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if pkg_out.returncode == 0:
+                for line in pkg_out.stdout.splitlines():
+                    line = line.strip()
+                    if "versionCode=" in line:
+                        parts = line.split("versionCode=")
+                        if len(parts) > 1:
+                            val = parts[1].split()[0]
+                            try:
+                                code = int(val)
+                                if code > max_installed:
+                                    max_installed = code
+                            except ValueError:
+                                pass
+        return max_installed
+    except Exception:
+        return 0
+
+
 def next_version_code(registry_path: Path, explicit: int | None) -> int:
-    """Allocate the versionCode exactly as publish_release will, so build and manifest agree."""
+    """Allocate the versionCode dynamically ensuring it strictly exceeds registry and connected devices."""
     registry = load_registry(registry_path)
     last_code = int(registry.get("lastVersionCode", 100))
+    for channel_data in registry.get("channels", {}).values():
+        if isinstance(channel_data, dict) and "versionCode" in channel_data:
+            last_code = max(last_code, int(channel_data["versionCode"]))
+
+    # Detect any installed test builds on connected ADB devices to prevent client-side update rejection
+    device_max = probe_connected_device_max_version_code()
+    if device_max > last_code:
+        print(f"[release] detected connected device with versionCode {device_max} > registry {last_code}; advancing baseline", flush=True)
+        last_code = device_max
+
     if explicit is not None:
         if explicit <= last_code:
             raise SystemExit(
-                f"--version-code {explicit} is not greater than the registry's lastVersionCode {last_code}"
+                f"--version-code {explicit} is not greater than the highest known versionCode {last_code}"
             )
         return explicit
     return last_code + 1
