@@ -172,4 +172,59 @@ describe('useQrSession', () => {
     expect(result.current.secondsLeft).toBe(10);
     expect(result.current.session).toBeNull();
   });
+
+  it('falls back to polling when the SSE connection errors', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'pending' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderHook(() => useQrSession());
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    // Simulate SSE error
+    act(() => {
+      FakeEventSource.instances[0].onerror?.(new Event('error'));
+    });
+
+    // Advance 3s so the poll interval fires
+    await act(async () => {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ status: 'confirmed' }),
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    await waitFor(() =>
+      expect(assignMock).toHaveBeenCalledWith('/api/auth/qr/qr_test_1/finalize'),
+    );
+  });
+
+  it('freezes the countdown and does not refresh session once confirmed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    const { result } = renderHook(() => useQrSession());
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      FakeEventSource.instances[0].emit('confirmed');
+    });
+
+    await waitFor(() => expect(result.current.confirmed).toBe(true));
+
+    // Advance by 150 seconds past the original 120s expiry
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150_000);
+    });
+
+    // Should NOT have requested a replacement session because the session was confirmed
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+  });
 });
+

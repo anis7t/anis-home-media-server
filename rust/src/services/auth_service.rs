@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse, AllowlistResponse};
 use axum::http::HeaderMap;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
@@ -330,6 +330,37 @@ impl AuthService {
             }
         }
 
+        None
+    }
+
+    /// Resolve effective user_id: first from session cookie, then from device_id linkage in `devices`.
+    pub async fn resolve_effective_user_id(
+        pool: &PgPool,
+        headers: &HeaderMap,
+        device_id: Option<&str>,
+    ) -> Option<i64> {
+        if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
+            if identity.user_id > 0 {
+                return Some(identity.user_id);
+            }
+        }
+        if let Some(dev) = device_id.filter(|d| !d.trim().is_empty()) {
+            let row = sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT user_id FROM devices WHERE device_id = $1"
+            )
+            .bind(dev)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+
+            if let Some(uid) = row {
+                if uid > 0 {
+                    return Some(uid);
+                }
+            }
+        }
         None
     }
 
@@ -1191,14 +1222,17 @@ impl AuthService {
         .await
         .map_err(|e| AppError::Internal(format!("Failed to store paired session: {}", e)))?;
 
-        // Mark pair session confirmed and store the minted session_id + device_name
+        // Mark pair session confirmed and store the minted session_id + device_name.
+        // Also extend expires_at by 60 seconds grace window to eliminate boundary race
+        // conditions during client finalization redirect.
         sqlx::query(
             r#"
             UPDATE device_pair_sessions
             SET confirmed = TRUE,
                 user_id = $1,
                 session_id = $2,
-                device_name = $3
+                device_name = $3,
+                expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '60 seconds')
             WHERE id = $4
             "#,
         )
@@ -1215,6 +1249,115 @@ impl AuthService {
             qr_id, user_id, device_name
         );
         Ok(())
+    }
+
+    /// Atomically finalize a confirmed pair session for the waiting TV/browser.
+    ///
+    /// Requires valid presented secret matching `secret_hash`.
+    /// Performs atomic single-use finalization:
+    /// - Marks `finalized = TRUE` and `finalized_at = CURRENT_TIMESTAMP`.
+    /// - If already finalized within the 10-second idempotency window (Option A), returns the existing `session_id`.
+    /// - If already finalized beyond 10 seconds, or unconfirmed, or expired, fails appropriately.
+    pub async fn finalize_pair_session(
+        pool: &PgPool,
+        qr_id: &str,
+        presented_secret: &str,
+    ) -> Result<(String, Option<String>), AppError> {
+        let clean_secret = presented_secret.trim();
+        if clean_secret.is_empty() {
+            return Err(AppError::Forbidden(
+                "This pairing session could not be verified. Refresh the QR code on this device and try again.".to_string(),
+            ));
+        }
+
+        // Query session with secret, confirmation and finalization state
+        let row = sqlx::query(
+            r#"
+            SELECT secret_hash, confirmed, session_id, device_name, finalized, finalized_at, expires_at
+            FROM device_pair_sessions
+            WHERE id = $1
+            "#,
+        )
+        .bind(qr_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some(r) = row else {
+            return Err(AppError::BadRequest("Pair session expired. Please start again.".to_string()));
+        };
+
+        // 1. Secret verification (constant-time)
+        let stored_hash: Option<String> = r.try_get("secret_hash").ok().flatten();
+        let candidate_hash = Self::hash_token(clean_secret);
+        let secret_valid = stored_hash
+            .map(|h| Self::constant_time_eq(candidate_hash.as_bytes(), h.as_bytes()))
+            .unwrap_or(false);
+
+        if !secret_valid {
+            return Err(AppError::Forbidden(
+                "This pairing session could not be verified. Refresh the QR code on this device and try again.".to_string(),
+            ));
+        }
+
+        let confirmed: bool = r.get("confirmed");
+        let finalized: bool = r.get("finalized");
+        let finalized_at: Option<DateTime<Utc>> = r.try_get("finalized_at").ok().flatten();
+        let expires_at: DateTime<Utc> = r.get("expires_at");
+        let session_id: Option<String> = r.try_get("session_id").ok().flatten();
+        let device_name: Option<String> = r.try_get("device_name").ok().flatten();
+
+        let now = Utc::now();
+
+        // 2. Check if already finalized (Option A: 10s idempotency window)
+        if finalized {
+            if let (Some(sid), Some(f_at)) = (session_id, finalized_at) {
+                if now <= f_at + Duration::seconds(10) {
+                    info!(
+                        "QR: pair session ref={} already finalized, returning existing session within 10s idempotency window",
+                        Self::redacted_pair_ref(qr_id)
+                    );
+                    return Ok((sid, device_name));
+                }
+            }
+            return Err(AppError::BadRequest("Pair session has already been finalized.".to_string()));
+        }
+
+        // 3. Must be confirmed
+        if !confirmed {
+            return Err(AppError::BadRequest(
+                "Pair session not yet confirmed. Please complete the pairing on your phone.".to_string(),
+            ));
+        }
+
+        // 4. Must not be expired
+        if now > expires_at {
+            return Err(AppError::BadRequest("Pair session expired. Please start again.".to_string()));
+        }
+
+        let Some(sid) = session_id else {
+            return Err(AppError::Internal("Pair session confirmed but no session token found.".to_string()));
+        };
+
+        // 5. Atomic transition: set finalized = TRUE, finalized_at = CURRENT_TIMESTAMP
+        let update_res = sqlx::query(
+            r#"
+            UPDATE device_pair_sessions
+            SET finalized = TRUE,
+                finalized_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND finalized = FALSE
+            "#,
+        )
+        .bind(qr_id)
+        .execute(pool)
+        .await?;
+
+        if update_res.rows_affected() == 0 {
+            // Raced with another concurrent finalize hit: return existing session
+            return Ok((sid, device_name));
+        }
+
+        info!("QR: pair session ref={} successfully finalized", Self::redacted_pair_ref(qr_id));
+        Ok((sid, device_name))
     }
 
     /// Delete expired pair sessions older than 5 minutes (2 min TTL + 3 min grace).

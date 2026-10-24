@@ -29,6 +29,8 @@ export function useQrSession(): UseQrSessionResult {
 
   const esRef = useRef<EventSource | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const confirmedRef = useRef(false);
   /**
    * Mirror of `secondsLeft`.
    *
@@ -50,13 +52,34 @@ export function useQrSession(): UseQrSessionResult {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (pollTimerRef.current !== null) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
   }, []);
 
+  const handleConfirmed = useCallback(
+    (qrId: string) => {
+      if (confirmedRef.current) return;
+      confirmedRef.current = true;
+      setConfirmed(true);
+      cleanup();
+      // Navigate to finalize — sets session cookie and redirects to /
+      window.location.assign(
+        `/api/auth/qr/${encodeURIComponent(qrId)}/finalize`,
+      );
+    },
+    [cleanup],
+  );
+
   const fetchSession = useCallback(async () => {
+    if (confirmedRef.current) return;
     cleanup();
     setConfirmed(false);
+    confirmedRef.current = false;
     try {
       const data = await createQrSession();
+      if (confirmedRef.current) return;
       setSession(data);
       // Calculate actual seconds left based on server-issued expires_at
       const secs = Math.max(0, data.expires_at - Math.floor(Date.now() / 1000));
@@ -64,8 +87,10 @@ export function useQrSession(): UseQrSessionResult {
       setSecondsLeft(secs);
     } catch {
       // Silently retry — the TV page will show old QR until next refresh
-      secondsLeftRef.current = 10; // retry sooner
-      setSecondsLeft(10);
+      if (!confirmedRef.current) {
+        secondsLeftRef.current = 10; // retry sooner
+        setSecondsLeft(10);
+      }
     } finally {
       setLoading(false);
     }
@@ -74,11 +99,19 @@ export function useQrSession(): UseQrSessionResult {
   // Countdown timer — auto-refreshes when it hits 0
   const startCountdown = useCallback(
     (initialSecs: number) => {
+      if (confirmedRef.current) return;
       if (timerRef.current !== null) clearInterval(timerRef.current);
       secondsLeftRef.current = initialSecs;
       setSecondsLeft(initialSecs);
 
       timerRef.current = setInterval(() => {
+        if (confirmedRef.current) {
+          if (timerRef.current !== null) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          return;
+        }
         const next = Math.max(0, secondsLeftRef.current - 1);
         secondsLeftRef.current = next;
         setSecondsLeft(next);
@@ -92,7 +125,9 @@ export function useQrSession(): UseQrSessionResult {
             timerRef.current = null;
           }
           // Refresh the session; fetchSession will restart the countdown
-          void fetchSession();
+          if (!confirmedRef.current) {
+            void fetchSession();
+          }
         }
       }, 1000);
     },
@@ -101,21 +136,42 @@ export function useQrSession(): UseQrSessionResult {
 
   // When a new session is issued, start the SSE listener and countdown
   useEffect(() => {
-    if (!session) return;
+    if (!session || confirmedRef.current) return;
 
     // SSE wait stream
     const es = new EventSource(`/api/auth/qr/${encodeURIComponent(session.qr_id)}/wait`);
     esRef.current = es;
 
+    const startPollingFallback = () => {
+      if (pollTimerRef.current !== null || confirmedRef.current) return;
+      pollTimerRef.current = setInterval(async () => {
+        if (confirmedRef.current) {
+          if (pollTimerRef.current !== null) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          return;
+        }
+        try {
+          const res = await fetch(`/api/auth/qr/${encodeURIComponent(session.qr_id)}/status`);
+          if (!res.ok) return;
+          const json = (await res.json()) as { status: string };
+          if (json.status === 'confirmed') {
+            handleConfirmed(session.qr_id);
+          } else if (json.status === 'expired') {
+            cleanup();
+            void fetchSession();
+          }
+        } catch {
+          // ignore transient network/proxy error during poll
+        }
+      }, 3000);
+    };
+
     es.onmessage = (e) => {
       const data = (e.data as string).trim();
       if (data === 'confirmed') {
-        setConfirmed(true);
-        cleanup();
-        // Navigate to finalize — sets session cookie and redirects to /
-        window.location.assign(
-          `/api/auth/qr/${encodeURIComponent(session.qr_id)}/finalize`,
-        );
+        handleConfirmed(session.qr_id);
       } else if (data === 'expired') {
         void fetchSession();
       }
@@ -123,15 +179,19 @@ export function useQrSession(): UseQrSessionResult {
     };
 
     es.onerror = () => {
-      // SSE dropped — fall back to countdown-based polling
-      es.close();
+      // SSE dropped — fall back to active status polling every 3 seconds
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      startPollingFallback();
     };
 
     const secs = Math.max(5, session.expires_at - Math.floor(Date.now() / 1000));
     startCountdown(secs);
 
     return cleanup;
-  }, [session, cleanup, fetchSession, startCountdown]);
+  }, [session, cleanup, fetchSession, handleConfirmed, startCountdown]);
 
   // Initial fetch
   useEffect(() => {

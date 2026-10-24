@@ -597,34 +597,8 @@ pub async fn qr_finalize_handler(
     enforce(&state, &headers, "finalize", LIMIT_FINALIZE)?;
 
     let presented = cookie_value(&headers, "ms_qr_secret").unwrap_or_default();
-    let secret_ok = !presented.is_empty()
-        && AuthService::verify_pair_session_secret(&state.pool, &qr_id, &presented).await?;
-    if !secret_ok {
-        return Err(AppError::Forbidden(
-            "This pairing session could not be verified. Refresh the QR code on this device and try again.".to_string(),
-        ));
-    }
-
-    let status = AuthService::get_pair_session_status(&state.pool, &qr_id).await?;
-
-    let (session_id, device_name) = match status {
-        Some((true, Some(sid), dev_name)) => (sid, dev_name),
-        Some((true, None, _)) => {
-            return Err(AppError::Internal(
-                "Pair session confirmed but no session token found.".to_string(),
-            ))
-        }
-        Some((false, _, _)) => {
-            return Err(AppError::BadRequest(
-                "Pair session not yet confirmed. Please complete the pairing on your phone.".to_string(),
-            ))
-        }
-        None => {
-            return Err(AppError::BadRequest(
-                "Pair session expired. Please start again.".to_string(),
-            ))
-        }
-    };
+    let (session_id, device_name) =
+        AuthService::finalize_pair_session(&state.pool, &qr_id, &presented).await?;
 
     // If TV has a device_id cookie or header and we have a friendly device name, record it in `devices`
     if let Some(dev_name) = device_name {
