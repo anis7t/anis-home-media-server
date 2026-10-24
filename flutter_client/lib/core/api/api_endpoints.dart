@@ -15,5 +15,14 @@ class ApiEndpoints {
   static const String transcodeStatus = '/api/transcode-status';
   static const String appUpdate = '/api/app/update';
   static const String appDownload = '/api/app/download';
+
+  // Authentication & Session
+  static const String authMe = '/api/auth/me';
+  static const String loginPin = '/api/auth/login-pin';
+  static const String logout = '/auth/logout';
+
+  // Remote Pairing / QR Login
+  static const String qrSession = '/api/auth/qr';
+  static const String qrLookup = '/api/auth/qr/lookup';
 }
 

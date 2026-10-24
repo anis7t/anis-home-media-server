@@ -30,3 +30,11 @@ class ServerException extends AppException {
 class StorageException extends AppException {
   const StorageException(super.message, {super.details});
 }
+
+class ValidationException extends AppException {
+  const ValidationException(super.message, {super.details});
+}
+
+class UnauthorizedException extends AppException {
+  const UnauthorizedException(super.message, {super.statusCode = 401, super.details});
+}
