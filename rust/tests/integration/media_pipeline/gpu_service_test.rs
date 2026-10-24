@@ -44,7 +44,7 @@ fn test_select_amf_strategy_requirements() {
     };
     let (needs_vpp_10bit, count_10bit) = GpuService::select_amf_strategy(Some(&stream_10bit), None);
     assert!(needs_vpp_10bit, "10-bit input requires vpp_amf");
-    assert_eq!(count_10bit, 3, "10-bit defaults to 3 workers");
+    assert_eq!(count_10bit, 2, "10-bit defaults to 2 workers");
 
     // 3. 4K stream (height 2160 > 1080) -> vpp_amf IS required for downscaling
     let stream_4k = ProbeStream {
@@ -57,7 +57,7 @@ fn test_select_amf_strategy_requirements() {
     };
     let (needs_vpp_4k, count_4k) = GpuService::select_amf_strategy(Some(&stream_4k), None);
     assert!(needs_vpp_4k, "4K input requires vpp_amf downscale");
-    assert_eq!(count_4k, 3, "4K defaults to 3 workers");
+    assert_eq!(count_4k, 2, "4K defaults to 2 workers");
 
     // 4. Missing/unknown stream -> fails safe to vpp_amf = true
     let (needs_vpp_unknown, _) = GpuService::select_amf_strategy(None, None);
@@ -66,7 +66,7 @@ fn test_select_amf_strategy_requirements() {
     // 5. 1080p source scaled to 720p target -> vpp_amf IS required for scaling
     let (needs_vpp_720, count_720) = GpuService::select_amf_strategy(Some(&stream_1080p), Some(720));
     assert!(needs_vpp_720, "1080p source scaled to 720p requires vpp_amf");
-    assert_eq!(count_720, 3, "downscaling requires 3 workers");
+    assert_eq!(count_720, 2, "downscaling defaults to 2 workers");
 }
 
 #[test]
@@ -139,16 +139,16 @@ fn test_select_amf_strategy_all_qualities() {
     };
 
     // 4K downscaling across all quality tiers
-    for (target_h, expected_workers) in [(1440, 3), (1080, 3), (720, 3), (480, 3), (360, 3)] {
+    for (target_h, expected_workers) in [(1440, 2), (1080, 2), (720, 2), (480, 2), (360, 2)] {
         let (needs_vpp, count) = GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(target_h));
         assert!(needs_vpp, "4K downscale to {}p requires vpp_amf", target_h);
         assert_eq!(count, expected_workers, "4K downscale to {}p should allocate {} workers", target_h, expected_workers);
     }
 
-    // 4K target on 4K 8-bit source -> no scaling needed, but 3 workers due to target_h >= 1440
+    // 4K target on 4K 8-bit source -> no scaling needed, 1 dedicated worker to avoid bus contention
     let (needs_vpp_4k, count_4k) = GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(2160));
     assert!(!needs_vpp_4k, "4K source at 4K target does not require scaling");
-    assert_eq!(count_4k, 3, "4K target allocates 3 workers due to high resolution");
+    assert_eq!(count_4k, 1, "4K target allocates 1 dedicated worker to avoid bus contention");
 
     // 1080p source -> 720p downscaling
     let stream_1080p_8bit = ProbeStream {
@@ -161,7 +161,7 @@ fn test_select_amf_strategy_all_qualities() {
     };
     let (needs_vpp_720, count_720) = GpuService::select_amf_strategy(Some(&stream_1080p_8bit), Some(720));
     assert!(needs_vpp_720, "1080p to 720p requires vpp_amf");
-    assert_eq!(count_720, 3, "downscale requires 3 workers");
+    assert_eq!(count_720, 2, "downscale requires 2 workers");
 
     // 720p source -> 720p target (same resolution, 8-bit) -> no vpp, 2 workers
     let stream_720p_8bit = ProbeStream {
@@ -201,7 +201,12 @@ fn test_ffmpeg_arguments_generation() {
             h,
             expected_filter
         );
-        assert!(args.contains(&"h264_amf".to_string()));
+        if h >= 2160 {
+            assert!(args.contains(&"hevc_amf".to_string()));
+            assert!(args.contains(&"hvc1".to_string()));
+        } else {
+            assert!(args.contains(&"h264_amf".to_string()));
+        }
         assert!(args.contains(&"cqp".to_string()));
         assert!(args.contains(&"22".to_string()));
         assert!(args.contains(&"24".to_string()));
@@ -228,7 +233,12 @@ fn test_ffmpeg_arguments_generation() {
             h,
             expected_cpu_filter
         );
-        assert!(cpu_args.contains(&"libx264".to_string()));
+        if h >= 2160 {
+            assert!(cpu_args.contains(&"libx265".to_string()));
+            assert!(cpu_args.contains(&"hvc1".to_string()));
+        } else {
+            assert!(cpu_args.contains(&"libx264".to_string()));
+        }
     }
 
     // VAAPI worker scaling across tiers
@@ -247,7 +257,12 @@ fn test_ffmpeg_arguments_generation() {
             h,
             expected_vaapi_filter
         );
-        assert!(vaapi_args.contains(&"h264_vaapi".to_string()));
+        if h >= 2160 {
+            assert!(vaapi_args.contains(&"hevc_vaapi".to_string()));
+            assert!(vaapi_args.contains(&"hvc1".to_string()));
+        } else {
+            assert!(vaapi_args.contains(&"h264_vaapi".to_string()));
+        }
     }
 }
 

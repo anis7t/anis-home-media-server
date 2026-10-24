@@ -1,22 +1,12 @@
-pub mod assets;
-pub mod cast;
-pub mod devices;
-pub mod health;
-pub mod hls;
-pub mod jobs;
-pub mod media;
-pub mod media_info;
-pub mod movies;
-pub mod preview;
-pub mod progress;
-pub mod qr_auth;
-pub mod subtitles;
-pub mod system;
-pub mod spa;
-pub mod transcode;
-pub mod scan;
-pub mod upload;
-pub mod storage;
-pub mod admin;
-pub mod app_dist;
-pub mod auth;
+pub mod casting;
+pub mod catalog;
+pub mod identity;
+pub mod media_pipeline;
+pub mod ops;
+
+// Re-exports for seamless root and cross-crate compatibility
+pub use casting::cast;
+pub use catalog::{assets, movies, progress, scan};
+pub use identity::{admin, auth, devices, qr_auth};
+pub use media_pipeline::{hls, media, media_info, preview, subtitles, transcode};
+pub use ops::{app_dist, health, jobs, spa, storage, system, upload};

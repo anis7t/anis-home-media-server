@@ -140,6 +140,8 @@ async fn test_post_scan_with_valid_header_pin_succeeds() {
     assert_eq!(json["status"], "scanning");
     assert_eq!(json["busy"], true);
 
+    media_server_api::services::scan_service::ScanService::set_busy_for_test(false);
+
     let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)
         .await;
@@ -172,6 +174,8 @@ async fn test_post_scan_with_valid_body_pin_succeeds() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
+
+    media_server_api::services::scan_service::ScanService::set_busy_for_test(false);
 
     let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
         .execute(&pool)

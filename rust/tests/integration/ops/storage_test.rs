@@ -186,6 +186,14 @@ async fn test_storage_settings_get_and_post() {
 async fn test_storage_audit_and_purge() {
     let ctx = StorageTestContext::setup().await;
 
+    // Ensure clean state without residual running jobs from prior tests
+    let _ = sqlx::query("DELETE FROM transcode_jobs WHERE status IN ('queued', 'running')")
+        .execute(&ctx.pool)
+        .await;
+
+    // Reset scanner busy flag so previous tests don't cause purge refusal
+    media_server_api::services::scan_service::ScanService::set_busy_for_test(false);
+
     // Create an active video file
     let video_path = ctx.media_dir.join("TestMovie.mp4");
     fs::write(&video_path, b"dummy video content").unwrap();
@@ -238,7 +246,7 @@ async fn test_storage_audit_and_purge() {
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
-    assert_eq!(body["success"], true);
+    assert_eq!(body["success"], true, "Purge refused with body: {:?}", body);
     assert_eq!(body["result"]["dry_run"], true);
     assert_eq!(body["result"]["refused"], false);
 

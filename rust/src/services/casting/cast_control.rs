@@ -699,8 +699,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
     fn an_ended_cast_reports_stopped_not_buffering() {
         // An app that is running with nothing playing is stopped. Inferring
         // "buffering" from "the app is running" left a finished cast showing
@@ -858,7 +856,6 @@ async fn live_teardown_timeline() {
     conn.close().await;
 }
 
-#[test]
     /// The quit-app message is `STOP` carrying `sessionId`, matching
     /// pychromecast. `STOP_APP` is not a real message type: the receiver
     /// accepts it, answers, and leaves the app running on its blank screen.

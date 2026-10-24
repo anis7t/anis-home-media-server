@@ -39,6 +39,10 @@ async fn test_scan_service_daemon_lifecycle_and_shutdown() {
     let wait_res = tokio::time::timeout(Duration::from_millis(500), handle).await;
     assert!(wait_res.is_ok(), "ScanService daemon failed to terminate on shutdown signal");
     assert!(wait_res.unwrap().is_ok(), "ScanService daemon task panicked");
+
+    // Allow in-flight scan to settle so subsequent tests don't see a busy scanner
+    let _ = ScanService::wait_until_idle(Duration::from_millis(100)).await;
+    ScanService::set_busy_for_test(false);
 }
 
 #[tokio::test]

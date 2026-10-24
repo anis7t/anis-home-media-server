@@ -38,8 +38,19 @@ impl ScanService {
         SCANNER_BUSY.load(Ordering::SeqCst)
     }
 
+    /// Wait until any running scan is completed, bounded by timeout.
+    pub async fn wait_until_idle(timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        while Self::is_busy() {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        true
+    }
+
     /// Set busy flag directly (for testing / mocking purposes).
-    #[cfg(test)]
     pub fn set_busy_for_test(busy: bool) {
         SCANNER_BUSY.store(busy, Ordering::SeqCst);
     }

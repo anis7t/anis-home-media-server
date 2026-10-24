@@ -15,5 +15,6 @@ rem INCLUDE is what pure-Rust builds never need, so it was never set - and any
 rem crate with C sources (ring, aws-lc-sys, and so any rustls crypto provider)
 rem then fails to find stddef.h. Symptom is "cl.exe ran and returned exit 2".
 set "INCLUDE=%MSVC_INC%;%WIN_SDK_INC_UCRT%;%WIN_SDK_INC_UM%;%WIN_SDK_INC_SHARED%"
+if not defined RUST_TEST_THREADS set "RUST_TEST_THREADS=1"
 
 cargo %*

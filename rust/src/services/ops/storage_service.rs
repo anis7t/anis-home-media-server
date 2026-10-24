@@ -341,8 +341,14 @@ impl StorageService {
         .await
         .unwrap_or(0);
 
-        if active_jobs_count > 0 || ScanService::is_busy() {
-            info!("Refusing cache purge: active transcode or library scan in progress");
+        let scanner_busy = ScanService::is_busy();
+        if active_jobs_count > 0 || scanner_busy {
+            let reason = if active_jobs_count > 0 {
+                format!("Transcode in progress ({} active jobs)", active_jobs_count)
+            } else {
+                "Scan in progress".to_string()
+            };
+            info!("Refusing cache purge: {}", reason);
             return PurgeResult {
                 freed_bytes: 0,
                 purged_count: 0,
@@ -353,7 +359,7 @@ impl StorageService {
                 skipped_live: Vec::new(),
                 dry_run,
                 refused: true,
-                reason: Some("Transcode in progress".to_string()),
+                reason: Some(reason),
             };
         }
 

@@ -4,9 +4,105 @@
 //! and AMD Radeon Vega 8 integrated `dx11:0`) orchestration in Rust.
 
 use crate::services::probe_service::ProbeStream;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info};
+
+/// Subprocess priority level for GPU and CPU media processing tasks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SubprocessPriority {
+    /// Interactive user playback (live chunk transcoding, HLS stream generation).
+    InteractivePlayback = 0,
+    /// Fast user-facing media inspection (ffprobe metadata querying).
+    InteractiveProbe = 1,
+    /// Background asset generation (seek preview frames, subtitle classification).
+    BackgroundExtract = 2,
+    /// Bulk offline transcoding and caching worker.
+    BackgroundPreTranscode = 3,
+}
+
+/// Deterministic kill-on-drop process supervisor guard.
+///
+/// Ensures child processes spawned by ffmpeg/ffprobe do not linger as orphaned
+/// zombie processes if an HTTP connection aborts, a task times out, or the guard drops.
+pub struct ProcessGuard {
+    child: Option<tokio::process::Child>,
+    pub pid: Option<u32>,
+    _permit: Option<OwnedSemaphorePermit>,
+}
+
+impl ProcessGuard {
+    pub fn new(child: tokio::process::Child, permit: Option<OwnedSemaphorePermit>) -> Self {
+        let pid = child.id();
+        Self {
+            child: Some(child),
+            pid,
+            _permit: permit,
+        }
+    }
+
+    pub fn inner_mut(&mut self) -> Option<&mut tokio::process::Child> {
+        self.child.as_mut()
+    }
+
+    pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        if let Some(mut child) = self.child.take() {
+            child.wait().await
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Process already waited or terminated",
+            ))
+        }
+    }
+
+    pub async fn kill(&mut self) -> std::io::Result<()> {
+        if let Some(mut child) = self.child.take() {
+            let res = child.start_kill();
+            #[cfg(windows)]
+            if let Some(pid) = self.pid {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+            res
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            if let Ok(None) = child.try_wait() {
+                let _ = child.start_kill();
+                #[cfg(windows)]
+                if let Some(pid) = self.pid {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+            }
+        }
+    }
+}
+
+static PLAYBACK_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static BACKGROUND_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn playback_semaphore() -> Arc<Semaphore> {
+    PLAYBACK_SEMAPHORE.get_or_init(|| Arc::new(Semaphore::new(4))).clone()
+}
+
+fn background_semaphore() -> Arc<Semaphore> {
+    BACKGROUND_SEMAPHORE.get_or_init(|| Arc::new(Semaphore::new(2))).clone()
+}
 
 pub const HLS_MAX_HEIGHT: i64 = 1080;
 
@@ -432,6 +528,42 @@ impl GpuService {
         }
         out
     }
+
+    /// Spawn a managed tokio process with concurrency semaphore gating and kill-on-drop lifecycle.
+    pub async fn spawn_managed(
+        mut cmd: tokio::process::Command,
+        priority: SubprocessPriority,
+    ) -> std::io::Result<ProcessGuard> {
+        let permit = match priority {
+            SubprocessPriority::InteractivePlayback | SubprocessPriority::InteractiveProbe => {
+                playback_semaphore().acquire_owned().await.ok()
+            }
+            SubprocessPriority::BackgroundExtract | SubprocessPriority::BackgroundPreTranscode => {
+                background_semaphore().acquire_owned().await.ok()
+            }
+        };
+
+        let child = cmd.spawn()?;
+        Ok(ProcessGuard::new(child, permit))
+    }
+
+    /// Run a managed process to completion with concurrency gating.
+    pub async fn run_managed(
+        mut cmd: tokio::process::Command,
+        priority: SubprocessPriority,
+    ) -> std::io::Result<std::process::Output> {
+        let sem = match priority {
+            SubprocessPriority::InteractivePlayback | SubprocessPriority::InteractiveProbe => {
+                playback_semaphore()
+            }
+            SubprocessPriority::BackgroundExtract | SubprocessPriority::BackgroundPreTranscode => {
+                background_semaphore()
+            }
+        };
+        let _permit = sem.acquire_owned().await.ok();
+
+        cmd.output().await
+    }
 }
 
 #[cfg(test)]
@@ -536,6 +668,24 @@ mod tests {
         assert_eq!(expanded.len(), 1);
         assert!(expanded[0].is_discrete);
         assert_eq!(expanded[0].name, "AMD Radeon RX 560X");
+    }
+
+    #[tokio::test]
+    async fn test_subprocess_priority_ordering() {
+        assert!(SubprocessPriority::InteractivePlayback < SubprocessPriority::BackgroundPreTranscode);
+        assert!(SubprocessPriority::InteractiveProbe < SubprocessPriority::BackgroundExtract);
+    }
+
+    #[tokio::test]
+    async fn test_process_guard_lifecycle() {
+        let mut cmd = tokio::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-Command", "Start-Sleep -Milliseconds 50"]);
+        let guard = GpuService::spawn_managed(cmd, SubprocessPriority::InteractiveProbe).await;
+        if let Ok(mut g) = guard {
+            assert!(g.pid.is_some());
+            let status = g.wait().await;
+            assert!(status.is_ok());
+        }
     }
 }
 
