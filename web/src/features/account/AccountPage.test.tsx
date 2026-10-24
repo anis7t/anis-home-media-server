@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -91,7 +91,9 @@ describe('AccountPage', () => {
     expect(
       await screen.findByRole('heading', { name: /sign in to anis' home media server/i }),
     ).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some((call) => String(call[0]) === '/api/auth/qr')).toBe(true);
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => String(call[0]) === '/api/auth/qr')).toBe(true);
+    });
   });
 
   it('does not create a QR session for an already signed-in visitor', async () => {
@@ -146,5 +148,20 @@ describe('AccountPage', () => {
     await user.click(pinButtons[0]);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /Admin PIN Sign-In/i })).toBeInTheDocument();
+  });
+
+  it('renders Admin Security section and opens ChangeAdminPinModal when user is admin', async () => {
+    const user = userEvent.setup();
+    mockAuth(true, { role: 'admin' });
+
+    renderAccount();
+    expect(await screen.findByRole('heading', { name: /Admin Security/i })).toBeInTheDocument();
+
+    const changePinBtn = screen.getByRole('button', { name: /Change Admin PIN/i });
+    expect(changePinBtn).toBeInTheDocument();
+
+    await user.click(changePinBtn);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Rotate Admin PIN')).toBeInTheDocument();
   });
 });

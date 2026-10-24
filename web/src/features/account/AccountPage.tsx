@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
 import Avatar from '../../components/Avatar';
+import { Icon } from '../../components/icons';
 import { QrSignInPanel } from '../../components/QrSignInPanel';
+import { ChangeAdminPinModal } from '../manage/components/ChangeAdminPinModal';
 
 export function AccountPage() {
   const {
@@ -16,6 +18,9 @@ export function AccountPage() {
     oauthConfigured,
     openPinSignIn,
   } = useAuth();
+
+  const [changePinOpen, setChangePinOpen] = useState(false);
+  const [pinFeedback, setPinFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -134,6 +139,45 @@ export function AccountPage() {
           </button>
         </section>
       )}
+
+      {/* Admin Security Section - Admin only */}
+      {authenticated && role === 'admin' && (
+        <section aria-labelledby="admin-security-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 id="admin-security-heading" className="text-lg font-bold text-white flex items-center gap-2">
+                <Icon name="shield" size={18} className="text-brand-400" />
+                <span>Admin Security</span>
+              </h2>
+              <p className="mt-1 text-xs text-white/50">
+                Manage administrator unlock PIN used for sensitive library actions and non-OAuth devices.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChangePinOpen(true)}
+              className="card-ring rounded-full border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 px-4 py-2 text-xs font-bold text-brand-300 hover:text-brand-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 self-start sm:self-auto"
+            >
+              <Icon name="shield" size={13} />
+              <span>Change Admin PIN</span>
+            </button>
+          </div>
+          {pinFeedback && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+              ✓ {pinFeedback}
+            </div>
+          )}
+        </section>
+      )}
+
+      <ChangeAdminPinModal
+        isOpen={changePinOpen}
+        onClose={() => setChangePinOpen(false)}
+        onSuccess={() => {
+          setPinFeedback('Admin PIN rotated successfully!');
+          setTimeout(() => setPinFeedback(null), 5000);
+        }}
+      />
     </div>
   );
 }
