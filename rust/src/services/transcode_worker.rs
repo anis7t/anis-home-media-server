@@ -569,9 +569,30 @@ impl TranscodeWorker {
             active_pids.lock().await.insert(pid);
         }
 
-        let output = child.wait_with_output().await.map_err(|e| {
-            AppError::Internal(format!("FFmpeg wait error on chunk {}: {}", chunk.chunk_id, e))
-        })?;
+        // Bounded per-chunk timeout (180s) to guard against GPU driver deadlocks
+        let timeout_duration = Duration::from_secs(180);
+        let output = match tokio::time::timeout(timeout_duration, child.wait_with_output()).await {
+            Ok(Ok(out)) => out,
+            Ok(Err(e)) => {
+                if let Some(pid) = child_pid {
+                    active_pids.lock().await.remove(&pid);
+                }
+                return Err(AppError::Internal(format!("FFmpeg wait error on chunk {}: {}", chunk.chunk_id, e)));
+            }
+            Err(_) => {
+                // Timeout elapsed - kill child process to release GPU contexts
+                if let Some(pid) = child_pid {
+                    active_pids.lock().await.remove(&pid);
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F", "/T"])
+                        .output();
+                }
+                return Err(AppError::Internal(format!(
+                    "Chunk {} on {} timed out after {}s (possible GPU hang/TDR)",
+                    chunk.chunk_id, worker.name, timeout_duration.as_secs()
+                )));
+            }
+        };
 
         if let Some(pid) = child_pid {
             active_pids.lock().await.remove(&pid);
@@ -584,6 +605,15 @@ impl TranscodeWorker {
                 .filter(|l| !l.trim().is_empty())
                 .last()
                 .unwrap_or("unknown FFmpeg failure");
+
+            // Log explicit diagnostic if AMF / D3D11 device error is detected
+            if stderr_text.contains("AMF_") || stderr_text.contains("DXGI_ERROR") || stderr_text.contains("D3D11") {
+                error!(
+                    "AMF/GPU driver error on adapter {} ({}): stderr: {}",
+                    worker.adapter_id, worker.name, last_err
+                );
+            }
+
             return Err(AppError::Internal(format!(
                 "Chunk {} failed on {}: {}",
                 chunk.chunk_id, worker.name, last_err

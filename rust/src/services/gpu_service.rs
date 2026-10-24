@@ -332,7 +332,7 @@ impl GpuService {
             std::env::var("MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(3)
+                .unwrap_or(2)
         } else {
             std::env::var("MEDIA_SERVER_TRANSCODE_WORKERS_8BIT")
                 .ok()
