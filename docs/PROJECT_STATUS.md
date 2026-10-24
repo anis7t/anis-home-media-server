@@ -28,6 +28,14 @@ Active branch: `feat/rust-react-postgres-migration`
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 12 | Mobile & TV Auth Parity & Native Admin Management | ✅ COMPLETE (Slices 12.1–12.5 Delivered & Verified; v1.3.1 Hotfix) — [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md) |
+| 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ⏳ IN PLANNING — [`docs/PHASE_13_HOME_FEED_NAVIGATION_PLAN.md`](PHASE_13_HOME_FEED_NAVIGATION_PLAN.md) |
+
+## 2026-10-25 — Phase 13: Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation (Flutter Mobile & TV)
+
+Initiated Phase 13 on dedicated branch `feat/phase-13-flutter-home-feed-navigation`:
+- **Endless Discovery Feed:** Dynamic multi-section feed for Phone and Android TV starting with *Continue Watching*, followed by *Recently Added*, dynamically transitioning into endless lazy-loaded genre rails (Action, Sci-Fi, Thriller, Drama, Animation, etc.).
+- **Modern Transparent Tree Navigation:** Translucent frosted obsidian glass navigation menu / hierarchical category tree replacing traditional static menus, providing instant filtering across Movies, Genres, and Recently Added with ultra-smooth transitions.
+- **TV & Mobile Focus Parity:** Bidirectional D-pad navigation across horizontal rails and vertical feed traversal on Android TV / Fire TV Stick 4K alongside fluid inertia-driven touch gestures on mobile phones.
 
 ## 2026-10-25 — Phase 12.7 Hotfix: Storage Audit Timeout & Library Scan Reliability Fix & Android Release v1.3.2
 
