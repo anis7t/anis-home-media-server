@@ -276,3 +276,110 @@ pub async fn logout_handler(
 
     Ok(res)
 }
+
+/// `GET /auth/callback/mobile`
+///
+/// Bridge page served after Google OAuth sign-in completing on a mobile browser / Custom Tab.
+/// Extracts the session token from the cookie set by `/auth/google/callback` and immediately
+/// deep-links into the Android app via custom scheme `ahms://auth/callback?session_token=<token>`.
+pub async fn mobile_oauth_callback_handler(headers: HeaderMap) -> Response {
+    let token = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| {
+            for part in cookies.split(';') {
+                let mut kv = part.splitn(2, '=');
+                if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
+                    let key = k.trim();
+                    let val = v.trim();
+                    if (key == "session_token" || key == "media_session") && !val.is_empty() {
+                        return Some(val.to_string());
+                    }
+                }
+            }
+            None
+        })
+        .unwrap_or_default();
+
+    // Sanitize token characters strictly for safe HTML and URL injection
+    let clean_token: String = token
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+
+    let html = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Anis' Home Media Server - Sign In</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background-color: #05060a;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 32px 24px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 24px;
+      background: #e50914;
+      color: #fff;
+      font-weight: 700;
+      padding: 14px 28px;
+      border-radius: 9999px;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(229, 9, 20, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size: 40px; margin-bottom: 12px;">🍿</div>
+    <h1 style="font-size: 20px; margin: 0 0 8px 0;">Signed In Successfully</h1>
+    <p style="color: rgba(255, 255, 255, 0.6); font-size: 14px; margin: 0;">Returning to Anis' Home Media Server app...</p>
+    <a id="app-btn" class="btn" href="#">Open App</a>
+  </div>
+  <script>
+    (function() {
+      var token = "{token}";
+      if (!token) {
+        var match = document.cookie.match(/session_token=([^;]+)/);
+        if (match) token = match[1];
+      }
+      var targetUri = "ahms://auth/callback?session_token=" + encodeURIComponent(token);
+      var btn = document.getElementById("app-btn");
+      if (btn) btn.href = targetUri;
+      setTimeout(function() {
+        window.location.href = targetUri;
+      }, 50);
+    })();
+  </script>
+</body>
+</html>"##
+        .replace("{token}", &clean_token);
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        html,
+    )
+        .into_response()
+}

@@ -504,6 +504,10 @@ pub fn create_app_full(
             get(routes::auth::google_callback_handler),
         )
         .route(
+            "/auth/callback/mobile",
+            get(routes::auth::mobile_oauth_callback_handler),
+        )
+        .route(
             "/auth/logout",
             get(routes::auth::logout_handler)
                 .post(routes::auth::logout_handler),

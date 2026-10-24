@@ -50,7 +50,7 @@
 
 ---
 
-### Slice 12.2: Mobile Phone Auth Views (Google OAuth & Admin PIN Login)
+### Slice 12.2: Mobile Phone Auth Views (Google OAuth & Admin PIN Login) — ✅ COMPLETE & VERIFIED
 - **12.2a — Google OAuth Mobile Flow:**
   - In-app Custom Tabs / external browser launcher directing to `<server_url>/auth/google?next=/auth/callback/mobile`.
   - Android deep-link intent-filter registration in `AndroidManifest.xml` (`ahms://auth/callback?session_token=...`).

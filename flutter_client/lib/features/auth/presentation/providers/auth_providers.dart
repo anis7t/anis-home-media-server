@@ -4,11 +4,17 @@ import '../../domain/models/auth_state.dart';
 import '../../domain/models/user_identity.dart';
 import '../../infrastructure/auth_repository.dart';
 import '../../infrastructure/auth_secure_storage.dart';
+import '../../infrastructure/oauth_launcher_service.dart';
 import '../controllers/auth_notifier.dart';
 
 /// Provider for hardware-backed secure storage.
 final authSecureStorageProvider = Provider<AuthSecureStorage>((ref) {
   return AuthSecureStorage();
+});
+
+/// Provider for Google OAuth launcher and deep-link listener service.
+final oauthLauncherServiceProvider = Provider<OAuthLauncherService>((ref) {
+  return OAuthLauncherService();
 });
 
 /// Provider for remote authentication repository.
