@@ -25,14 +25,14 @@ Future<void> main(List<String> args) async {
       ? args.firstWhere((a) => a.startsWith('--route=')).substring(8)
       : null;
 
-  final startAtPoc = args.contains('--player-poc') ||
+  final startAtPlayer = args.contains('--player') ||
+      args.contains('--player-poc') ||
       args.contains('--poc') ||
+      routeArg == '/player' ||
+      routeArg == 'player' ||
       routeArg == '/player-poc' ||
       routeArg == 'player-poc' ||
       routeArg == 'poc';
-  final startAtPlayer = args.contains('--player') ||
-      routeArg == '/player' ||
-      routeArg == 'player';
 
   final hasServerArg = args.any((a) => a.startsWith('--server='));
   final serverArg = hasServerArg
@@ -45,9 +45,7 @@ Future<void> main(List<String> args) async {
       : null;
 
   String? initialRoute;
-  if (startAtPoc) {
-    initialRoute = AppRoutes.playerPoc;
-  } else if (startAtPlayer) {
+  if (startAtPlayer) {
     initialRoute = AppRoutes.player;
   } else if (routeArg != null && routeArg.isNotEmpty) {
     initialRoute = routeArg.startsWith('/') ? routeArg : '/$routeArg';

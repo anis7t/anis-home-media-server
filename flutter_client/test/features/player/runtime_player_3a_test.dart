@@ -5,10 +5,6 @@ import 'package:media_server_client/features/player/domain/player_controller_int
     as prod;
 import 'package:media_server_client/features/player/infrastructure/media_kit_player_adapter.dart'
     as prod_adapter;
-import 'package:media_server_client/features/player_poc/domain/player_controller_interface.dart'
-    as poc;
-import 'package:media_server_client/features/player_poc/infrastructure/media_kit_player_adapter.dart'
-    as poc_adapter;
 
 import '../../support/live_server_gate.dart';
 
@@ -28,17 +24,11 @@ void main() {
   });
 
   group('Phase 3A Runtime & Interoperability Battery', () {
-    test('1. Canonical interface and POC re-export type identity', () async {
+    test('1. Canonical interface implementation type identity', () async {
       final prodAdapter = prod_adapter.MediaKitPlayerAdapter();
       expect(prodAdapter, isA<prod.PlayerControllerInterface>());
-      expect(prodAdapter, isA<poc.PlayerControllerInterface>());
-
-      final pocAdapter = poc_adapter.MediaKitPlayerAdapter();
-      expect(pocAdapter, isA<prod.PlayerControllerInterface>());
-      expect(pocAdapter, isA<poc.PlayerControllerInterface>());
 
       await prodAdapter.dispose();
-      await pocAdapter.dispose();
     });
 
     // Tests 2 and 5 play real media from the running server, so they are live-server tests.

@@ -10,7 +10,6 @@ import '../features/library/data/models/movie_item.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/library/presentation/screens/movie_details_screen.dart';
 import '../features/player/presentation/player_screen.dart';
-import '../features/player_poc/presentation/player_poc_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/shell/presentation/screens/app_shell.dart';
 
@@ -22,7 +21,6 @@ class AppRoutes {
   static const String settings = '/settings';
   static const String connection = '/connection';
   static const String movieDetails = '/movie-details';
-  static const String playerPoc = '/player-poc';
   static const String player = '/player';
   static const String adminHub = '/admin';
 
@@ -161,13 +159,6 @@ class AppRoutes {
           },
         ),
 
-        // Player POC Harness
-        GoRoute(
-          path: playerPoc,
-          builder: (BuildContext context, GoRouterState state) {
-            return const PlayerPocScreen();
-          },
-        ),
 
         // Production Video Player (Strictly top-level fullscreen outside shell)
         GoRoute(
