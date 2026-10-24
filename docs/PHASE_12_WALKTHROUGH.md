@@ -161,3 +161,20 @@ Phase 12 is **100% COMPLETE**. All requirements outlined in the user directive h
 - Android TV / Fire TV Remote QR login with SSE/polling.
 - Android TV On-Screen D-pad remote keypad for direct Admin PIN login.
 - Dedicated branch `feat/phase-12-flutter-auth-admin-tv-parity` fully verified and committed.
+
+---
+
+## 6. Post-Release Hotfixes & Maintenance
+
+### Phase 12.6 Hotfix: Google OAuth Deep-Link Routing (v1.3.1, Build 144)
+- **GoRouter Interception:** Resolved `GoException: no routes for location: ahms://auth/callback` by intercepting custom scheme deep-links in `redirect` and safely extracting session tokens.
+- **Navigation Safety Net:** Added `onException` handler in GoRouter to prevent unhandled routing errors.
+- **Idempotency:** Guarded `AuthNotifier.setSessionToken` to prevent redundant profile fetches.
+- **Device Tested:** ADB intent verified on physical phone; authenticated profile hydrated.
+
+### Phase 12.7 Hotfix: Storage Audit Timeout & Scan Reliability (v1.3.2, Build 145)
+- **60-Second Server TTL Audit Cache:** Reduced repeated `GET /api/storage/audit` latency from 25.9s to **9.5ms** (~2,700× speedup) across 162k cache files.
+- **Client Timeout Extension:** Increased Dio base timeouts to 15s/30s and dedicated 60s for heavy admin storage & scan endpoints.
+- **Decoupled Home Scan State:** Decoupled `loadLibrary` from `triggerScan()` with `unawaited(...)` to eliminate false-negative scan failure toasts.
+- **Device Tested:** Live physical phone verified via ADB; Storage Pool rendered without timeout, Home scan button triggered green success toast.
+- **Detailed Walkthrough:** [`docs/WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md`](WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md).
