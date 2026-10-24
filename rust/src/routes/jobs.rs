@@ -359,7 +359,7 @@ pub async fn transcode_dashboard_handler(
         ));
     }
 
-    let all_jobs = JobService::list(&state.pool, 50).await?;
+    let all_jobs = JobService::list_for_dashboard(&state.pool, 50).await?;
 
     // Batch query movie metadata in a single roundtrip
     let filenames: Vec<String> = all_jobs.iter().map(|j| j.filename.clone()).collect();

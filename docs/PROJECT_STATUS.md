@@ -28,6 +28,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 
+## 2026-10-24 — 4K GPU Transcode Stability & Dashboard Telemetry Fix (Category 5.7 resolved)
+
+Resolved unexpected hard system resets (Kernel-Power Event 41) caused by dual-GPU 4K HEVC contention, eliminated background sweeper retry loops, and fixed the Transcode Dashboard active job visibility blindspot:
+- **Dashboard Active Job Prioritization:** Implemented `JobService::list_for_dashboard` with a CTE that guarantees 100% of active (running/queued) jobs are always selected first regardless of creation date, followed by recently updated jobs (`updated_at DESC`). Resolves the issue where older active jobs (like Job #776 created on Oct 17) were omitted by `ORDER BY created_at DESC LIMIT 50` and caused the UI to report "0 active transcodes".
+- **Dedicated Single Discrete GPU for 4K:** Preserved 4K HLS transcoding per user directive for browser playback, but pinned 4K HEVC tiers to 1 dedicated worker on the discrete AMD Radeon RX 560X (4GB GDDR5). The integrated Vega 8 stays idle during 4K, eliminating dual-GPU APU memory bus contention and display driver watchdog deadlocks. Added `MEDIA_SERVER_TRANSCODE_WORKERS_4K=1` to `.env`.
+- **Sweeper Circuit Breaker:** In `rust/src/services/transcode_sweeper.rs`, added checks to permanently respect `canceled` status and lock out failed jobs with `attempts >= 3`, preventing infinite retry loops upon system boot.
+- **Verification:** Unit tests in `gpu_service` (6/6), integration test `test_list_for_dashboard_always_prioritizes_active_jobs` (1/1), and Android contract probe (22/22) pass. Deployed release binary to `MediaServerRust` (port 8000). Active runaway job canceled and system verified stable at 0% idle GPU load.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+- **Plan:** [`docs/PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+
+---
+
 ## 2026-10-24 — 4K HEVC Streaming & Smart Direct Play (Category 5.6 resolved)
 
 Resolved 4K streaming stall on Android mobile clients (*Ghost in the Cell*):

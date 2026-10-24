@@ -155,7 +155,23 @@ impl TranscodeWorker {
         let (use_vpp_amf, worker_count) =
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
-        let workers = GpuService::expand_workers(&base_gpus, worker_count);
+        let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
+        if effective_target_height.map_or(false, |h| h >= 2160) || effective_quality_label == "2160p" {
+            if workers.len() > 1 {
+                if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
+                    workers = vec![d];
+                } else {
+                    workers.truncate(1);
+                }
+            }
+            if !workers.is_empty() {
+                info!(
+                    "Job #{}: 4K 2160p transcode running on single dedicated GPU ({}) for thermal and driver stability",
+                    job.id,
+                    workers[0].name
+                );
+            }
+        }
 
         info!(
             "Job #{}: duration={:.1}s, quality={}, height={:?}, vpp_amf={}, workers={} ({})",

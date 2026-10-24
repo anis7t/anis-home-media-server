@@ -525,6 +525,19 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4, 14.5 and 14.6 are closed.
 - **Tests & Verification:** Dedicated unit test suite in `rust/src/services/gpu_service.rs` passed 4/4 tests. Flutter resolver unit test suite (`test/features/player/player_media_resolver_test.dart`) passed 6/6 tests. Flutter quality sheet widget test passed 4/4 tests. Full Rust lib test suite passed 125/125 tests. Android API contract probe passed 22/22 endpoints. Live 2160p transcode chunk probe verified `hevc_amf` with FourCC `hvc1 (0x31637668)` at 3840x2160.
 - **Walkthrough:** [`docs/WALKTHROUGH_4K_HEVC_STREAMING_FIX.md`](WALKTHROUGH_4K_HEVC_STREAMING_FIX.md).
 - **Plan:** [`docs/PLAN_4K_HEVC_STREAMING_FIX.md`](PLAN_4K_HEVC_STREAMING_FIX.md).
+#### 5.7 4K GPU Transcode Stability, Sweeper Infinite Loop & Dashboard Telemetry — ✅ RESOLVED (2026-10-24)
+- **Problem:** Host machine crashed 3 times with sudden unexpected shutdowns (Kernel-Power Event 41 with BugCheck 0) during active 4K HEVC transcoding (*Ghost in the Cell*), entering an infinite crash loop upon reboot. Simultaneously, the Transcode Dashboard displayed "0 Active Transcodes (0 running, 0 queued)" despite the job actively executing on both GPUs.
+- **Root Cause:**
+  1. *Dual-GPU 4K Contention:* Running 4K 10-bit HEVC (`hevc_amf`) with `vpp_amf` scaling concurrently across both the integrated Vega 8 (sharing system RAM and driving the laptop display) and discrete RX 560X overloaded the APU memory bus and caused dual-adapter D3D11 command timeouts (Chunks 35 & 36 failed after 180s), triggering driver crashes and fatal kernel deadlocks.
+  2. *Dashboard Query Blindspot:* `transcode_dashboard_handler` called `JobService::list(pool, 50)`, which ordered by `created_at DESC LIMIT 50`. Older active jobs (Job #776 created on Oct 17) fell outside the top 50 and were omitted from the dashboard payload.
+  3. *Sweeper Infinite Loop:* `transcode_sweeper.rs` automatically re-enqueued failed/canceled jobs with `force = true` on every 5-minute cycle, restarting the crash-inducing job upon boot.
+- **Resolution:**
+  - *Dashboard Active Job Prioritization:* Implemented `JobService::list_for_dashboard` in [`rust/src/services/job_service.rs`](../rust/src/services/job_service.rs) using a CTE that always selects 100% of active (running/queued) jobs first, and sorts finished jobs by `updated_at DESC`.
+  - *Dedicated Single Discrete GPU for 4K:* Preserved 4K HLS transcoding per user directive, but restricted 4K HEVC tiers to 1 dedicated worker on the discrete AMD Radeon RX 560X (`MEDIA_SERVER_TRANSCODE_WORKERS_4K=1`) in [`rust/src/services/gpu_service.rs`](../rust/src/services/gpu_service.rs) and [`rust/src/services/transcode_worker.rs`](../rust/src/services/transcode_worker.rs), leaving the integrated Vega 8 idle to maintain display and bus stability.
+  - *Sweeper Circuit Breaker:* In [`rust/src/services/transcode_sweeper.rs`](../rust/src/services/transcode_sweeper.rs), added checks to skip `status == "canceled"` jobs and skip failed jobs with `attempts >= 3`.
+- **Tests & Verification:** Unit tests in `gpu_service` passed 6/6 tests. Integration test `test_list_for_dashboard_always_prioritizes_active_jobs` passed. Android API contract probe passed 22/22 endpoints. Live service compiled with release profile and deployed to port 8000; dashboard accurately displays recent jobs and sweeper runs with zero re-enqueue loops.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+- **Plan:** [`docs/PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
 
 ---
 

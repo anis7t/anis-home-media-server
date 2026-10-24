@@ -370,6 +370,35 @@ async fn test_status_classification_and_listing() {
 }
 
 #[tokio::test]
+async fn test_list_for_dashboard_always_prioritizes_active_jobs() {
+    let _lock = acquire_global_lock().await;
+    let pool = pool().await;
+    purge(&pool).await;
+
+    // 1. Enqueue and claim a running job
+    let running_file = unique_filename("active_dash");
+    let job1 = JobService::enqueue(&pool, &running_file, "hls", false).await.unwrap();
+    let claimed = JobService::claim_next(&pool, "worker-dash", 300).await.unwrap().unwrap();
+    assert_eq!(claimed.id, job1.id);
+
+    // 2. Enqueue and complete a completed job
+    let completed_file = unique_filename("completed_dash");
+    let _job2 = JobService::enqueue(&pool, &completed_file, "hls", false).await.unwrap();
+    let claimed2 = JobService::claim_next(&pool, "worker-dash", 300).await.unwrap().unwrap();
+    JobService::complete(&pool, claimed2.id, "worker-dash").await.unwrap();
+
+    // 3. Query list_for_dashboard
+    let dashboard_jobs = JobService::list_for_dashboard(&pool, 10).await.unwrap();
+    assert!(!dashboard_jobs.is_empty());
+    // Active running job MUST be first in the returned list
+    assert_eq!(dashboard_jobs[0].id, job1.id);
+    assert_eq!(dashboard_jobs[0].status, "running");
+
+    purge(&pool).await;
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn test_enqueue_request_defaults_to_hls_mode() {
     let req = EnqueueJobRequest {
         mode: None,

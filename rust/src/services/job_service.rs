@@ -363,6 +363,33 @@ impl JobService {
         .await?;
         Ok(rows.iter().map(map_job).collect())
     }
+
+    /// Return all active (running/queued) jobs followed by the most recently updated finished jobs.
+    /// This guarantees that running/queued jobs are never truncated or omitted regardless of their creation timestamp.
+    pub async fn list_for_dashboard(pool: &PgPool, recent_limit: i64) -> Result<Vec<TranscodeJob>, AppError> {
+        let rows = sqlx::query(
+            r#"
+            WITH active AS (
+                SELECT * FROM transcode_jobs 
+                WHERE status IN ('running', 'queued') 
+                ORDER BY priority DESC, created_at ASC
+            ),
+            recent AS (
+                SELECT * FROM transcode_jobs 
+                WHERE status NOT IN ('running', 'queued') 
+                ORDER BY updated_at DESC 
+                LIMIT $1
+            )
+            SELECT * FROM active 
+            UNION ALL 
+            SELECT * FROM recent;
+            "#,
+        )
+        .bind(recent_limit.clamp(1, 500))
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.iter().map(map_job).collect())
+    }
 }
 
 fn map_job(row: &sqlx::postgres::PgRow) -> TranscodeJob {

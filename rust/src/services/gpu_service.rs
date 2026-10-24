@@ -351,7 +351,14 @@ impl GpuService {
         let unknown = height <= 0;
         let needs_vpp = unknown || ten_bit || height > target_h;
 
-        let count: usize = if needs_vpp || target_h >= 1440 {
+        let count: usize = if target_h >= 2160 {
+            // For 4K (2160p), constrain to 1 dedicated worker to prevent dual-GPU bus contention
+            // and driver deadlocks on mobile APU/dGPU architectures.
+            std::env::var("MEDIA_SERVER_TRANSCODE_WORKERS_4K")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1)
+        } else if needs_vpp || target_h >= 1440 {
             std::env::var("MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -372,6 +379,9 @@ impl GpuService {
             return Vec::new();
         }
         if count <= 1 {
+            if let Some(d) = workers.iter().find(|w| w.is_discrete) {
+                return vec![d.clone()];
+            }
             return workers[..1].to_vec();
         }
 
@@ -497,6 +507,35 @@ mod tests {
             .find(|(label, _, _, _, _)| *label == "1440p")
             .expect("1440p tier must exist");
         assert!(q_1440.4.contains("avc1"), "1440p must declare avc1 codec: {}", q_1440.4);
+    }
+
+    #[test]
+    fn test_select_amf_strategy_2160p_selects_single_worker() {
+        let (_, count) = GpuService::select_amf_strategy(None, Some(2160));
+        assert_eq!(count, 1, "4K 2160p must strictly use 1 worker to prevent dual-GPU bus contention");
+    }
+
+    #[test]
+    fn test_expand_workers_count_1_picks_discrete() {
+        let workers = vec![
+            GPUWorkerConfig {
+                adapter_id: 1,
+                name: "AMD Radeon RX 560X".into(),
+                backend: GpuBackend::Amf,
+                is_discrete: true,
+            },
+            GPUWorkerConfig {
+                adapter_id: 0,
+                name: "AMD Radeon Vega 8".into(),
+                backend: GpuBackend::Amf,
+                is_discrete: false,
+            },
+        ];
+
+        let expanded = GpuService::expand_workers(&workers, 1);
+        assert_eq!(expanded.len(), 1);
+        assert!(expanded[0].is_discrete);
+        assert_eq!(expanded[0].name, "AMD Radeon RX 560X");
     }
 }
 

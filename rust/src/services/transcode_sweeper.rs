@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Minimum free space required on cache drive (15 GB).
 const MIN_DISK_HEADROOM_BYTES: u64 = 15 * 1024 * 1024 * 1024;
@@ -173,6 +173,19 @@ impl TranscodeSweeperService {
                             continue;
                         }
                         if existing.status == "completed" {
+                            stats.skipped += 1;
+                            continue;
+                        }
+                        if existing.status == "canceled" {
+                            stats.skipped += 1;
+                            continue;
+                        }
+                        // Circuit breaker: do not endlessly re-enqueue jobs that repeatedly failed
+                        if existing.status == "failed" && existing.attempts >= 3 {
+                            debug!(
+                                "Sweeper skipping failed job for {} ({}): exceeded max attempts ({})",
+                                rel_key, mode, existing.attempts
+                            );
                             stats.skipped += 1;
                             continue;
                         }
