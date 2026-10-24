@@ -47,6 +47,7 @@ dependencies:
   path_provider: ^2.1.2
   url_launcher: ^6.3.0
   app_links: ^6.3.2
+  qr_flutter: ^4.1.0
 
   # The brand opening sequence's score. The web synthesises its own (D8); the
   # phone and the TV ship the canonical's offline render instead, because

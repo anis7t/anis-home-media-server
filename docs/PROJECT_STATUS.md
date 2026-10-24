@@ -27,7 +27,7 @@ Active branch: `feat/rust-react-postgres-migration`
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
-| 12 | Mobile & TV Auth Parity & Native Admin Management | ⏳ IN PROGRESS (Slices 12.1 & 12.2 Delivered & Verified) — [`docs/PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md`](PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md) |
+| 12 | Mobile & TV Auth Parity & Native Admin Management | ⏳ IN PROGRESS (Slices 12.1, 12.2 & 12.3 Delivered & Verified) — [`docs/PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md`](PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md) |
 
 ## 2026-10-24 — 4K GPU Transcode Stability & Dashboard Telemetry Fix (Category 5.7 resolved)
 

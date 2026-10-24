@@ -7,6 +7,7 @@ import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../updater/presentation/widgets/settings_content.dart';
 
 import '../../../auth/presentation/widgets/account_profile_card.dart';
+import '../../../auth/presentation/widgets/tv_account_profile_card.dart';
 
 /// Full-screen Settings tab embedded in the persistent bottom navigation shell.
 /// Reuses [SettingsContent] to share exact update channel, server, and version logic.
@@ -24,6 +25,11 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             _buildFrostedHeader(isTv),
             if (!isTv) const AccountProfileCard(),
+            if (isTv)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+                child: TvAccountProfileCard(),
+              ),
             const Expanded(
               child: SettingsContent(
                 isModal: false,

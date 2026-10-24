@@ -67,7 +67,7 @@
 
 ---
 
-### Slice 12.3: Android TV Remote Authentication (QR Sign-In & On-Screen PIN Pad)
+### Slice 12.3: Android TV Remote Authentication (QR Sign-In & On-Screen PIN Pad) — ✅ COMPLETE & VERIFIED
 - **12.3a — TV QR Pair Lifecycle & State Machine:**
   - Service for managing pairing session: calls `POST /api/auth/qr` to obtain `qr_id`, 5-char `code`, `sig`, `expires_at`, and `qr_url`.
   - Background SSE listener (`GET /api/auth/qr/{id}/wait`) with 3-second fallback polling (`GET /api/auth/qr/{id}/status`).

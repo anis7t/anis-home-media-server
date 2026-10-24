@@ -5,7 +5,9 @@ import '../../domain/models/user_identity.dart';
 import '../../infrastructure/auth_repository.dart';
 import '../../infrastructure/auth_secure_storage.dart';
 import '../../infrastructure/oauth_launcher_service.dart';
+import '../../infrastructure/qr_auth_repository.dart';
 import '../controllers/auth_notifier.dart';
+import '../controllers/tv_qr_pair_controller.dart';
 
 /// Provider for hardware-backed secure storage.
 final authSecureStorageProvider = Provider<AuthSecureStorage>((ref) {
@@ -48,4 +50,20 @@ final isAdminProvider = Provider<bool>((ref) {
 final currentUserProvider = Provider<UserIdentity>((ref) {
   final authState = ref.watch(authNotifierProvider);
   return authState.identity ?? UserIdentity.guest;
+});
+
+/// Provider for remote QR authentication repository.
+final qrAuthRepositoryProvider = Provider<QrAuthRepository>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  final storage = ref.watch(authSecureStorageProvider);
+  return QrAuthRepository(
+    apiClient: apiClient,
+    secureStorage: storage,
+  );
+});
+
+/// NotifierProvider for Android TV QR pairing workflow.
+final tvQrPairControllerProvider =
+    NotifierProvider<TvQrPairNotifier, TvQrPairState>(() {
+  return TvQrPairNotifier();
 });

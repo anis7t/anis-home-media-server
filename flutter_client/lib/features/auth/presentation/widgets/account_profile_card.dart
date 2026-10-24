@@ -4,6 +4,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../core/api/api_client.dart';
 import '../providers/auth_providers.dart';
 import 'admin_pin_sheet.dart';
+import 'tv_pairing_sheet.dart';
 
 /// Premium account profile card embedded in the Settings screen.
 /// Displays authenticated user identity, role badges, Google Sign-In,
@@ -101,6 +102,64 @@ class AccountProfileCard extends ConsumerWidget {
                 ),
             ],
           ),
+
+          // Authenticated Actions (Link TV / Remote Device)
+          if (isAuthenticated) ...[
+            const SizedBox(height: 14),
+            const Divider(color: AppColors.borderSubtle, height: 1),
+            const SizedBox(height: 10),
+            InkWell(
+              onTap: () => TvPairingSheet.show(context),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandRedGlow,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.tv_rounded,
+                        size: 16,
+                        color: AppColors.brandRed,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Link Android TV / Remote Device',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Enter 5-character code displayed on TV',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
 
           // Unauthenticated Action Buttons (Google Sign-In & Admin PIN)
           if (!isAuthenticated) ...[

@@ -24,5 +24,9 @@ class ApiEndpoints {
   // Remote Pairing / QR Login
   static const String qrSession = '/api/auth/qr';
   static const String qrLookup = '/api/auth/qr/lookup';
+  static String qrStatus(String id) => '/api/auth/qr/$id/status';
+  static String qrConfirm(String id) => '/api/auth/qr/$id/confirm';
+  static String qrFinalize(String id) => '/api/auth/qr/$id/finalize';
+  static String qrWait(String id) => '/api/auth/qr/$id/wait';
 }
 
