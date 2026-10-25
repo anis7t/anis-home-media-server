@@ -117,5 +117,26 @@ E:\MediaServer/
 └── web/
     └── src/lib/api/
         ├── schema.ts                                <-- Regenerated OpenAPI TypeScript types
-        └── spec-drift.ts                            <-- Reconciled type aliases
 ```
+
+---
+
+## 5. Pre-Merge Polish (Argon Sign-Off)
+
+Following the initial Argon review of `argon-review`, a final pre-merge consistency and boundary pass was executed:
+
+1. **Rust Subtitle Integration Test Deduplication:**
+   - Consolidated all 5 test functions from `rust/tests/integration/media_pipeline/subtitle_test.rs` into `subtitles_test.rs`.
+   - Deleted redundant `subtitle_test.rs` and removed its declaration from `media_pipeline/mod.rs`.
+   - All 21 tests in `subtitles_test.rs` verified 100% green.
+2. **Flutter `core/device/` Layer Alignment:**
+   - Standardized `flutter_client/lib/core/device/infrastructure/device_capability_service.dart` to `core/device/data/device_capability_service.dart`.
+   - Removed the empty `infrastructure/` directory to match the clean `domain/` + `data/` convention used across all 12 feature domains.
+   - Updated all 20 import occurrences across `flutter_client/lib/` and `flutter_client/test/` with 0 analysis issues.
+3. **Unidirectional Rust Service Boundaries:**
+   - Refactored `rust/src/services/ops/storage_service.rs` to use explicit domain paths (`services::catalog::{PathResolver, ScanService}`, `services::media_pipeline::{HlsService, PreviewService}`, `services::ops::SystemService`).
+   - Audited all 5 service domains to guarantee zero circular dependencies (strict DAG architecture).
+4. **Web `spec-drift.ts` Tightening:**
+   - Inlined canonical type exports (`MovieSummary`, `MovieListResponse`, `MovieDetailsResponse`) directly from `web/src/lib/api/types.ts` into all active components and `client.ts`.
+   - Marked all legacy aliases in `web/src/lib/api/spec-drift.ts` with explicit `@deprecated` JSDocs pointing to the canonical `docs/openapi.yaml` schema.
+

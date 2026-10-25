@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_server_client/core/device/domain/device_capabilities.dart';
-import 'package:media_server_client/core/device/infrastructure/device_capability_service.dart';
+import 'package:media_server_client/core/device/data/device_capability_service.dart';
 import 'package:media_server_client/features/intro/presentation/controllers/intro_controller.dart';
 import 'package:media_server_client/features/shell/presentation/screens/app_shell.dart';
 import 'package:media_server_client/features/shell/presentation/widgets/tv_exit_dialog.dart';

@@ -6,7 +6,7 @@ import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../domain/models/movie_details.dart';
 import '../../domain/models/movie_extended_details.dart';

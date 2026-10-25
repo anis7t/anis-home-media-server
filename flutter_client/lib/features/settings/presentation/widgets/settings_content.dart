@@ -8,7 +8,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/models/app_channel.dart';
 import '../../../../core/storage/settings_service.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../updater/presentation/controllers/update_controller.dart';
 import '../../../updater/presentation/widgets/update_prompt_dialog.dart';

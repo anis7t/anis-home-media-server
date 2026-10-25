@@ -14,7 +14,7 @@ import {
 import { playbackModeFor, playbackUrlFor, type PlaybackMode } from '../../lib/api/media';
 import { useDeviceId } from '../../lib/useDeviceId';
 import type { MediaInfoResponse, TranscodeStatusResponse, QualityOption } from '../../lib/api/types';
-import type { MovieSummary } from '../../lib/api/spec-drift';
+import type { MovieSummary } from '../../lib/api/types';
 import { posterUrl } from '../../lib/api/poster';
 import { PosterImage } from '../../components/PosterImage';
 import { useSubtitles } from './useSubtitles';
