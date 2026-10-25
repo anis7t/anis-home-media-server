@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_exception.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import '../../data/repositories/library_repository.dart';
 
 enum LibraryStatus { initial, loading, loaded, error }

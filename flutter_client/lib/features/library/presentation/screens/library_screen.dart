@@ -10,12 +10,12 @@ import '../../../../app/theme/app_typography.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/device/infrastructure/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import '../controllers/library_controller.dart';
 import '../widgets/continue_watching_rail.dart';
 import '../widgets/movie_grid.dart';
 import '../widgets/sort_filter_sheet.dart';
-import '../../../updater/presentation/widgets/settings_sheet.dart';
+import '../../../settings/presentation/widgets/settings_sheet.dart';
 
 /// Main home and media catalog screen with responsive grid, continue-watching rail,
 /// instant search with debouncing, and sort/filter capabilities.

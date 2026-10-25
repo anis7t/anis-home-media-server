@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import 'movie_card.dart';
 
 /// Horizontal rail of in-progress media items with playback progress and one-tap resume.

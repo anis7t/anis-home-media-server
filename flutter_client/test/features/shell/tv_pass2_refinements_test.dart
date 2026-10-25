@@ -9,7 +9,7 @@ import 'package:media_server_client/features/intro/presentation/controllers/intr
 import 'package:media_server_client/features/shell/presentation/screens/app_shell.dart';
 import 'package:media_server_client/features/shell/presentation/widgets/tv_exit_dialog.dart';
 import 'package:media_server_client/features/shell/presentation/widgets/tv_side_navigation_rail.dart';
-import 'package:media_server_client/features/updater/presentation/widgets/settings_content.dart';
+import 'package:media_server_client/features/settings/presentation/widgets/settings_content.dart';
 
 class _MockIntroNotifier extends IntroController {
   @override

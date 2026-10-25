@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/intro_score.dart';
-import '../../infrastructure/audioplayers_score.dart';
+import '../../data/audioplayers_score.dart';
 
 /// The brand opening sequence's score.
 ///

@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../../features/auth/infrastructure/auth_secure_storage.dart';
+import '../../features/auth/data/auth_secure_storage.dart';
 import '../errors/app_exception.dart';
 import '../storage/device_identity_service.dart';
 

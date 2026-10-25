@@ -5,7 +5,7 @@ import 'package:media_server_client/core/api/api_client.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
 import 'package:media_server_client/features/auth/domain/models/user_identity.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_secure_storage.dart';
+import 'package:media_server_client/features/auth/data/auth_secure_storage.dart';
 import 'package:media_server_client/features/auth/presentation/providers/auth_providers.dart';
 import 'package:media_server_client/features/auth/presentation/widgets/admin_pin_sheet.dart';
 import 'auth_notifier_test.dart';

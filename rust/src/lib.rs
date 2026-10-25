@@ -3,8 +3,8 @@ pub mod db;
 pub mod error;
 pub mod models;
 pub mod routes;
-pub mod scanner;
 pub mod services;
+pub use crate::services::catalog::scanner;
 pub mod test_support;
 
 use axum::{routing::get, Router};

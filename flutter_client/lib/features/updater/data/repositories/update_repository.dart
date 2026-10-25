@@ -3,7 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import '../../../../core/api/api_endpoints.dart';
 import '../../../../core/models/app_channel.dart';
-import '../models/update_manifest.dart';
+import '../../domain/models/update_manifest.dart';
 
 class UpdateRepository {
   final Dio _dio;

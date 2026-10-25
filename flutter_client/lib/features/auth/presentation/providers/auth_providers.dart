@@ -2,10 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_client.dart';
 import '../../domain/models/auth_state.dart';
 import '../../domain/models/user_identity.dart';
-import '../../infrastructure/auth_repository.dart';
-import '../../infrastructure/auth_secure_storage.dart';
-import '../../infrastructure/oauth_launcher_service.dart';
-import '../../infrastructure/qr_auth_repository.dart';
+import '../../data/auth_repository.dart';
+import '../../data/auth_secure_storage.dart';
+import '../../data/oauth_launcher_service.dart';
+import '../../data/qr_auth_repository.dart';
 import '../controllers/auth_notifier.dart';
 import '../controllers/tv_qr_pair_controller.dart';
 

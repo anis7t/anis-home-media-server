@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../../../library/data/models/movie_item.dart';
+import '../../../library/domain/models/movie_item.dart';
 import '../../../library/presentation/widgets/movie_card.dart';
 
 /// Reusable horizontal discovery rail for genre categories and recently added collections.

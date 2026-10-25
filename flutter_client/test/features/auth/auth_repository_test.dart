@@ -5,8 +5,8 @@ import 'package:media_server_client/core/api/api_endpoints.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/errors/app_exception.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_repository.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_secure_storage.dart';
+import 'package:media_server_client/features/auth/data/auth_repository.dart';
+import 'package:media_server_client/features/auth/data/auth_secure_storage.dart';
 import 'auth_secure_storage_test.dart';
 
 void main() {

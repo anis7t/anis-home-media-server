@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/player_poc/domain/player_controller_interface.dart';
-import 'package:media_server_client/features/player_poc/domain/seek_preview_controller.dart';
+import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
+import 'package:media_server_client/features/player/domain/seek_preview_controller.dart';
 
 void main() {
   group('SeekPreviewController — Race & Debounce Validation', () {

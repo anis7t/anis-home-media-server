@@ -12,13 +12,23 @@ import 'package:media_server_client/features/intro/domain/intro_timeline.dart';
 /// made that impossible - decision D9 made it deterministic, and this test is
 /// what keeps the two implementations honest.
 ///
-/// The reference is JavaScript's, captured by `web/_prng_capture.mjs`.
-const String kReferencePath = '../web/_prng_capture.json';
+File _resolveReferenceFile() {
+  final candidates = [
+    'test/features/intro/fixtures/prng_reference.json',
+    'fixtures/prng_reference.json',
+    '../web/_prng_capture.json',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) return file;
+  }
+  return File('test/features/intro/fixtures/prng_reference.json');
+}
 
 void main() {
-  final file = File(kReferencePath);
+  final file = _resolveReferenceFile();
   if (!file.existsSync()) {
-    fail('The PRNG reference is missing: $kReferencePath');
+    fail('The PRNG reference is missing: ${file.path}');
   }
   final raw = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
 

@@ -1,11 +1,16 @@
 {
-  "venvPath": ".",
-  "venv": "venv",
+  "include": [
+    "scripts",
+    "tests/load"
+  ],
   "exclude": [
     "**/__pycache__",
     "**/venv",
     "**/.venv",
     "cache",
-    "**/build"
+    "**/build",
+    "rust",
+    "web",
+    "flutter_client"
   ]
 }

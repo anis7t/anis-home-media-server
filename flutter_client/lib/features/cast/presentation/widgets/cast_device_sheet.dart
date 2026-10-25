@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/models/cast_device.dart';
+import '../../domain/models/cast_device.dart';
 import '../controllers/cast_controller.dart';
 
 /// Device picker for casting: lists what the server found (DLNA renderers and

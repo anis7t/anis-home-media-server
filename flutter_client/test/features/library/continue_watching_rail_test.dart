@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
 import 'package:media_server_client/features/library/presentation/widgets/continue_watching_rail.dart';
 
 void main() {

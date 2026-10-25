@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../library/data/models/movie_item.dart';
+import '../../../library/domain/models/movie_item.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../../domain/models/genre_section.dart';
 

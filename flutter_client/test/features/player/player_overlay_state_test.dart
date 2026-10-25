@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_controls_overlay.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_hud_toast.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_loading_indicator.dart';

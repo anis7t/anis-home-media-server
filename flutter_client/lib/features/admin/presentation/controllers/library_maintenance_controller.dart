@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/audit_log_model.dart';
 import '../../domain/models/library_scan_model.dart';
-import '../../infrastructure/admin_repository.dart';
+import '../../data/admin_repository.dart';
 import '../providers/admin_providers.dart';
 
 @immutable

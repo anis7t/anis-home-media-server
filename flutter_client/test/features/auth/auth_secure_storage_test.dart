@@ -1,7 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/constants/storage_keys.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_secure_storage.dart';
+import 'package:media_server_client/features/auth/data/auth_secure_storage.dart';
 
 class MockSecureStorage extends FlutterSecureStorage {
   final Map<String, String> memory = {};

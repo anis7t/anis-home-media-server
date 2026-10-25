@@ -23,6 +23,7 @@ media.db-wal
 # Cached/generated files
 cache/
 backups/
+*.zip
 
 # Hermes kanban task worktrees (one per dispatched task)
 .worktrees/

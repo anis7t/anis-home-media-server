@@ -2003,6 +2003,15 @@ components:
           type: [string, "null"]
         added_at:
           type: [integer, "null"]
+        poster:
+          type: [string, "null"]
+          description: Tagged poster reference (tmdb:<id> or local:<relpath>) or artwork URL.
+        details_json:
+          type: [string, "null"]
+          description: Raw JSON string holding TMDb tagline, cast, crew, and certifications.
+        last_metadata_refresh:
+          type: [integer, "null"]
+          description: Unix timestamp in seconds of last TMDb metadata refresh.
         position:
           type: number
           description: Watch progress position in seconds.
@@ -2053,11 +2062,17 @@ components:
       properties:
         resolution:
           type: [string, "null"]
+        resolution_badge:
+          type: [string, "null"]
         video_codec:
+          type: [string, "null"]
+        video_profile:
           type: [string, "null"]
         audio_codec:
           type: [string, "null"]
         audio_channels:
+          type: [string, "null"]
+        container:
           type: [string, "null"]
         aspect_ratio:
           type: [string, "null"]
@@ -2065,6 +2080,12 @@ components:
           type: [string, "null"]
         filesize:
           type: [string, "null"]
+        file_size:
+          type: [string, "null"]
+        subtitles:
+          type: array
+          items:
+            type: string
 
     MovieDetailsResponse:
       type: object
@@ -2128,7 +2149,32 @@ components:
           type: [integer, "null"]
         reason:
           type: string
+        quality_ladder:
+          type: array
+          items:
+            $ref: '#/components/schemas/QualityOption'
       required: [container, duration, direct_play, needs_transcode, is_transcode_ready]
+
+    QualityOption:
+      type: object
+      properties:
+        label:
+          type: string
+        quality:
+          type: string
+        height:
+          type: integer
+        width:
+          type: integer
+        bitrate:
+          type: integer
+        is_direct:
+          type: boolean
+        is_ready:
+          type: boolean
+        hls_url:
+          type: [string, "null"]
+      required: [label, quality, height, width, bitrate, is_direct, is_ready]
 
     MediaReadinessResponse:
       type: object

@@ -6,8 +6,8 @@ import 'package:media_server_client/core/errors/app_exception.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
 import 'package:media_server_client/features/auth/domain/models/auth_state.dart';
 import 'package:media_server_client/features/auth/domain/models/user_identity.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_repository.dart';
-import 'package:media_server_client/features/auth/infrastructure/auth_secure_storage.dart';
+import 'package:media_server_client/features/auth/data/auth_repository.dart';
+import 'package:media_server_client/features/auth/data/auth_secure_storage.dart';
 import 'package:media_server_client/features/auth/presentation/providers/auth_providers.dart';
 import 'auth_secure_storage_test.dart';
 

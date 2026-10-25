@@ -8,11 +8,11 @@ import 'package:media_server_client/core/api/api_client.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/errors/app_exception.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
-import 'package:media_server_client/features/library/data/models/library_response.dart';
-import 'package:media_server_client/features/library/data/models/movie_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_extended_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
-import 'package:media_server_client/features/library/data/models/movie_specs.dart';
+import 'package:media_server_client/features/library/domain/models/library_response.dart';
+import 'package:media_server_client/features/library/domain/models/movie_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_extended_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_specs.dart';
 import 'package:media_server_client/features/library/data/repositories/library_repository.dart';
 import 'package:media_server_client/features/library/presentation/screens/movie_details_screen.dart';
 

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/player/domain/playback_mode.dart';
-import 'package:media_server_client/features/player/infrastructure/player_media_resolver.dart';
+import 'package:media_server_client/features/player/data/player_media_resolver.dart';
 
 void main() {
   group('PlayerMediaResolver.resolveQualityUrl Tests', () {

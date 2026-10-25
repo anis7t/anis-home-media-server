@@ -13,13 +13,23 @@ import 'package:media_server_client/features/intro/domain/intro_frame.dart';
 /// spread of random values) at four precisions. It was captured from Node and
 /// is the check that `jsToFixed` is faithful.
 ///
-/// The capture lives in `web/_tofixed_capture.mjs`.
-const String kReferencePath = '../web/_tofixed_capture.json';
+File _resolveReferenceFile() {
+  final candidates = [
+    'test/features/intro/fixtures/tofixed_reference.json',
+    'fixtures/tofixed_reference.json',
+    '../web/_tofixed_capture.json',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) return file;
+  }
+  return File('test/features/intro/fixtures/tofixed_reference.json');
+}
 
 void main() {
-  final file = File(kReferencePath);
+  final file = _resolveReferenceFile();
   if (!file.existsSync()) {
-    fail('The toFixed reference is missing: $kReferencePath');
+    fail('The toFixed reference is missing: ${file.path}');
   }
   final raw = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
 

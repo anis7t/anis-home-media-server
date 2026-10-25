@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
 import 'package:media_server_client/features/player/domain/playback_mode.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 
 import '../../support/recording_player_controller.dart';
 
