@@ -1,8 +1,8 @@
 # Argon Architectural Tightening Directive — Master Review & Certification Dossier
 
-**Branch:** `argon-review` (lightweight review snapshot < 15MB) / `feat/argon-architectural-revamp`  
+**Branch:** `main` (Merged from `feat/argon-architectural-revamp` / `argon-review`)  
 **Stack:** 100% Rust Axum (:8000) + React 19 SPA + Flutter Mobile/Android TV + PostgreSQL 18.4  
-**Status:** ✅ **All 4 Slices Completed, Hardware-Verified, and Multi-Pillar Certified**
+**Status:** ✅ **Argon Final Sign-Off Granted & Successfully Merged to `main` (Production Cutover Complete)**
 
 ---
 
