@@ -10,25 +10,6 @@ export interface AccountResponse {
   readonly oauth_configured?: boolean;
 }
 
-export interface TokenRecord {
-  readonly id: number;
-  readonly user_id: number;
-  readonly label: string;
-  readonly created_at: number;
-  readonly last_used_at: number | null;
-  readonly expires_at: number | null;
-  readonly revoked_at: number | null;
-}
-
-export interface MintedToken {
-  readonly token: string;
-  readonly pairing_url: string;
-  readonly id: number;
-  readonly label: string;
-  readonly expires_at: number | null;
-  readonly warning: string;
-}
-
 export interface QrSession {
   readonly qr_id: string;
   readonly code: string;
@@ -49,21 +30,6 @@ export function loginWithPin(pin: string): Promise<{ success: boolean; user?: an
     method: 'POST',
     body: JSON.stringify({ pin }),
   });
-}
-
-export function listTokens(): Promise<{ tokens: TokenRecord[] }> {
-  return accountRequest<{ tokens: TokenRecord[] }>('/api/auth/tokens');
-}
-
-export function mintToken(label: string): Promise<MintedToken> {
-  return accountRequest<MintedToken>('/api/auth/tokens', {
-    method: 'POST',
-    body: JSON.stringify({ label }),
-  });
-}
-
-export function revokeToken(id: number): Promise<{ revoked: number }> {
-  return accountRequest<{ revoked: number }>(`/api/auth/tokens/${id}`, { method: 'DELETE' });
 }
 
 /** Create a new QR pair session. Called by the TV/browser when showing the sign-in panel. */

@@ -45,6 +45,9 @@ dependencies:
   media_kit_libs_android_video: ^1.3.8
   crypto: ^3.0.3
   path_provider: ^2.1.2
+  url_launcher: ^6.3.0
+  app_links: ^6.3.2
+  qr_flutter: ^4.1.0
 
   # The brand opening sequence's score. The web synthesises its own (D8); the
   # phone and the TV ship the canonical's offline render instead, because
@@ -79,10 +82,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    # The brand opening sequence's score - the canonical's offline render,
-    # byte for byte. It REPLACES `assets/videos/intro-demo-portrait.mp4`,
-    # which was declared here, never played, and cost 2.4 MB in every APK.
-    - assets/audio/intro-theme.wav
+    # The brand opening sequence's score - compressed AAC-LC audio.
+    # It replaces the uncompressed WAV to minimize APK/bundle size.
+    - assets/audio/intro-theme.m4a
     # The television's pre-rendered brand opening sequence. It is rendered
     # from the canonical (the shipped web application) by
     # `scripts/capture-intro-video.mjs`, and verified against the canonical's

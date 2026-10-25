@@ -1,3 +1,22 @@
+# Caddyfile Template for Anis' Home Media Server
+# Reverse Proxy with Automated DNS-01 Let's Encrypt TLS via Cloudflare
+#
+# CLOUDFLARE API TOKEN LEAST-PRIVILEGE SCOPING INSTRUCTIONS:
+# 1. Log in to Cloudflare Dashboard -> My Profile -> API Tokens.
+# 2. Click "Create Token" -> Use "Create Custom Token".
+# 3. Token Name: "MediaServer Caddy DNS-01"
+# 4. Permissions:
+#    - Zone | DNS | Edit
+#    - Zone | Zone | Read
+# 5. Zone Resources:
+#    - Include | Specific zone | anisparvez.in
+# 6. Click "Continue to summary" -> "Create Token".
+# 7. Copy the generated token into YOUR_CLOUDFLARE_API_TOKEN below
+#    (or set as environment variable CLOUDFLARE_API_TOKEN).
+#
+# To audit your token against least-privilege constraints, run:
+#   powershell -ExecutionPolicy Bypass -File .\scripts\verify_cloudflare_token.ps1
+
 {
     email anis7t@gmail.com
     admin off
@@ -5,6 +24,7 @@
 
 media.anisparvez.in {
     tls {
+        # Either hardcode your scoped token or use {env.CLOUDFLARE_API_TOKEN}
         dns cloudflare YOUR_CLOUDFLARE_API_TOKEN
     }
     reverse_proxy 127.0.0.1:8000

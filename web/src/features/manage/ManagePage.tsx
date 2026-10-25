@@ -19,6 +19,7 @@ import {
 import { startTranscode } from '../../lib/api/client';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { AdminPinModal } from './components/AdminPinModal';
+import { ChangeAdminPinModal } from './components/ChangeAdminPinModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import {
   InventoryToolbar,
@@ -53,6 +54,7 @@ export function ManagePage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInputValue, setPinInputValue] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
+  const [changePinModalOpen, setChangePinModalOpen] = useState(false);
 
   // In-delete modal PIN input
   const [modalPinInput, setModalPinInput] = useState('');
@@ -116,11 +118,12 @@ export function ManagePage() {
       if (e.key === 'Escape') {
         if (deleteTarget && !deleting) setDeleteTarget(null);
         if (pinModalOpen) setPinModalOpen(false);
+        if (changePinModalOpen) setChangePinModalOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deleteTarget, deleting, pinModalOpen]);
+  }, [deleteTarget, deleting, pinModalOpen, changePinModalOpen]);
 
   // Active HLS lookup map (from audit telemetry)
   const activeHlsMap = useMemo(() => {
@@ -414,6 +417,15 @@ export function ManagePage() {
                 </span>
                 <button
                   type="button"
+                  onClick={() => setChangePinModalOpen(true)}
+                  className="card-ring rounded-full border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 px-3.5 py-2 text-xs font-semibold text-brand-300 hover:text-brand-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                  title="Change administrator PIN"
+                >
+                  <Icon name="shield" size={13} />
+                  <span>Change PIN</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleLockAdmin}
                   className="card-ring rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                   title="Lock admin controls and require PIN or re-login"
@@ -587,6 +599,18 @@ export function ManagePage() {
         onChangePin={setPinInputValue}
         onSubmit={() => void handleVerifyPin(pinInputValue)}
         onClose={() => setPinModalOpen(false)}
+      />
+
+      {/* Admin PIN Rotation Dialog */}
+      <ChangeAdminPinModal
+        isOpen={changePinModalOpen}
+        defaultCurrentPin={adminPin}
+        onClose={() => setChangePinModalOpen(false)}
+        onSuccess={(newPin) => {
+          setAdminPin(newPin);
+          setIsPinUnlocked(true);
+          setFeedback('Admin PIN rotated successfully!');
+        }}
       />
     </div>
   );

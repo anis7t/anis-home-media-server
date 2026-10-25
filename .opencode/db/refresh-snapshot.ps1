@@ -1,64 +1,7 @@
-# Refresh the read-only SQLite snapshot used by the `media-db` MCP server.
-#
-# WHY THIS EXISTS
-#   The `media-db` MCP server (mcp-server-sqlite) exposes a `write_query` tool that
-#   runs INSERT/UPDATE/DELETE and commits. Pointing it at the live
-#   E:\MediaServer\media.db would let an agent mutate data the service is using.
-#
-#   So the MCP points at .opencode/db/media.snapshot.db instead, which carries the
-#   Windows read-only attribute. SQLite can read it and returns
-#   "attempt to write a readonly database" for any write - an OS-level guarantee,
-#   not a prompt-level one.
-#
-#   NOTE: the source database is the RETIRED SQLite file. PostgreSQL 18.4
-#   (MediaServerPG, data in E:\pgdata) has been the system of record since Phase 3,
-#   so this snapshot is STALE PRE-MIGRATION data. It is kept because the MCP server
-#   is wired to it, not because it reflects production. See Issue 12 in
-#   docs/Current issues.md.
-#
-# USAGE
-#   powershell -ExecutionPolicy Bypass -File .opencode\db\refresh-snapshot.ps1
-#
-# The snapshot is gitignored. Run this before a session that needs current data.
+# RETIRED (2026-10-24) — Issue 12
+# The `media-db` MCP server and SQLite snapshot are fully decommissioned.
+# PostgreSQL 18.4 (MediaServerPG on port 5432, database `media_server`) is the
+# authoritative database, queried via `postgresql-mcp` or psql.
 
-$ErrorActionPreference = 'Stop'
-
-$repo    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$source  = Join-Path $repo 'media.db'
-$destDir = Join-Path $repo '.opencode\db'
-$dest    = Join-Path $destDir 'media.snapshot.db'
-
-if (-not (Test-Path $source)) {
-    Write-Error "Source database not found: $source"
-    exit 1
-}
-
-New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-
-# Clear the read-only attribute before overwriting, then restore it.
-if (Test-Path $dest) {
-    attrib -R $dest
-    Remove-Item $dest -Force
-}
-
-# Copy via a temp name so a concurrent reader never sees a half-written file.
-$tmp = "$dest.tmp"
-if (Test-Path $tmp) { Remove-Item $tmp -Force }
-Copy-Item $source $tmp -Force
-
-# Re-apply the read-only attribute BEFORE the final rename so the file is never
-# observable in a writable state at its real path.
-attrib +R $tmp
-Move-Item $tmp $dest -Force
-
-$size = (Get-Item $dest).Length
-$rows = & (Join-Path $repo 'venv\Scripts\python.exe') -c @"
-import sqlite3
-c = sqlite3.connect(r'$dest')
-print(c.execute('select count(*) from movies').fetchone()[0])
-"@
-
-Write-Host "Snapshot refreshed: $dest"
-Write-Host ("  size : {0:N0} bytes" -f $size)
-Write-Host "  movies rows: $rows"
-Write-Host "  attribute  : read-only (writes are rejected by SQLite)"
+Write-Warning "refresh-snapshot.ps1 is RETIRED. PostgreSQL 18.4 (MediaServerPG) is the system of record."
+exit 0

@@ -6,6 +6,10 @@
 > `admin`. A non-empty allowlist is the optional brake. The Rust implementation's invariants are in
 > `AGENTS.md` → *Sign-in allowlist invariants*; the "allowlist is a precondition" stance below is
 > **not** current policy.
+>
+> **Token system retired 2026-10-23:** the `/api/auth/tokens` and `/auth/pair` routes, the
+> `auth_tokens` table and the `ms_…` bearer identity path are gone. QR sign-in is the only pairing
+> path. See [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md) §8.
 
 **Status:** Proposal — not implemented.
 **Author:** Phase 2 React work, 2026-10-12

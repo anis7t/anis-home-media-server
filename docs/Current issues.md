@@ -2,17 +2,10 @@
 
 Issues 1–10 have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
 reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
-sign-in feature and the migration cutover. **Two are open:**
+sign-in feature and the migration cutover; Issue 11 (libmpv host test dependency), Issue 12 (Flask/Waitress
+decommissioning loose ends), and Issue 13 (AMD GPU TDR Resilience) are resolved. **All core issues are resolved:**
 
-- **Issue 11** — three Flutter test files cannot run on this host because media_kit's Windows native
-  libraries are absent.
-- **Issue 12** — three loose ends from the Flask/Waitress era: the `media-db` MCP server still
-  serves the retired SQLite database, the stopped `MediaServer` service is still registered, and
-  the dev server's proxy origins are stale.
-- **Issue 13** — the AMD graphics stack is chronically unstable and the **AMF transcode pipeline
-  provokes GPU TDRs**; a hard system reset on 2026-10-20 was triggered by headless-Chromium GPU
-  compositing. The Playwright harness now runs with the GPU disabled. The driver decision is the
-  owner's.
+- **Issue 13 (AMD GPU TDR Resilience) — RESOLVED 2026-10-24.** Relaxed Windows GraphicsDrivers TDR timeouts (`TdrDelay=8`, `TdrDdiDelay=20`), calibrated Main10 concurrency to 2 workers (1 per physical GPU: discrete RX 560X + integrated Vega 8), introduced 180s bounded transcode chunk execution timeout with AMF/D3D11 driver diagnostics, built automated audit tool (`scripts/audit_gpu_tdr.ps1`), and verified zero-dump 4K transcode stability. Details: [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
 
 ---
 
@@ -46,11 +39,15 @@ sign-in feature and the migration cutover. **Two are open:**
 ### Issue 4: Device Pairing Mechanism, Tokens & Watch History
 - **Reported:** *In the devices page, there is a section to pair a device but it also says in browser it's not required. And the whole point of pairing a device is to have a watch history, resume points and other settings without typing password. WHere can one see their watch history? Also the mechanism is confusing. How would it know which device is to be paired by just entering a name? Like how adding a device would provide a token and if i have the token, i can pair my device. What is purpose of google sign in then? doesn't it preserve settings account wise and then on different devices with the same account can have device name for distinction?*
 - **Resolution (Phase 3):**
-  - **15-Minute Pairing Token Engine:** Added `POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim` to `app/routes/auth.py`. Users enter a friendly name on `/account` (phone/PC) to generate an ephemeral 6-character code (e.g. `K9X2P4`). Entering this code on Fire TV or a secondary browser mints a 1-year cryptographically secure device bearer token (`ms_device_token`).
+  - **15-Minute Pairing Token Engine:** Added `POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim` to `app/routes/auth.py`. Users enter a friendly name on `/account` (phone/PC) to generate an ephemeral 6-character code (e.g. `K9X2P4`). Entering this code on Fire TV or a secondary browser mints a 1-year cryptographically secure device bearer token (`ms_device_token`). *(Retired 2026-10-23: the Flask routes no longer exist, and the Add-device UI was removed — see Issue 14, fault 6.)*
   - **Interactive Watch History Drawer:** Added `POST /api/progress` watch reporting and a sliding obsidian Watch History Drawer on `/account`. Displays movie posters, timestamps, completion percentages, resume action buttons, and a **Clear All History** option.
   - **Google Account Association:** User-scoped progress and paired device tokens are tied to the Google account, syncing watch state across all authorized household screens.
 
 ---
+
+> **Retired 2026-10-23:** the pairing-token UI, backend routes, client helpers and `auth_tokens`
+> table described in Issues 5 and 6 no longer exist. QR sign-in is the only pairing path; see
+> Issue 14.6 and [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
 ### Issue 5: Admin 403 on Add Device (Admin PIN Token Minting)
 - **Reported:** *In the devices page, when I(admin) try to add a device, I get 403'd.*
@@ -253,7 +250,7 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 
 ---
 
-### Issue 12: The Flask/Waitress Era Left Three Live Loose Ends (2026-10-20)
+### Issue 12: The Flask/Waitress Era Left Three Live Loose Ends (2026-10-20, RESOLVED 2026-10-24)
 
 - **Reported:** *(asked directly, while planning Phase 11 Slice 11.2)* — *"are we still using
   waitress?"* **No.** The answer is unambiguous:
@@ -262,18 +259,17 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
   - `requirements.txt` lists only `selenium` and `websockets`; **neither `flask` nor `waitress`
     is installed**, in the venv or anywhere else.
   - The `python.exe` processes on the host are the agent harness's own MCP servers
-    (`fastmcp-sqlite`, `postgresql-mcp`, `serena`) — not a web server.
-- **What was wrong:** the *system* had moved on; **the documentation and one shipped UI string had
-  not.** Three loose ends remained, and two of them are now fixed in the same commit as this
-  entry:
+    (`postgresql-mcp`, `serena`) — not a web server.
+- **Resolution (2026-10-24):** All loose ends are **fully resolved**:
 
 | # | Loose end | State |
 |---|---|---|
 | 1 | **The app footer rendered the badge `Waitress WSGI`** — a false statement in the shipped product, on every page. | ✅ **Fixed** — now reads `Rust · Axum API`. |
-| 2 | **The agent-facing memories lied about the architecture.** `.serena/memories/architecture.md` asserted *"Backend — `app/`, Python. Served by Waitress under NSSM"* and *"127.0.0.1:8000 -> Waitress -> Flask -> services"*; `paths-and-drives.md` said *"Production WSGI is Waitress, never Gunicorn"* and pointed at `app.services.transcode_service`, `app.config.CACHE_DIR` and `media.db` as live. An agent that reads those files is confidently misinformed about the whole stack. `.serena/project.yml`'s initial prompt repeated the lie (*"a Flask + Flutter monorepo"*). | ✅ **Fixed** — rewritten against the Rust/PostgreSQL reality, with the Python-era pointers removed rather than translated (guessing at Rust function names would have introduced *new* wrong pointers). **Note: `.serena/` is gitignored**, so these fixes are **local to this machine** — see the note below. |
-| 3 | **The `media-db` MCP server serves retired data.** It is pointed at `.opencode/db/media.snapshot.db`, a snapshot of `E:\MediaServer\media.db` — the **SQLite database retired in Phase 3**. PostgreSQL 18.4 has been the system of record since. The `media-db` tools therefore report **stale pre-migration rows**, and nothing tells the caller. | ⏳ **Open.** The snapshot script's comment now says so, but the MCP server is still wired to the retired file. |
-| 4 | **The `MediaServer` NSSM service is still registered.** `MediaServer` — the old Flask/Waitress service — is `Stopped` / `Manual` and still points at `venv\Scripts\python.exe run_production.py`, a file that **no longer exists**, so it cannot start. Inert, but it is a leftover. | ⏳ **Open — the owner's call.** It is a host-level registration; deleting it is not something to do unattended. |
-| 5 | **The dev server's proxy origins are stale, and inverted relative to reality.** `web/vite.config.ts` sets `RUST_ORIGIN` to `:8001` (**nothing listens there** — Rust runs on `:8000`) and `FLASK_ORIGIN` to `:8000` (**which is actually Rust**). So in `npm run dev` the "Rust" routes point at a dead port and the "Flask" catch-all actually hits Rust. The names and the comments are both wrong. | ⏳ **Open.** A dev-only behaviour change: collapsing the two origins into one needs the "unmigrated" endpoint list confirmed first, so it does not belong in a documentation cleanup. |
+| 2 | **The agent-facing memories lied about the architecture.** `.serena/memories/architecture.md` asserted *"Backend — `app/`, Python. Served by Waitress under NSSM"* and *"127.0.0.1:8000 -> Waitress -> Flask -> services"*; `paths-and-drives.md` said *"Production WSGI is Waitress, never Gunicorn"* and pointed at `app.services.transcode_service`, `app.config.CACHE_DIR` and `media.db` as live. An agent that reads those files is confidently misinformed about the whole stack. `.serena/project.yml`'s initial prompt repeated the lie (*"a Flask + Flutter monorepo"*). | ✅ **Fixed** — rewritten against the Rust/PostgreSQL reality, with the Python-era pointers removed rather than translated. |
+| 3 | **The `media-db` MCP server serves retired data.** It was pointed at `.opencode/db/media.snapshot.db`, a snapshot of `E:\MediaServer\media.db` — the **SQLite database retired in Phase 3**. | ✅ **Fixed 2026-10-24** — `fastmcp-sqlite` `media-db` retired; replaced in `mcp_config.json` and `opencode.json` with `postgresql-mcp` pointing directly to live PostgreSQL 18.4 (`MediaServerPG` on port 5432, database `media_server`). Stale `.opencode/db/media.snapshot.db` purged; `refresh-snapshot.ps1` marked retired. |
+| 4 | **The `MediaServer` NSSM service was still registered.** `MediaServer` — the old Flask/Waitress service — was `Stopped` / `Manual` and pointed at non-existent `venv\Scripts\python.exe run_production.py`. | ✅ **Fixed 2026-10-24** — cleanly deregistered via `nssm remove MediaServer confirm`. Confirmed removed from Service Control Manager; active services `MediaServerRust`, `MediaServerCaddy`, and `MediaServerPG` unaffected. |
+| 5 | **The dev server's proxy origins were stale, and inverted relative to reality.** `web/vite.config.ts` set `RUST_ORIGIN` to `:8001` (dead port) and `FLASK_ORIGIN` to `:8000` (which is Rust). | ✅ **Fixed in Phase 11 Slice 11.6** — collapsed dual origins into a single `SERVER_ORIGIN` (`http://127.0.0.1:8000`). Verified clean TypeScript build (`tsc -b`) and 45/45 test files passing (325 tests). |
+| 6 | **Stale external duplicate directory.** `C:\Users\anis7\Documents\Anis-Media-Server-Intro\` (294 MB) held pre-in-tree intro assets. | ✅ **Fixed 2026-10-24** — confirmed 100% of canonical assets reside in-tree under `docs/opening-sequence/`; external directory deleted, reclaiming 294 MB. |
 
 - **The lesson, again:** *a decommissioning sign-off must diff **capabilities**, not just
   mechanisms.* Phase 7E removed the Flask app and verified the architecture; it did not sweep the
@@ -341,38 +337,207 @@ Full account: [`docs/QR_SIGNIN_WALKTHROUGH.md`](QR_SIGNIN_WALKTHROUGH.md).
 ### Issue 14: User-Reported Web / Devices / Playback Faults (2026-10-23)
 
 Reported by the owner immediately after the 2026-10-23 Google sign-in outage was resolved and
-sign-in was restored. **State: documented, not yet triaged or fixed** (this entry only records
-what was said; no code change accompanied it).
+sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4, 14.5 and 14.6 are closed.**
 
-1. **Watch history not populated.** While signed in on the web browser and after playing media,
-   **no played entry was listed in the devices menu**. Possibly a device-scoping / progress-source
-   mismatch (`GET /api/devices` returns the caller's current device plus owned devices and embeds
-   `watch_history` from the device/progress tables), or the history UI rendering. Needs a live,
-   signed-in reproduction.
-2. **Account icon missing.** The user account icon is **not present throughout all pages** of the
-   web app — some pages lack the signed-in identity affordance.
+1. **Watch history not populated — FIXED 2026-10-23 (17:50).** While signed in on the web browser
+   and after playing media, **no played entry was listed in the devices menu**.
+   - **Root cause: two device identities per browser.** The player wrote `POST /api/progress` under
+     the SPA's `web_…` id (`useDeviceId`), while `GET /api/devices` accepted only `dev_…` and fell
+     back to a fingerprint of IP + User-Agent — a *different* row, with no history. A Flask-era
+     year-long `ms_device_id` cookie compounded it: the resolver read the cookie **before** the
+     header, and Rust never refreshes it, so a stale cookie could shadow the browser's own id.
+   - **Fix:** the device-id validator accepts `dev_` **and** `web_` (ASCII, ≤ 64 chars) and the header
+     now wins over the cookie; `DevicesPage` sends `X-Device-Id` on the device list and every
+     mutation. No `/api/*` shape change; the Flutter client has no cookie jar and its
+     `dev_[0-9a-f]{16}` ids are still accepted.
+   - **Verified live:** `curl -H "X-Device-Id: web_4f30657458814841" /api/devices` answers
+     `current_device_id` = that id with **12** history rows, and `/devices` shows "Recent: 2001: A
+     Space Odyssey" plus "Watch History 12". Rust suite 0 failures; web 318 tests 0 failures.
+   - **Approved cleanup:** the **374** device rows with no history were purged (407 → 33; every
+     survivor has history, and the browser's own row kept its 12).
+   - The same request also moved **Upload Media into the header row** — the separate second row above
+     the hero is gone (portalled slot, icon-only below 640 px; verified at 390 / 768 / 1280 px).
+   - Details: [`docs/TRIAGE_01_WATCH_HISTORY.md`](TRIAGE_01_WATCH_HISTORY.md) §10.
+2. **Account icon "missing" across pages — CLOSED 2026-10-23: the report was a misdiagnosis.**
+   The account affordance is rendered by the shared `AppShell` header on **every** route (both
+   `AuthProvider` and `AppShell` wrap the whole route table in `main.tsx`): **"Sign in"** when
+   signed out, the **account avatar** when signed in. It is deliberately hidden on `/watch/*` so a
+   stray nav click cannot interrupt playback (`AppShell.tsx:221`). The 14.2 remediation added a
+   **second**, auth-ungated `Avatar` to `LibraryPage`'s `Upload Media` row, so signed out the page
+   showed the header's "Sign in" pill *and* a silhouette on the next row, and signed in it showed
+   **two** avatars — reported by the owner as "the user icon and sign in icon both are being
+   displayed … the items should be in the same row of the header … no 2 rows". The page-level
+   duplicate (and the companion `Avatar` `useOptionalAuth` change that only existed to keep it
+   renderable outside a provider) was reverted, and a regression test now pins that the page does
+   not render one. Verified live at 390 / 1280 / 1440 px: exactly one account glyph, in the header,
+   which never wraps. See [`docs/TRIAGE_02_ACCOUNT_ICON.md`](TRIAGE_02_ACCOUNT_ICON.md).
 3. **Playback stuck at 0:00.** Movies such as *2001: A Space Odyssey* don't play automatically and,
    after pressing play, stay at **0:00**. Occasionally, after trying other media and then returning
    to the unplayable media, it **does** play — the owner is unsure how consistent this is, and it
    needs re-testing for reliability.
-4. **Unscannable QR code in the devices menu.** In the **signed-in** state, the QR code displayed in
-   the devices menu is **cropped / not fully displayed**, making it unscannable.
-5. **Header "Sign in" menu.** Clicking "Sign in" in the header lands **directly** into the Google
-   sign-in flow instead of showing **both** the Google sign-in option and the QR scan option. The QR
-   scan option should be **disabled only in the TV variant** of the app.
-6. **Add-device / QR flow confusion.** In the devices menu, the **"Add device"** option: after
-   entering a device name it shows a **QR code, a URL and a token**. Questions the owner has:
-   - What am I supposed to do with the QR code?
-   - The URL is **non-functional**.
-   - Where was I supposed to enter the token?
-   - Why does this whole thing exist, since QR login is already handled?
+   - **FIXED 2026-10-23.** Root cause measured, not inferred: `PlayerPage`'s source-attach effect
+     gated on `videoRef.current`, but the `<video>` only mounts on the commit *after* the one that
+     sets `info` (the capability probe is awaited between them), and no dependency changed when the
+     element arrived — so the effect ran once into a `null` and never again. Direct-play titles
+     therefore had **no `src` at all**: zero `/media/` requests, `readyState` 0, and `play()` on a
+     source-less element resolves and waits forever, which is exactly "press play, stays at 0:00,
+     no error". Any quality change re-ran the effect, which is the intermittency that was reported.
+     Fixed by mirroring the element into state through a stable callback ref and adding it to the
+     dependencies (plus the same for the PiP listeners, and a HUD instead of silence when a
+     user-initiated `play()` rejects). Verified live in Edge: *2001* attaches its source at 1.5 s and
+     plays with no interaction; *Monsters Inc* identical; *28 Days Later* (HLS) unregressed;
+     `probe_android_api.py` 22/22. Details and evidence:
+     [`docs/TRIAGE_03_PLAYBACK_ZERO_STALL.md`](TRIAGE_03_PLAYBACK_ZERO_STALL.md).
+     *(The temporary `Avatar`-in-`LibraryPage` test failures noted here are gone: that edit was
+     reverted as part of the 14.2 correction above.)*
+4. **Unscannable QR code in the devices menu — FIXED 2026-10-24.** In the **signed-in** state, the
+   QR code was reported as **cropped / not fully displayed**.
+   - The reported QR was `PairingQr` in the Add-device / *Devices & TV App Pairing* panel. That
+     panel and component were removed with the pairing-token retirement in `d6d6786` (14.6), so
+     signed-in `/account` no longer renders a QR.
+   - The remaining signed-out `QrSignInPanel` reproduced the defect: `qrcode` with `width: 0` fell
+     back to its default scale and produced a fixed **236 px** canvas inside a **160–220 px** card
+     with `overflow-hidden`, clipping it at 390, 768 and 1280 px (by 76 / 67 / 16 px).
+   - **Fix:** the card clamps to **220–240 px**, and the canvas uses `max-w-full max-h-full` so the
+     bitmap is fitted rather than clipped. QR payload, colours, error correction, auth backend and
+     the TV/Flutter variants are unchanged.
+   - **Verified:** `web/e2e/qr-layout.spec.ts` now measures 218 px inside 220 px at 390/768 and
+     236 px inside 240 px at 1280; the signed-in state renders no QR and sends no
+     `POST /api/auth/qr`. A live check against the production server measured the same and
+     reported `LIVE QR LAYOUT OK`. Web suite **309/309**, production build passes.
+   - Details and measurements: [`docs/TRIAGE_04_QR_CROPPED_SIGNED_IN.md`](TRIAGE_04_QR_CROPPED_SIGNED_IN.md).
+5. **Header "Sign in" menu — FIXED 2026-10-24.** Clicking "Sign in" in the header used to call
+   `signIn()` directly and land in the Google OAuth flow. It now opens a chooser with
+   **Continue with Google** (when configured) and **Sign in with QR code**. The QR item is a link
+   to `/account`, where the existing QR panel owns the session; opening the menu itself sends no
+   `POST /api/auth/qr`. Desktop, tablet and TV browsers show both options; a phone browser keeps
+   a direct sign-in button (Google when configured) and hides QR, because the phone is the scanner.
+   When OAuth is unconfigured, the menu offers the Admin PIN instead of a mislabelled Google item. The
+   header-only scope leaves the `/account` QR panel unchanged, and the Flutter client is
+   untouched (it has no Google/QR sign-in UI). Verified: web **325/325**, e2e **9/9** (including
+   the 14.4 QR-layout gate), production build passes, Android probe **22/22**, and a live
+   unmocked check at 1280 px and a 412 px phone viewport. Details:
+   [`docs/TRIAGE_05_SIGNIN_MENU_OPTIONS.md`](TRIAGE_05_SIGNIN_MENU_OPTIONS.md).
+6. **Add-device / QR flow confusion — FIXED 2026-10-23 (23:20) by removing the flow.** The
+   **"Add device"** form on `/account` minted a CSPRNG `ms_…` token (stored as SHA-256, default
+   lifetime **365 days**). Its QR code and URL were the same `https://…/auth/pair#token=…` link;
+   opening that link in any browser posted the token and received a **30-day session** for the
+   minting account — a reusable, non-device-bound, password-equivalent link. It never added a
+   device row, and the Flutter client has no code that accepts the token (its only identity is
+   `dev_[0-9a-f]{16}`). The panel — form, one-time token display, token list and the "For Android
+   TV & Fire TV" copy — was removed, and `web/src/components/PairingQr.tsx` with it. The QR sign-in
+   card is the only pairing path. The token pasted into the report (`ms_bbd276…`, row 40) was
+   revoked and `/auth/pair` answered **401** for it; all 25 token rows were revoked.
+   **Backend retired 2026-10-23:** the three token routes, both `/auth/pair` methods, the four
+   service helpers, the `Authorization: Bearer` branch and the web client helpers were deleted,
+   and `auth_tokens` was dropped (the 25 revoked rows went with it, by the owner's choice). Old
+   links now answer **404**; rolling back to a pre-retirement binary re-creates an empty table
+   but does not restore the rows. The QR flow is untouched. Details:
+   [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md).
 
-- **Open questions for triage:** watch-history source of truth and per-device scoping;
-  playback root cause (autoplay / 0:00 / direct play vs HLS); QR display/scoping; sign-in menu
-  option set; add-device token/QR flow.
+- **Triage complete:** all Issue 14 faults, including the sign-in menu option set (14.5), are
+  closed. The 14.5 record is [`docs/TRIAGE_05_SIGNIN_MENU_OPTIONS.md`](TRIAGE_05_SIGNIN_MENU_OPTIONS.md).
 - **Context:** the sign-in outage itself was fixed on 2026-10-23 (stale allowlist row cleared; allowlist
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
-  against that restored state and are presumed **unrelated to the allowlist**, pending reproduction.
+  against that restored state and were **unrelated to the allowlist**; their root causes are
+  recorded above.
+
+---
+
+### Category 3: Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
+- **3.1 Admin PIN Rotation:**
+  - Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` with input validation, error handling, and session sync.
+  - Mounted Change PIN button into the `/manage` header toolbar and a dedicated **Admin Security** section on `/account` for verified administrators.
+  - Created automated host CLI rotation script [`scripts/rotate_admin_pin.ps1`](../scripts/rotate_admin_pin.ps1) with current PIN verification, numeric format validation, and superuser break-glass recovery (`-Force`).
+  - Unit tests: Rust `admin_auth_test` (6/6), Vitest `ChangeAdminPinModal.test.tsx` (8/8), `AccountPage.test.tsx` (8/8).
+  - Walkthrough: [`docs/WALKTHROUGH_ADMIN_PIN_ROTATION.md`](WALKTHROUGH_ADMIN_PIN_ROTATION.md).
+- **3.2 Cloudflare API Token Scoping:**
+  - Audited live Cloudflare token using automated tool [`scripts/verify_cloudflare_token.ps1`](../scripts/verify_cloudflare_token.ps1).
+  - Proved least-privilege compliance: `#dns_records:edit`, `#dns_records:read`, `#zone:read` strictly confined to `anisparvez.in`. Broad scopes (`/user`, `/accounts/{id}/members`) return `403 Forbidden`.
+  - Updated [`Caddyfile.template`](../Caddyfile.template) with explicit least-privilege token creation steps.
+  - Walkthrough: [`docs/WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md`](WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md).
+- **3.3 Google Sign-In Post-Fix Verification:**
+  - Created [`scripts/verify_google_auth.ps1`](../scripts/verify_google_auth.ps1) auditing OAuth config, database user/session state, and live endpoints.
+  - Verified `users` table records `anis7t@gmail.com` with `role: 'admin'`.
+  - Verified `/auth/google` redirect handshake generates valid `accounts.google.com` OAuth URLs.
+  - Verified `GET /api/auth/me` and `/api/admin/status` resolve identity to `authenticated: true`, `role: "admin"`, `is_admin: true` both locally and over public HTTPS (`https://media.anisparvez.in`).
+  - Walkthrough: [`docs/WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md`](WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md).
+
+---
+
+### Category 2: AMD GPU TDR Resilience (Issue 13) — ✅ RESOLVED (2026-10-24)
+- **Root Cause:** Default Windows `TdrDelay` (2.0s) and over-allocation of 3 Main10 workers across 2 physical GPUs provoked D3D11 command latency and intra-adapter VRAM contention on the discrete RX 560X during 4K/HDR encoding bursts, triggering driver watchdog timeouts.
+- **TDR Registry Relaxation:** Created [`scripts/configure_tdr_registry.ps1`](../scripts/configure_tdr_registry.ps1), relaxing Windows GraphicsDrivers parameters to `TdrDelay = 8` s and `TdrDdiDelay = 20` s.
+- **Concurrency Calibration:** Calibrated default 4K/HDR Main10 transcode concurrency in `rust/src/services/gpu_service.rs` and `.env` to 2 workers (`MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=2`), assigning exactly 1 dedicated worker per physical GPU (discrete RX 560X `dx11:1` + integrated Vega 8 `dx11:0`), completely eliminating intra-adapter VRAM contention.
+- **Worker Execution Timeout & Diagnostics:** Added bounded 180s timeout in `rust/src/services/transcode_worker.rs` with child process forceful termination on hang and structured AMF/D3D11 device error diagnostics.
+- **Audit Tool & Verification:** Created [`scripts/audit_gpu_tdr.ps1`](../scripts/audit_gpu_tdr.ps1). Audited registry, 0 recent LiveKernelReports dumps, calibrated concurrency, and passed D3D11 AMF probes on both physical GPUs. Verified 4K stress transcode with zero TDR dumps.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
+
+---
+
+### Category 5: Multi-User Identity, Scoping & Governance Backlog
+
+#### 5.1 Per-User Playback Progress Scoping — ✅ RESOLVED (2026-10-24)
+- **Problem:** The PostgreSQL `progress` table had a single-column primary key on `filename`, forcing all users and unauthenticated guests to share identical resume timestamps. Watching a movie on one account or device overwrote playback progress for every other user in the household.
+- **Database Schema Migration:** Added `user_id BIGINT REFERENCES users(id) ON DELETE CASCADE` to `progress` table in [`rust/src/db.rs`](../rust/src/db.rs). Added surrogate primary key `id BIGSERIAL PRIMARY KEY` and enforced `UNIQUE NULLS NOT DISTINCT (user_id, filename)` (native in PostgreSQL 18.4), allowing exactly 1 progress row per registered user and 1 shared fallback row for unauthenticated guests.
+- **Service & Handler Resolution:** Updated `ProgressService` in [`rust/src/services/progress.rs`](../rust/src/services/progress.rs) to resolve caller `user_id` via session cookies or bearer tokens (`AuthService::resolve_effective_user_id`). Applied Option A precedence: authenticated users read and write strictly to their own scoped record; unauthenticated guests fall back to the guest record (`user_id IS NULL`).
+- **Tests & Verification:** Dedicated test suite [`rust/tests/user_progress_test.rs`](../rust/tests/user_progress_test.rs) passes 4/4 tests. Android contract probe passes 22/22 endpoints. Full web suite passes 334/334 tests.
+- **Walkthrough:** [`docs/WALKTHROUGH_USER_PROGRESS_SCOPING.md`](WALKTHROUGH_USER_PROGRESS_SCOPING.md).
+
+#### 5.2 Dedicated Admin Mutation Audit Log Table in PostgreSQL — ✅ RESOLVED (2026-10-24)
+- **Problem:** Security-sensitive administrative mutations (Admin PIN changes, device renames/deletions, allowlist alterations, cache purges, and media deletions) were recorded only as transient text logs in `logs/rust_api.log`. There was no persistent, queryable audit trail in PostgreSQL.
+- **Database Schema:** Created indexed `audit_logs` table (`id BIGSERIAL PRIMARY KEY, actor_type TEXT, actor_id TEXT, action TEXT, target_type TEXT, target_id TEXT, details JSONB, ip_address TEXT, created_at TIMESTAMPTZ`) in [`rust/src/db.rs`](../rust/src/db.rs).
+- **Service & Non-Blocking Design:** Implemented `AuditService` in [`rust/src/services/audit_service.rs`](../rust/src/services/audit_service.rs) with error containment (logging failures never break caller operations) and actor/IP resolution helpers.
+- **Admin Query Route:** Added `GET /api/admin/audit-logs` in [`rust/src/routes/admin.rs`](../rust/src/routes/admin.rs) mounted in `admin_routes` ([`rust/src/lib.rs`](../rust/src/lib.rs)), guarded by `AuthService::is_admin_authorized` (Option A: 401 Unauthorized for anonymous requests).
+- **Route Instrumentation:** Instrumented Admin PIN rotation, device assignment/history delete, device rename/delete, allowlist changes, storage cache purges, storage retention policy changes, and media deletions.
+- **Tests & Verification:** Dedicated test suite [`rust/tests/audit_log_test.rs`](../rust/tests/audit_log_test.rs) passes 7/7 tests. Android contract probe passes 22/22 endpoints. Full web suite passes 334/334 tests. Live production verification on port 8000 confirmed 401 gate, authorized queries, and real-time event recording into PostgreSQL.
+- **Walkthrough:** [`docs/WALKTHROUGH_ADMIN_AUDIT_LOG.md`](WALKTHROUGH_ADMIN_AUDIT_LOG.md).
+
+#### 5.3 QR Expiry & Finalize Status Race Condition — ✅ RESOLVED (2026-10-24)
+- **Problem:** If a mobile user confirmed a pair session near the 2-minute deadline (T-1s), `confirm_pair_session()` succeeded and minted a 30-day session, but left `expires_at` unchanged. By the time the TV received SSE/status and redirected to `/finalize`, `expires_at` had elapsed, returning 400 Bad Request and stranding the user. Furthermore, finalize lacked single-use atomicity/idempotency, and client SSE interruptions failed silently without status polling.
+- **Expiry Boundary Grace Extension:** In `rust/src/services/auth_service.rs`, `confirm_pair_session()` now updates `expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '60 seconds')`, guaranteeing a 60-second grace window for the TV to finalize.
+- **Atomic Single-Use Finalization (Option A):** Added `finalized` (`BOOLEAN NOT NULL DEFAULT FALSE`) and `finalized_at` (`TIMESTAMPTZ`) to `device_pair_sessions` with index `idx_device_pair_sessions_lookup` in `rust/src/db.rs`. `AuthService::finalize_pair_session()` atomically updates `finalized = TRUE, finalized_at = CURRENT_TIMESTAMP`, permitting a 10-second idempotency window for identical duplicate requests from the same client and failing closed thereafter.
+- **Frontend Fallback & Timer Freeze:** In `web/src/hooks/useQrSession.ts`, `onerror` activates a 3-second fallback interval polling `GET /api/auth/qr/{id}/status`, and confirmation immediately freezes the countdown timer so local clock drift never requests a replacement session over an in-flight handshake.
+- **Tests & Verification:** Dedicated test suite [`rust/tests/qr_auth_test.rs`](../rust/tests/qr_auth_test.rs) passes 5/5 tests. Frontend tests in `web/src/hooks/useQrSession.test.ts` pass 9/9 (full web suite 336/336 tests pass across all 46 test files). Regression suite (`audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) passes with zero failures. Live production service restarted and verified on port 8000 via `scripts/probe_qr_auth.ps1`.
+- **Walkthrough:** [`docs/WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md`](WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md).
+
+#### 5.4 Proactive Subtitle Acquisition — ✅ RESOLVED (2026-10-24)
+- **Problem:** Subtitles were acquired on-demand during player playback start (`get_subtitle_tracks`). Titles without embedded English subtitles suffered an 8–10 second stall while computing the OpenSubtitles 64-bit hash, performing REST lookups, downloading gzip archives, and decompressing VTT files. Titles with no matches repeated this network lookup on every playback.
+- **24-Hour Negative-Match Caching (`.nomatch`):** In `rust/src/services/subtitle_service.rs`, `fetch_online_subtitle()` checks for a 24-hour negative-match marker (`cache/subtitles/online/{short_hash}.nomatch`). If present and younger than 24h, the lookup terminates in < 1ms. If an external query yields no results, a `.nomatch` marker is written. When subtitles are successfully acquired, any existing `.nomatch` marker is unlinked.
+- **Local & Embedded Precedence:** Added `SubtitleService::has_english_subtitles()` checking directory sidecars (`list_tracks`), cached `.vtt` files, and container embedded tracks (`probe_embedded_subtitles`). Online requests are bypassed if English tracks are already present.
+- **Native Ingestion Hook & Polite Library Sweep:** Integrated `ensure_subtitles_for_movie()` into new media ingestion in `rust/src/scanner/engine.rs`. Added `ScannerEngine::proactive_subtitle_sweep()` to politely sweep existing library titles lacking English tracks with a 500ms delay between consecutive OpenSubtitles queries.
+- **Telemetry:** Added `subtitles_acquired: usize` to `ScannerReport` and `ScanResponse` (`GET /api/scan`).
+- **Tests & Verification:** Dedicated test suite [`rust/tests/subtitle_test.rs`](../rust/tests/subtitle_test.rs) passed 5/5 tests. Full regression suite (`qr_auth_test` 5/5, `audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) passed. Deployed release binary to port 8000.
+- **Walkthrough:** [`docs/WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md`](WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md).
+
+#### 5.5 Off-Host Database Backups — ✅ RESOLVED (2026-10-24)
+- **Problem:** Both the live PostgreSQL database (`E:\pgdata`) and daily backups (`E:\MediaServer\backups\postgres`) resided on the same physical SSD drive `E:`. A drive hardware failure or corruption would result in total, catastrophic data loss.
+- **Cross-Volume Secondary Replication (Option A):** In [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1), backups are automatically replicated to `D:\Flicks\.backups\postgres` on the secondary high-capacity HDD using atomic `.tmp` file copying and byte-size verification before promotion.
+- **Pre-Replication Integrity Verification:** Runs `pg_restore --list` directly on the new `.dump` file to ensure archive header and table of contents are valid prior to rotation pruning or secondary replication.
+- **Independent 14-Day Cold Recovery Retention (Option A):** Prunes secondary backups on `D:` independently from `E:`, maintaining a 14-day cold disaster recovery window.
+- **Disaster Recovery Fallback in Restore Tool:** In [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1), if the primary backup directory on `E:` is missing or empty, the restore tool automatically falls back to searching `D:\Flicks\.backups\postgres`.
+- **Media Scanner Ignore Rule:** Added `.backups` to directory ignore filter in `ScannerEngine::discover_video_files` ([`rust/src/scanner/engine.rs`](../rust/src/scanner/engine.rs)).
+#### 5.6 4K HEVC Streaming (*Ghost in the Cell*) & Smart Direct Play Routing — ✅ RESOLVED (2026-10-24)
+- **Problem:** 4K HEVC title (*Ghost in the Cell*) stalled or failed to stream completely on Android mobile clients over HLS at 2160p, while 1440p (2K) and lower resolutions streamed smoothly, and native Direct Play 4K also played smoothly.
+- **Root Cause:** Android mobile SoCs (Qualcomm Snapdragon, MediaTek, Exynos) dedicate hardware 4K decoding blocks strictly to HEVC/VP9/AV1, and lack hardware decoding for 4K H.264 (AVC). The server previously used `h264_amf` for all HLS tiers including 2160p, forcing MediaCodec to fail and drop into unaccelerated software CPU decoding (`libavcodec`), which pegged mobile CPU cores to 100% and froze playback. Furthermore, selecting 4K in the player forced an unneeded server-side re-transcode instead of utilizing the lossless, instant 4K Direct Play bitstream.
+- **Backend Dual-Codec HLS Transcoding:** In `rust/src/services/gpu_service.rs`, `GPUWorkerConfig::get_ffmpeg_video_args()` switches to **HEVC** (`hevc_amf`, `hevc_vaapi`, `libx265`) with canonical MP4 FourCC `-tag:v hvc1` for tiers \(\ge 2160\text{p}\), while keeping universal H.264 (`h264_amf`) for \(\le 1440\text{p}\). In `rust/src/services/hls_service.rs`, `STANDARD_QUALITIES` advertises `CODECS="hvc1.1.6.L153.B0,mp4a.40.2"` for 2160p. In `rust/src/routes/transcode.rs`, `start_transcode_handler()` reopens purged or missing cache tiers with `force = true`.
+- **Smart 4K Direct Play Routing in Flutter Client:** In `flutter_client/lib/features/player/infrastructure/player_media_resolver.dart`, `resolveQualityUrl()` detects native 4K titles and `PlaybackMode.directPlay`, routing 2160p quality selections directly to `/media/<filename>` RFC 7233 byte-range stream for instantaneous start and zero GPU overhead. In `player_screen.dart`, added `_isNative4k` dimension check and `'4K DIRECT'` badge. In `quality_selector_sheet.dart`, clarified option titles and badges (`Original (4K Direct Play - Lossless)` vs `2160p (4K HEVC Stream)`).
+- **Tests & Verification:** Dedicated unit test suite in `rust/src/services/gpu_service.rs` passed 4/4 tests. Flutter resolver unit test suite (`test/features/player/player_media_resolver_test.dart`) passed 6/6 tests. Flutter quality sheet widget test passed 4/4 tests. Full Rust lib test suite passed 125/125 tests. Android API contract probe passed 22/22 endpoints. Live 2160p transcode chunk probe verified `hevc_amf` with FourCC `hvc1 (0x31637668)` at 3840x2160.
+- **Walkthrough:** [`docs/WALKTHROUGH_4K_HEVC_STREAMING_FIX.md`](WALKTHROUGH_4K_HEVC_STREAMING_FIX.md).
+- **Plan:** [`docs/PLAN_4K_HEVC_STREAMING_FIX.md`](PLAN_4K_HEVC_STREAMING_FIX.md).
+#### 5.7 4K GPU Transcode Stability, Sweeper Infinite Loop & Dashboard Telemetry — ✅ RESOLVED (2026-10-24)
+- **Problem:** Host machine crashed 3 times with sudden unexpected shutdowns (Kernel-Power Event 41 with BugCheck 0) during active 4K HEVC transcoding (*Ghost in the Cell*), entering an infinite crash loop upon reboot. Simultaneously, the Transcode Dashboard displayed "0 Active Transcodes (0 running, 0 queued)" despite the job actively executing on both GPUs.
+- **Root Cause:**
+  1. *Dual-GPU 4K Contention:* Running 4K 10-bit HEVC (`hevc_amf`) with `vpp_amf` scaling concurrently across both the integrated Vega 8 (sharing system RAM and driving the laptop display) and discrete RX 560X overloaded the APU memory bus and caused dual-adapter D3D11 command timeouts (Chunks 35 & 36 failed after 180s), triggering driver crashes and fatal kernel deadlocks.
+  2. *Dashboard Query Blindspot:* `transcode_dashboard_handler` called `JobService::list(pool, 50)`, which ordered by `created_at DESC LIMIT 50`. Older active jobs (Job #776 created on Oct 17) fell outside the top 50 and were omitted from the dashboard payload.
+  3. *Sweeper Infinite Loop:* `transcode_sweeper.rs` automatically re-enqueued failed/canceled jobs with `force = true` on every 5-minute cycle, restarting the crash-inducing job upon boot.
+- **Resolution:**
+  - *Dashboard Active Job Prioritization:* Implemented `JobService::list_for_dashboard` in [`rust/src/services/job_service.rs`](../rust/src/services/job_service.rs) using a CTE that always selects 100% of active (running/queued) jobs first, and sorts finished jobs by `updated_at DESC`.
+  - *Dedicated Single Discrete GPU for 4K:* Preserved 4K HLS transcoding per user directive, but restricted 4K HEVC tiers to 1 dedicated worker on the discrete AMD Radeon RX 560X (`MEDIA_SERVER_TRANSCODE_WORKERS_4K=1`) in [`rust/src/services/gpu_service.rs`](../rust/src/services/gpu_service.rs) and [`rust/src/services/transcode_worker.rs`](../rust/src/services/transcode_worker.rs), leaving the integrated Vega 8 idle to maintain display and bus stability.
+  - *Sweeper Circuit Breaker:* In [`rust/src/services/transcode_sweeper.rs`](../rust/src/services/transcode_sweeper.rs), added checks to skip `status == "canceled"` jobs and skip failed jobs with `attempts >= 3`.
+- **Tests & Verification:** Unit tests in `gpu_service` passed 6/6 tests. Integration test `test_list_for_dashboard_always_prioritizes_active_jobs` passed. Android API contract probe passed 22/22 endpoints. Live service compiled with release profile and deployed to port 8000; dashboard accurately displays recent jobs and sweeper runs with zero re-enqueue loops.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+- **Plan:** [`docs/PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
 
 ---
 

@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
-import '../../../updater/presentation/widgets/settings_content.dart';
+import '../../../../core/device/data/device_capability_service.dart';
+import '../widgets/settings_content.dart';
+
+import '../../../admin/presentation/widgets/admin_hub_tile.dart';
+import '../../../auth/presentation/widgets/account_profile_card.dart';
+import '../../../auth/presentation/widgets/tv_account_profile_card.dart';
 
 /// Full-screen Settings tab embedded in the persistent bottom navigation shell.
 /// Reuses [SettingsContent] to share exact update channel, server, and version logic.
@@ -21,6 +25,13 @@ class SettingsScreen extends ConsumerWidget {
         child: Column(
           children: [
             _buildFrostedHeader(isTv),
+            if (!isTv) const AccountProfileCard(),
+            if (isTv)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+                child: TvAccountProfileCard(),
+              ),
+            const AdminHubTile(),
             const Expanded(
               child: SettingsContent(
                 isModal: false,

@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_exception.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import '../../data/repositories/library_repository.dart';
 
 enum LibraryStatus { initial, loading, loaded, error }
@@ -318,7 +319,14 @@ class LibraryController extends Notifier<LibraryState> {
       final success = await _repository.triggerScan();
       state = state.copyWith(isScanning: false);
       if (success) {
-        await loadLibrary(isRefresh: true);
+        // Asynchronously refresh the library catalog in the background so slow
+        // database queries or network latency do not mask scan trigger success.
+        unawaited(
+          loadLibrary(isRefresh: true).catchError((e) {
+            debugPrint('[LibraryController] Background library refresh after scan error: $e');
+            return null;
+          }),
+        );
       }
       return success;
     } catch (e) {

@@ -17,11 +17,11 @@ import 'package:media_server_client/core/storage/settings_service.dart'
 // resolves and makes the displayed origin depend on microtask timing.
 import 'package:media_server_client/core/storage/settings_service.dart'
     as settings show serverBaseUrlProvider;
-import 'package:media_server_client/features/library/data/models/library_response.dart';
-import 'package:media_server_client/features/library/data/models/movie_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_extended_details.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
-import 'package:media_server_client/features/library/data/models/movie_specs.dart';
+import 'package:media_server_client/features/library/domain/models/library_response.dart';
+import 'package:media_server_client/features/library/domain/models/movie_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_extended_details.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_specs.dart';
 import 'package:media_server_client/features/library/data/repositories/library_repository.dart';
 import 'package:media_server_client/features/updater/presentation/controllers/update_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';

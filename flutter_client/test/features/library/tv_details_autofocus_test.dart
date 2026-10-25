@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/device/domain/device_capabilities.dart';
-import 'package:media_server_client/core/device/infrastructure/device_capability_service.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
+import 'package:media_server_client/core/device/data/device_capability_service.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
 import 'package:media_server_client/features/library/presentation/screens/movie_details_screen.dart';
 
 void main() {

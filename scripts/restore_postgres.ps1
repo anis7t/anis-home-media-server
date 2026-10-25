@@ -23,6 +23,7 @@ param(
     [string]$DbHost = "127.0.0.1",
     [int]$Port = 5432,
     [string]$DestDir = "E:\MediaServer\backups\postgres",
+    [string]$SecondaryDestDir = "D:\Flicks\.backups\postgres",
 
     # Skip the pre-restore rollback point (only sensible for a scratch target).
     [switch]$NoRollbackPoint,
@@ -59,10 +60,26 @@ $env:PGPASSWORD = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { "postgres" }
 if (-not $DumpFile) {
     $newest = Get-ChildItem -Path $DestDir -Filter "${Database}_*.dump" -ErrorAction SilentlyContinue |
         Sort-Object CreationTime -Descending | Select-Object -First 1
-    if (-not $newest) { $newest = Get-ChildItem -Path $DestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
-        Sort-Object CreationTime -Descending | Select-Object -First 1 }
     if (-not $newest) {
-        Write-Host "ERROR: no .dump archive found in $DestDir. Pass -DumpFile explicitly." -ForegroundColor Red
+        $newest = Get-ChildItem -Path $DestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
+            Sort-Object CreationTime -Descending | Select-Object -First 1
+    }
+
+    if (-not $newest -and $SecondaryDestDir -and (Test-Path $SecondaryDestDir)) {
+        Write-Host "NOTE: No dumps found in primary $DestDir. Checking secondary storage: $SecondaryDestDir ..." -ForegroundColor Yellow
+        $newest = Get-ChildItem -Path $SecondaryDestDir -Filter "${Database}_*.dump" -ErrorAction SilentlyContinue |
+            Sort-Object CreationTime -Descending | Select-Object -First 1
+        if (-not $newest) {
+            $newest = Get-ChildItem -Path $SecondaryDestDir -Filter "*.dump" -ErrorAction SilentlyContinue |
+                Sort-Object CreationTime -Descending | Select-Object -First 1
+        }
+        if ($newest) {
+            Write-Host "DISASTER RECOVERY FALLBACK: Selected backup from secondary storage ($($newest.FullName))" -ForegroundColor Cyan
+        }
+    }
+
+    if (-not $newest) {
+        Write-Host "ERROR: no .dump archive found in $DestDir (or $SecondaryDestDir). Pass -DumpFile explicitly." -ForegroundColor Red
         exit 1
     }
     $DumpFile = $newest.FullName
@@ -138,7 +155,7 @@ if ($rc -ne 0) {
 
 # --- Verify -----------------------------------------------------------------
 Write-Host "`n[4/4] Verifying the restored database..." -ForegroundColor Cyan
-$checks = @("movies", "users", "sessions", "progress", "devices", "settings", "auth_tokens")
+$checks = @("movies", "users", "sessions", "progress", "devices", "settings", "device_pair_sessions")
 $ok = $true
 foreach ($t in $checks) {
     $count = (& $psql -h $DbHost -p $Port -U $User -d $target -A -t -c "SELECT count(*) FROM $t;" 2>$null)
@@ -155,7 +172,8 @@ if ($ok) {
     if ($isTargetLive) {
         Write-Host "Now start the server:  Start-Service MediaServerRust" -ForegroundColor Green
         Write-Host "The Rust server creates any missing tables at pool creation, so a dump" -ForegroundColor DarkGray
-        Write-Host "taken before a schema change is still safe to restore." -ForegroundColor DarkGray
+        Write-Host "taken before a schema change is still safe to restore. It also drops the" -ForegroundColor DarkGray
+        Write-Host "retired auth_tokens table on boot." -ForegroundColor DarkGray
     }
 } else {
     Write-Host "`nRESTORE COMPLETED BUT VERIFICATION FOUND MISSING TABLES." -ForegroundColor Yellow

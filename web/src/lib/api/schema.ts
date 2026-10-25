@@ -730,8 +730,14 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Single-File Media Upload
-         * @description Multipart video upload with atomic staging (.upload_*.part) and automatic metadata scanning.
+         * Single-File Media Upload (Compatibility)
+         * @description Multipart video upload with atomic staging and automatic metadata
+         *     scanning. This compatibility route accepts one file up to 256 MiB; the
+         *     React client uses the resumable chunked route instead.
+         *
+         *     **Admin authorization is required**: either an authenticated admin
+         *     session cookie or the `X-Admin-Pin` header. The PIN is never accepted
+         *     from a query string.
          */
         post: operations["postApiUpload"];
         delete?: never;
@@ -751,7 +757,11 @@ export interface paths {
         put?: never;
         /**
          * Initialize Resumable Chunked Upload Session
-         * @description Initiates a reverse-proxy-safe chunked upload session for large files up to 20 GiB.
+         * @description Starts an 8 MiB-chunk resumable session for a file up to 20 GiB.
+         *
+         *     **Admin authorization is required.** The JSON request stays under
+         *     Axum's 2 MB default body limit; only the chunk route carries the larger
+         *     per-route body limit.
          */
         post: operations["postApiUploadChunkInit"];
         delete?: never;
@@ -769,18 +779,20 @@ export interface paths {
         };
         /**
          * Query Chunked Upload Offset
-         * @description Returns current received byte offset for resuming interrupted uploads.
+         * @description Returns the current received byte offset for resuming an interrupted upload. Requires admin authorization.
          */
         get: operations["getApiUploadChunk"];
         put?: never;
         /**
          * Upload Slice at Byte Offset
-         * @description Appends raw binary chunk at declared X-Upload-Offset.
+         * @description Appends raw binary bytes at `X-Upload-Offset`. The header defaults to 0
+         *     when omitted. A mismatch is a 409 whose body reports the server's
+         *     `current_offset`, so the client can resume rather than restart.
          */
         post: operations["postApiUploadChunk"];
         /**
          * Abort Chunked Upload Session
-         * @description Cancels upload session and unlinks temporary staging files.
+         * @description Cancels the upload session and unlinks temporary staging files. Requires admin authorization.
          */
         delete: operations["deleteApiUploadChunk"];
         options?: never;
@@ -799,7 +811,9 @@ export interface paths {
         put?: never;
         /**
          * Finalize and Assemble Chunked Upload
-         * @description Verifies complete byte transfer, atomically promotes file to library root, and triggers scanning.
+         * @description Verifies the complete byte transfer, moves the file into the library
+         *     root, inserts a fallback catalog row, and triggers the library scan.
+         *     Requires admin authorization.
          */
         post: operations["postApiUploadChunkComplete"];
         delete?: never;
@@ -1208,10 +1222,227 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/remotelogin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Phone-Side Remote Login Page
+         * @description Standalone mobile-first page that completes a QR device sign-in. It is served outside the
+         *     application shell, with no navigation header or footer, so it reads as a focused
+         *     single-purpose screen.
+         *
+         *     Two arrival modes:
+         *
+         *     - **QR scan** — the URL carries `qr_id`, `code` and `sig` query parameters, the code is
+         *       auto-filled and the manual lookup is skipped.
+         *     - **Manual entry** — the visitor opened the URL themselves and types the 5-character code
+         *       shown on the TV.
+         *
+         *     If the visitor is not signed in, a Google sign-in link is offered. The QR parameters are
+         *     preserved across that redirect, so the flow resumes where it left off.
+         */
+        get: operations["getRemoteLoginPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a QR Device Pairing Session
+         * @description Creates an ephemeral pairing session and returns everything the waiting TV needs to
+         *     display: the session id, the 5-character code, an HMAC signature, and the QR URL to encode.
+         *
+         *     The session lives for **2 minutes**. It is renewed silently by the client when it expires,
+         *     and the previous session is swept from the database.
+         *
+         *     The 5-character code is drawn from the unambiguous charset
+         *     `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no `0`, `O`, `1` or `I`) using the operating system's
+         *     CSPRNG, giving 25 bits of entropy. The `sig` is
+         *     `HMAC-SHA256(MEDIA_SERVER_SECRET, "qr_id:code")` and lets a phone that scanned the QR
+         *     confirm without re-typing the code.
+         */
+        post: operations["createQrPairSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a Hand-Typed Pair Code
+         * @description Resolves a manually entered 5-character code to the id of a live, unexpired, unconfirmed
+         *     pairing session, so the phone can then confirm it.
+         *
+         *     **Requires the caller to be signed in.** This is the endpoint that makes a guessable pair
+         *     code exploitable, so the code must carry real entropy and this endpoint must stay behind
+         *     authentication.
+         */
+        post: operations["lookupQrPairCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr/{id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Await Pairing Confirmation (Server-Sent Events)
+         * @description Long-lived event stream the waiting TV subscribes to. The server pushes a frame every
+         *     three seconds and closes the stream on a terminal state.
+         *
+         *     Frame payloads are the bare strings `pending`, `confirmed` and `expired`.
+         *
+         *     The stream is unauthenticated by necessity — the TV is not signed in yet — but the session
+         *     id is a 256-bit secret, so possession of it is the capability. It is never written to the
+         *     log in full.
+         */
+        get: operations["waitQrPairConfirmation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll Pairing Session Status
+         * @description JSON polling fallback for networks where the event stream is blocked. Returns the same
+         *     three states the stream reports.
+         */
+        get: operations["getQrPairStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a Pairing as the Signed-In Phone
+         * @description The phone authorises the pairing. It mints a 30-day session for the waiting device, binds
+         *     the friendly device name the user chose, and marks the session confirmed so the waiting
+         *     TV's event stream fires.
+         *
+         *     **Requires the caller to be signed in** — the session is bound to that account, not to the
+         *     phone.
+         *
+         *     The request may carry either the `code` or the `sig` from the QR URL. The signature is
+         *     preferred because it cannot be mistyped.
+         */
+        post: operations["confirmQrPairSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/qr/{id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finalize the Pairing on the Waiting Device
+         * @description Called by the TV after it observes the `confirmed` event. Issues the 30-day session cookie
+         *     for the paired account, records the friendly device name against the device, and redirects
+         *     to the library.
+         *
+         *     The redirect is a `307`, so the `Set-Cookie` header is honoured and the browser lands on
+         *     `/` already signed in.
+         *
+         *     This endpoint is **unauthenticated and keyed only on the session id**, which is a 256-bit
+         *     secret. Possession of the id is therefore the capability, and the id is never written to
+         *     the log in full.
+         */
+        get: operations["finalizeQrPairSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A newly created QR pairing session. The session lives for 2 minutes. */
+        QrPairSession: {
+            /**
+             * @description Pairing session id. A 256-bit secret, and the only key to the finalize endpoint.
+             * @example qr_0ab050b365726ee1441b51e1a2809ef3d52b1ed98cf4c62b464c400842119b1d
+             */
+            qr_id: string;
+            /**
+             * @description The 5-character pair code, drawn from the unambiguous charset
+             *     `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` using the OS CSPRNG. 25 bits of entropy.
+             * @example K7R2P
+             */
+            code: string;
+            /** @description HMAC-SHA256 over "qr_id:code", keyed with MEDIA_SERVER_SECRET. */
+            sig: string;
+            /**
+             * Format: int64
+             * @description Unix timestamp at which the session expires.
+             */
+            expires_at: number;
+            /** @description URL to encode in the QR image. Carries the qr_id, code and signature. */
+            qr_url: string;
+            /** @description Human-readable remote login URL, for devices whose camera cannot be used. */
+            login_url: string;
+        };
         PwaManifest: {
             name: string;
             short_name: string;
@@ -1242,6 +1473,12 @@ export interface components {
             updated_at?: number | string | null;
             release_date?: string | null;
             added_at?: number | null;
+            /** @description Tagged poster reference (tmdb:<id> or local:<relpath>) or artwork URL. */
+            poster?: string | null;
+            /** @description Raw JSON string holding TMDb tagline, cast, crew, and certifications. */
+            details_json?: string | null;
+            /** @description Unix timestamp in seconds of last TMDb metadata refresh. */
+            last_metadata_refresh?: number | null;
             /** @description Watch progress position in seconds. */
             position: number;
             /** @description Total media runtime in seconds. */
@@ -1250,6 +1487,8 @@ export interface components {
             percent: number;
             remaining_mins?: number | null;
             needs_transcode?: boolean;
+            /** @description Whether an HLS transcode cache is complete on disk. */
+            hls_cached?: boolean;
             can_transcode?: boolean;
             is_transcoding?: boolean;
             transcode_progress?: number | null;
@@ -1264,12 +1503,17 @@ export interface components {
         };
         TechnicalSpecs: {
             resolution?: string | null;
+            resolution_badge?: string | null;
             video_codec?: string | null;
+            video_profile?: string | null;
             audio_codec?: string | null;
             audio_channels?: string | null;
+            container?: string | null;
             aspect_ratio?: string | null;
             bitrate?: string | null;
             filesize?: string | null;
+            file_size?: string | null;
+            subtitles?: string[];
         };
         MovieDetailsResponse: {
             movie: components["schemas"]["MovieSummaryItem"];
@@ -1302,7 +1546,7 @@ export interface components {
             rating?: number | null;
             runtime?: number | null;
             reason?: string;
-            quality_ladder?: Array<components["schemas"]["QualityOption"]>;
+            quality_ladder?: components["schemas"]["QualityOption"][];
         };
         QualityOption: {
             label: string;
@@ -1476,6 +1720,13 @@ export interface components {
             offset: number;
             chunk_size: number;
         };
+        ChunkAppendResponse: {
+            success: boolean;
+            upload_id: string;
+            offset: number;
+            size: number;
+            complete: boolean;
+        };
         SubtitleUploadResponse: {
             success: boolean;
             filename: string;
@@ -1544,6 +1795,13 @@ export interface components {
     parameters: {
         /** @description Unique client identifier (e.g. dev_a1b2c3d4) scoping watch progress and presence. */
         XDeviceIdHeader: string;
+        /**
+         * @description Admin PIN for a caller without an admin session cookie. It is ignored
+         *     when the request carries an admin session. A PIN in the query string is
+         *     never read, because query strings leak into access logs, browser
+         *     history and Referer headers.
+         */
+        XAdminPinHeader: string;
     };
     requestBodies: never;
     headers: never;
@@ -2580,7 +2838,15 @@ export interface operations {
     postApiUpload: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2606,8 +2872,29 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSuccessResponse"];
                 };
             };
-            /** @description No file provided or unsupported format. */
+            /** @description No file provided. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin authorization required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File exceeds the 256 MiB single-file compatibility cap. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unsupported media extension. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2625,7 +2912,15 @@ export interface operations {
     postApiUploadChunkInit: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2657,8 +2952,22 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Size exceeds 20 GiB safety limit. */
+            /** @description Admin authorization required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Size exceeds the 20 GiB safety limit. */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unsupported media extension. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2669,7 +2978,15 @@ export interface operations {
     getApiUploadChunk: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+            };
             path: {
                 upload_id: string;
             };
@@ -2686,6 +3003,13 @@ export interface operations {
                     "application/json": components["schemas"]["ChunkStatusResponse"];
                 };
             };
+            /** @description Admin authorization required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Session not found. */
             404: {
                 headers: {
@@ -2698,9 +3022,16 @@ export interface operations {
     postApiUploadChunk: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Byte offset matching current server state. */
-                "X-Upload-Offset": number;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+                /** @description Byte offset matching current server state; defaults to 0. */
+                "X-Upload-Offset"?: number;
             };
             path: {
                 upload_id: string;
@@ -2719,11 +3050,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChunkStatusResponse"];
+                    "application/json": components["schemas"]["ChunkAppendResponse"];
                 };
             };
-            /** @description Offset mismatch or chunk exceeds declared total size. */
+            /** @description Empty chunk, invalid offset header, or chunk extends past the declared size. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin authorization required. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2736,12 +3074,34 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Offset mismatch; the body reports `current_offset`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Chunk exceeds the 8 MiB chunk size or the route transport limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     deleteApiUploadChunk: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+            };
             path: {
                 upload_id: string;
             };
@@ -2757,16 +3117,37 @@ export interface operations {
                 content: {
                     "application/json": {
                         success: boolean;
-                        message?: string;
                     };
                 };
+            };
+            /** @description Admin authorization required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Session not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
     postApiUploadChunkComplete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Admin PIN for a caller without an admin session cookie. It is ignored
+                 *     when the request carries an admin session. A PIN in the query string is
+                 *     never read, because query strings leak into access logs, browser
+                 *     history and Referer headers.
+                 */
+                "X-Admin-Pin"?: components["parameters"]["XAdminPinHeader"];
+            };
             path: {
                 upload_id: string;
             };
@@ -2783,15 +3164,22 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSuccessResponse"];
                 };
             };
-            /** @description Session not found. */
-            404: {
+            /** @description Upload byte count is incomplete. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Upload byte count incomplete. */
-            409: {
+            /** @description Admin authorization required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Session not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3486,6 +3874,243 @@ export interface operations {
             };
             /** @description APK artifact not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getRemoteLoginPage: {
+        parameters: {
+            query?: {
+                /** @description Pairing session id, present when arriving via QR scan. */
+                qr_id?: string;
+                /** @description 5-character pair code, present when arriving via QR scan. */
+                code?: string;
+                /** @description HMAC-SHA256 signature over "qr_id:code", present when arriving via QR scan. */
+                sig?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remote login page (React SPA shell). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    createQrPairSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pairing session created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QrPairSession"];
+                };
+            };
+            /** @description The secure random source was unavailable, so no session was created. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    lookupQrPairCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example K7R2P */
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Code resolved to a live pairing session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        qr_id: string;
+                        code: string;
+                    };
+                };
+            };
+            /** @description The code was not exactly 5 characters. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller is not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No live pairing session matches that code. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    waitQrPairConfirmation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Pairing session id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    getQrPairStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Pairing session id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current pairing state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "pending" | "confirmed" | "expired";
+                    };
+                };
+            };
+        };
+    };
+    confirmQrPairSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Pairing session id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The 5-character pair code. Required when `sig` is not supplied. */
+                    code?: string;
+                    /** @description HMAC signature from the QR URL. When valid, the code check is skipped. */
+                    sig?: string;
+                    /** @example Living room TV */
+                    device_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Pairing confirmed; the TV will sign in automatically. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                        message: string;
+                    };
+                };
+            };
+            /** @description The session expired, was already confirmed, or the device name was invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller is not signed in, or the submitted code or signature did not match. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    finalizeQrPairSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Pairing session id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the library with the session cookie set. */
+            307: {
+                headers: {
+                    /** @example session_token=sess_...; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000 */
+                    "Set-Cookie"?: string;
+                    /** @example / */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The session was not confirmed yet, or it had already expired. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

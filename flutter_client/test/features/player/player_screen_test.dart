@@ -4,13 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_controls_overlay.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_error_card.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_loading_indicator.dart';
 import 'package:media_server_client/features/player/presentation/widgets/double_tap_seek_detector.dart';
-import 'package:media_server_client/features/player/infrastructure/screen_brightness_service.dart';
-import 'package:media_server_client/features/player/infrastructure/media_volume_service.dart';
+import 'package:media_server_client/features/player/data/screen_brightness_service.dart';
+import 'package:media_server_client/features/player/data/media_volume_service.dart';
 
 class FakePlayerController implements PlayerControllerInterface {
   Duration _position = Duration.zero;

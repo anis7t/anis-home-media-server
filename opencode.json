@@ -52,21 +52,6 @@
         "command": ["npx", "-y", "@mobilenext/mobile-mcp@latest"],
         "enabled": true
       },
-      "media-db": {
-        "type": "local",
-        "command": [
-          "uvx",
-          "fastmcp-sqlite",
-          "--db",
-          ".opencode/db/media.snapshot.db",
-          "--read-only",
-          "--allowed-dir",
-          ".opencode/db",
-          "--max-rows",
-          "200"
-        ],
-        "enabled": true
-      },
       "postgres": {
         "type": "local",
         "command": ["uvx", "postgresql-mcp"],
@@ -74,8 +59,8 @@
           "POSTGRES_HOST": "127.0.0.1",
           "POSTGRES_PORT": "5432",
           "POSTGRES_USER": "postgres",
-          "POSTGRES_PASSWORD": "{env:POSTGRES_PASSWORD}",
-          "POSTGRES_DB": "media_dev",
+          "POSTGRES_PASSWORD": "postgres",
+          "POSTGRES_DB": "media_server",
           "POSTGRES_SSLMODE": "disable",
           "ALLOW_WRITE_OPERATIONS": "true",
           "QUERY_TIMEOUT": "30",

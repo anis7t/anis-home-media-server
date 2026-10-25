@@ -6,9 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/models/app_channel.dart';
 import '../../../../core/storage/settings_service.dart';
-import '../../data/models/update_manifest.dart';
+import '../../domain/models/update_manifest.dart';
 import '../../data/repositories/update_repository.dart';
-import '../../infrastructure/app_installer_bridge.dart';
+import '../../data/bridges/app_installer_bridge.dart';
 
 enum UpdateStatus {
   idle,

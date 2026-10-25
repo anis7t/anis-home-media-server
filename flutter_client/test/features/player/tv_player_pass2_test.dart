@@ -4,9 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/device/domain/device_capabilities.dart';
-import 'package:media_server_client/core/device/infrastructure/device_capability_service.dart';
+import 'package:media_server_client/core/device/data/device_capability_service.dart';
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_controls_overlay.dart';
 
 class _FakeTvPass2PlayerController implements PlayerControllerInterface {

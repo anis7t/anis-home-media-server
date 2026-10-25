@@ -51,6 +51,7 @@ export type IconName =
   | 'trash'
   | 'archive'
   | 'devices'
+  | 'qr'
   | 'book'
   | 'shield'
   | 'cast'
@@ -281,6 +282,14 @@ const PATHS: Record<IconName, React.ReactElement> = {
       <path d="M8.5 14v4" />
       <rect x="14" y="9" width="8" height="12" rx="2" />
       <path d="M18 18h.01" />
+    </>
+  ),
+  qr: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM19 14h2M14 19h2M19 19h2v2" />
     </>
   ),
   book: (

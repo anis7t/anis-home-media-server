@@ -1,14 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/navigation/tv_spatial_focus_traversal_policy.dart';
 import '../../../intro/presentation/controllers/intro_controller.dart';
 import '../../../intro/presentation/providers/intro_score_provider.dart';
 import '../../../intro/presentation/widgets/brand_intro_overlay.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../widgets/tv_exit_dialog.dart';
 import '../widgets/tv_side_navigation_rail.dart';
 
@@ -31,6 +33,25 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   DateTime? _lastBackTime;
+  StreamSubscription<Uri>? _deepLinkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authNotifierProvider.notifier).hydrate();
+
+      _deepLinkSub = ref.read(oauthLauncherServiceProvider).listenForAuthCallbacks((token) {
+        ref.read(authNotifierProvider.notifier).setSessionToken(token);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSub?.cancel();
+    super.dispose();
+  }
 
   void _onDestinationSelected(int index) {
     widget.navigationShell.goBranch(

@@ -129,6 +129,25 @@ describe('DevicesPage', () => {
     expect(screen.getByText(/fleet privacy scoping active/i)).toBeInTheDocument();
   });
 
+  it('identifies this browser on /api/devices so its own history is returned', async () => {
+    renderDevices();
+    await screen.findByText('Client Devices & Telemetry');
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url) === '/api/devices');
+    expect(call).toBeTruthy();
+    const headers = (call![1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+
+    /*
+     * Issue 14.1: without this header the server resolves the caller from a
+     * hash of IP + User-Agent, which is a different device row than the one
+     * `/api/progress` writes to. The page then shows a current device with no
+     * history while the viewing sits under the browser's own id.
+     */
+    expect(headers?.['X-Device-Id']).toMatch(/^web_/);
+  });
+
   it('opens and closes the portaled Watch History modal when clicking the button', async () => {
     const user = userEvent.setup();
     renderDevices();
@@ -376,6 +395,12 @@ describe('DevicesPage admin oversight', () => {
     expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({
       device_id: 'dev_123',
     });
+
+    // Mutations carry the browser's own id too: the server answers "is this my
+    // current device?" from it, so a missing header made a non-admin's own
+    // device look like somebody else's and the request was refused.
+    const headers = (call[1] as RequestInit).headers as Record<string, string>;
+    expect(headers['X-Device-Id']).toMatch(/^web_/);
   });
 
   it('removes a single history entry from the history modal', async () => {

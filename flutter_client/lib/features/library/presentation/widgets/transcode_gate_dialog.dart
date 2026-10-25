@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
-import '../../data/models/movie_item.dart';
+import '../../domain/models/movie_item.dart';
 import '../../data/repositories/library_repository.dart';
 
 /// Modal dialog presented when a movie requires 100% complete transcoding

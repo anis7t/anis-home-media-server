@@ -65,3 +65,7 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 http-body-util = "0.1"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"

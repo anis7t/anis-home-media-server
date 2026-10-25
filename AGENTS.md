@@ -350,13 +350,39 @@ enforcement switch (`MEDIA_SERVER_AUTH` is), and the two must never be conflated
   the server, set a non-empty list (admin-only); to reopen it, clear the list. Never "fix" a
   lockout by adding a placeholder address, and never add a default list in code.
 
+### Pairing token retirement invariant (`rust/src/routes/auth.rs` & `rust/src/db.rs`)
+
+The QR device sign-in flow is the **only** pairing path. The long-lived `ms_…` bearer-token
+surface that preceded it is retired, and the retirement is load-bearing.
+
+- **The routes are gone, deliberately.** `GET`/`POST /api/auth/tokens`, `DELETE
+  /api/auth/tokens/{id}` and `GET`/`POST /auth/pair` are not registered. The SPA fallback answers
+  **404** for unmatched `/api/*` and `/auth/*` paths, so an old link or a stale client gets a 404
+  — not the app shell and not a session.
+- **`auth_tokens` is dropped on every boot.** `db::ensure_schema()` runs
+  `DROP TABLE IF EXISTS auth_tokens`, which also heals a database restored from a pre-retirement
+  dump. Do not re-add the table or its DDL without removing the drop. Rolling back to an older
+  binary re-creates an **empty** table, so the old routes answer 401 for every token; the revoked
+  rows are not restored.
+- **There is no `Authorization: Bearer` identity path.**
+  `AuthService::resolve_session_identity` resolves the `session_token` / `media_session` cookie
+  only. Do not reintroduce bearer authentication from a long-lived link.
+- **Never reintroduce a reusable, long-lived pairing link.** The retired surface minted a
+  365-day, reusable, non-consumed `ms_…` secret whose URL signed any browser in as the minting
+  account without a Google step and never created a device row. The UI was removed on 2026-10-23
+  and the backend and table were retired the same day. The QR flow is not affected: it uses
+  `device_pair_sessions`, a 2-minute single-use code, a path-scoped secret bound to the waiting
+  device, and `sess_` session cookies.
+- **The client helpers are gone with it.** `web/src/lib/api/account.ts` no longer exports
+  `listTokens`, `mintToken`, `revokeToken`, `TokenRecord` or `MintedToken`.
+
 ### QR Device Sign-In invariants (`rust/src/routes/qr_auth.rs` & `rust/src/services/auth_service.rs`)
 
 The QR sign-in flow is reachable from the public internet, so its secrets are load-bearing.
 
 - **Every security token comes from the OS CSPRNG.** `getrandom` (BCryptGenRandom on Windows),
   never a clock-derived seed. This covers the pair code, the `qr_id`, the `sess_` session tokens,
-  the `ms_` device tokens, the OAuth `state`/`nonce` and the PKCE `verifier`.
+  the OAuth `state`/`nonce` and the PKCE `verifier`.
   - The failure mode that motivated this: `generate_pair_code()` walked one 64-bit LCG and took
     `seed % 32` per step. The LCG's multiplier and increment are both odd, so the low 5 bits of
     every step depend only on the low 5 bits of the first one — the whole code collapsed to **32

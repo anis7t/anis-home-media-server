@@ -3,8 +3,8 @@ pub mod db;
 pub mod error;
 pub mod models;
 pub mod routes;
-pub mod scanner;
 pub mod services;
+pub use crate::services::catalog::scanner;
 pub mod test_support;
 
 use axum::{routing::get, Router};
@@ -480,6 +480,10 @@ pub fn create_app_full(
             "/api/admin/pin",
             axum::routing::post(routes::admin::admin_pin_handler),
         )
+        .route(
+            "/api/admin/audit-logs",
+            get(routes::admin::admin_audit_logs_handler),
+        )
         .with_state(admin_state);
 
     // Phase C5 Slice 4: Authentication, Google OAuth, Tokens, Allowlist, 100% native.
@@ -494,29 +498,19 @@ pub fn create_app_full(
             get(routes::auth::get_allowlist_handler)
                 .post(routes::auth::post_allowlist_handler),
         )
-        .route(
-            "/api/auth/tokens",
-            get(routes::auth::get_tokens_handler)
-                .post(routes::auth::post_tokens_handler),
-        )
-        .route(
-            "/api/auth/tokens/{id}",
-            axum::routing::delete(routes::auth::delete_token_handler),
-        )
         .route("/auth/google", get(routes::auth::google_start_handler))
         .route(
             "/auth/google/callback",
             get(routes::auth::google_callback_handler),
         )
         .route(
+            "/auth/callback/mobile",
+            get(routes::auth::mobile_oauth_callback_handler),
+        )
+        .route(
             "/auth/logout",
             get(routes::auth::logout_handler)
                 .post(routes::auth::logout_handler),
-        )
-        .route(
-            "/auth/pair",
-            get(routes::auth::pair_page_handler)
-                .post(routes::auth::pair_submit_handler),
         )
         .route(
             "/api/auth/login-pin",

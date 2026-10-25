@@ -200,6 +200,9 @@ That token mints:
 request errors rather than minting a guessable secret. The signature became
 `Result<String, AppError>`, and the compiler found all eight call sites.
 
+> **Retired 2026-10-23:** `ms_` device tokens and the `/auth/pair` redemption path are gone with
+> `auth_tokens`. The QR flow's `sess_` sessions and its `qr_id`/secret are unaffected.
+
 ### 4.3 P0 — the pair code and the full `qr_id` were logged in plaintext
 
 ```rust

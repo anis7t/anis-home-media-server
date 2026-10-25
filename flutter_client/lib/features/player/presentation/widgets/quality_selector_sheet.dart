@@ -77,9 +77,16 @@ class QualitySelectorSheet extends StatelessWidget {
   String _formatOptionTitle(QualityOption option) {
     if (option.quality == 'auto') return 'Auto (Adaptive Stream)';
     if (option.isDirect || option.quality == 'source') {
+      if (option.height >= 2160 || option.width >= 3840) {
+        return 'Original (4K Direct Play - Lossless)';
+      }
       return 'Original (Direct Play)';
     }
-    return option.label.isNotEmpty ? option.label : '${option.quality.toUpperCase()} Stream';
+    if (option.label.isNotEmpty) return option.label;
+    if (option.quality == '2160p' || option.quality == '4k') {
+      return '2160p (4K HEVC Stream)';
+    }
+    return '${option.quality.toUpperCase()} Stream';
   }
 
   String? _formatOptionSubtitle(QualityOption option) {
@@ -87,7 +94,10 @@ class QualitySelectorSheet extends StatelessWidget {
       return 'Dynamically adjusts quality based on your network speed';
     }
     if (option.isDirect || option.quality == 'source') {
-      return 'Bitstream direct play without transcoding';
+      final details = <String>[];
+      if (option.dimensionsLabel.isNotEmpty) details.add(option.dimensionsLabel);
+      details.add('Bitstream direct play without transcoding');
+      return details.join(' • ');
     }
     final details = <String>[];
     if (option.dimensionsLabel.isNotEmpty) {
@@ -95,6 +105,9 @@ class QualitySelectorSheet extends StatelessWidget {
     }
     if (option.formattedBitrate.isNotEmpty) {
       details.add(option.formattedBitrate);
+    }
+    if (option.quality == '2160p' || option.quality == '4k') {
+      details.add('HEVC stream');
     }
     if (details.isEmpty) return null;
     return details.join(' • ');

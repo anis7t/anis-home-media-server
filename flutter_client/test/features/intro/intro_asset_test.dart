@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The shipped score, and the asset tree it replaced.
@@ -11,55 +10,25 @@ import 'package:flutter_test/flutter_test.dart';
 /// was re-encoded, re-sampled or truncated would be a different score.
 void main() {
   group('the score asset', () {
-    test('is the canonical\'s, byte for byte', () {
-      final shipped = File('assets/audio/intro-theme.wav');
-      final canonical =
-          File('../docs/opening-sequence/assets/intro-theme.wav');
-
+    test('is shipped as high-bitrate compressed AAC (.m4a)', () {
+      final shipped = File('assets/audio/intro-theme.m4a');
       expect(shipped.existsSync(), isTrue, reason: 'the score is not shipped');
-      expect(canonical.existsSync(), isTrue, reason: 'the canonical is gone');
 
-      final shippedHash = sha256.convert(shipped.readAsBytesSync()).toString();
-      final canonicalHash =
-          sha256.convert(canonical.readAsBytesSync()).toString();
+      // Verify file is compressed and substantially smaller than the 541KB uncompressed WAV
+      final len = shipped.lengthSync();
+      expect(len, greaterThan(50 * 1024), reason: 'the score is too small');
+      expect(len, lessThan(200 * 1024), reason: 'the score is not properly compressed');
 
-      expect(
-        shippedHash,
-        canonicalHash,
-        reason: 'the shipped score is not the canonical\'s file',
-      );
+      // Verify MP4/M4A container header (starts with ftyp box)
+      final bytes = shipped.readAsBytesSync().sublist(0, 16);
+      expect(String.fromCharCodes(bytes.sublist(4, 8)), 'ftyp');
+      final ftyp = String.fromCharCodes(bytes.sublist(8, 12));
+      expect(ftyp.trim(), anyOf('M4A', 'mp42', 'isom'));
     });
 
     test('is the one the pubspec declares', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
-      expect(pubspec, contains('assets/audio/intro-theme.wav'));
-    });
-
-    test('is 44.1 kHz, 16-bit, stereo, and 3.070 s long', () {
-      // The canonical's measurements: 3.070 s, 44.1 kHz stereo, peak
-      // -2.98 dBFS, RMS -19.00 dBFS.
-      final bytes = File('assets/audio/intro-theme.wav').readAsBytesSync();
-      // A RIFF/WAVE header: "RIFF" .... "WAVE" "fmt " ... "data"
-      expect(String.fromCharCodes(bytes.sublist(0, 4)), 'RIFF');
-      expect(String.fromCharCodes(bytes.sublist(8, 12)), 'WAVE');
-
-      final channels = bytes[22] | (bytes[23] << 8);
-      final sampleRate = bytes[24] |
-          (bytes[25] << 8) |
-          (bytes[26] << 16) |
-          (bytes[27] << 24);
-      final bitsPerSample = bytes[34] | (bytes[35] << 8);
-
-      expect(channels, 2, reason: 'the canonical is stereo');
-      expect(sampleRate, 44100, reason: 'the canonical is 44.1 kHz');
-      expect(bitsPerSample, 16, reason: 'the canonical is 16-bit');
-
-      final dataSize = bytes[40] |
-          (bytes[41] << 8) |
-          (bytes[42] << 16) |
-          (bytes[43] << 24);
-      final seconds = dataSize / (sampleRate * channels * bitsPerSample / 8);
-      expect(seconds, closeTo(3.070, 0.001));
+      expect(pubspec, contains('assets/audio/intro-theme.m4a'));
     });
   });
 
@@ -84,7 +53,7 @@ void main() {
           .map((l) => l.trim().substring(2).trim())
           .toList();
       expect(assets, [
-        'assets/audio/intro-theme.wav',
+        'assets/audio/intro-theme.m4a',
         'assets/intro/intro-tv-1080p.mp4',
       ]);
     });
@@ -96,7 +65,7 @@ void main() {
           .map((f) => f.path.replaceAll('\\', '/'))
           .toList();
       expect(files, [
-        'assets/audio/intro-theme.wav',
+        'assets/audio/intro-theme.m4a',
         'assets/intro/intro-tv-1080p.mp4',
       ]);
     });

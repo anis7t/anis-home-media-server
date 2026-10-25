@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/app/theme/app_colors.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
 import 'package:media_server_client/features/library/presentation/widgets/movie_card.dart';
 
 void main() {

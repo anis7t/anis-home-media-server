@@ -14,7 +14,7 @@ import {
 import { playbackModeFor, playbackUrlFor, type PlaybackMode } from '../../lib/api/media';
 import { useDeviceId } from '../../lib/useDeviceId';
 import type { MediaInfoResponse, TranscodeStatusResponse, QualityOption } from '../../lib/api/types';
-import type { MovieSummary } from '../../lib/api/spec-drift';
+import type { MovieSummary } from '../../lib/api/types';
 import { posterUrl } from '../../lib/api/poster';
 import { PosterImage } from '../../components/PosterImage';
 import { useSubtitles } from './useSubtitles';
@@ -98,6 +98,20 @@ export function PlayerPage() {
   const params = useParams();
   const decoded = decodeURIComponent(params['*'] ?? '');
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  /*
+   * The <video> is only mounted once the probe resolves, so `videoRef.current` is
+   * still null on the commit that first flips `mode` / `isPlaybackReady`. An
+   * effect that gates on the ref therefore runs once into a null and never runs
+   * again: nothing in its dependency array changes when the element arrives.
+   * Mirroring the node into state makes the mount itself observable, which is the
+   * dependency those effects actually have. (Issue 14.3: no source was ever
+   * attached to a direct-play title, so playback sat at 0:00 with no error.)
+   */
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    setVideoEl(node);
+  }, []);
 
   const [info, setInfo] = useState<MediaInfoResponse | undefined>();
   const [clientCapability, setClientCapability] = useState<CapabilityVerdict | undefined>();
@@ -505,7 +519,7 @@ export function PlayerPage() {
 
   // --- Attach the media source (strictly locked until 100% ready) -----------
   useEffect(() => {
-    const video = videoRef.current;
+    const video = videoEl;
     if (!video || !mode || !isPlaybackReady) return;
 
     const src = playbackUrlFor(decoded, effectiveMode, selectedQuality);
@@ -564,7 +578,7 @@ export function PlayerPage() {
     }
 
     return teardown;
-  }, [decoded, effectiveMode, selectedQuality, isPlaybackReady, mode]);
+  }, [videoEl, decoded, effectiveMode, selectedQuality, isPlaybackReady, mode]);
 
   // --- Persist resume progress --------------------------------------------
   const reportProgress = useCallback(
@@ -706,7 +720,16 @@ export function PlayerPage() {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      void video.play().catch(() => {});
+      /*
+       * Silently discarding this rejection is how Issue 14.3 stayed invisible:
+       * the element had no source at all, play() resolved, and nothing moved.
+       * A rejection is always worth one line of feedback - but it must never be
+       * `setError`, which replaces the whole player for what is usually only the
+       * autoplay policy asking for a gesture.
+       */
+      void video.play().catch(() => {
+        showHud('Playback could not start');
+      });
     } else {
       video.pause();
     }
@@ -867,7 +890,7 @@ export function PlayerPage() {
   }, [resetControlsTimer]);
 
   useEffect(() => {
-    const v = videoRef.current;
+    const v = videoEl;
     if (!v) return;
     const onEnter = () => setIsPipActive(true);
     const onLeave = () => setIsPipActive(false);
@@ -877,7 +900,7 @@ export function PlayerPage() {
       v.removeEventListener('enterpictureinpicture', onEnter);
       v.removeEventListener('leavepictureinpicture', onLeave);
     };
-  }, []);
+  }, [videoEl]);
 
   const controlsVisibleAtInteractionStart = useRef(true);
   const lastTapTimeRef = useRef(0);
@@ -1362,7 +1385,7 @@ export function PlayerPage() {
       >
         <video
           id="video"
-          ref={videoRef}
+          ref={attachVideo}
           className={`aspect-video w-full bg-black cursor-pointer aspect-${aspectMode}`}
           playsInline
           preload="metadata"

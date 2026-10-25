@@ -204,3 +204,34 @@ export function deleteMovieMedia(
     },
   );
 }
+
+export interface ChangeAdminPinResponse {
+  readonly success: boolean;
+  readonly error?: string;
+}
+
+export async function changeAdminPin(
+  params: { currentPin?: string; newPin: string },
+  signal?: AbortSignal,
+): Promise<ChangeAdminPinResponse> {
+  try {
+    return await request<{ success: boolean }>('/api/admin/pin', {
+      method: 'POST',
+      headers: adminHeaders(params.currentPin),
+      body: {
+        current_pin: params.currentPin,
+        new_pin: params.newPin,
+      },
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof ApiError) {
+      const errorMsg =
+        err.body && typeof err.body === 'object' && 'error' in err.body && typeof err.body.error === 'string'
+          ? err.body.error
+          : err.message;
+      return { success: false, error: errorMsg };
+    }
+    throw err;
+  }
+}

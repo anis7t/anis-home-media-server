@@ -4,8 +4,8 @@ import '../../../../core/api/api_client.dart';
 import '../../../../core/api/api_endpoints.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/storage/settings_service.dart';
-import '../models/library_response.dart';
-import '../models/movie_details.dart';
+import '../../domain/models/library_response.dart';
+import '../../domain/models/movie_details.dart';
 
 /// Repository responsible for movie library catalog and details network operations.
 class LibraryRepository {
@@ -78,8 +78,13 @@ class LibraryRepository {
   Future<bool> triggerScan() async {
     await _ensureBaseUrl();
     try {
-      final response = await _dio.post(ApiEndpoints.scan);
-      return response.statusCode == 200;
+      final response = await _dio.post(
+        ApiEndpoints.scan,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      return response.statusCode == 200 || response.statusCode == 202;
     } on DioException catch (e) {
       throw NetworkException(
         e.message ?? 'Failed to trigger library scan',

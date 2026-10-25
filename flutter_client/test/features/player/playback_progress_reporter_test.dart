@@ -1,6 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/features/player/application/playback_progress_reporter.dart';
+import 'package:media_server_client/features/player/presentation/controllers/playback_progress_reporter.dart';
 
 /// Regression tests for resume-position persistence.
 ///

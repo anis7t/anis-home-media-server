@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router';
 import { Icon } from '../../components/icons';
 import { getStoredAdminPin } from '../../lib/api/account';
+import { useDeviceId } from '../../lib/useDeviceId';
 import { useOptionalAuth } from '../../auth/AuthProvider';
 
 export interface WatchHistoryItem {
@@ -107,17 +108,34 @@ export function DevicesPage() {
   const hasStoredPin = Boolean(getStoredAdminPin());
   const isAdmin = isAdminSession || hasStoredPin || isFleetUnlocked;
 
+  /*
+   * The id the player writes watch progress under. `/api/devices` resolves the
+   * caller from `X-Device-Id`; without it the server falls back to a hash of
+   * IP + User-Agent, which is a *different* device row holding no history - so
+   * this page showed a current device that had never played anything, while
+   * the viewing sat under this browser's own id (Issue 14.1). Every call that
+   * answers "which device am I?" sends it.
+   */
+  const deviceId = useDeviceId();
+  const deviceHeaders = useMemo<Record<string, string>>(
+    () => ({ 'X-Device-Id': deviceId }),
+    [deviceId],
+  );
+
   const getAdminHeaders = useCallback((): Record<string, string> => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...deviceHeaders,
+    };
     const pin = getStoredAdminPin();
     if (pin) headers['X-Admin-Pin'] = pin;
     return headers;
-  }, []);
+  }, [deviceHeaders]);
 
   const loadDevices = useCallback(async (signal?: AbortSignal) => {
     try {
       const pin = getStoredAdminPin();
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...deviceHeaders };
       if (pin) headers['X-Admin-Pin'] = pin;
       const res = await fetch('/api/devices', { headers, signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -130,7 +148,7 @@ export function DevicesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [deviceHeaders]);
 
   const loadAccounts = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -405,7 +423,7 @@ export function DevicesPage() {
               to="/account"
               className="card-ring rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition"
             >
-              Pair New TV App →
+              Account &amp; Devices →
             </NavLink>
           </div>
         </div>
@@ -450,12 +468,14 @@ export function DevicesPage() {
             <span>How Device Pairing &amp; Watch History Work</span>
           </div>
           <p>
-            <strong>Browser vs. External Screens:</strong> Your web browser signs in directly with your Google account.
-            To connect a TV (Android TV or Fire TV Stick) without typing Google passwords with a remote control,
-            visit <NavLink to="/account" className="text-brand-400 underline hover:text-brand-300 font-medium">Account &gt; Pair New TV App</NavLink> to mint a pairing token and QR code.
+            <strong>Browser vs. the TV app:</strong> Your web browser signs in directly with your Google
+            account. The Android / Fire TV app does not sign in — it identifies itself with its own
+            device id, and the library is public. To sign a browser in on a camera-less screen, open{' '}
+            <NavLink to="/account" className="text-brand-400 underline hover:text-brand-300 font-medium">Account &amp; Devices</NavLink>{' '}
+            there and confirm its QR code or 5-character code from your phone.
           </p>
           <p className="text-white/50">
-            All playback progress, resume positions, and watch history are synchronized automatically across your account and all paired devices.
+            Playback progress, resume positions, and watch history are recorded per device and shown in the fleet table below.
           </p>
         </div>
       </section>
@@ -725,7 +745,7 @@ export function DevicesPage() {
                 </div>
 
                 {/* Watch Activity */}
-                {(d.recent_watch || (d.watch_history && d.watch_history.length > 0)) ? (
+                {(d.recent_watch || !!d.watch_history?.length) ? (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3.5 py-2.5 text-xs">
                     <div className="flex items-center gap-2 truncate max-w-[75%]">
                       <span className="text-white/40 shrink-0">🎬</span>

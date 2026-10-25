@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import type { MovieSummary } from '../../lib/api/spec-drift';
+import type { MovieSummary } from '../../lib/api/types';
 import { backdropUrl, posterUrl } from '../../lib/api/poster';
 import { Icon } from '../../components/icons';
 

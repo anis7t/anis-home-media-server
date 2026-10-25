@@ -1,4 +1,4 @@
-import type { MovieSummary } from '../lib/api/spec-drift';
+import type { MovieSummary } from '../lib/api/types';
 import { MovieCard } from './MovieCard';
 
 interface MovieGridProps {

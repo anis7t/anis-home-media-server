@@ -8,11 +8,15 @@ import Avatar from '../components/Avatar';
 import BrandIntroOverlay from '../components/brand/BrandIntroOverlay';
 import { Icon } from '../components/icons';
 import LoginScreen from '../components/LoginScreen';
+import { SignInMenu } from '../components/SignInMenu';
 import { useIntroSequence } from '../hooks/useIntroSequence';
 import BrandMark from '../components/BrandMark';
+import { HEADER_ACTIONS_SLOT_ID } from '../lib/useHeaderActionsTarget';
+import { useIsPhoneBrowser } from '../lib/signInPlatform';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { authenticated, email, name, locked, signIn, signOut } = useAuth();
+  const { authenticated, email, name, locked, signIn, signOut, oauthConfigured, openPinSignIn } =
+    useAuth();
   const location = useLocation();
 
   /*
@@ -22,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
    * screen then would be wrong - the app is usable.
    */
   const showLogin = locked && !authenticated;
+  const isPhoneBrowser = useIsPhoneBrowser();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
@@ -218,6 +223,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="hidden xl:inline">Devices</span>
             </NavLink>
 
+            {/*
+             * Page-owned actions (the library's Upload Media) mount here, so
+             * the header stays one row. Empty on every other route;
+             * `empty:hidden` keeps an unused slot from contributing flex gaps.
+             */}
+            <div
+              id={HEADER_ACTIONS_SLOT_ID}
+              className="empty:hidden flex items-center gap-1.5 sm:gap-2.5"
+            />
+
             {/* Hidden on the player, where a stray nav click would interrupt playback. */}
             {location.pathname.startsWith('/watch/') ? null : authenticated ? (
               <div className="relative">
@@ -339,7 +354,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : isPhoneBrowser ? (
               <button
                 type="button"
                 onClick={signIn}
@@ -347,6 +362,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 Sign in
               </button>
+            ) : (
+              <SignInMenu
+                key={location.pathname}
+                oauthConfigured={oauthConfigured}
+                onGoogleSignIn={signIn}
+                onPinSignIn={openPinSignIn}
+              />
             )}
           </nav>
         </div>
@@ -478,7 +500,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
                   </p>
                   <p>
-                    Playback progress, user accounts, and device pairing tokens are persisted entirely within a local SQLite database (<code>media.db</code>) on your host machine.
+                    Playback progress, user accounts, and device identities are stored in the server&apos;s PostgreSQL database on your host machine.
                   </p>
                   <p>
                     Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.

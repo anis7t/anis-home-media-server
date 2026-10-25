@@ -32,7 +32,10 @@ export function QrSignInPanel({ onGoogleSignIn, onPinSignIn, oauthConfigured }: 
     // Dynamic import so qrcode is only loaded when this panel is shown
     import('qrcode').then((QRCode: typeof import('qrcode')) => {
       QRCode.toCanvas(canvasRef.current!, session.qr_url, {
-        width: 0, // responsive — fill the canvas element's CSS size
+        // Let the library use its default scale for a crisp module grid. The
+        // canvas's max-width/max-height below fit that bitmap to the card; the
+        // old `width: 0` did not mean "responsive" - it produced a fixed
+        // 236 px canvas that the 160-220 px card clipped with overflow-hidden.
         margin: 1,
         color: {
           dark: '#ffffff',
@@ -64,14 +67,14 @@ export function QrSignInPanel({ onGoogleSignIn, onPinSignIn, oauthConfigured }: 
         <div className="flex-shrink-0 flex flex-col items-center gap-3">
           <div
             className="relative flex items-center justify-center rounded-2xl bg-white/5 border border-white/10 overflow-hidden"
-            style={{ width: 'clamp(160px, 22vw, 220px)', height: 'clamp(160px, 22vw, 220px)' }}
+            style={{ width: 'clamp(220px, 24vw, 240px)', height: 'clamp(220px, 24vw, 240px)' }}
           >
             {loading ? (
               <div className="h-8 w-8 rounded-full border-2 border-white/10 border-t-brand-500 animate-spin" />
             ) : (
               <canvas
                 ref={canvasRef}
-                className="w-full h-full object-contain"
+                className="block max-w-full max-h-full"
                 aria-label="QR code to sign in on this device"
               />
             )}

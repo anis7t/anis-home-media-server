@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/auth/presentation/providers/auth_providers.dart';
 import '../storage/settings_service.dart';
 import 'api_endpoints.dart';
 import 'api_interceptors.dart';
@@ -44,9 +45,9 @@ class ApiClient {
             Dio(
               BaseOptions(
                 baseUrl: baseUrl,
-                connectTimeout: const Duration(seconds: 5),
-                receiveTimeout: const Duration(seconds: 5),
-                sendTimeout: const Duration(seconds: 5),
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 30),
+                sendTimeout: const Duration(seconds: 30),
               ),
             ),
        baseUrlNotifier = ValueNotifier<String>(baseUrl) {
@@ -116,7 +117,14 @@ class ApiClient {
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final deviceService = ref.watch(deviceIdentityServiceProvider);
-  final authInterceptor = DeviceAuthInterceptor(deviceService);
+  final secureStorage = ref.watch(authSecureStorageProvider);
+  final authInterceptor = DeviceAuthInterceptor(
+    deviceService,
+    secureStorage: secureStorage,
+    onUnauthorized: () {
+      ref.read(authNotifierProvider.notifier).handleUnauthorized();
+    },
+  );
 
   return ApiClient(
     baseUrl: SettingsService.defaultServerUrl,

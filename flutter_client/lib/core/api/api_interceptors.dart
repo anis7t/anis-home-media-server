@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../../features/auth/data/auth_secure_storage.dart';
 import '../errors/app_exception.dart';
 import '../storage/device_identity_service.dart';
 
@@ -31,11 +32,18 @@ String buildClientUserAgent({
   return 'MediaServer-Flutter/1.0 ($platformName; Dart)';
 }
 
-/// Interceptor that attaches the persistent device ID and client metadata to all requests.
+/// Interceptor that attaches the persistent device ID, client metadata,
+/// session token cookie, and optional Admin PIN header to all requests.
 class DeviceAuthInterceptor extends Interceptor {
   final DeviceIdentityService _deviceIdentityService;
+  final AuthSecureStorage? secureStorage;
+  final VoidCallback? onUnauthorized;
 
-  DeviceAuthInterceptor(this._deviceIdentityService);
+  DeviceAuthInterceptor(
+    this._deviceIdentityService, {
+    this.secureStorage,
+    this.onUnauthorized,
+  });
 
   @override
   Future<void> onRequest(
@@ -66,8 +74,26 @@ class DeviceAuthInterceptor extends Interceptor {
         operatingSystemVersion: kIsWeb ? '' : Platform.operatingSystemVersion,
       );
       options.headers['Accept'] = 'application/json';
+
+      // Attach active session token cookie and admin PIN if present
+      if (secureStorage != null) {
+        final token = await secureStorage!.getSessionToken();
+        if (token != null && token.isNotEmpty) {
+          final existingCookie = options.headers['Cookie'] as String?;
+          final sessionCookie = 'session_token=$token';
+          options.headers['Cookie'] =
+              existingCookie != null && existingCookie.isNotEmpty
+                  ? '$existingCookie; $sessionCookie'
+                  : sessionCookie;
+        }
+
+        final adminPin = await secureStorage!.getAdminPin();
+        if (adminPin != null && adminPin.isNotEmpty) {
+          options.headers['X-Admin-Pin'] = adminPin;
+        }
+      }
     } catch (e) {
-      debugPrint('[DeviceAuthInterceptor] Failed to attach device identity: $e');
+      debugPrint('[DeviceAuthInterceptor] Failed to attach device identity or auth: $e');
     }
 
     handler.next(options);
@@ -92,6 +118,9 @@ class DeviceAuthInterceptor extends Interceptor {
       case DioExceptionType.badResponse:
         final status = err.response?.statusCode;
         final msg = err.response?.statusMessage ?? 'Server returned error';
+        if (status == 401) {
+          onUnauthorized?.call();
+        }
         exception = ServerException(
           'Server error ($status): $msg',
           statusCode: status,

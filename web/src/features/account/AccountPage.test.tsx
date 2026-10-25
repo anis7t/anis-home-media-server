@@ -15,27 +15,42 @@ function jsonResponse(body: unknown, status = 200) {
   } as Response;
 }
 
+const qrSession = {
+  qr_id: 'qr_test',
+  code: 'ABC12',
+  sig: 'sig_test',
+  expires_at: Math.floor(Date.now() / 1000) + 120,
+  qr_url: 'https://host/auth/qr?code=ABC12&sig=sig_test',
+  login_url: 'https://host/remote-login?code=ABC12',
+};
+
 let fetchMock: ReturnType<typeof vi.fn>;
+
+function mockAuth(authenticated: boolean, extra: Record<string, unknown> = {}) {
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/auth/me') {
+      return jsonResponse(
+        authenticated
+          ? {
+              authenticated: true,
+              email: 'owner@example.com',
+              name: 'Anis Parvez',
+              role: 'admin',
+              ...extra,
+            }
+          : { authenticated: false, email: null, name: null, role: null, ...extra },
+      );
+    }
+    if (url === '/api/auth/qr') return jsonResponse(qrSession);
+    return jsonResponse({});
+  });
+}
 
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
-  /*
-   * Dispatch on URL rather than one blanket response. A single default would
-   * hand the `/api/auth/me` shape to `/api/auth/tokens` as well, which is how
-   * the first draft of this file produced a white screen.
-   */
-  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-    if (String(input) === '/api/auth/me') {
-      return jsonResponse({
-        authenticated: true,
-        email: 'owner@example.com',
-        name: 'Anis Parvez',
-        role: 'admin',
-      });
-    }
-    return jsonResponse({ tokens: [] });
-  });
+  mockAuth(true);
 });
 
 afterEach(() => {
@@ -54,17 +69,7 @@ function renderAccount() {
 
 describe('AccountPage', () => {
   it('shows the guest mode status and sign in prompt when unauthenticated', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({
-          authenticated: false,
-          email: null,
-          name: null,
-          role: null,
-        });
-      }
-      return jsonResponse({ tokens: [] });
-    });
+    mockAuth(false);
 
     renderAccount();
     expect(await screen.findByText('Guest Mode')).toBeInTheDocument();
@@ -79,257 +84,61 @@ describe('AccountPage', () => {
     expect(await screen.findByText('owner@example.com')).toBeInTheDocument();
   });
 
-  it('lists existing devices with their status', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      return jsonResponse({
-        tokens: [
-          {
-            id: 1,
-            user_id: 1,
-            label: 'Living room TV',
-            created_at: 1700000000,
-            last_used_at: null,
-            expires_at: null,
-            revoked_at: null,
-          },
-        ],
-      });
-    });
+  it('offers the QR sign-in card only to signed-out visitors', async () => {
+    mockAuth(false);
 
     renderAccount();
-    expect(await screen.findByText('Living room TV')).toBeInTheDocument();
-    expect(screen.getByText('Active')).toBeInTheDocument();
-  });
-
-  it('marks a revoked device as revoked', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      return jsonResponse({
-        tokens: [
-          {
-            id: 1,
-            user_id: 1,
-            label: 'Old tablet',
-            created_at: 1700000000,
-            last_used_at: 1700000001,
-            expires_at: null,
-            revoked_at: 1700000002,
-          },
-        ],
-      });
-    });
-
-    renderAccount();
-    expect(await screen.findByText('Revoked')).toBeInTheDocument();
-  });
-
-  it('explains an empty device list rather than showing nothing', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      return jsonResponse({ tokens: [] });
-    });
-
-    renderAccount();
-    expect(await screen.findByText('No devices yet.')).toBeInTheDocument();
-  });
-
-  it('requires a label before minting', async () => {
-    renderAccount();
-    const button = await screen.findByRole('button', { name: /add device/i });
-    expect(button).toBeDisabled();
-  });
-
-  it('mints a token and shows it once with its pairing link', async () => {
-    const user = userEvent.setup();
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      if (init?.method === 'POST') {
-        return jsonResponse(
-          {
-            token: 'ms_super_secret',
-            pairing_url: 'https://host/auth/pair#ms_super_secret',
-            id: 5,
-            label: 'Living room TV',
-            expires_at: null,
-            warning: 'This token is displayed once and cannot be retrieved again.',
-          },
-          201,
-        );
-      }
-      return jsonResponse({ tokens: [] });
-    });
-
-    renderAccount();
-    await user.type(await screen.findByLabelText(/device name/i), 'Living room TV');
-    await user.click(screen.getByRole('button', { name: /add device/i }));
-
-    expect(await screen.findByText('ms_super_secret')).toBeInTheDocument();
     expect(
-      screen.getByText('https://host/auth/pair#ms_super_secret'),
+      await screen.findByRole('heading', { name: /sign in to anis' home media server/i }),
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => String(call[0]) === '/api/auth/qr')).toBe(true);
+    });
+  });
+
+  it('does not create a QR session for an already signed-in visitor', async () => {
+    renderAccount();
+    await screen.findByText('Anis Parvez');
+
     expect(
-      screen.getByText(/displayed once and cannot be retrieved again/i),
-    ).toBeInTheDocument();
+      screen.queryByRole('heading', { name: /sign in to anis' home media server/i }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]) === '/api/auth/qr')).toBe(false);
   });
 
-  it('can dismiss the one-time token panel', async () => {
-    const user = userEvent.setup();
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      if (init?.method === 'POST') {
-        return jsonResponse(
-          {
-            token: 'ms_secret',
-            pairing_url: 'https://host/auth/pair#ms_secret',
-            id: 5,
-            label: 'TV',
-            expires_at: null,
-            warning: 'This token is displayed once and cannot be retrieved again.',
-          },
-          201,
-        );
-      }
-      return jsonResponse({ tokens: [] });
-    });
-
+  it('no longer renders the add-device / pairing-token panel', async () => {
     renderAccount();
-    await user.type(await screen.findByLabelText(/device name/i), 'TV');
-    await user.click(screen.getByRole('button', { name: /add device/i }));
+    await screen.findByText('Anis Parvez');
 
-    await screen.findByText('ms_secret');
-    await user.click(screen.getByRole('button', { name: /i've saved it/i }));
-    await waitFor(() => {
-      expect(screen.queryByText('ms_secret')).not.toBeInTheDocument();
-    });
-  });
-
-  it('revokes a device and reloads the list', async () => {
-    const user = userEvent.setup();
-    let listCalls = 0;
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      if (init?.method === 'DELETE') return jsonResponse({ revoked: 1 });
-      listCalls += 1;
-      return jsonResponse({
-        tokens:
-          listCalls === 1
-            ? [
-                {
-                  id: 1,
-                  user_id: 1,
-                  label: 'Old TV',
-                  created_at: 1700000000,
-                  last_used_at: null,
-                  expires_at: null,
-                  revoked_at: null,
-                },
-              ]
-            : [],
-      });
-    });
-
-    renderAccount();
-    await screen.findByText('Old TV');
-    await user.click(screen.getByRole('button', { name: /revoke/i }));
-    await waitFor(() => {
-      expect(screen.getByText('No devices yet.')).toBeInTheDocument();
-    });
-  });
-
-  it('allows a non-admin viewer to add devices in their own scope', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'viewer@example.com', role: 'viewer' });
-      }
-      return jsonResponse({ tokens: [] });
-    });
-
-    renderAccount();
-    expect(await screen.findByRole('button', { name: /add device/i })).toBeInTheDocument();
-    expect(screen.queryByText(/only an administrator can add devices/i)).not.toBeInTheDocument();
-  });
-
-  it('prompts unauthenticated guests to sign in before adding devices', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: false, email: null, role: null });
-      }
-      return jsonResponse({ tokens: [] });
-    });
-
-    renderAccount();
-    expect(await screen.findByRole('button', { name: /sign in to pair →/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add device/i })).not.toBeInTheDocument();
-  });
+    expect(screen.queryByRole('button', { name: /sign in to pair/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/device name/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/devices & tv app pairing/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pairing token/i)).not.toBeInTheDocument();
 
-  it('does not fetch tokens or display 403 error when browsing as unauthenticated guest', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: false, email: null, role: null });
-      }
-      if (String(input) === '/api/auth/tokens') {
-        return jsonResponse(
-          { error: 'Sign in or provide the Admin PIN to manage device tokens.' },
-          403,
-        );
-      }
-      return jsonResponse({});
-    });
-
-    renderAccount();
-    expect(await screen.findByRole('button', { name: /sign in to pair →/i })).toBeInTheDocument();
-    expect(screen.queryByText(/request failed: 403/i)).not.toBeInTheDocument();
-    expect(
-      await screen.findByText('Sign in to view your paired devices or generate a new TV pairing token.'),
-    ).toBeInTheDocument();
-    const tokenCalls = fetchMock.mock.calls.filter((call) => String(call[0]) === '/api/auth/tokens');
+    const tokenCalls = fetchMock.mock.calls.filter(
+      (call) => String(call[0]) === '/api/auth/tokens',
+    );
     expect(tokenCalls).toHaveLength(0);
   });
 
-  it('surfaces a failure rather than silently showing an empty list', async () => {
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({ authenticated: true, email: 'owner@example.com', role: 'admin' });
-      }
-      return jsonResponse({ error: 'nope' }, 403);
-    });
+  it('does not offer the removed add-device flow to signed-out visitors either', async () => {
+    mockAuth(false);
 
     renderAccount();
-    expect(await screen.findByText(/request failed: 403/i)).toBeInTheDocument();
+    await screen.findByText('Guest Mode');
+
+    expect(screen.queryByRole('button', { name: /add device/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/pairing token/i)).not.toBeInTheDocument();
   });
 
   it('provides Admin PIN fallback and opens modal when OAuth is unconfigured', async () => {
     const user = userEvent.setup();
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      if (String(input) === '/api/auth/me') {
-        return jsonResponse({
-          authenticated: false,
-          email: null,
-          role: null,
-          oauth_configured: false,
-        });
-      }
-      return jsonResponse({ tokens: [] });
-    });
+    mockAuth(false, { oauth_configured: false });
 
     renderAccount();
     expect(
-      await screen.findByText(/Google Sign-In is not configured on this server/i)
+      await screen.findByText(/Google Sign-In is not configured on this server/i),
     ).toBeInTheDocument();
 
     const pinButtons = screen.getAllByRole('button', { name: /sign in with admin pin/i });
@@ -339,5 +148,20 @@ describe('AccountPage', () => {
     await user.click(pinButtons[0]);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /Admin PIN Sign-In/i })).toBeInTheDocument();
+  });
+
+  it('renders Admin Security section and opens ChangeAdminPinModal when user is admin', async () => {
+    const user = userEvent.setup();
+    mockAuth(true, { role: 'admin' });
+
+    renderAccount();
+    expect(await screen.findByRole('heading', { name: /Admin Security/i })).toBeInTheDocument();
+
+    const changePinBtn = screen.getByRole('button', { name: /Change Admin PIN/i });
+    expect(changePinBtn).toBeInTheDocument();
+
+    await user.click(changePinBtn);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Rotate Admin PIN')).toBeInTheDocument();
   });
 });

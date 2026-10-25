@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { listMovies } from '../../lib/api/client';
 import { getStoredAdminPin } from '../../lib/api/account';
 import { verifyAdminPin } from '../../lib/api/manage';
 import { useOptionalAuth } from '../../auth/AuthProvider';
 import { useDeviceId } from '../../lib/useDeviceId';
+import { useHeaderActionsTarget } from '../../lib/useHeaderActionsTarget';
 import { StateMessage } from '../../components/StateMessage';
 import { useAsync } from '../../lib/useAsync';
 import { MovieGrid } from '../../components/MovieGrid';
@@ -15,6 +17,7 @@ import { Icon } from '../../components/icons';
 
 export function LibraryPage() {
   const deviceId = useDeviceId();
+  const headerActions = useHeaderActionsTarget();
   const auth = useOptionalAuth();
   const role = auth?.role ?? null;
 
@@ -147,27 +150,34 @@ export function LibraryPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={handleUploadClick}
-          className="inline-flex items-center gap-2 rounded-full brand-gradient px-4 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 active:scale-[0.98]"
-        >
-          <Icon name="upload" size={14} />
-          Upload Media
-        </button>
-      </div>
+      {/*
+        Upload Media lives in the header's action slot, not in a row of its own:
+        the header is the page's only banner row. The button, its PIN gate and
+        the upload modal all stay owned by this page - only the place the button
+        renders moves. The label hides below `sm` so the header keeps one line
+        on a phone, and `aria-label` preserves the accessible name.
+      */}
+      {headerActions
+        ? createPortal(
+            <button
+              type="button"
+              onClick={handleUploadClick}
+              aria-label="Upload Media"
+              title="Upload Media"
+              className="inline-flex items-center gap-2 rounded-full brand-gradient px-3 sm:px-4 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 active:scale-[0.98]"
+            >
+              <Icon name="upload" size={14} />
+              <span className="hidden sm:inline">Upload Media</span>
+            </button>,
+            headerActions,
+          )
+        : null}
 
       {/* Cinematic Hero Billboard (only shown when catalog is populated and featured has artwork) */}
       {!loading && !error && featured && (featured.overview || featured.backdrop_path) && !hasActiveFilters ? (
-        /*
-         * hasTopBanner=true: the Upload Media row above means the hero is no
-         * longer the page's first element. The default variant tucks its top
-         * edge under the sticky header with a negative margin (-mt-6 sm:-mt-8),
-         * which would pull the artwork up over that row. The banner variant
-         * keeps it below with a positive margin instead.
-         */
-        <HeroSpotlight movie={featured} hasTopBanner={true} />
+        /* The hero is the page's first element again, so it takes the default
+         * variant: its artwork tucks under the sticky header (-mt-6 sm:-mt-8). */
+        <HeroSpotlight movie={featured} />
       ) : null}
 
       {/* Interactive Search, Filter & Sort Bar */}

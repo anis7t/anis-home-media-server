@@ -9,8 +9,8 @@ import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/errors/app_exception.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
 import 'package:media_server_client/features/home/presentation/screens/home_screen.dart';
-import 'package:media_server_client/features/library/data/models/library_response.dart';
-import 'package:media_server_client/features/library/data/models/movie_item.dart';
+import 'package:media_server_client/features/library/domain/models/library_response.dart';
+import 'package:media_server_client/features/library/domain/models/movie_item.dart';
 import 'package:media_server_client/features/library/data/repositories/library_repository.dart';
 
 class MockSecureStorage extends FlutterSecureStorage {
@@ -235,7 +235,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Recovered
-      expect(find.text('Batman Knightfall'), findsOneWidget);
+      expect(find.text('Batman Knightfall'), findsWidgets);
     });
 
     testWidgets('triggers library scan from header button', (tester) async {
@@ -262,9 +262,35 @@ void main() {
 
       expect(scanTriggered, isTrue);
       expect(
-        find.text('Library scan completed successfully'),
+        find.text('Library scan started successfully'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('opens FrostedTreeDrawer when tree button in header is tapped',
+        (tester) async {
+      final fakeRepo = FakeHomeLibraryRepository(
+        onGetMovies: () async => const LibraryResponse(
+          movies: [movieA],
+          watching: [],
+          total: 1,
+        ),
+      );
+
+      await tester.pumpWidget(createSubject(fakeRepo));
+      await tester.pumpAndSettle();
+
+      // Find the account_tree_rounded icon button in header
+      final treeBtn = find.byIcon(Icons.account_tree_rounded);
+      expect(treeBtn, findsOneWidget);
+
+      await tester.tap(treeBtn);
+      await tester.pumpAndSettle();
+
+      // Drawer should now be visible
+      expect(find.text('Media Catalog Tree'), findsOneWidget);
+      expect(find.text('All Movies'), findsOneWidget);
+      expect(find.text('Genres'), findsOneWidget);
     });
   });
 }

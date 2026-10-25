@@ -1,10 +1,10 @@
-pub mod auth;
-pub mod job;
-pub mod movie;
-pub mod preview;
-pub mod progress;
-pub mod storage;
-pub mod subtitle;
-pub mod system;
-pub mod transcode;
-pub mod upload;
+pub mod catalog;
+pub mod identity;
+pub mod media_pipeline;
+pub mod ops;
+
+// Re-exports for seamless root and cross-crate compatibility
+pub use catalog::{movie, progress};
+pub use identity::{audit, auth};
+pub use media_pipeline::{preview, subtitle, transcode};
+pub use ops::{job, storage, system, upload};

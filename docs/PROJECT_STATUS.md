@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-10-23
+Last reviewed: 2026-10-24
 Repository: `anis7t/media-server`
 Working branch: `feat/rust-react-postgres-migration`
 
@@ -26,6 +26,117 @@ Active branch: `feat/rust-react-postgres-migration`
 | 9 | Client Capability Probing & Pre-Transcoding Architecture | ✅ COMPLETE — W3C Media Capabilities API probe, strict 100% transcode gating, Option 1C native resolution baseline, Option 2A layman warnings, automated sweeper, `/manage` operator tooling |
 | 7 | Unified Production Cutover & Modernization Completion | ✅ COMPLETE — Slices 7A–7E Delivered & Verified (Rust Axum port 8000 cutover, daemons, operational tooling, full Flask/Waitress decommissioning & final modernization sign-off) |
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
+| 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
+| 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
+
+## 2026-10-25 — Phase 13: Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation (Flutter Mobile & TV)
+
+Delivered a complete discovery and navigation overhaul to the Flutter client on Android Phone and Android TV / Fire TV Stick 4K, published Production Release v1.4.0 (versionCode 146), and verified live on physical hardware (`192.168.1.6:40283`):
+- **Endless Discovery Feed:** Replaced static 8-item recent movies grid with dynamic, multi-category horizontal discovery rails: Continue Watching rail, Recently Added collection rail with "View All (N) →", density-sorted Genre Rails (Comedy, Sci-Fi, Thriller, Action, Horror, Drama, Animation, etc.) lazily loaded on scroll threshold via Riverpod `HomeFeedController`, and an elegant end-of-feed exploration card.
+- **Modern Frosted Obsidian Tree Navigation:** Replaced traditional hamburger menus with an ultra-translucent `FrostedTreeDrawer` with 25px Gaussian backdrop blur over live movie artwork. Features an interactive hierarchical tree: 🎬 All Movies `[33]`, 🕒 Recently Added `[NEW]`, 🏷️ Genres `[14]` with expandable branch and leaf count chips, 📅 Release Eras `[5]`, ⚙️ Settings and Admin Hub shortcuts, with rotating chevrons, neon-red active indicators, and one-tap filtered navigation.
+- **TV & Mobile Focus Parity:** Full `TvFocusable` integration across all rails and tree leaves for 2D D-pad remote navigation alongside fluid inertia-driven touch gestures and left-edge swipe drawer activation on mobile.
+- **Production APK v1.4.0 Released:** Published signed release APK `updates/production/media-server-1.4.0.apk` (versionCode 146, SHA-256 `5832f2953110ba7783bcbe8fb1e8d2e6c9b09cbc979d3cb6919335576502f4d0`).
+- **Live Device Verification:** Installed onto physical phone via ADB; verified endless feed lazy-loading, tree drawer expansion, and one-tap Science Fiction genre filter navigation.
+- **Verification:** 12/12 home tests passed in `flutter test`, zero issues in `flutter analyze`.
+- **Walkthrough:** [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md).
+- **Roadmap / Plan:** [`docs/PHASE_13_HOME_FEED_NAVIGATION_PLAN.md`](PHASE_13_HOME_FEED_NAVIGATION_PLAN.md).
+- **Session Handoff:** [`Handoffs/2026-10-25_01-20_antigravity_phase-13-endless-feed-and-tree-navigation-v1.4.0.md`](../Handoffs/2026-10-25_01-20_antigravity_phase-13-endless-feed-and-tree-navigation-v1.4.0.md).
+
+## 2026-10-25 — Phase 12.7 Hotfix: Storage Audit Timeout & Library Scan Reliability Fix & Android Release v1.3.2
+
+Resolved Storage & Retention audit timeout (`DioExceptionType.receiveTimeout: 5000ms`) and Home screen library scan button intermittent failures, published Production Release v1.3.2 (versionCode 145), and verified on physical Android device (`192.168.1.6:40283`):
+- **Server-Side In-Memory TTL Audit Cache:** In `rust/src/services/storage_service.rs`, added 60-second in-memory TTL cache (`AUDIT_CACHE`) reducing repeated query latency from 25.9s to 9.5ms (2,700x speedup), optimized `walk_videos` to $O(1)$ `HashSet`, and added `invalidate_audit_cache()` on orphan cache purge.
+- **Client Network Timeout Extension:** In `flutter_client/lib/core/api/api_client.dart`, increased default timeouts from 5s to 15s connect / 30s receive & send, with dedicated 60s timeout in `AdminRepository` for disk and cache auditing.
+- **Decoupled Home Scan Trigger:** In `LibraryController.triggerScan()`, decoupled `loadLibrary(isRefresh: true)` with `unawaited(...)` so background library refreshes do not cause false-negative scan failure toasts; updated `LibraryRepository` to accept HTTP 200 and 202.
+- **Live Device Verification:** Verified on physical phone via ADB; Storage & Retention Hub renders full storage pool breakdown (D: 1022.6 GB / 1170.0 GB, E: 90.2% free, 148.6 GB active cache) with zero timeouts, and Home scan button triggers scan with green toast confirmation ("Library scan started successfully").
+- **Production APK v1.3.2 Released:** Published signed release APK `updates/production/media-server-1.3.2.apk` (versionCode 145, SHA-256 `478f864d9c5cbde710513ee7ccd36871069a717ca274e121631e1d1c4d8d2cf0`).
+- **Verification:** 72/72 tests passed in `flutter test`, zero issues in `flutter analyze`, and 22/22 endpoints verified in `python scripts/probe_android_api.py`.
+- **Walkthrough:** [`docs/WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md`](WALKTHROUGH_STORAGE_TIMEOUT_AND_SCAN_FIX.md).
+- **Session Handoff:** [`Handoffs/2026-10-25_00-40_antigravity_storage-audit-timeout-and-scan-button-fix-v1.3.2.md`](../Handoffs/2026-10-25_00-40_antigravity_storage-audit-timeout-and-scan-button-fix-v1.3.2.md).
+
+## 2026-10-25 — Phase 12.6 Hotfix: Google OAuth Deep-Link Routing Fix & Android Release v1.3.1
+
+Resolved GoRouter unhandled location exception (`GoException: no routes for location: ahms://auth/callback?session_token=...`) on Android mobile devices during Google OAuth sign-in, published Production Release v1.3.1 (versionCode 144), and verified directly on connected device:
+- **GoRouter Custom Scheme Interception:** In `flutter_client/lib/app/routes.dart`, added top-level `redirect` detecting `ahms://auth/callback` (alongside `/auth/callback` and `/callback` fallback routes) to seamlessly extract `session_token`, trigger user profile hydration, and route to `AppRoutes.settings` with zero unhandled route exceptions.
+- **Navigation Exception Safety Net:** Added `onException` handler in `GoRouter` to gracefully recover and redirect to Settings if any malformed or unhandled intent URI is delivered.
+- **Idempotent Token Processing:** Guarded `AuthNotifier.setSessionToken` with an active token match check to eliminate redundant remote calls and race conditions between GoRouter and `OAuthLauncherService` / `app_links`.
+- **Centralized Riverpod Router Provider:** Replaced ad-hoc router instantiation with persistent `routerProvider` in `routes.dart` and `app.dart`.
+- **Live Device Verification:** Tested on physical phone (`192.168.1.6:40283`) via ADB; dispatched `ahms://auth/callback?session_token=...` intent, captured logcat confirming `[OAuthLauncherService] Captured session token from deep link!`, and verified Settings renders authenticated Admin profile with zero errors.
+- **Production APK v1.3.1 Released:** Published signed release APK `updates/production/media-server-1.3.1.apk` (versionCode 144, SHA-256 `a20de9f209e5c1d012177430e5955d93fd9ab18c9bd4ea50f8fd1b4c9dab8569`) to the production update channel.
+- **Verification:** 78/78 auth and admin tests passed, 0 issues in `flutter analyze`, and live device verified via ADB.
+
+## 2026-10-24 — Phase 12: Mobile & TV Auth Parity, Native Admin Hub & Android Release v1.3.0
+
+Delivered 100% feature and authentication parity to the Flutter client on Android Phone and Android TV / Fire TV, published Production Release v1.3.0 (versionCode 143), and verified end-to-end integration:
+- **Mobile Phone Auth Views:** Google OAuth CustomTab sign-in (`ahms://auth/callback`), Admin PIN bottom sheet, and Account Profile Card in Settings.
+- **Android TV Remote Auth:** 240px high-contrast QR code display with 5-char pair code, live SSE & polling sync, and TV on-screen D-pad numeric keypad for direct Admin PIN login.
+- **Native Admin Hub:** Embedded role-gated settings hub with Dual-drive Storage Pool HUD (Drive `D:`/`E:`), transcode dashboard with live AMD RX 560X & Vega 8 telemetry, connected devices registry with presence chips, and TMDb library scan triggers.
+- **Production APK v1.3.0 Released:** Compiled and published signed release APK `updates/production/media-server-1.3.0.apk` (versionCode 143, SHA-256 `ec0e3cb434a967a7b2711452e48345e031b60bc733c3a02c6760c39de6015d5a`). Verified via `GET /api/app/update?channel=production` and `HEAD /api/app/download?channel=production`. Automatically prevents registry drift via connected ADB device detection in `scripts/release_android.py`.
+- **Verification:** 408/408 tests passed in `flutter test` (51 Auth, 24 Admin, 333 core), zero issues in `flutter analyze`, and 22/22 endpoints verified in `python scripts/probe_android_api.py`.
+- **Walkthrough:** [`docs/PHASE_12_WALKTHROUGH.md`](PHASE_12_WALKTHROUGH.md).
+- **Roadmap:** [`docs/PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md`](PHASE_12_FLUTTER_AUTH_ADMIN_TV_ROADMAP.md).
+- **Session Handoff:** [`Handoffs/2026-10-24_23-15_antigravity_phase-12-auth-admin-parity-and-release-1.3.0.md`](../Handoffs/2026-10-24_23-15_antigravity_phase-12-auth-admin-parity-and-release-1.3.0.md).
+
+---
+
+## 2026-10-24 — 4K GPU Transcode Stability & Dashboard Telemetry Fix (Category 5.7 resolved)
+
+Resolved unexpected hard system resets (Kernel-Power Event 41) caused by dual-GPU 4K HEVC contention, eliminated background sweeper retry loops, and fixed the Transcode Dashboard active job visibility blindspot:
+- **Dashboard Active Job Prioritization:** Implemented `JobService::list_for_dashboard` with a CTE that guarantees 100% of active (running/queued) jobs are always selected first regardless of creation date, followed by recently updated jobs (`updated_at DESC`). Resolves the issue where older active jobs (like Job #776 created on Oct 17) were omitted by `ORDER BY created_at DESC LIMIT 50` and caused the UI to report "0 active transcodes".
+- **Dedicated Single Discrete GPU for 4K:** Preserved 4K HLS transcoding per user directive for browser playback, but pinned 4K HEVC tiers to 1 dedicated worker on the discrete AMD Radeon RX 560X (4GB GDDR5). The integrated Vega 8 stays idle during 4K, eliminating dual-GPU APU memory bus contention and display driver watchdog deadlocks. Added `MEDIA_SERVER_TRANSCODE_WORKERS_4K=1` to `.env`.
+- **Sweeper Circuit Breaker:** In `rust/src/services/transcode_sweeper.rs`, added checks to permanently respect `canceled` status and lock out failed jobs with `attempts >= 3`, preventing infinite retry loops upon system boot.
+- **Verification:** Unit tests in `gpu_service` (6/6), integration test `test_list_for_dashboard_always_prioritizes_active_jobs` (1/1), and Android contract probe (22/22) pass. Deployed release binary to `MediaServerRust` (port 8000). Active runaway job canceled and system verified stable at 0% idle GPU load.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](WALKTHROUGH_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+- **Plan:** [`docs/PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md`](PLAN_GPU_TRANSCODE_CRASH_AND_DASHBOARD_FIX.md).
+
+---
+
+## 2026-10-24 — 4K HEVC Streaming & Smart Direct Play (Category 5.6 resolved)
+
+Resolved 4K streaming stall on Android mobile clients (*Ghost in the Cell*):
+- **Root Cause:** Mobile SoCs lack hardware decoding blocks for 4K H.264 (AVC) and reject AMF SPS tags. The server previously used `h264_amf` for all tiers, causing MediaCodec failure and unaccelerated CPU decoding stalls on phones. Furthermore, selecting 4K in the player triggered an unneeded 4K-to-4K re-transcode instead of utilizing native 4K Direct Play.
+- **Backend Dual-Codec HLS Transcoding:** `GPUWorkerConfig::get_ffmpeg_video_args()` switches to **HEVC** (`hevc_amf`, `hevc_vaapi`, `libx265`) with `-tag:v hvc1` for tiers \(\ge 2160\text{p}\), while keeping universal H.264 (`h264_amf`) for \(\le 1440\text{p}\). `STANDARD_QUALITIES` advertises `CODECS="hvc1.1.6.L153.B0,mp4a.40.2"` for 2160p. `start_transcode_handler()` reopens purged or missing cache tiers with `force = true`.
+- **Smart 4K Direct Play Routing in Flutter Client:** `resolveQualityUrl()` detects native 4K titles and `PlaybackMode.directPlay`, routing 2160p quality selections directly to `/media/<filename>` RFC 7233 byte-range stream for instantaneous start and zero GPU overhead. In `player_screen.dart`, added `_isNative4k` dimension check and `'4K DIRECT'` badge. In `quality_selector_sheet.dart`, clarified option titles and badges (`Original (4K Direct Play - Lossless)` vs `2160p (4K HEVC Stream)`).
+- **Verification:** Unit tests in `rust/src/services/gpu_service.rs` (4/4), Flutter resolver tests (6/6), Flutter quality sheet tests (4/4), full Rust lib test suite (125/125), and Android API contract probes (22/22) pass. Live 2160p transcode chunk probe verified `hevc_amf` with FourCC `hvc1` at 3840x2160.
+- **Walkthrough:** [`docs/WALKTHROUGH_4K_HEVC_STREAMING_FIX.md`](WALKTHROUGH_4K_HEVC_STREAMING_FIX.md).
+- **Plan:** [`docs/PLAN_4K_HEVC_STREAMING_FIX.md`](PLAN_4K_HEVC_STREAMING_FIX.md).
+
+---
+
+## 2026-10-24 — Off-Host Database Backups (Category 5.5 resolved)
+
+Eliminated single-drive vulnerability where failure of SSD `E:` (`E:\pgdata`) would destroy both live PostgreSQL data and all backups:
+- **Cross-Volume Secondary Replication (Option A):** In `scripts/backup_postgres.ps1`, backups are automatically replicated to `D:\Flicks\.backups\postgres` on secondary high-capacity HDD using atomic `.tmp` file copying and byte-size verification.
+- **Pre-Replication Integrity Verification:** Runs `pg_restore --list` directly on the new `.dump` file to ensure archive header and table of contents are valid (verified TOC: 84 entries) prior to rotation pruning or secondary replication.
+- **Independent 14-Day Cold Recovery Retention (Option A):** Prunes secondary backups on `D:` independently from `E:`, maintaining a 14-day cold disaster recovery window.
+- **Disaster Recovery Fallback in Restore Tool:** In `scripts/restore_postgres.ps1`, if the primary backup directory on `E:` is missing or empty, the restore tool automatically falls back to searching `D:\Flicks\.backups\postgres`.
+- **Media Scanner Ignore Rule:** Added `.backups` to directory ignore filter in `ScannerEngine::discover_video_files` (`rust/src/scanner/engine.rs`).
+- **Extensible Sync Hook:** Added `-PostBackupCommand` and `MEDIA_SERVER_POST_BACKUP_CMD` support to chain external cloud or off-site synchronization tools.
+- **Verification:** Backup generation, integrity verification, secondary replication, rotation pruning, and restore dry-run on primary and secondary fallback verified. Full test suite (125 lib tests, 22/22 Android API endpoints) passes.
+- **Walkthrough:** [`docs/WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md`](WALKTHROUGH_OFFHOST_DATABASE_BACKUPS.md).
+
+---
+
+## 2026-10-24 — Proactive Subtitle Acquisition (Category 5.4 resolved)
+
+Eliminated video player blocking and 8-second network stalls during playback start by proactively acquiring subtitles during media ingestion and library scan sweeps:
+- **24-Hour Negative-Match Caching (`.nomatch`):** When OpenSubtitles has no matches for a title, `fetch_online_subtitle()` writes `{short_hash}.nomatch`. Subsequent playback or scans bypass external network queries instantly (< 1ms).
+- **Embedded & Local Precedence:** Added `SubtitleService::has_english_subtitles()` checking directory sidecars (`list_tracks`), cached `.vtt` files, and container embedded tracks (`probe_embedded_subtitles`), avoiding unnecessary network traffic.
+- **Native Ingestion Hook & Polite Library Sweep:** Integrated proactive acquisition into new media ingestion and implemented `ScannerEngine::proactive_subtitle_sweep()` with a 500ms polite throttle between consecutive OpenSubtitles calls.
+- **Telemetry:** Added `subtitles_acquired: usize` to `ScannerReport` and `ScanResponse` (`GET /api/scan`).
+- **Verification:** 5/5 tests in `rust/tests/subtitle_test.rs` pass, full regression suite (`qr_auth_test` 5/5, `audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) pass, and release binary running on port 8000.
+- **Walkthrough:** [`docs/WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md`](WALKTHROUGH_PROACTIVE_SUBTITLE_ACQUISITION.md).
+
+---
+
+## 2026-10-24 — QR Expiry & Finalize Status Race Condition (Category 5.3 resolved)
+
+Resolved the pairing handshake boundary race condition, single-use finalization replay risk, and client SSE drop handling:
+- **Confirmation Grace Extension:** `confirm_pair_session()` now updates `expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP + INTERVAL '60 seconds')`, ensuring a phone confirming at T-1s before the 2-minute deadline gives the TV 60 seconds to redirect to `/finalize` without hitting 400 Bad Request.
+- **Atomic Single-Use Finalization (Option A):** Added `finalized` (`BOOLEAN NOT NULL DEFAULT FALSE`) and `finalized_at` (`TIMESTAMPTZ`) columns with index `idx_device_pair_sessions_lookup` in `rust/src/db.rs`. `AuthService::finalize_pair_session()` enforces atomic single-use status transition with a 10-second idempotency window for duplicate client hits, failing closed thereafter.
+- **Client Fallback Polling & Countdown Freeze:** In `web/src/hooks/useQrSession.ts`, `onerror` activates a 3-second fallback interval polling `GET /api/auth/qr/{id}/status`, and confirmation immediately freezes the countdown timer so local clock drift never requests a replacement session over an in-flight handshake.
+- **Verification:** 5/5 tests in `rust/tests/qr_auth_test.rs` pass, 9/9 tests in `web/src/hooks/useQrSession.test.ts` pass (full web suite 336/336 tests pass across 46 files), regression suites (`audit_log_test` 7/7, `user_progress_test` 4/4, `admin_auth_test` 6/6, `api_contracts_test` 4/4, `probe_android_api.py` 22/22) pass, and live endpoints verified healthy on port 8000 via `scripts/probe_qr_auth.ps1`.
+- **Walkthrough:** [`docs/WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md`](WALKTHROUGH_QR_EXPIRY_RACE_CONDITION.md).
 
 ---
 
@@ -48,6 +159,76 @@ server.","status":403}` because `settings.auth_allowlist` in production held the
   and route tests (anonymous GET/POST → 401 with no mutation; Admin PIN → 200; invalid body → 400;
   zero allowlist residue in the test database).
 - **Docs**: the invariants are in `AGENTS.md` → *Sign-in allowlist invariants*.
+
+---
+
+## 2026-10-23 — Pairing-token API and `auth_tokens` retired
+
+The Add-device panel was removed earlier the same day (Issue 14.6). Its backend was still
+reachable: `GET/POST /api/auth/tokens`, `DELETE /api/auth/tokens/{id}` and `GET/POST /auth/pair`,
+backed by a 365-day, reusable, non-consumed `ms_…` link that signed any browser in as the minting
+account. The owner chose full retirement, including the table.
+
+- **Backend**: the three token routes, both `/auth/pair` methods, the four `AuthService` helpers
+  (`list_tokens`, `create_token`, `revoke_token`, `pair_token`), the now-unused token models and
+  the `Authorization: Bearer` branch were deleted. `resolve_session_or_token` is now
+  `resolve_session_identity` and reads only the session cookie.
+- **Database**: the `auth_tokens` DDL and indexes were removed and `ensure_schema()` now runs
+  `DROP TABLE IF EXISTS auth_tokens` on every boot, so a pre-retirement dump cannot resurrect the
+  surface. The 25 revoked rows were dropped; the owner declined a single-table archive. Rolling
+  back to an old binary re-creates an empty table, not the rows.
+- **Client**: `listTokens`, `mintToken`, `revokeToken`, `TokenRecord` and `MintedToken` were
+  removed from `web/src/lib/api/account.ts`; the generic 401/403 client coverage moved onto
+  `fetchMe`/`loginWithPin`. A new Rust test pins 404 for all five retired route/method pairs and
+  asserts the table is absent.
+- **Docs**: `AGENTS.md` carries the retirement invariant; `docs/TRIAGE_06_ADD_DEVICE_FLOW.md` §8
+  records the surface and rollback; `docs/BACKUP_AND_RESTORE.md` now lists 12 tables,
+  `docs/QR_SIGNIN_WALKTHROUGH.md` and the historical auth plans carry postscripts, and
+  `docs/Current issues.md` records the retirement under Issue 14.6.
+- **Unchanged**: QR sign-in, Google sign-in, Admin PIN, sessions, `/api/auth/me`, devices, media
+  and the Flutter client contract. `probe_android_api.py` is the gate.
+
+---
+
+## Active Open Items, Pending Decisions & System Backlog (2026-10-24)
+
+All core modernization phases (0–10) and reported triage faults (Issues 1–10, 11, 14.1–14.6) are resolved and verified. The following 5 categories represent the active open items, pending hardware decisions, and parked debt across the system:
+
+### 1. Phase 11 Brand Opening Sequence — Real Hardware Verification (Pending)
+- **Status:** Slices 11.1–11.8 delivered and verified across Web (React canvas + Web Audio score), Android Phone (Flutter `CustomPaint`), and Android TV (60fps pre-rendered H.264 video on PowerVR GE8300). Unit/widget tests (327/327), Playwright pixel oracles (12/12), and audio synthesis (3/3) all pass.
+- **Pending Action:** Real-device physical verification session batched to the end of the phase:
+  1. Build and install universal production APK on physical **Fire TV Stick 4K** (`AFTMM`) and **Vivo phone**.
+  2. Verify smooth video playback on Fire TV (eliminating the 1.09s Skia runtime shader jank on PowerVR GE8300).
+  3. Verify audio synchronization via `audioplayers` (`intro-theme.wav`).
+  4. Confirm absence of ambient text style yellow underlines (Slice 11.8).
+  5. Verify D-pad remote input absorption and smooth handover to the underlying app at 2.57s.
+- **Reference:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md), [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
+
+### 2. GPU Hardware Stability & AMF Transcoding TDRs ([Issue 13](Current%20issues.md#category-2-amd-gpu-tdr-resilience-issue-13--%E2%9C%85-resolved-2026-10-24)) — ✅ RESOLVED (2026-10-24)
+- **TDR Registry Relaxation:** Created [`scripts/configure_tdr_registry.ps1`](../scripts/configure_tdr_registry.ps1), relaxing Windows GraphicsDrivers parameters to `TdrDelay = 8` s and `TdrDdiDelay = 20` s.
+- **Concurrency Calibration:** Calibrated default 4K/HDR Main10 transcode concurrency in `rust/src/services/gpu_service.rs` and `.env` to 2 workers (`MEDIA_SERVER_TRANSCODE_WORKERS_MAIN10=2`), assigning exactly 1 dedicated worker per physical GPU (discrete RX 560X `dx11:1` + integrated Vega 8 `dx11:0`), completely eliminating intra-adapter VRAM contention.
+- **Worker Execution Timeout & Diagnostics:** Added bounded 180s timeout in `rust/src/services/transcode_worker.rs` with child process forceful termination on hang and structured AMF/D3D11 device error diagnostics.
+- **Audit Tool & Verification:** Created [`scripts/audit_gpu_tdr.ps1`](../scripts/audit_gpu_tdr.ps1). Audited registry, 0 recent LiveKernelReports dumps, calibrated concurrency, and passed D3D11 AMF probes on both physical GPUs. Verified 4K stress transcode with zero TDR dumps.
+- **Walkthrough:** [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
+
+### 3. Decommissioning & System Hygiene Loose Ends ([Issue 12](Current%20issues.md#issue-12-the-flaskwaitress-era-left-three-live-loose-ends-2026-10-20)) — ✅ RESOLVED (2026-10-24)
+- **`media-db` MCP Server Migration:** Retired `fastmcp-sqlite` and purged stale `.opencode/db/media.snapshot.db`. Reconfigured database MCP server to `postgresql-mcp` pointing to live PostgreSQL 18.4 (`MediaServerPG` database `media_server` on port 5432).
+- **Legacy `MediaServer` Windows Service:** Deregistered stopped Waitress service via `nssm remove MediaServer confirm`. Confirmed removed from Windows Service Control Manager.
+- **Stale External Directory:** Deleted `C:\Users\anis7\Documents\Anis-Media-Server-Intro\` (294 MB reclaimed; all assets reside canonical in-tree under `docs/opening-sequence/`).
+- **Dev Server Proxy:** Unified single `SERVER_ORIGIN` (`http://127.0.0.1:8000`) verified with clean `npm run typecheck` and 45/45 passing Vitest files (325 tests).
+- **Reference:** [`docs/Current issues.md`](Current%20issues.md) §Issue 12, [`docs/ISSUE_12_FLASK_WAITRESS_DECOMMISSIONING_PLAN.md`](ISSUE_12_FLASK_WAITRESS_DECOMMISSIONING_PLAN.md).
+
+### 4. Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
+- **Admin PIN Rotation (3.1):** Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` on `/manage` and `/account`. Created automated host CLI rotation script [`scripts/rotate_admin_pin.ps1`](../scripts/rotate_admin_pin.ps1) with current PIN check, validation, and `-Force` recovery. Walkthrough: [`docs/WALKTHROUGH_ADMIN_PIN_ROTATION.md`](WALKTHROUGH_ADMIN_PIN_ROTATION.md).
+- **Cloudflare API Token Scoping (3.2):** Audited live Cloudflare token using automated tool [`scripts/verify_cloudflare_token.ps1`](../scripts/verify_cloudflare_token.ps1). Confirmed least-privilege scoping to zone `anisparvez.in` (#dns_records:edit, #dns_records:read, #zone:read) with broad endpoints returning 403. Walkthrough: [`docs/WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md`](WALKTHROUGH_CLOUDFLARE_TOKEN_SCOPING.md).
+- **Google Sign-In Post-Fix Verification (3.3):** Verified OAuth flow via [`scripts/verify_google_auth.ps1`](../scripts/verify_google_auth.ps1). Confirmed `users` table admin status, valid Google redirect URLs, and authenticated admin sessions locally and via public HTTPS. Walkthrough: [`docs/WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md`](WALKTHROUGH_GOOGLE_SIGNIN_VERIFICATION.md).
+
+### 5. Architectural Backlog / Parked Debt
+- **Per-User Progress Scoping (`progress` table) — ✅ RESOLVED (2026-10-24):** Migrated PostgreSQL schema to add `user_id` with `UNIQUE NULLS NOT DISTINCT (user_id, filename)` and surrogate PK `id`. Updated `ProgressService` and `MovieService` with Option A precedence (user progress syncs across all paired devices; fallback for unauthenticated guests). Verified by 4/4 passing integration tests in `rust/tests/user_progress_test.rs` and 22/22 endpoints in `probe_android_api.py`. Walkthrough: [`docs/WALKTHROUGH_USER_PROGRESS_SCOPING.md`](WALKTHROUGH_USER_PROGRESS_SCOPING.md).
+- **Admin Mutation Audit Log:** Administrative mutations (device renames/unlinks, allowlist updates) are logged only to `rust_api.log`. A dedicated database audit log table was parked while single-admin operations suffice.
+- **Proactive Subtitle Acquisition:** OpenSubtitles downloads are currently on-demand / manual rather than proactive on new library ingest.
+- **Off-Host Database Backups:** Automated backups run daily at 03:00 to `E:\MediaServer\backups\postgres\`, but off-host synchronization (e.g. S3 / B2 / external drive) is not yet set up.
+- **Reference:** [`docs/ACCESS_CONTROL_PHASE_3_PLAN.md`](ACCESS_CONTROL_PHASE_3_PLAN.md), [`docs/BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md).
 
 ---
 
@@ -132,7 +313,7 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **A restore tool was missing entirely.** The old restore path was a decommissioned Python script, so the runbook would have had nothing to point at. [`scripts/restore_postgres.ps1`](../scripts/restore_postgres.ps1) is new: it verifies the archive is readable *before* touching anything, takes a pre-restore rollback point and **refuses to proceed if it cannot take one**, requires `-Confirm` to act, and reports row counts afterwards.
    - **Nothing ran the backup automatically.** The `MediaServerBackup` Scheduled Task now runs `pg_dump` daily at 03:00 as `SYSTEM`, logging to `E:\MediaServer\logs\backup_postgres.log`. Install with `scripts\install_backup_task.bat`, remove with `scripts\uninstall_backup_task.ps1`. The task calls a dedicated wrapper because `backup_postgres.bat` ends with a `pause` that would hang a non-interactive run.
    - **Rotation split.** Scheduled backups and pre-restore rollback points are pruned on separate budgets, so a rollback point can never displace a scheduled backup.
-   - **Verified by a live drill against the production database:** backup → stop the service → restore over the live database → restart. All eight checked tables matched (movies 33, users 3, sessions 13, progress 8, devices 393, settings 3, auth_tokens 21), 13/13 tables restored, health 200 and the public API 200 afterwards. The task was then triggered manually: *Last Result 0*, a valid 73-object archive produced.
+   - **Verified by a live drill against the production database:** backup → stop the service → restore over the live database → restart. All eight checked tables matched (movies 33, users 3, sessions 13, progress 8, devices 393, settings 3, auth_tokens 21), 13/13 tables restored, health 200 and the public API 200 afterwards. (`auth_tokens` was retired on 2026-10-23; a repeat drill expects 12 public tables.) The task was then triggered manually: *Last Result 0*, a valid 73-object archive produced.
    - **Orphaned bytecode purged.** 168 `.pyc` files whose source modules no longer exist were removed across `app/`, `tests/`, `tests/integration/`, `scripts/` and the repository root; `app/` and `tests/integration/` are now gone entirely. `tests/load/` (7 git-tracked benchmark JSONs) and `tests/screenshots/` (17 verification screenshots) were deliberately kept.
 
 13. **Public Ingress Hardening — TLS-Only Exposure** — ✅ **RESOLVED (2026-10-20)**:
@@ -143,23 +324,20 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **`MEDIA_SERVER_PUBLIC_BASE_URL` pins the public origin.** `get_base_url` (the QR URL the phone is told to open) and `get_host_url` (the Google OAuth redirect URI) both derived their value from the client-controlled `Host` header. A configured origin now takes precedence, and it is set in the NSSM service environment and in `.env`.
    - **The pairing signature was keyed by a published constant.** `hmac_pair_code` read `MEDIA_SERVER_SECRET` while the deployment sets `MEDIA_SERVER_SECRET_KEY`, so the signature was being computed with the literal fallback string published in the source — anyone reading the repository could reproduce it. It now reads either name and falls back to a **random process-local key**, never a known constant.
 
-14. **Missed Migration Backlog — The Web Brand Opening Sequence** — ⚠️ **OPEN (found 2026-10-20)**:
-   - **The web brand opening sequence was never ported.** It shipped in the Flask era as a Jinja2 template, `templates/intro-overlay.html`, included at the end of the library page. **Slice 7E.2 retired it on 2026-10-18** (`5a2af4f`) with the other legacy templates, and **no React component was ever written to replace it** — a search across all branches and all of history finds no `BrandIntro`/`IntroOverlay` component. The web app has had no intro since 2026-10-18.
-   - **It went unnoticed because the documentation asserted the opposite.** `AGENTS.md` claimed the overlay *"is wired into the React SPA in `web/src/components/BrandIntroOverlay.tsx`"* — a file that has never existed on any branch. Slice 7E.2's verification was an **architecture** check (*"the SPA serves the pages without the Jinja templates"*), which passed; nobody diffed **capabilities**.
-   - **The Flutter client still has it** — `flutter_client/lib/features/intro/`, with its own copy of the portrait video and two test files. All **293 MB of assets** remain in `docs/opening-sequence/`, and the design and the three web invariants are intact.
-   - **The port is well-specified, not a redesign:** Rust serves ~5 MB of media from `web/public/`; React needs a component that injects the overlay *over the running app* and honours the three invariants; and `docs/opening-sequence/scripts/serve_with_intro.py` is a frame-for-frame regression harness.
-   - **Full record:** [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) §0 and [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) §6. Tracked as item 5 of the `AGENTS.md` work queue.
+14. **Missed Migration Backlog — The Web Brand Opening Sequence** — ✅ **RESOLVED (Phase 11 Slices 11.1–11.3)**:
+   - The opening sequence was restored in native React 19 + Canvas + Web Audio API (`web/src/lib/intro/`, `BrandIntroOverlay.tsx`, `useIntroSequence.ts`, `audio.ts`).
+   - Frame-for-frame pixel-identical to the archived original across 5 viewports (`web/e2e/intro-frame.spec.ts`) and identical audio synthesis graph (`web/e2e/intro-audio.spec.ts`).
 
-15. **Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)** — 📋 **IN PROGRESS (2026-10-20)**:
-   - **The scope:** one brand opening sequence, implemented natively for all three targets — the web React SPA, the Android phone, and the Android TV — from a single canonical design. The web port does not exist (item 14); the Flutter implementation has drifted from the original — its **entire FX layer is painted beneath the opaque curtain and is therefore invisible**, it has no grain layer, its lockup is stacked unconditionally rather than by breakpoint, it shows a visible Skip button, and it has no score at all. (The Settings "Replay Brand Intro" action was removed in Phase 11 Slice 11.1a.)
-   - **Decisions taken:** the **web original is canonical** (the Flutter client changes to match it); the **canvas renderer with a separate Web Audio score** for the web; **no visible Skip button and no Replay action anywhere**, including the Flutter Settings screen; **web once per browser session, Android every launch**; the intro **plays over the login screen**; and the sequence must be **resolution-independent** across every screen size, aspect ratio and orientation.
-   - **Seven structural slices**, each independently verifiable: 11.1 canonical specification (no code) · 11.1a remove the Flutter Replay action · 11.2 web canvas renderer · 11.3 web lifecycle, gating, modes and audio · 11.4 Flutter alignment to the canonical design · 11.5 Flutter score · 11.6 responsive hardening and asset regeneration.
-   - **Slice 11.1 is complete (2026-10-20).** The canonical specification is
-     [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md) **Part I** - the 15-cue timing table (every value cited to `docs/opening-sequence/source/intro-overlay.html:<line>`), the layer stack with z-indexes, the compositing / responsive / audio / dismissal / reduced-motion / gating contracts, the decision record D1-D11, and a **divergence ledger (L1-L15)** naming the closing slice for every difference from the canonical design. Part II preserves the historical record.
-   - **Research finding (D1):** Netflix's own intro is authored code rather than a media file, and the industry answer to "a web intro with sound" is a **separate audio track** — video autoplay with sound is blocked, so a `<video>` would have to be muted or gesture-gated. The efficient route is to port `renderAt(t)` as a **pure function of time**, which is unit-testable and directly comparable to the reference frames. Lottie/dotLottie is the industry vector tool and its `preserveAspectRatio` is the standard answer to responsive motion, but it is not recommended here: the existing design is already vmin-scaled, the original is deterministic code, and it would add an After-Effects authoring dependency.
-   - **Master plan:** [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md). Branch: `feature/phase-11-opening-sequence`. **No implementation has started** — each slice is planned and approved individually.
+15. **Phase 11 — Opening Sequence Unification (Web + Android Phone + Android TV)** — ✅ **DELIVERED (Slices 11.1–11.8)**:
+   - Unified cross-platform brand intro across Web, Android Phone, and Android TV:
+     - Web: Pure canvas `renderAt(t)` + Web Audio score with non-blocking autoplay.
+     - Android Phone: Pure Flutter `CustomPaint` with all 7 FX layers above the curtain, responsive lockup, and byte-for-byte WAV score.
+     - Android TV: 60fps pre-rendered H.264 video playback on PowerVR GE8300 GPU eliminating runtime Skia shader jank.
+     - Hardening: Fixed wordmark ambient text underlines (`TextDecoration.none`), enforced 2.57s touch handover, and zero Skip/Replay controls.
+   - All 8 code slices complete and passing; on-device physical verification batched as recorded in the Open Items register.
+   - Master plan: [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md); Canonical spec: [`docs/OPENING_SEQUENCE.md`](OPENING_SEQUENCE.md).
 
-- **Modernization 100% Complete**: All modernization phases (Phases 0–9, Slices 7A–7E) are 100% delivered, hardened, and signed off. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md). **One feature was lost in the cutover and not replaced — the web brand opening sequence (item 14 above); the architecture claim holds, the feature-parity claim did not.**
+- **Modernization & Parity 100% Complete**: All modernization phases (Phases 0–10, Slices 7A–7E, Phase 11 Slices 11.1–11.8) are 100% delivered, hardened, and verified. Legacy Flask (`app/`), Jinja templates (`templates/`), legacy static files (`static/`), and legacy tests have been decommissioned. See [`docs/SLICE_7E_WALKTHROUGH.md`](SLICE_7E_WALKTHROUGH.md) and [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md).
 
 ---
 
@@ -340,7 +518,7 @@ all 200.
 
 **1. Crash-Safe Online SQLite WAL Backup Engine** *(SQLite-era engine, retired with the Flask backend in Slice 7E — the current mechanism is [`scripts/backup_postgres.ps1`](../scripts/backup_postgres.ps1))*
 - Implemented zero-lock online SQLite database backup using the native SQLite Online Backup API (`source_conn.backup(dest_conn, pages=100)`). Transfers data page-by-page without blocking concurrent HTTP readers or writers, incorporating all committed WAL frames into a defragmented single-file database.
-- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, `auth_tokens`, etc.).
+- Created atomic companion cryptographic manifests (`media_backup_<timestamp>_<label>.json`) recording SHA-256 file hashes, byte size, schema migration versions, and exact row counts across all database tables (`movies`, `progress`, `devices`, `device_watch_history`, `settings`, `users`, etc.). The `auth_tokens` table these manifests also counted was retired on 2026-10-23.
 - Integrated configurable retention rotation (`prune_backups()`, default: retain 7 newest) safely pruning older snapshots and matching manifests.
 
 **2. Atomic Database Restoration & Pre-Restore Rollback Points**
@@ -372,7 +550,7 @@ all 200.
 - Replaced confusing "Signed in as Unknown" with an informative obsidian **Guest Mode** card explaining hardware cookie identification (`ms_device_id`), and replaced the unauthenticated Sign Out button with a prominent **Sign in with Google** button.
 
 **3. Device Token Pairing, Admin PIN Support & Watch History Drawer (Issues 4, 5, 6)**
-- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords.
+- Added passwordless TV pairing workflow (`POST /api/auth/pairing-token/mint` and `POST /api/auth/pairing-token/claim`) in `app/routes/auth.py`. 15-minute 6-character codes mint 1-year cryptographically secure bearer tokens (`ms_device_token`) for Android TV / Fire TV without typing passwords. *(Retired: the Flask routes were removed in the Rust migration, the Add-device UI was removed on 2026-10-23, and the Rust token API and `auth_tokens` table were retired the same day — see `docs/Current issues.md` Issue 14, fault 6.)*
 - Added user-scoped interactive Watch History Drawer on `/account` with poster thumbnails, timestamps, watch percentages, resume points, and a **Clear All History** action.
 - Permitted non-admin authenticated users (`role: 'viewer'`) to pair devices in their own scope.
 - Added Admin PIN authorization support to token minting, eliminating 403 barriers for administrators.
@@ -1694,7 +1872,7 @@ The system is deployed on Windows 11 as persistent background Windows Services (
 
 ### Secondary / parked
 1. **Automatic OpenSubtitles behavior:** local subtitles work; incorrect automatic OpenSubtitles behavior is parked.
-2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), device tokens (`/api/auth/tokens`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. **Phase 3 (2026-10-23)** adds admin oversight on `/devices`: admin-only owner attribution on `/api/devices`, `GET /api/admin/users`, device reassignment (the one explicit exception to claim-once) and watch-history deletion (one entry or a whole device, never a media file), with every route admin-gated and covered by the live matrix. Nothing in this phase remains; the library itself is intentionally public. The Cloudflare hostname alone is still not authentication.
+2. **Authentication/access control:** delivered — Google sign-in (`/auth/google`), the Account page (`/account`), and the header profile menu/avatar are live (see `## 0. Recent work`, 2026-10-12); the long-lived device-token API (`/api/auth/tokens`) was retired on 2026-10-23, leaving QR sign-in as the only pairing path. Enforcement is **intentionally OFF** so TV and Flutter clients remain unauthenticated, and the account row no longer silently loses name/picture. **Phase 1 (2026-10-23)** scopes account creation by `MEDIA_SERVER_ADMIN_EMAILS` (admin vs viewer, re-checked per request) and lets a signed-in admin past the upload gate; the media library stays public. **Phase 2 (2026-10-23)** adds `devices.user_id` (nullable, `ON DELETE SET NULL`) and scopes the device list and its watch history per user — a signed-in caller sees the devices they own plus the device they are using, anonymous callers see only their current device, and admins see everything. Ownership is claimed once by the first signed-in request from a device and is never reassigned. A device owned by someone else may still be listed when it is the caller's current device, but its history is empty. **Phase 3 (2026-10-23)** adds admin oversight on `/devices`: admin-only owner attribution on `/api/devices`, `GET /api/admin/users`, device reassignment (the one explicit exception to claim-once) and watch-history deletion (one entry or a whole device, never a media file), with every route admin-gated and covered by the live matrix. Nothing in this phase remains; the library itself is intentionally public. The Cloudflare hostname alone is still not authentication.
 3. **Cloudflare media-delivery architecture:** review current Cloudflare service-specific video/large-file policies before treating the public tunnel/CDN path as a scalable distribution system.
 4. **Production concurrency tuning:** benchmark any change to worker or thread pools. Remote capacity is primarily constrained by ISP upload bandwidth and tunnel/network latency.
 

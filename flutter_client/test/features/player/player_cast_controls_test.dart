@@ -5,11 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:media_server_client/core/api/api_client.dart';
 import 'package:media_server_client/core/api/api_interceptors.dart';
 import 'package:media_server_client/core/storage/device_identity_service.dart';
-import 'package:media_server_client/features/cast/data/models/cast_device.dart';
+import 'package:media_server_client/features/cast/domain/models/cast_device.dart';
 import 'package:media_server_client/features/cast/data/repositories/cast_repository.dart';
 import 'package:media_server_client/features/cast/presentation/controllers/cast_controller.dart';
 import 'package:media_server_client/features/player/domain/player_controller_interface.dart';
-import 'package:media_server_client/features/player/presentation/player_screen.dart';
+import 'package:media_server_client/features/player/presentation/screens/player_screen.dart';
 import 'package:media_server_client/features/player/presentation/widgets/player_controls_overlay.dart';
 
 import 'player_screen_test.dart' show FakePlayerController;

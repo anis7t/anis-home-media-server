@@ -5,6 +5,10 @@
 **Prerequisites:** Phase C5 Slice 1 (`68538e1`), Slice 2 (`1a30efd`), and Slice 3 (`8ce85b3`) complete & committed  
 **Objective:** Port the remaining authentication and administrator session surface (`/auth/*`, `/api/auth/*`, `/api/admin/*`) natively to Rust Axum, completely delete `rust/src/routes/proxy.rs`, remove `flask_origin` and the reverse-proxy bridge from `rust/src/lib.rs`, and achieve 100% native independence in preparation for the `:8000` port swap.
 
+> **Postscript (2026-10-23):** the token routes this plan ports (`/api/auth/tokens`,
+> `/auth/pair`) and the `auth_tokens` table were retired. QR sign-in is the only pairing path;
+> see [`docs/TRIAGE_06_ADD_DEVICE_FLOW.md`](TRIAGE_06_ADD_DEVICE_FLOW.md) §8.
+
 ---
 
 ## 1. Background & Migration Milestone
