@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_server_client/core/device/infrastructure/device_capability_service.dart';
+import 'package:media_server_client/core/device/data/device_capability_service.dart';
 import 'package:media_server_client/features/admin/presentation/widgets/admin_hub_tile.dart';
 import 'package:media_server_client/features/auth/presentation/providers/auth_providers.dart';
 

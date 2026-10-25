@@ -9,7 +9,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/api/api_client.dart';
 import '../../../../core/api/api_endpoints.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/storage/device_identity_service.dart';
 import '../../../../core/storage/settings_service.dart';
 import '../../../cast/presentation/controllers/cast_controller.dart';

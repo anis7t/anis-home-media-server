@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/theme/app_colors.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/navigation/tv_spatial_focus_traversal_policy.dart';
 import '../../../intro/presentation/controllers/intro_controller.dart';
 import '../../../intro/presentation/providers/intro_score_provider.dart';

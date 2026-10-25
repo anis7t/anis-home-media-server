@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { MovieGrid } from './MovieGrid';
-import type { MovieSummary } from '../lib/api/spec-drift';
+import type { MovieSummary } from '../lib/api/types';
 
 function movie(title: string): MovieSummary {
   return { filename: `${title}.mkv`, title, poster: 'tmdb:1', position: 0, duration: 0, percent: 0 };

@@ -14,11 +14,9 @@
  */
 import { notifyAuthLocked } from '../../auth/authEvents';
 import type {
-  MovieDetailsResponseLive,
-  MovieListResponseLive,
-} from './spec-drift';
-import type {
   MediaInfoResponse,
+  MovieDetailsResponse,
+  MovieListResponse,
   TranscodeStatusResponse,
 } from './types';
 
@@ -183,7 +181,7 @@ export function encodePathSegments(value: string): string {
  * still the starting point - this only widens it.
  */
 export function listMovies(options: { signal?: AbortSignal; deviceId?: string } = {}) {
-  return request<MovieListResponseLive>('/api/movies', options);
+  return request<MovieListResponse>('/api/movies', options);
 }
 
 /**
@@ -201,7 +199,7 @@ export function getMovieDetails(
     timeoutMs?: number;
   } = {},
 ) {
-  return request<MovieDetailsResponseLive>(
+  return request<MovieDetailsResponse>(
     `/api/movie/${encodePathSegments(filename)}`,
     { timeoutMs: MEDIA_PROBE_TIMEOUT_MS, ...options },
   );

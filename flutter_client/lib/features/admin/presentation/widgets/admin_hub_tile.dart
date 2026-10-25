@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
-import '../../../../core/device/infrastructure/device_capability_service.dart';
+import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/widgets/admin_pin_sheet.dart';

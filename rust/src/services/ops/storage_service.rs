@@ -3,11 +3,9 @@ use crate::models::storage::{
     ArchiveResult, CacheAuditData, CacheAuditItem, PurgeResult, StorageAuditResponse,
     StorageSettingsResponse,
 };
-use crate::services::hls_service::HlsService;
-use crate::services::path_resolver::PathResolver;
-use crate::services::preview_service::PreviewService;
-use crate::services::scan_service::ScanService;
-use crate::services::system_service::SystemService;
+use crate::services::catalog::{PathResolver, ScanService};
+use crate::services::media_pipeline::{HlsService, PreviewService};
+use crate::services::ops::SystemService;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use std::fs;

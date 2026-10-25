@@ -7,11 +7,14 @@
  * `resolution_badge`, `video_profile`, `container`, `file_size`, and `subtitles`.
  *
  * This file remains as a backward-compatible adapter export aliasing the
- * canonical generated types from `types.ts`.
+ * canonical generated types from `types.ts`. All active code should import
+ * directly from `types.ts` or `schema.ts`.
  */
 import type { MovieDetailsResponse, MovieListResponse, MovieSummaryItem, TechnicalSpecs } from './types';
 
-/** Fields the live `/api/movies` returns (now declared canonically in OpenAPI spec). */
+/**
+ * @deprecated Legacy drift representation. Canonical schema is now `components['schemas']['MovieSummaryItem']` in `docs/openapi.yaml`.
+ */
 export interface MovieSummaryDrift {
   /** Tagged poster reference: `tmdb:<id>`, `local:<relpath>`, or absent. */
   poster?: string | null;
@@ -21,13 +24,26 @@ export interface MovieSummaryDrift {
   last_metadata_refresh?: number | null;
 }
 
-/** Spec-declared shape (now unified with server reality). */
+/**
+ * @deprecated Use `MovieSummaryItem` from `web/src/lib/api/types.ts` or `web/src/lib/api/schema.ts`.
+ * Canonical schema: `docs/openapi.yaml` #/components/schemas/MovieSummaryItem.
+ */
 export type MovieSummary = MovieSummaryItem;
 
-/** Endpoint response types embedding unified movie summaries. */
+/**
+ * @deprecated Use `MovieListResponse` from `web/src/lib/api/types.ts`.
+ * Canonical schema: `docs/openapi.yaml` #/components/schemas/MovieListResponse.
+ */
 export type MovieListResponseLive = MovieListResponse;
 
+/**
+ * @deprecated Use `MovieDetailsResponse` from `web/src/lib/api/types.ts`.
+ * Canonical schema: `docs/openapi.yaml` #/components/schemas/MovieDetailsResponse.
+ */
 export type MovieDetailsResponseLive = MovieDetailsResponse;
 
+/**
+ * @deprecated Use `TechnicalSpecs` from `web/src/lib/api/types.ts`.
+ * Canonical schema: `docs/openapi.yaml` #/components/schemas/TechnicalSpecs.
+ */
 export type TechnicalSpecsDrift = TechnicalSpecs;
-

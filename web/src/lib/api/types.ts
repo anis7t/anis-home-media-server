@@ -9,6 +9,7 @@
 import type { components } from './schema';
 
 export type MovieSummaryItem = components['schemas']['MovieSummaryItem'];
+export type MovieSummary = MovieSummaryItem;
 export type MovieListResponse = components['schemas']['MovieListResponse'];
 export type MovieDetailsResponse = components['schemas']['MovieDetailsResponse'];
 export type MediaInfoResponse = components['schemas']['MediaInfoResponse'];

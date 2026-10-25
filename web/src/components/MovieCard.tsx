@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import type { MovieSummary } from '../lib/api/spec-drift';
+import type { MovieSummary } from '../lib/api/types';
 import { posterUrl } from '../lib/api/poster';
 import { PosterImage, type PosterPriority } from './PosterImage';
 import { Icon } from './icons';
