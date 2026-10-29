@@ -59,7 +59,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev ffmpeg
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4dd2834b071a938c5f5905eb5fc6cbdd9454170d # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -106,7 +106,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22 LTS
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22
           cache: npm
