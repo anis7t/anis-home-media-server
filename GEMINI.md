@@ -100,13 +100,47 @@
   ```
   This prevents rightmost navigation elements (such as `📁 My Library`) from overflowing off-screen on phones.
 
-## 6. Git Operations & Index Recovery Protocol
+## 6. Git Operations, Commit Protocols & Push Protection
 - **Zero Data Loss Index Recovery**: If Git fails with `fatal: .git/index: index file smaller than expected` (due to `.git/index` being truncated to 0 bytes), NEVER run `git reset --hard` or `git clean`. Run the non-destructive recovery:
   ```bash
   rm -f .git/index && git reset
   ```
   This immediately regenerates `.git/index` from `HEAD` and leaves all modified files and untracked assets completely intact.
-- **Non-Interactive Push Guardrail**: Do not run `git push` commands that prompt for credentials in non-interactive background terminals. Instruct the user to use VS Code's Source Control Sync button (`⟳ 1 ↑`) or provide explicit credentials.
+- **Push Execution & Non-Interactive Credential Guardrail**: Automated `git push` is fully supported and permitted when repository credentials are configured non-interactively (e.g. system Git credential helper, SSH agent, or GitHub CLI token). However, NEVER run commands that block or stall waiting for interactive username/password prompts in background terminals. If push credentials expire or are missing, instruct the user to use VS Code's Source Control Sync button (`⟳ 1 ↑`) or provide explicit credentials.
+- **Secret Scanning & Push Protection Guardrail**: Native GitHub Secret Scanning and Secret Scanning Push Protection are active repository-wide. Any `git push` containing high-confidence API tokens, private keys, cloud credentials, or secrets will be immediately rejected at the wire by GitHub. NEVER bypass push protection or commit raw credentials. All production secrets belong in `.env` (gitignored).
+- **Branch Protection & CI Status Check Enforcement**: The `main` branch enforces branch protection requiring 4 passing status checks before any Pull Request can be merged:
+  1. `Rust Backend (Axum)`
+  2. `React 19 Frontend (SPA)`
+  3. `Flutter Client (Android / TV)`
+  4. `Secrets & Security Scan`
+  Branches must be kept up to date with `main` (`strict: true`). While repository administrators retain direct push capabilities for emergency hotfixes, all routine changes should proceed through verified feature branches and PRs.
+- **Dual-Tier Pre-Commit / Pre-Push Verification Protocol**:
+  Developers and agents have two testing modes available:
+  - **Tier 1: Fast-Path Verification (Default / Standard Iteration)**: Run lightweight targeted checks before pushing:
+    ```powershell
+    cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+    npm --prefix web run test
+    npm --prefix web run typecheck
+    cd flutter_client; flutter analyze; cd ..
+    ```
+  - **Tier 2: Exhaustive Local Parity Suite (Deep Troubleshooting)**: Whenever investigating persistent CI failures or preparing major cross-tier refactors, run the full local parity suite mirroring GitHub Actions runners before pushing:
+    ```powershell
+    # 1. Rust backend formatting, clippy, and tests
+    cargo fmt --manifest-path rust/Cargo.toml --check
+    cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+    cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+
+    # 2. React frontend typecheck, oxlint, tests, and production build
+    cd web; npm run typecheck; npm run lint; npm run test; npm run build; cd ..
+
+    # 3. Flutter client static analysis and full test suite
+    cd flutter_client; flutter analyze; cd ..
+    .\scripts\run_flutter_tests.ps1
+
+    # 4. Gitleaks secrets audit
+    gitleaks git --pre-commit
+    ```
+
 
 ## 7. Modular Architecture & Package Import Invariants
 - **Package Precedence (`app/` vs `app.py`)**: When `app/` directory and root `app.py` coexist, Python resolves `import app` to `app/__init__.py`.
@@ -429,5 +463,24 @@
   - Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
 - **Recursive Media Path Resolution Fallback**:
   - Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, while preserving strict directory traversal (`..`) security defenses.
+
+## 30. Continuous Integration (GitHub Actions) & Security Scanning Invariants
+- **4-Pillar Pipeline Architecture ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))**:
+  The project's continuous integration pipeline executes four isolated, concurrent jobs on `ubuntu-latest`:
+  1. **`backend` (`Rust Backend (Axum)`)**: Installs system libraries (`pkg-config`, `libssl-dev`, `ffmpeg`), spins up an ephemeral PostgreSQL 17 service container with health checks, caches Cargo targets, checks formatting (`cargo fmt --check`), enforces zero Clippy warnings (`cargo clippy --all-targets -- -D warnings`), synthesizes a 1s test media fixture via `ffmpeg` to isolate from private media roots, and runs the entire Rust test suite (`cargo test --no-fail-fast -- --test-threads=1`, 242 tests passing).
+  2. **`frontend` (`React 19 Frontend (SPA)`)**: Node.js 22 LTS, clean install via `npm ci`, TypeScript typechecking (`npm run typecheck`), linting (`npm run lint`), Vitest unit tests (`npm run test`), and production bundling (`npm run build`).
+  3. **`flutter` (`Flutter Client (Android / TV)`)**: Java 17 Temurin, Flutter stable, system `libmpv-dev libmpv2` installation, `flutter pub get`, static analysis (`flutter analyze`), and all 417 offline unit, widget, contract, and intro tests (`flutter test`).
+  4. **`security` (`Secrets & Security Scan`)**: Executes `gitleaks/gitleaks-action@v3.0.0` with `fetch-depth: 0` configured via [`.gitleaks.toml`](.gitleaks.toml) to audit git history and diffs for leaked secrets, API keys, tokens, and PII.
+- **CI Test Database & Media Root Isolation**:
+  CI workflows must never attempt to connect to production databases or access host paths (`D:\Flicks`, `E:\MediaServer`). Database URLs are explicitly overridden in CI to the ephemeral PostgreSQL container (`postgresql://postgres:postgres@localhost:5432/media_server_test`).
+- **Headless Flutter MediaKit & Inode Invariants**:
+  - Flutter tests on Linux CI runners must not fail if hardware video players cannot initialize; `app_shell_test.dart` guards `MediaKit.ensureInitialized()` defensively, and the workflow installs `libmpv-dev libmpv2`.
+  - Inode file listing order differs across ext4 (Linux) and NTFS (Windows); tests asserting directory contents (e.g. `intro_asset_test.dart`) must sort directory listings (`..sort()`) before asserting file presence.
+- **Gitleaks Allowlist Maintenance**:
+  Legitimate test fixtures, synthetic tokens, mock UUIDs, documentation examples, and package lockfiles must be declared in [`.gitleaks.toml`](.gitleaks.toml) under `[allowlist]`. Production credentials must NEVER be allowlisted.
+- **Status Check Context Exactness**:
+  GitHub branch protection status check contexts must match the job `name:` strings in `ci.yml` byte-for-byte: `"Rust Backend (Axum)"`, `"React 19 Frontend (SPA)"`, `"Flutter Client (Android / TV)"`, and `"Secrets & Security Scan"`.
+- **Documentation & Verification Standard**:
+  All CI foundations, troubleshooting, and local reproduction commands are canonicalized in [`docs/TESTING.md`](docs/TESTING.md).
 
 

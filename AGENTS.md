@@ -51,6 +51,8 @@ The production backend is 100% native Rust (`:8000`), the frontend is a 100% Rea
 - **Where the migration stands** is `docs/MIGRATION_STATUS.md` (all phases P0–P9 and Slice 7E 100% complete); the authoritative roadmap is in `docs/FLASK_RUST_REACT_POSTGRES_MIGRATION_ROADMAP.md`.
 - `docs/DEVELOPMENT_STATUS.md` and `docs/WINDOWS_SETUP.md` contain the detailed current Windows/AMF and persistent service state. `docs/REMOTE_ACCESS_CLOUDFLARE_TUNNEL.md` contains the remote-access history and named-tunnel configuration.
 - `docs/MULTI_GPU_CHUNKED_TRANSCODING_PROPOSAL.md` documents the dynamic multi-GPU chunked transcoding architecture implemented in Rust (`rust/src/transcode/` and `rust/src/services/gpu.rs`).
+- **Continuous Integration & Branch Protection (4 Pillars):** Automated GitHub Actions CI pipeline ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) validates every pull request and push to `main` across four concurrent jobs: `Rust Backend (Axum)`, `React 19 Frontend (SPA)`, `Flutter Client (Android / TV)`, and `Secrets & Security Scan` (Gitleaks). Branch protection on `main` requires all four checks to pass with branches up to date (`strict: true`). Native GitHub Secret Scanning and Secret Scanning Push Protection actively reject pushes containing raw credentials at the wire. The full guide, reproduction commands, and CI matrix are documented in [`docs/TESTING.md`](docs/TESTING.md).
+
 - `docs/OPENING_SEQUENCE.md` documents the brand opening-sequence overlay. **Part I is the canonical
   specification** — the timing table, the layer stack, the compositing / responsive / audio /
   dismissal / reduced-motion contracts, and the divergence ledger. Every Phase 11 slice is written
@@ -1021,28 +1023,53 @@ Full write-up, with the measurements behind every number: `docs/TRANSCODE_CORREC
 
 ## 7. Testing protocol
 
-Before committing:
+### Dual-Tier Pre-Commit / Pre-Push Testing Protocol
 
+Developers and agents can choose between two verification tiers based on context:
+
+#### Tier 1: Fast-Path Verification (Default / Rapid Iteration)
+Use for standard feature development and minor fixes when CI is healthy:
 ```powershell
-# 1. Rust backend unit & integration tests
+# 1. Rust backend core test suite
 cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
 
-# 2. React frontend unit tests and production build verification
+# 2. React frontend unit tests & typechecking
+cd web; npm run test; npm run typecheck; cd ..
+
+# 3. Flutter client static analysis
+cd flutter_client; flutter analyze; cd ..
+```
+
+#### Tier 2: Exhaustive Local Parity Suite (Deep Troubleshooting & Pre-Push Validation)
+Select this mode whenever diagnosing persistent CI failures, verifying major cross-tier changes, or reproducing the full cloud runner matrix locally:
+```powershell
+# 1. Rust backend formatting, clippy, and full suite
+cargo fmt --manifest-path rust/Cargo.toml --check
+cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+
+# 2. React frontend typecheck, oxlint, unit tests, and production bundling
 cd web
+npm run typecheck
+npm run lint
 npm run test
 npm run build
 cd ..
 
-# 3. Live client contract probe suites (against running server)
+# 3. Flutter client static analysis and full test suite
+cd flutter_client
+flutter analyze
+cd ..
+.\scripts\run_flutter_tests.ps1
+
+# 4. Gitleaks secrets & PII audit
+gitleaks git --pre-commit
+
+# 5. Live client contract probe suites (against running server)
 python scripts/probe_android_api.py
 python scripts/probe_phase_8_contracts.py
 ```
 
-Flutter client:
-
-```powershell
-.\scripts\run_flutter_tests.ps1
-```
 
 - **Run the Flutter suite through `scripts/run_flutter_tests.ps1`, never as a bare `flutter test`.** It purges media_kit's orphaned temp state before the run and again in a `finally`, which is what stops the accumulation. `NativeReferenceHolder` writes one reference-buffer address to `...NativeReferenceHolder.$pid`, creates that file empty before writing, and never deletes it; Windows recycles PIDs, so a new test process inherits a dead run's file and either `int.parse('')`s it (`FormatException: Invalid number`) or adopts a dead heap pointer via `Pointer.fromAddress`, hanging every `add()`/`remove()` that awaits the never-completed `_completer` — the whole file then reports "did not complete". Measured: 415 orphaned files (70 empty) spanning 2026-09-24..10-03 caused 2 failures in 6 runs *including one `--concurrency=1` run*, so serial is **not** a fix; after the purge, repeated full runs leave 0 stale files. The script also refuses to delete a file whose PID is a live process. Debug-mode only (`if (!kDebugMode) return;`), so release APKs and device playback are unaffected. Full analysis, and the rule not to re-add `MediaKit.ensureInitialized()` to tests that do not need native playback, are in `docs/FLUTTER_CLIENT_STATUS.md`.
 - **Ordinary Flutter tests must never reach the live server.** `test/support/test_network_guard.dart` installs an allowlist `HttpOverrides` (per-isolate, so call it from each file's `setUp`/`setUpAll`, after `TestWidgetsFlutterBinding.ensureInitialized()`) that refuses any non-sentinel host, plus a shared sentinel origin `http://test.invalid:8000` — deliberately non-loopback, because `PlayerMediaResolver.resolveServerOrigin` skips loopback media hosts and would then fall through to the production `connectionControllerProvider`. Tests that genuinely need the running server stay behind `liveServerSkip` (`MEDIA_SERVER_LIVE_TESTS=1`) and must never null `HttpOverrides.global` unconditionally.
@@ -1152,4 +1179,25 @@ Rules:
   Axum's radix router strictly forbids overlapping wildcard parameters under the same parent prefix (e.g. `/subtitles/{*path}` and `/subtitles/embedded/{*path}`). Multi-mode stream handlers must register a single wildcard endpoint (e.g. `/subtitles/{*path}`) and dispatch internally using string prefix matching (`clean.strip_prefix("embedded/")`, `clean.strip_prefix("online/")`) before falling back to local files.
 - **Recursive Media Path Resolution Fallback:**
   Media files referenced by bare filenames across subdirectories must resolve safely across media roots using bounded recursive search in `PathResolver::resolve_media_path`, preserving strict directory traversal (`..`) security defenses.
+
+## 10. Continuous Integration, Branch Protection & Repository Security Guardrails
+
+- **Unified 4-Pillar CI Pipeline ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):**
+  Automated validation runs concurrently on every pull request targeting `main` and on pushes to `main`:
+  1. `Rust Backend (Axum)`: Ephemeral PostgreSQL 17 container, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, synthetic media fixture, `cargo test --no-fail-fast -- --test-threads=1`.
+  2. `React 19 Frontend (SPA)`: Node 22 LTS, `npm ci`, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build`.
+  3. `Flutter Client (Android / TV)`: Java 17 Temurin, Flutter stable, `libmpv-dev libmpv2`, `flutter analyze`, and 417 offline unit/widget/contract/intro tests via `flutter test`.
+  4. `Secrets & Security Scan`: Gitleaks full history audit (`gitleaks/gitleaks-action@v3.0.0`) configured via [`.gitleaks.toml`](.gitleaks.toml).
+- **Mandatory Branch Protection on `main`:**
+  - Enforces all 4 required status checks (`Rust Backend (Axum)`, `React 19 Frontend (SPA)`, `Flutter Client (Android / TV)`, `Secrets & Security Scan`).
+  - Requires branches to be strictly up-to-date with `main` (`strict: true`).
+  - Emergency admin direct push bypass is retained for break-glass hotfixes, but routine development must flow through verified branches and PRs.
+- **Repository-Wide Push Protection & Secret Scanning:**
+  - Native GitHub Secret Scanning and Push Protection are active repository-wide. Any `git push` containing recognized cloud credentials, API tokens, or private keys is rejected at the Git wire boundary.
+  - Never bypass push protection, never commit raw secrets, and keep all credentials in `.env` (gitignored). Test fixtures and synthetic tokens must be declared in [`.gitleaks.toml`](.gitleaks.toml).
+- **Non-Interactive Git Execution:**
+  - Automated `git push` is fully permitted when authentication credentials are present in the environment/credential helper.
+  - Commands that stall waiting for interactive password prompts in background terminals are forbidden.
+- **Canonical Testing Guide:**
+  - Detailed architecture, failure recovery, local reproduction commands, and matrix exclusions are maintained in [`docs/TESTING.md`](docs/TESTING.md).
 
