@@ -32,13 +32,14 @@ Active branch: `feat/rust-react-postgres-migration`
 
 ## 2026-10-29 — Production-Quality CI/CD Foundations (GitHub Actions)
 
-Delivered production-grade Continuous Integration for Anis' Home Media Server:
-- **Unified GitHub Actions Pipeline:** Automated validation pipeline in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) with two isolated, concurrent jobs: `backend` (Rust Axum) and `frontend` (React 19 SPA).
-- **Backend Job (`backend`):** Spins up ephemeral PostgreSQL 17 container on port 5432 with healthchecks, installs system dependencies (`pkg-config`, `libssl-dev`, `ffmpeg`), caches Cargo registry/targets, checks formatting (`cargo fmt --check`), enforces zero Clippy warnings (`cargo clippy --all-targets -- -D warnings`), synthesizes a 1s test media fixture via `ffmpeg` to isolate from private media roots, and executes the full test suite (`cargo test --no-fail-fast -- --test-threads=1`).
+Delivered production-grade Continuous Integration for Anis' Home Media Server across all three application tiers:
+- **Unified 3-Pillar GitHub Actions Pipeline:** Automated validation pipeline in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) with three isolated, concurrent jobs: `backend` (Rust Axum), `frontend` (React 19 SPA), and `flutter` (Flutter Client for Android & TV).
+- **Backend Job (`backend`):** Spins up ephemeral PostgreSQL 17 container on port 5432 with healthchecks, installs system dependencies (`pkg-config`, `libssl-dev`, `ffmpeg`), caches Cargo registry/targets, checks formatting (`cargo fmt --check`), enforces zero Clippy warnings (`cargo clippy --all-targets -- -D warnings`), synthesizes a 1s test media fixture via `ffmpeg` to isolate from private media roots, and executes the full test suite (`cargo test --no-fail-fast -- --test-threads=1`, 242 tests passing).
 - **Frontend Job (`frontend`):** Clean install via `npm ci`, TypeScript typechecking (`npm run typecheck`), linting (`npm run lint`), Vitest unit testing (`npm run test`), and production bundling (`npm run build`).
+- **Flutter Client Job (`flutter`):** Sets up Java 17 Temurin and Flutter stable with tool cache caching, fetches packages (`flutter pub get`), verifies zero static analysis or linter issues (`flutter analyze`), and runs all 417 offline unit, widget, architecture contract, and brand intro tests (`flutter test`).
 - **Strict Database & Secret Safety:** Explicit CI environment overrides (`MEDIA_SERVER_DATABASE_URL`, `MEDIA_SERVER_TEST_DATABASE_URL`, `DATABASE_URL`) guarantee 100% isolation from production data. No production secrets or paths exist in workflow definitions.
 - **Workflow Security & Performance:** Actions pinned to immutable commit SHAs with version comments, least-privilege permissions (`contents: read`), and concurrency cancellation on outdated pull requests.
-- **Documentation & Verification Guide:** Created [`docs/TESTING.md`](TESTING.md) detailing test architecture, local reproduction commands, troubleshooting, and staging/live probe exclusions. Added live workflow status badge to [`README.md`](../README.md).
+- **Documentation & Verification Guide:** Created [`docs/TESTING.md`](TESTING.md) detailing test architecture, local reproduction commands, troubleshooting, and staging/live probe exclusions. Added live workflow status badge to [`README.md`](../README.md). Plans and walkthroughs: [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) and [`docs/PLAN_FLUTTER_CI.md`](PLAN_FLUTTER_CI.md).
 
 
 ## 2026-10-25 — Phase 13: Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation (Flutter Mobile & TV)

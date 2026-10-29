@@ -14,6 +14,7 @@ The primary CI pipeline is defined in [`.github/workflows/ci.yml`](../.github/wo
 |---|---|---|---|
 | **`backend`** | `ubuntu-latest` + `postgres:17-alpine` | Rust Axum (`rust/`) | `cargo fmt --check`<br>`cargo clippy --all-targets -- -D warnings`<br>Synthetic media fixture generation<br>`cargo test --no-fail-fast -- --test-threads=1` |
 | **`frontend`** | `ubuntu-latest` + Node.js 22 LTS | React 19 SPA (`web/`) | `npm ci`<br>`npm run typecheck`<br>`npm run lint` (oxlint)<br>`npm run test` (Vitest)<br>`npm run build` (Vite production build) |
+| **`flutter`** | `ubuntu-latest` + Flutter stable + Java 17 | Flutter Client (`flutter_client/`) | `flutter pub get`<br>`flutter analyze`<br>`flutter test` (417 offline unit, widget, contract & intro tests) |
 
 ### Triggers & Concurrency
 - **Triggers**: Pushes to `main`, pull requests targeting `main`, pushes to `android/antigravity-work`, and manual triggers (`workflow_dispatch`).
@@ -99,6 +100,23 @@ npm run build
 npm run verify
 ```
 
+### 3.3 Flutter Client Checks (`flutter_client/`)
+
+```bash
+cd flutter_client
+
+# 1. Fetch dependencies
+flutter pub get
+
+# 2. Static analysis and linter rules
+flutter analyze
+
+# 3. Unit, widget, and architecture contract tests
+# Runs 417 offline unit, widget, and intro sequence tests.
+# The 12 live-server integration tests automatically skip when MEDIA_SERVER_LIVE_TESTS is unset.
+flutter test
+```
+
 ---
 
 ## 4. Hardware-Dependent & Live Staging Probes
@@ -128,5 +146,6 @@ To maintain codebase health on `main`, configure the following GitHub branch pro
 1. **Require status checks to pass before merging**:
    - Check: `Rust Backend (Axum)`
    - Check: `React 19 Frontend (SPA)`
+   - Check: `Flutter Client (Android / TV)`
 2. **Require branches to be up to date before merging**: Ensures PRs are tested against the latest `main` commit.
 3. **Do not allow bypassing the above settings**: Enforces uniform quality for all contributors and automated agents.
