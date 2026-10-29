@@ -51,13 +51,14 @@ The Windows host features two AMD graphics processors:
 
 The system runs completely detached as persistent Windows Services that survive reboots without active user login.
 
-> **C:-resident hosting & Autonomous Rust Operation (2026-10-17).** The application lives on the removable volume `E:`. NSSM runs from `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries from `C:\postgres` (data on `E:\pgdata`). The `MediaServerWatchdog` task was deliberately unregistered on 2026-10-16 after its interactive 5-minute run flashed a console window; its scripts were removed in Slice 7E.1. Service survival now relies on the Automatic start and SCM restart-x3 recovery of `MediaServerRust`, `MediaServerCaddy`, and `MediaServerPG`; `docs/SERVICE_WATCHDOG.md` records the accepted gap.
+> **C:-resident hosting, Autonomous Rust Operation & Auto-Start on Mount (2026-10-30).** The application and database live on the removable volume `E:`. NSSM runs from `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries from `C:\postgres` (data on `E:\pgdata`). To eliminate the requirement for manual intervention when booting without the USB drive attached, the automated task **`MediaServerAutoStartOnMount`** runs non-interactively in the background as `SYSTEM` with `-WindowStyle Hidden` (invoking `C:\MediaServer\bin\auto_start_on_mount.ps1`). It triggers immediately upon Windows Event ID `1001` (`Microsoft-Windows-StorageVolume/Operational`, Volume Arrived) and includes a repeating 1-minute fallback safety net. When drive `E:\pgdata` is detected, it automatically starts `MediaServerPG` and `MediaServerRust` within 3–4 seconds.
 
 ### A. MediaServerRust (Rust Axum API & React Web SPA — Primary Production Service)
 Registered using NSSM (Non-Sucking Service Manager):
 - **Service Name:** `MediaServerRust`
 - **Display Name:** `Media Server API (Rust/Axum)`
 - **Startup Type:** `Automatic`
+
 - **Service Wrapper:** `C:\MediaServer\bin\nssm.exe`
 - **Binary:** `E:\MediaServer\rust\target\release\media-server-api.exe`
 - **Port:** `8000` (Unified production port; port 8001 is fully retired)
