@@ -74,8 +74,13 @@ impl RangeService {
         headers: HeaderMap,
         method: Method,
     ) -> Result<Response<Body>, AppError> {
-        let mut file = File::open(&path).await.map_err(|e| AppError::NotFound(e.to_string()))?;
-        let metadata = file.metadata().await.map_err(|e| AppError::Internal(e.to_string()))?;
+        let mut file = File::open(&path)
+            .await
+            .map_err(|e| AppError::NotFound(e.to_string()))?;
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         let total_size = metadata.len();
 
         let mime = mime_guess::from_path(&path)
@@ -87,12 +92,32 @@ impl RangeService {
         res_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
         res_headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).unwrap());
         res_headers.insert("access-control-allow-origin", HeaderValue::from_static("*"));
-        res_headers.insert("access-control-allow-methods", HeaderValue::from_static("GET, HEAD, OPTIONS"));
-        res_headers.insert("access-control-allow-headers", HeaderValue::from_static("Range, Origin, Accept, Content-Type"));
-        res_headers.insert("access-control-expose-headers", HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges"));
-        res_headers.insert("cross-origin-resource-policy", HeaderValue::from_static("cross-origin"));
-        res_headers.insert("contentfeatures.dlna.org", HeaderValue::from_static("DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"));
-        res_headers.insert("transfermode.dlna.org", HeaderValue::from_static("Streaming"));
+        res_headers.insert(
+            "access-control-allow-methods",
+            HeaderValue::from_static("GET, HEAD, OPTIONS"),
+        );
+        res_headers.insert(
+            "access-control-allow-headers",
+            HeaderValue::from_static("Range, Origin, Accept, Content-Type"),
+        );
+        res_headers.insert(
+            "access-control-expose-headers",
+            HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges"),
+        );
+        res_headers.insert(
+            "cross-origin-resource-policy",
+            HeaderValue::from_static("cross-origin"),
+        );
+        res_headers.insert(
+            "contentfeatures.dlna.org",
+            HeaderValue::from_static(
+                "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000",
+            ),
+        );
+        res_headers.insert(
+            "transfermode.dlna.org",
+            HeaderValue::from_static("Streaming"),
+        );
 
         if let Some(range_raw) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
             if let Some(parsed) = HttpRange::parse(range_raw) {
@@ -102,13 +127,19 @@ impl RangeService {
                         res_headers.insert(header::CONTENT_LENGTH, HeaderValue::from(length));
                         res_headers.insert(
                             header::CONTENT_RANGE,
-                            HeaderValue::from_str(&format!("bytes {}-{}/{}", start, end, total_size)).unwrap(),
+                            HeaderValue::from_str(&format!(
+                                "bytes {}-{}/{}",
+                                start, end, total_size
+                            ))
+                            .unwrap(),
                         );
 
                         let body = if method == Method::HEAD {
                             Body::empty()
                         } else {
-                            file.seek(SeekFrom::Start(start)).await.map_err(|e| AppError::Internal(e.to_string()))?;
+                            file.seek(SeekFrom::Start(start))
+                                .await
+                                .map_err(|e| AppError::Internal(e.to_string()))?;
                             let stream = ReaderStream::with_capacity(file.take(length), 64 * 1024);
                             Body::from_stream(stream)
                         };

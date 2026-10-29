@@ -27,7 +27,12 @@ async fn app() -> axum::Router {
     )
 }
 
-async fn call(app: &axum::Router, method: Method, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+async fn call(
+    app: &axum::Router,
+    method: Method,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let payload = body.map(|b| b.to_string()).unwrap_or_default();
     let req = Request::builder()
         .method(method)
@@ -38,7 +43,10 @@ async fn call(app: &axum::Router, method: Method, uri: &str, body: Option<Value>
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 #[tokio::test]
@@ -201,7 +209,10 @@ async fn volume_is_bounded_to_zero_through_one_hundred() {
         )
         .await;
         assert!(
-            body["error"].as_str().unwrap_or("").contains("Unknown device"),
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Unknown device"),
             "volume={} should have passed validation: {}",
             good,
             body
@@ -220,7 +231,14 @@ async fn subtitle_offset_is_the_one_numeric_action_that_defaults() {
     )
     .await;
     // It defaults to 0, so it gets past validation and fails as unknown device.
-    assert!(body["error"].as_str().unwrap_or("").contains("Unknown device"), "{}", body);
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Unknown device"),
+        "{}",
+        body
+    );
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -246,7 +264,10 @@ async fn transport_actions_carry_no_value_and_must_not_require_one() {
         );
         assert_eq!(status, StatusCode::BAD_REQUEST, "{}", action);
         assert!(
-            body["error"].as_str().unwrap_or("").contains("Unknown device"),
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Unknown device"),
             "{} should have passed validation and reached the device: {}",
             action,
             body
@@ -260,8 +281,16 @@ async fn cast_endpoints_are_no_longer_proxied() {
     let calls = [
         (Method::GET, "/api/cast/devices", None),
         (Method::GET, "/api/cast/status?device_id=dlna:x", None),
-        (Method::POST, "/api/cast/play", Some(json!({ "device_id": "d", "filename": "a.mkv" }))),
-        (Method::POST, "/api/cast/control", Some(json!({ "device_id": "d", "action": "play" }))),
+        (
+            Method::POST,
+            "/api/cast/play",
+            Some(json!({ "device_id": "d", "filename": "a.mkv" })),
+        ),
+        (
+            Method::POST,
+            "/api/cast/control",
+            Some(json!({ "device_id": "d", "action": "play" })),
+        ),
     ];
     for (method, uri, body) in calls {
         let (status, _) = call(&app, method, uri, body).await;

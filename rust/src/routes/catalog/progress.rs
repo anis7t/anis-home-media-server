@@ -34,7 +34,11 @@ fn extract_device_id(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
-async fn extract_user_id(pool: &PgPool, headers: &HeaderMap, device_id: Option<&str>) -> Option<i64> {
+async fn extract_user_id(
+    pool: &PgPool,
+    headers: &HeaderMap,
+    device_id: Option<&str>,
+) -> Option<i64> {
     AuthService::resolve_effective_user_id(pool, headers, device_id).await
 }
 

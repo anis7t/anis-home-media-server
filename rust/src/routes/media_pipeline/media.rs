@@ -20,8 +20,14 @@ pub async fn media_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
         return Ok(res);
     }
 

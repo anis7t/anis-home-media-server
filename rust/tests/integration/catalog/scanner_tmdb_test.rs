@@ -79,7 +79,9 @@ fn test_build_details_json_synthesis() {
 async fn test_live_tmdb_search_if_token_configured() {
     dotenvy::dotenv().ok();
     let token = match std::env::var("TMDB_API_TOKEN") {
-        Ok(t) if !t.trim().is_empty() => t.trim().trim_matches(|c| c == '"' || c == '\'').to_string(),
+        Ok(t) if !t.trim().is_empty() => {
+            t.trim().trim_matches(|c| c == '"' || c == '\'').to_string()
+        }
         _ => {
             println!("Skipping live TMDb test: TMDB_API_TOKEN not configured");
             return;

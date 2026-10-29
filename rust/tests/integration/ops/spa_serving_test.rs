@@ -3,9 +3,7 @@ use axum::{
     http::{header, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_with_static, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_with_static, db, services::system_service::SystemService};
 use tower::ServiceExt;
 
 async fn setup_test_app() -> axum::Router {
@@ -27,10 +25,7 @@ async fn setup_test_app() -> axum::Router {
 async fn test_serves_spa_index_at_root() {
     let app = setup_test_app().await;
 
-    let req = Request::builder()
-        .uri("/")
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::builder().uri("/").body(Body::empty()).unwrap();
 
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -71,10 +66,7 @@ async fn test_client_side_routing_fallback() {
     let app = setup_test_app().await;
 
     for route in &["/manage", "/devices", "/manual", "/movie/sample.mp4"] {
-        let req = Request::builder()
-            .uri(*route)
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().uri(*route).body(Body::empty()).unwrap();
 
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(
@@ -122,10 +114,7 @@ async fn test_static_asset_serving_with_immutable_cache() {
             let file_name = entry.file_name().to_string_lossy().to_string();
             if file_name.ends_with(".js") || file_name.ends_with(".css") {
                 let uri = format!("/assets/{}", file_name);
-                let req = Request::builder()
-                    .uri(&uri)
-                    .body(Body::empty())
-                    .unwrap();
+                let req = Request::builder().uri(&uri).body(Body::empty()).unwrap();
 
                 let res = app.clone().oneshot(req).await.unwrap();
                 assert_eq!(res.status(), StatusCode::OK);
@@ -189,10 +178,7 @@ async fn test_missing_api_and_media_routes_return_404_json_not_html() {
     ];
 
     for route in &routes {
-        let req = Request::builder()
-            .uri(*route)
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().uri(*route).body(Body::empty()).unwrap();
 
         let res = app.clone().oneshot(req).await.unwrap();
         assert!(

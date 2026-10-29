@@ -414,7 +414,9 @@ pub struct ReceiverStatus {
 impl ReceiverStatus {
     /// `volume_level` is 0.0–1.0 on the wire; the player works in 0–100.
     pub fn percent_volume(&self) -> f64 {
-        self.volume_level.map(|v| (v * 100.0).round()).unwrap_or(100.0)
+        self.volume_level
+            .map(|v| (v * 100.0).round())
+            .unwrap_or(100.0)
     }
 }
 
@@ -448,7 +450,12 @@ impl ReceiverStatus {
 pub fn parse_receiver_status(payload: &str) -> ReceiverStatus {
     let value: serde_json::Value = match serde_json::from_str(payload) {
         Ok(v) => v,
-        Err(_) => return ReceiverStatus { volume_level: None, volume_muted: None },
+        Err(_) => {
+            return ReceiverStatus {
+                volume_level: None,
+                volume_muted: None,
+            }
+        }
     };
     let status = status_object(&value).unwrap_or(&value);
 
@@ -461,8 +468,7 @@ pub fn parse_receiver_status(payload: &str) -> ReceiverStatus {
     };
 
     ReceiverStatus {
-        volume_level: read_level("level")
-            .or_else(|| volume.and_then(|v| v.as_f64())),
+        volume_level: read_level("level").or_else(|| volume.and_then(|v| v.as_f64())),
         volume_muted: volume
             .and_then(|v| v.get("muted"))
             .or_else(|| status.get("muted"))
@@ -527,7 +533,11 @@ pub fn parse_media_status(payload: &str) -> Option<MediaStatus> {
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
 
-    Some(MediaStatus { state, position: current, duration })
+    Some(MediaStatus {
+        state,
+        position: current,
+        duration,
+    })
 }
 
 #[cfg(test)]
@@ -536,7 +546,12 @@ mod tests {
 
     #[test]
     fn a_text_message_round_trips() {
-        let msg = CastMessage::text("sender-abc", DEFAULT_RECEIVER_ID, NS_CONNECTION, r#"{"type":"CONNECT"}"#);
+        let msg = CastMessage::text(
+            "sender-abc",
+            DEFAULT_RECEIVER_ID,
+            NS_CONNECTION,
+            r#"{"type":"CONNECT"}"#,
+        );
         let bytes = msg.encode();
         let back = CastMessage::decode(&bytes).expect("decode");
         assert_eq!(back, msg);
@@ -554,16 +569,23 @@ mod tests {
         let bytes = msg.encode();
 
         let mut expected: Vec<u8> = Vec::new();
-        expected.push(0x12); expected.push(8);
+        expected.push(0x12);
+        expected.push(8);
         expected.extend_from_slice(b"sender-1");
-        expected.push(0x1a); expected.push(10);
+        expected.push(0x1a);
+        expected.push(10);
         expected.extend_from_slice(b"receiver-0");
-        expected.push(0x22); expected.push(39);
+        expected.push(0x22);
+        expected.push(39);
         expected.extend_from_slice(b"urn:x-cast:com.google.cast.tp.heartbeat");
-        expected.push(0x32); expected.push(15);
+        expected.push(0x32);
+        expected.push(15);
         expected.extend_from_slice(br#"{"type":"PING"}"#);
 
-        assert_eq!(bytes, expected, "wire bytes must match the protocol, not just round-trip");
+        assert_eq!(
+            bytes, expected,
+            "wire bytes must match the protocol, not just round-trip"
+        );
     }
 
     #[test]
@@ -578,7 +600,12 @@ mod tests {
     #[test]
     fn a_buffer_holding_two_frames_yields_both() {
         let a = CastMessage::text("s", "receiver-0", NS_HEARTBEAT, r#"{"type":"PING"}"#);
-        let b = CastMessage::text("s", DEFAULT_RECEIVER_ID, NS_CONNECTION, r#"{"type":"CONNECT"}"#);
+        let b = CastMessage::text(
+            "s",
+            DEFAULT_RECEIVER_ID,
+            NS_CONNECTION,
+            r#"{"type":"CONNECT"}"#,
+        );
         let mut buf = a.encode_frame();
         buf.extend_from_slice(&b.encode_frame());
 
@@ -620,12 +647,14 @@ mod tests {
 
     #[test]
     fn unknown_fields_are_skipped_not_rejected() {
-        let mut bytes = CastMessage::text("s", "receiver-0", NS_CONNECTION, r#"{"type":"CONNECT"}"#).encode();
+        let mut bytes =
+            CastMessage::text("s", "receiver-0", NS_CONNECTION, r#"{"type":"CONNECT"}"#).encode();
         // Field 99, wire type 2 (length-delimited), one byte of payload.
         bytes.push((99 << 3) | 2);
         bytes.push(1);
         bytes.push(0xAB);
-        let msg = CastMessage::decode(&bytes).expect("a new firmware field must not break decoding");
+        let msg =
+            CastMessage::decode(&bytes).expect("a new firmware field must not break decoding");
         assert_eq!(msg.message_type().as_deref(), Some("CONNECT"));
     }
 
@@ -646,7 +675,12 @@ mod tests {
 
     #[test]
     fn request_ids_are_extracted_for_response_matching() {
-        let msg = CastMessage::text("s", DEFAULT_RECEIVER_ID, NS_MEDIA, r#"{"type":"GET_STATUS","requestId":42}"#);
+        let msg = CastMessage::text(
+            "s",
+            DEFAULT_RECEIVER_ID,
+            NS_MEDIA,
+            r#"{"type":"GET_STATUS","requestId":42}"#,
+        );
         assert_eq!(msg.request_id(), Some(42));
     }
 
@@ -664,8 +698,16 @@ mod tests {
             "volume":{"level":0.45,"muted":true,"controlType":"attenuation"},
             "isActiveInput":true}}"#;
         let s = parse_receiver_status(payload);
-        assert_eq!(s.volume_level, Some(0.45), "level is nested under status.volume");
-        assert_eq!(s.volume_muted, Some(true), "muted is nested under status.volume");
+        assert_eq!(
+            s.volume_level,
+            Some(0.45),
+            "level is nested under status.volume"
+        );
+        assert_eq!(
+            s.volume_muted,
+            Some(true),
+            "muted is nested under status.volume"
+        );
         assert_eq!(s.percent_volume(), 45.0);
     }
 
@@ -674,16 +716,21 @@ mod tests {
     /// 100 while the speakers were demonstrably moving.
     #[test]
     fn an_object_valued_volume_is_not_reported_as_full() {
-        let payload = r#"{"type":"RECEIVER_STATUS","status":{"volume":{"level":0.10,"muted":false}}}"#;
+        let payload =
+            r#"{"type":"RECEIVER_STATUS","status":{"volume":{"level":0.10,"muted":false}}}"#;
         let s = parse_receiver_status(payload);
-        assert!(s.volume_level.is_some(), "an object volume must still yield a level");
+        assert!(
+            s.volume_level.is_some(),
+            "an object volume must still yield a level"
+        );
         assert_eq!(s.percent_volume(), 10.0);
     }
 
     /// Same shape arriving as a list, which this receiver uses elsewhere.
     #[test]
     fn nested_volume_survives_the_list_status_shape() {
-        let payload = r#"{"type":"RECEIVER_STATUS","status":[{"volume":{"level":0.30,"muted":true}}]}"#;
+        let payload =
+            r#"{"type":"RECEIVER_STATUS","status":[{"volume":{"level":0.30,"muted":true}}]}"#;
         let s = parse_receiver_status(payload);
         assert_eq!(s.volume_level, Some(0.30));
         assert_eq!(s.volume_muted, Some(true));
@@ -733,10 +780,17 @@ mod tests {
         .unwrap();
         assert_eq!(playing.state, "playing");
         assert_eq!(playing.position, 12.5);
-        assert_eq!(playing.duration, 8931.0, "duration is read from the nested media status");
+        assert_eq!(
+            playing.duration, 8931.0,
+            "duration is read from the nested media status"
+        );
 
-        let idle = parse_media_status(r#"{"type":"MEDIA_STATUS","status":{"playerState":"IDLE"}}"#).unwrap();
-        assert_eq!(idle.state, "stopped", "IDLE means nothing is loaded, not stopped playback");
+        let idle = parse_media_status(r#"{"type":"MEDIA_STATUS","status":{"playerState":"IDLE"}}"#)
+            .unwrap();
+        assert_eq!(
+            idle.state, "stopped",
+            "IDLE means nothing is loaded, not stopped playback"
+        );
 
         assert_eq!(
             parse_media_status(r#"{"type":"MEDIA_STATUS","status":{"playerState":"BUFFERING"}}"#)

@@ -66,8 +66,7 @@ pub fn test_database_url() -> String {
 /// concurrent creation is tolerated, because `CREATE DATABASE` would
 /// otherwise abort the transaction it was issued in.
 pub async fn ensure_test_database(url: &str) -> Result<(), sqlx::Error> {
-    let parsed =
-        url::Url::parse(url).map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+    let parsed = url::Url::parse(url).map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
 
     let db_name = parsed.path().trim_start_matches('/').to_string();
     if db_name.is_empty() {
@@ -129,8 +128,7 @@ pub async fn test_config() -> AppConfig {
     // Upload tests construct their UploadState from these fields directly, so
     // they never write into the production media root (`D:\Flicks`). The
     // production router derives the same paths from the media root and env.
-    let upload_root =
-        std::env::temp_dir().join(format!("ms_test_uploads_{}", std::process::id()));
+    let upload_root = std::env::temp_dir().join(format!("ms_test_uploads_{}", std::process::id()));
     let upload_tmp = upload_root.join("tmp");
     let upload_target = upload_root.join("target");
     let _ = std::fs::create_dir_all(&upload_tmp);
@@ -195,16 +193,14 @@ pub async fn seed_real_media_row(
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| filename.clone());
     let title = stem.replace(['_', '.'], " ").trim().to_string();
-    let year = title
-        .split_whitespace()
-        .find_map(|w| {
-            let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
-            if digits.len() == 4 {
-                digits.parse::<i32>().ok()
-            } else {
-                None
-            }
-        });
+    let year = title.split_whitespace().find_map(|w| {
+        let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() == 4 {
+            digits.parse::<i32>().ok()
+        } else {
+            None
+        }
+    });
 
     sqlx::query(
         r#"

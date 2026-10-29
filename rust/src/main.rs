@@ -26,7 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = db::create_pool(&config.database_url).await?;
 
     // Phase 6A: Recover stale/interrupted jobs from previous runs (Option A)
-    if let Err(e) = media_server_api::services::job_service::JobService::recover_stale_jobs(&pool).await {
+    if let Err(e) =
+        media_server_api::services::job_service::JobService::recover_stale_jobs(&pool).await
+    {
         tracing::warn!("Failed to recover stale jobs on startup: {}", e);
     }
 

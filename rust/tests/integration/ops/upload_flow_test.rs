@@ -45,11 +45,8 @@ impl UploadCtx {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "ms_upload_it_{}_{}",
-            std::process::id(),
-            nonce
-        ));
+        let root =
+            std::env::temp_dir().join(format!("ms_upload_it_{}_{}", std::process::id(), nonce));
         let target = root.join("media");
         let tmp = root.join("tmp");
         std::fs::create_dir_all(&target).unwrap();
@@ -134,11 +131,7 @@ async fn upload_routes_require_admin_and_ignore_query_pins() {
     let wrong_pin = ctx
         .app
         .clone()
-        .oneshot(init_req(
-            "/api/upload/chunk/init",
-            Some("00000"),
-            &payload,
-        ))
+        .oneshot(init_req("/api/upload/chunk/init", Some("00000"), &payload))
         .await
         .unwrap();
     assert_eq!(wrong_pin.status(), StatusCode::FORBIDDEN);
@@ -147,11 +140,7 @@ async fn upload_routes_require_admin_and_ignore_query_pins() {
     let query_pin = ctx
         .app
         .clone()
-        .oneshot(init_req(
-            "/api/upload/chunk/init?pin=97531",
-            None,
-            &payload,
-        ))
+        .oneshot(init_req("/api/upload/chunk/init?pin=97531", None, &payload))
         .await
         .unwrap();
     assert_eq!(query_pin.status(), StatusCode::FORBIDDEN);
@@ -161,11 +150,7 @@ async fn upload_routes_require_admin_and_ignore_query_pins() {
     let hardcoded_pin = ctx
         .app
         .clone()
-        .oneshot(init_req(
-            "/api/upload/chunk/init",
-            Some("86420"),
-            &payload,
-        ))
+        .oneshot(init_req("/api/upload/chunk/init", Some("86420"), &payload))
         .await
         .unwrap();
     assert_eq!(hardcoded_pin.status(), StatusCode::FORBIDDEN);
@@ -173,11 +158,7 @@ async fn upload_routes_require_admin_and_ignore_query_pins() {
     let ok = ctx
         .app
         .clone()
-        .oneshot(init_req(
-            "/api/upload/chunk/init",
-            Some("97531"),
-            &payload,
-        ))
+        .oneshot(init_req("/api/upload/chunk/init", Some("97531"), &payload))
         .await
         .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
@@ -216,14 +197,10 @@ async fn chunk_flow_enforces_offsets_limits_and_completes() {
     let id = init_body["upload_id"].as_str().unwrap().to_string();
 
     // A wrong offset is a conflict that reports where the server actually is.
-    let wrong_offset = admin_req(
-        "POST",
-        &format!("/api/upload/chunk/{}", id),
-        "97531",
-    )
-    .header("X-Upload-Offset", "5")
-    .body(Body::from(vec![0u8; 1]))
-    .unwrap();
+    let wrong_offset = admin_req("POST", &format!("/api/upload/chunk/{}", id), "97531")
+        .header("X-Upload-Offset", "5")
+        .body(Body::from(vec![0u8; 1]))
+        .unwrap();
     let wrong_res = ctx.app.clone().oneshot(wrong_offset).await.unwrap();
     assert_eq!(wrong_res.status(), StatusCode::CONFLICT);
     let wrong_body = body_json(wrong_res).await;
@@ -249,38 +226,26 @@ async fn chunk_flow_enforces_offsets_limits_and_completes() {
 
     // 8 MiB + 1 is under the route's transport allowance, so the handler's own
     // 8 MiB check must produce the 413.
-    let oversized_handler = admin_req(
-        "POST",
-        &format!("/api/upload/chunk/{}", id),
-        "97531",
-    )
-    .header("X-Upload-Offset", "5")
-    .body(Body::from(vec![0u8; 8 * 1024 * 1024 + 1]))
-    .unwrap();
-    let oversized_handler_res = ctx
-        .app
-        .clone()
-        .oneshot(oversized_handler)
-        .await
+    let oversized_handler = admin_req("POST", &format!("/api/upload/chunk/{}", id), "97531")
+        .header("X-Upload-Offset", "5")
+        .body(Body::from(vec![0u8; 8 * 1024 * 1024 + 1]))
         .unwrap();
-    assert_eq!(oversized_handler_res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let oversized_handler_res = ctx.app.clone().oneshot(oversized_handler).await.unwrap();
+    assert_eq!(
+        oversized_handler_res.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
 
     // 9 MiB is past the transport limit and is rejected before the handler.
-    let oversized_transport = admin_req(
-        "POST",
-        &format!("/api/upload/chunk/{}", id),
-        "97531",
-    )
-    .header("X-Upload-Offset", "5")
-    .body(Body::from(vec![0u8; 9 * 1024 * 1024]))
-    .unwrap();
-    let oversized_transport_res = ctx
-        .app
-        .clone()
-        .oneshot(oversized_transport)
-        .await
+    let oversized_transport = admin_req("POST", &format!("/api/upload/chunk/{}", id), "97531")
+        .header("X-Upload-Offset", "5")
+        .body(Body::from(vec![0u8; 9 * 1024 * 1024]))
         .unwrap();
-    assert_eq!(oversized_transport_res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let oversized_transport_res = ctx.app.clone().oneshot(oversized_transport).await.unwrap();
+    assert_eq!(
+        oversized_transport_res.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
 
     // The 12-byte declaration still has only the first 5 bytes.
     let rest = admin_req("POST", &format!("/api/upload/chunk/{}", id), "97531")
@@ -306,7 +271,10 @@ async fn chunk_flow_enforces_offsets_limits_and_completes() {
     assert_eq!(complete_body["success"], true);
     assert_eq!(complete_body["filename"], final_name);
     assert_eq!(complete_body["title"], title);
-    assert_eq!(complete_body["details_url"], format!("/movie/{}", final_name));
+    assert_eq!(
+        complete_body["details_url"],
+        format!("/movie/{}", final_name)
+    );
 
     let target_path = ctx.target.join(&final_name);
     assert!(target_path.is_file(), "completed upload should be on disk");

@@ -51,8 +51,18 @@ async fn setup_preview_test() -> TestPreviewHarness {
         .unwrap()
         .as_nanos();
 
-    let test_dir = std::env::temp_dir().join(format!("rust_prev_media_{}_{}_{}", std::process::id(), now, count));
-    let cache_dir = std::env::temp_dir().join(format!("rust_prev_cache_{}_{}_{}", std::process::id(), now, count));
+    let test_dir = std::env::temp_dir().join(format!(
+        "rust_prev_media_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
+    let cache_dir = std::env::temp_dir().join(format!(
+        "rust_prev_cache_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
     fs::create_dir_all(&test_dir).expect("Failed to create media directory");
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
@@ -73,25 +83,21 @@ async fn setup_preview_test() -> TestPreviewHarness {
         .await;
 
     // Insert movie and progress rows
-    sqlx::query(
-        "INSERT INTO movies (filename, title, runtime) VALUES ($1, $2, $3)",
-    )
-    .bind(&test_filename)
-    .bind("Rust Test Movie")
-    .bind(20) // 20 minutes
-    .execute(&pool)
-    .await
-    .expect("Failed to insert test movie row");
+    sqlx::query("INSERT INTO movies (filename, title, runtime) VALUES ($1, $2, $3)")
+        .bind(&test_filename)
+        .bind("Rust Test Movie")
+        .bind(20) // 20 minutes
+        .execute(&pool)
+        .await
+        .expect("Failed to insert test movie row");
 
-    sqlx::query(
-        "INSERT INTO progress (filename, position, duration) VALUES ($1, $2, $3)",
-    )
-    .bind(&test_filename)
-    .bind(0.0)
-    .bind(1200.0) // 1200 seconds
-    .execute(&pool)
-    .await
-    .expect("Failed to insert test progress row");
+    sqlx::query("INSERT INTO progress (filename, position, duration) VALUES ($1, $2, $3)")
+        .bind(&test_filename)
+        .bind(0.0)
+        .bind(1200.0) // 1200 seconds
+        .execute(&pool)
+        .await
+        .expect("Failed to insert test progress row");
 
     // Write dummy file to media directory
     let video_path = test_dir.join(&test_filename);
@@ -282,7 +288,10 @@ async fn test_preview_thumb_head_and_options() {
     let res_options = harness.app.clone().oneshot(req_options).await.unwrap();
     assert_eq!(res_options.status(), StatusCode::OK);
     assert_eq!(
-        res_options.headers().get("access-control-allow-origin").unwrap(),
+        res_options
+            .headers()
+            .get("access-control-allow-origin")
+            .unwrap(),
         "*"
     );
     harness.teardown().await;

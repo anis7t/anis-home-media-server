@@ -33,7 +33,10 @@ impl ScannerEngine {
     pub fn is_video_file(path: &Path) -> bool {
         if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
             let lower = file_name.to_lowercase();
-            if lower.starts_with("chunk_") || lower.starts_with("init_chunk_") || lower.ends_with(".m4s") {
+            if lower.starts_with("chunk_")
+                || lower.starts_with("init_chunk_")
+                || lower.ends_with(".m4s")
+            {
                 return false;
             }
         }
@@ -151,7 +154,10 @@ impl ScannerEngine {
         let mut report = ScannerReport::default();
         let cache_dir_buf = cache_dir.to_path_buf();
 
-        info!("Starting native library scan across {} media root(s)...", roots.len());
+        info!(
+            "Starting native library scan across {} media root(s)...",
+            roots.len()
+        );
 
         // 1. Reconcile orphans first (Decision 1A)
         match Self::reconcile_orphans(pool, roots).await {
@@ -170,7 +176,10 @@ impl ScannerEngine {
         // 2. Discover physical video files on disk
         let files = Self::discover_video_files(roots);
         report.files_discovered = files.len();
-        info!("Discovered {} total video file(s) across media roots", files.len());
+        info!(
+            "Discovered {} total video file(s) across media roots",
+            files.len()
+        );
 
         // 3. Query existing indexed filenames from PostgreSQL
         let indexed_rows = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies")
@@ -201,12 +210,18 @@ impl ScannerEngine {
             report.subtitles_acquired += swept;
             info!(
                 "Scan complete. Discovered: {}, Swept Subtitles: {}, Pruned: {}, Errors: {}",
-                report.files_discovered, report.subtitles_acquired, report.orphans_pruned, report.errors
+                report.files_discovered,
+                report.subtitles_acquired,
+                report.orphans_pruned,
+                report.errors
             );
             return Ok(report);
         }
 
-        info!("Found {} unindexed video file(s) to ingest", unindexed.len());
+        info!(
+            "Found {} unindexed video file(s) to ingest",
+            unindexed.len()
+        );
 
         // 5. Initialize TMDb client if token is available
         let tmdb_client = tmdb_token.map(|t| TmdbClient::new(t.to_string()));
@@ -238,13 +253,19 @@ impl ScannerEngine {
                 if let Some(ref client) = tmdb_client {
                     match client.search_movie(&title, year).await {
                         Ok(Some(matched_movie)) => {
-                            debug!("TMDb matched: ID {} ({:?})", matched_movie.id, matched_movie.title);
+                            debug!(
+                                "TMDb matched: ID {} ({:?})",
+                                matched_movie.id, matched_movie.title
+                            );
                             match client.get_movie_details(matched_movie.id).await {
                                 Ok(details) => {
                                     tmdb_details = Some(details);
                                 }
                                 Err(err) => {
-                                    warn!("Failed to fetch TMDb details for ID {}: {}", matched_movie.id, err);
+                                    warn!(
+                                        "Failed to fetch TMDb details for ID {}: {}",
+                                        matched_movie.id, err
+                                    );
                                     report.errors += 1;
                                 }
                             }
@@ -259,62 +280,79 @@ impl ScannerEngine {
                     }
                 }
             } else {
-                info!("Filename '{}' classified as anonymous stem; skipping TMDb lookup.", title);
+                info!(
+                    "Filename '{}' classified as anonymous stem; skipping TMDb lookup.",
+                    title
+                );
             }
 
             // Extract or fallback runtime (Decision 2A)
-            let (final_title, final_year, tmdb_id, overview, poster_path, backdrop_path, mut runtime, genres, vote_avg, release_date, details_json) =
-                if let Some(details) = tmdb_details {
-                    let d_title = details.title.clone().unwrap_or(title);
-                    let d_rel_date = details.release_date.clone().unwrap_or_default();
-                    let d_year = d_rel_date
-                        .get(..4)
-                        .and_then(|y| y.parse::<i32>().ok())
-                        .or(year);
-                    let d_genres = details
-                        .genres
-                        .iter()
-                        .map(|g| g.name.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let d_json = TmdbClient::build_details_json(&details);
-                    let d_runtime = details.runtime.unwrap_or(0);
+            let (
+                final_title,
+                final_year,
+                tmdb_id,
+                overview,
+                poster_path,
+                backdrop_path,
+                mut runtime,
+                genres,
+                vote_avg,
+                release_date,
+                details_json,
+            ) = if let Some(details) = tmdb_details {
+                let d_title = details.title.clone().unwrap_or(title);
+                let d_rel_date = details.release_date.clone().unwrap_or_default();
+                let d_year = d_rel_date
+                    .get(..4)
+                    .and_then(|y| y.parse::<i32>().ok())
+                    .or(year);
+                let d_genres = details
+                    .genres
+                    .iter()
+                    .map(|g| g.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let d_json = TmdbClient::build_details_json(&details);
+                let d_runtime = details.runtime.unwrap_or(0);
 
-                    (
-                        d_title,
-                        d_year,
-                        Some(details.id),
-                        details.overview.clone().unwrap_or_default(),
-                        details.poster_path.clone().unwrap_or_default(),
-                        details.backdrop_path.clone().unwrap_or_default(),
-                        d_runtime,
-                        d_genres,
-                        details.vote_average.unwrap_or(0.0),
-                        d_rel_date,
-                        d_json,
-                    )
-                } else {
-                    (
-                        title.clone(),
-                        year,
-                        None,
-                        "No TMDB metadata found".to_string(),
-                        "".to_string(),
-                        "".to_string(),
-                        0,
-                        "".to_string(),
-                        0.0,
-                        year.map(|y| y.to_string()).unwrap_or_default(),
-                        "{}".to_string(),
-                    )
-                };
+                (
+                    d_title,
+                    d_year,
+                    Some(details.id),
+                    details.overview.clone().unwrap_or_default(),
+                    details.poster_path.clone().unwrap_or_default(),
+                    details.backdrop_path.clone().unwrap_or_default(),
+                    d_runtime,
+                    d_genres,
+                    details.vote_average.unwrap_or(0.0),
+                    d_rel_date,
+                    d_json,
+                )
+            } else {
+                (
+                    title.clone(),
+                    year,
+                    None,
+                    "No TMDB metadata found".to_string(),
+                    "".to_string(),
+                    "".to_string(),
+                    0,
+                    "".to_string(),
+                    0.0,
+                    year.map(|y| y.to_string()).unwrap_or_default(),
+                    "{}".to_string(),
+                )
+            };
 
             // Decision 2A: Fall back to ffprobe stream container duration if runtime is 0
             if runtime <= 0 {
                 let video_dur_sec = ProbeService::source_video_duration(&path).await;
                 if video_dur_sec > 0.0 {
                     runtime = (video_dur_sec / 60.0).round() as i64;
-                    debug!("Probed container runtime for '{}': {} min", relative, runtime);
+                    debug!(
+                        "Probed container runtime for '{}': {} min",
+                        relative, runtime
+                    );
                 }
             }
 
@@ -367,15 +405,35 @@ impl ScannerEngine {
                     // Download and cache artwork asynchronously if present
                     if let Some(id) = tmdb_id {
                         if !poster_path.is_empty() {
-                            let _ = TmdbArtworkService::get(pool, &cache_dir_buf, id, ArtworkKind::Poster).await;
+                            let _ = TmdbArtworkService::get(
+                                pool,
+                                &cache_dir_buf,
+                                id,
+                                ArtworkKind::Poster,
+                            )
+                            .await;
                         }
                         if !backdrop_path.is_empty() {
-                            let _ = TmdbArtworkService::get(pool, &cache_dir_buf, id, ArtworkKind::Backdrop).await;
+                            let _ = TmdbArtworkService::get(
+                                pool,
+                                &cache_dir_buf,
+                                id,
+                                ArtworkKind::Backdrop,
+                            )
+                            .await;
                         }
                     }
 
                     // Proactively acquire subtitles if movie lacks English subtitles
-                    if SubtitleService::ensure_subtitles_for_movie(&path, &relative, &final_title, roots, &cache_dir_buf).await {
+                    if SubtitleService::ensure_subtitles_for_movie(
+                        &path,
+                        &relative,
+                        &final_title,
+                        roots,
+                        &cache_dir_buf,
+                    )
+                    .await
+                    {
                         report.subtitles_acquired += 1;
                     }
                 }
@@ -436,7 +494,9 @@ impl ScannerEngine {
             };
 
             // Fast-path: check if English subtitles already exist
-            if SubtitleService::has_english_subtitles(&video_path, &filename, roots, cache_dir).await {
+            if SubtitleService::has_english_subtitles(&video_path, &filename, roots, cache_dir)
+                .await
+            {
                 continue;
             }
 

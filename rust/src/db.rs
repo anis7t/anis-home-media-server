@@ -568,9 +568,7 @@ pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .await?;
 
     // Verify database connectivity
-    sqlx::query("SELECT 1")
-        .execute(&pool)
-        .await?;
+    sqlx::query("SELECT 1").execute(&pool).await?;
 
     ensure_schema(&pool).await?;
 

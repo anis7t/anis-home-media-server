@@ -77,9 +77,12 @@ async fn enqueue_job_inner(
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let mode = req.mode.clone().unwrap_or_else(|| "hls".to_string());
     let force = req.force.unwrap_or(false);
-    let priority = req.priority.unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
+    let priority = req
+        .priority
+        .unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
 
-    let job = JobService::enqueue_with_priority(&state.pool, filename, &mode, force, priority).await?;
+    let job =
+        JobService::enqueue_with_priority(&state.pool, filename, &mode, force, priority).await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -124,9 +127,12 @@ pub async fn enqueue_job_handler(
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let mode = req.mode.clone().unwrap_or_else(|| "hls".to_string());
     let force = req.force.unwrap_or(false);
-    let priority = req.priority.unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
+    let priority = req
+        .priority
+        .unwrap_or(crate::services::job_service::PRIORITY_BACKGROUND);
 
-    let job = JobService::enqueue_with_priority(&state.pool, &filename, &mode, force, priority).await?;
+    let job =
+        JobService::enqueue_with_priority(&state.pool, &filename, &mode, force, priority).await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -227,7 +233,10 @@ fn probe_job_cache_size(filename: &str, roots: &[PathBuf], cache_dir: &std::path
 }
 
 fn estimate_total_bytes(current_bytes: u64, pct: f64, runtime_min: Option<i32>, mode: &str) -> u64 {
-    let dur_sec = runtime_min.filter(|&r| r > 0).map(|r| (r * 60) as f64).unwrap_or(5400.0);
+    let dur_sec = runtime_min
+        .filter(|&r| r > 0)
+        .map(|r| (r * 60) as f64)
+        .unwrap_or(5400.0);
     let target_rate_bps = target_bitrate_bps(mode) as f64;
     let theoretical_bytes = (target_rate_bps * dur_sec / 8.0) as u64;
 
@@ -248,32 +257,43 @@ pub async fn active_transcodes_handler(
 
     // Batch query movie runtimes in a single roundtrip
     let filenames: Vec<String> = jobs.iter().map(|j| j.filename.clone()).collect();
-    let runtimes: Vec<(String, Option<i32>)> = sqlx::query_as(
-        "SELECT filename, runtime FROM movies WHERE filename = ANY($1)",
-    )
-    .bind(&filenames)
-    .fetch_all(&*state.pool)
-    .await
-    .unwrap_or_default();
-    let runtime_map: std::collections::HashMap<String, Option<i32>> = runtimes.into_iter().collect();
+    let runtimes: Vec<(String, Option<i32>)> =
+        sqlx::query_as("SELECT filename, runtime FROM movies WHERE filename = ANY($1)")
+            .bind(&filenames)
+            .fetch_all(&*state.pool)
+            .await
+            .unwrap_or_default();
+    let runtime_map: std::collections::HashMap<String, Option<i32>> =
+        runtimes.into_iter().collect();
 
     let mut list = Vec::new();
     for j in jobs {
         if j.status == "running" || j.status == "queued" {
-            let name_parts = j.filename.rsplit_once('/').map(|(_, n)| n).unwrap_or(&j.filename);
-            let title = name_parts.rsplit_once('.').map(|(n, _)| n).unwrap_or(name_parts).replace('.', " ");
+            let name_parts = j
+                .filename
+                .rsplit_once('/')
+                .map(|(_, n)| n)
+                .unwrap_or(&j.filename);
+            let title = name_parts
+                .rsplit_once('.')
+                .map(|(n, _)| n)
+                .unwrap_or(name_parts)
+                .replace('.', " ");
             let pct = j.progress.unwrap_or(0.0);
             let speed_str = j.speed.map(|s| format!("{:.1}x", s));
             let fps_str = j.fps.map(|f| format!("{:.0} fps", f));
-            let eta_str = j.eta.map(|e| {
-                let m = (e / 60.0).floor() as u64;
-                let s = (e % 60.0).floor() as u64;
-                if m >= 60 {
-                    format!("{}h {}m", m / 60, m % 60)
-                } else {
-                    format!("{}m {}s", m, s)
-                }
-            }).unwrap_or_else(|| "calculating...".to_string());
+            let eta_str = j
+                .eta
+                .map(|e| {
+                    let m = (e / 60.0).floor() as u64;
+                    let s = (e % 60.0).floor() as u64;
+                    if m >= 60 {
+                        format!("{}h {}m", m / 60, m % 60)
+                    } else {
+                        format!("{}m {}s", m, s)
+                    }
+                })
+                .unwrap_or_else(|| "calculating...".to_string());
 
             let runtime = runtime_map.get(&j.filename).copied().flatten();
 
@@ -281,8 +301,16 @@ pub async fn active_transcodes_handler(
                 let dur_sec = (rt_min * 60) as f64;
                 let enc_sec = (dur_sec * (pct / 100.0)).clamp(0.0, dur_sec);
                 (
-                    Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
-                    Some(format!("{}:{:02}", (dur_sec / 60.0).floor() as u64, (dur_sec % 60.0).floor() as u64)),
+                    Some(format!(
+                        "{}:{:02}",
+                        (enc_sec / 60.0).floor() as u64,
+                        (enc_sec % 60.0).floor() as u64
+                    )),
+                    Some(format!(
+                        "{}:{:02}",
+                        (dur_sec / 60.0).floor() as u64,
+                        (dur_sec % 60.0).floor() as u64
+                    )),
                 )
             } else if let (Some(eta_val), Some(spd_val)) = (j.eta, j.speed) {
                 if spd_val > 0.05 && pct > 0.0 {
@@ -290,8 +318,16 @@ pub async fn active_transcodes_handler(
                     let total_est_sec = remaining_sec / (1.0 - (pct / 100.0)).max(0.01);
                     let enc_sec = (total_est_sec * (pct / 100.0)).max(0.0);
                     (
-                        Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
-                        Some(format!("{}:{:02}", (total_est_sec / 60.0).floor() as u64, (total_est_sec % 60.0).floor() as u64)),
+                        Some(format!(
+                            "{}:{:02}",
+                            (enc_sec / 60.0).floor() as u64,
+                            (enc_sec % 60.0).floor() as u64
+                        )),
+                        Some(format!(
+                            "{}:{:02}",
+                            (total_est_sec / 60.0).floor() as u64,
+                            (total_est_sec % 60.0).floor() as u64
+                        )),
                     )
                 } else {
                     (None, None)
@@ -371,8 +407,19 @@ pub async fn transcode_dashboard_handler(
     .await
     .unwrap_or_default();
 
-    let movie_map: std::collections::HashMap<String, (String, Option<i32>, Option<i32>, Option<String>, Option<String>)> =
-        movies.into_iter().map(|(f, t, y, r, p, b)| (f, (t, y, r, p, b))).collect();
+    let movie_map: std::collections::HashMap<
+        String,
+        (
+            String,
+            Option<i32>,
+            Option<i32>,
+            Option<String>,
+            Option<String>,
+        ),
+    > = movies
+        .into_iter()
+        .map(|(f, t, y, r, p, b)| (f, (t, y, r, p, b)))
+        .collect();
 
     let mut active_jobs = Vec::new();
     let mut recent_jobs = Vec::new();
@@ -385,8 +432,16 @@ pub async fn transcode_dashboard_handler(
     let mut queued_count = 0;
 
     for j in all_jobs {
-        let name_parts = j.filename.rsplit_once('/').map(|(_, n)| n).unwrap_or(&j.filename);
-        let title_guess = name_parts.rsplit_once('.').map(|(n, _)| n).unwrap_or(name_parts).replace('.', " ");
+        let name_parts = j
+            .filename
+            .rsplit_once('/')
+            .map(|(_, n)| n)
+            .unwrap_or(&j.filename);
+        let title_guess = name_parts
+            .rsplit_once('.')
+            .map(|(n, _)| n)
+            .unwrap_or(name_parts)
+            .replace('.', " ");
 
         let (title, year, runtime, poster_path, backdrop_path) = match movie_map.get(&j.filename) {
             Some((t, y, r, p, b)) => (t.clone(), *y, *r, p.clone(), b.clone()),
@@ -444,8 +499,16 @@ pub async fn transcode_dashboard_handler(
             let dur_sec = (rt_min * 60) as f64;
             let enc_sec = (dur_sec * (pct / 100.0)).clamp(0.0, dur_sec);
             (
-                Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
-                Some(format!("{}:{:02}", (dur_sec / 60.0).floor() as u64, (dur_sec % 60.0).floor() as u64)),
+                Some(format!(
+                    "{}:{:02}",
+                    (enc_sec / 60.0).floor() as u64,
+                    (enc_sec % 60.0).floor() as u64
+                )),
+                Some(format!(
+                    "{}:{:02}",
+                    (dur_sec / 60.0).floor() as u64,
+                    (dur_sec % 60.0).floor() as u64
+                )),
             )
         } else if let (Some(eta_val), Some(spd_val)) = (j.eta, j.speed) {
             if spd_val > 0.05 && pct > 0.0 {
@@ -453,8 +516,16 @@ pub async fn transcode_dashboard_handler(
                 let total_est_sec = remaining_sec / (1.0 - (pct / 100.0)).max(0.01);
                 let enc_sec = (total_est_sec * (pct / 100.0)).max(0.0);
                 (
-                    Some(format!("{}:{:02}", (enc_sec / 60.0).floor() as u64, (enc_sec % 60.0).floor() as u64)),
-                    Some(format!("{}:{:02}", (total_est_sec / 60.0).floor() as u64, (total_est_sec % 60.0).floor() as u64)),
+                    Some(format!(
+                        "{}:{:02}",
+                        (enc_sec / 60.0).floor() as u64,
+                        (enc_sec % 60.0).floor() as u64
+                    )),
+                    Some(format!(
+                        "{}:{:02}",
+                        (total_est_sec / 60.0).floor() as u64,
+                        (total_est_sec % 60.0).floor() as u64
+                    )),
                 )
             } else {
                 (None, None)

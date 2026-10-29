@@ -34,12 +34,27 @@ fn make_vtt_response(vtt_text: String, method: Method) -> Response<Body> {
 
     *res.status_mut() = StatusCode::OK;
     let h = res.headers_mut();
-    h.insert(header::CONTENT_TYPE, "text/vtt; charset=utf-8".parse().unwrap());
-    h.insert(header::CACHE_CONTROL, "private, max-age=3600".parse().unwrap());
+    h.insert(
+        header::CONTENT_TYPE,
+        "text/vtt; charset=utf-8".parse().unwrap(),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        "private, max-age=3600".parse().unwrap(),
+    );
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-    h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-    h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+    h.insert(
+        "access-control-allow-methods",
+        "GET, HEAD, OPTIONS".parse().unwrap(),
+    );
+    h.insert(
+        "access-control-allow-headers",
+        "Range, Origin, Accept, Content-Type".parse().unwrap(),
+    );
+    h.insert(
+        "cross-origin-resource-policy",
+        "cross-origin".parse().unwrap(),
+    );
 
     res
 }
@@ -57,9 +72,18 @@ pub async fn subtitle_stream_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -68,15 +92,21 @@ pub async fn subtitle_stream_handler(
     // 1. Embedded subtitles: /subtitles/embedded/<rel_video>/<stream_idx>.vtt
     if let Some(rest) = clean.strip_prefix("embedded/") {
         let (rel_video, stream_file) = rest.rsplit_once('/').ok_or_else(|| {
-            AppError::BadRequest("Embedded subtitle path must include video path and stream index".to_string())
+            AppError::BadRequest(
+                "Embedded subtitle path must include video path and stream index".to_string(),
+            )
         })?;
         let stream_idx: usize = stream_file
             .strip_suffix(".vtt")
             .and_then(|s| s.parse().ok())
-            .ok_or_else(|| AppError::BadRequest("Invalid stream index in embedded subtitle path".to_string()))?;
+            .ok_or_else(|| {
+                AppError::BadRequest("Invalid stream index in embedded subtitle path".to_string())
+            })?;
 
         let video_path = PathResolver::resolve_media_path(rel_video, &state.roots)?;
-        let vtt_path = SubtitleService::extract_embedded_subtitle(&video_path, stream_idx, &state.cache_dir).await?;
+        let vtt_path =
+            SubtitleService::extract_embedded_subtitle(&video_path, stream_idx, &state.cache_dir)
+                .await?;
         let content = tokio::fs::read_to_string(&vtt_path)
             .await
             .map_err(|e| AppError::Internal(format!("Failed to read embedded subtitle: {}", e)))?;
@@ -97,17 +127,19 @@ pub async fn subtitle_stream_handler(
         })?;
 
         let video_path = PathResolver::resolve_media_path(rel_video, &state.roots)?;
-        let movie_title: Option<String> = sqlx::query_scalar("SELECT title FROM movies WHERE filename = $1")
-            .bind(rel_video)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
+        let movie_title: Option<String> =
+            sqlx::query_scalar("SELECT title FROM movies WHERE filename = $1")
+                .bind(rel_video)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
 
         let title = movie_title.unwrap_or_default();
-        let vtt_path = SubtitleService::fetch_online_subtitle(&video_path, &title, &state.cache_dir)
-            .await
-            .ok_or_else(|| AppError::NotFound("Online subtitle not found".to_string()))?;
+        let vtt_path =
+            SubtitleService::fetch_online_subtitle(&video_path, &title, &state.cache_dir)
+                .await
+                .ok_or_else(|| AppError::NotFound("Online subtitle not found".to_string()))?;
 
         let content = tokio::fs::read_to_string(&vtt_path)
             .await
@@ -124,7 +156,9 @@ pub async fn subtitle_stream_handler(
 
     // 3. Local sidecar subtitles: /subtitles/<rel_video>/<sub_name>
     let (rel_video, sub_name) = clean.rsplit_once('/').ok_or_else(|| {
-        AppError::BadRequest("Subtitle path must include video path and subtitle filename".to_string())
+        AppError::BadRequest(
+            "Subtitle path must include video path and subtitle filename".to_string(),
+        )
     })?;
 
     let video_path = PathResolver::resolve_media_path(rel_video, &state.roots)?;
@@ -147,12 +181,13 @@ pub async fn list_subtitles_handler(
 ) -> Result<Json<SubtitleListResponse>, AppError> {
     let video_path = PathResolver::resolve_media_path(&filename, &state.roots)?;
 
-    let movie_title: Option<String> = sqlx::query_scalar("SELECT title FROM movies WHERE filename = $1")
-        .bind(&filename)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+    let movie_title: Option<String> =
+        sqlx::query_scalar("SELECT title FROM movies WHERE filename = $1")
+            .bind(&filename)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
 
     let tracks = SubtitleService::list_tracks_async(
         &video_path,
@@ -173,9 +208,9 @@ pub async fn upload_subtitle_handler(
     mut multipart: Multipart,
 ) -> Result<Json<SubtitleUploadResponse>, AppError> {
     let video_path = PathResolver::resolve_media_path(&filename, &state.roots)?;
-    let parent_dir = video_path.parent().ok_or_else(|| {
-        AppError::NotFound("Target video directory not found".to_string())
-    })?;
+    let parent_dir = video_path
+        .parent()
+        .ok_or_else(|| AppError::NotFound("Target video directory not found".to_string()))?;
 
     let mut found_file = None;
     while let Some(field) = multipart

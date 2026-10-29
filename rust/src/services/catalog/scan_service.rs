@@ -79,15 +79,12 @@ impl ScanService {
 
         tokio::spawn(async move {
             let _guard = ScannerLockGuard;
-            info!("Triggering native in-process library scan across {} media root(s)...", media_roots.len());
+            info!(
+                "Triggering native in-process library scan across {} media root(s)...",
+                media_roots.len()
+            );
 
-            match ScannerEngine::scan(
-                &pool,
-                &media_roots,
-                &cache_dir,
-                tmdb_token.as_deref(),
-            )
-            .await
+            match ScannerEngine::scan(&pool, &media_roots, &cache_dir, tmdb_token.as_deref()).await
             {
                 Ok(report) => {
                     info!("Native library scan completed successfully: {:?}", report);
@@ -163,7 +160,8 @@ impl ScanService {
         headers: &HeaderMap,
         body_pin: Option<&str>,
     ) -> bool {
-        crate::services::auth_service::AuthService::is_admin_authorized(pool, headers, body_pin).await
+        crate::services::auth_service::AuthService::is_admin_authorized(pool, headers, body_pin)
+            .await
     }
 }
 

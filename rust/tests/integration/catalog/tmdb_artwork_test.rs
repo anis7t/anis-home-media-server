@@ -9,7 +9,12 @@
 //! Database isolation (AGENTS.md s9): rows are inserted and deleted within
 //! each test, and namespaced so cleanup can never touch a real movie.
 
-use axum::{body::Body, http::{header, Method, Request, StatusCode}, routing::get, Router};
+use axum::{
+    body::Body,
+    http::{header, Method, Request, StatusCode},
+    routing::get,
+    Router,
+};
 use http_body_util::BodyExt;
 use media_server_api::{
     create_app,
@@ -26,11 +31,11 @@ static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// A 1x1 PNG: small but comfortably above the 1000-byte cache guard.
 fn png_bytes() -> Vec<u8> {
     let mut v = vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-        0x42, 0x60, 0x82,
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
     // Pad with a comment chunk so the fixture clears the 1000-byte guard.
     v.extend_from_slice(&[0u8; 1200]);
@@ -128,7 +133,10 @@ async fn mock_tmdb() -> MockGuard {
     let serial = MOCK_SERIAL.lock().await;
     let mock = spawn_mock_tmdb().await;
     std::env::set_var("TMDB_ARTWORK_BASE_URL", &mock.base);
-    MockGuard { mock, _serial: serial }
+    MockGuard {
+        mock,
+        _serial: serial,
+    }
 }
 
 struct Fixture {
@@ -150,8 +158,10 @@ async fn fixture() -> Fixture {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let cache_dir = std::env::temp_dir().join(format!("rust_tmdbcache_{}_{}", std::process::id(), n));
-    let media_root = std::env::temp_dir().join(format!("rust_tmdbmedia_{}_{}", std::process::id(), n));
+    let cache_dir =
+        std::env::temp_dir().join(format!("rust_tmdbcache_{}_{}", std::process::id(), n));
+    let media_root =
+        std::env::temp_dir().join(format!("rust_tmdbmedia_{}_{}", std::process::id(), n));
     fs::create_dir_all(&cache_dir).unwrap();
     fs::create_dir_all(&media_root).unwrap();
 
@@ -165,12 +175,22 @@ async fn fixture() -> Fixture {
         vec![media_root.clone()],
         cache_dir.clone(),
     );
-    Fixture { app, cache_dir, media_root, pool }
+    Fixture {
+        app,
+        cache_dir,
+        media_root,
+        pool,
+    }
 }
 
 /// Insert a throwaway movie row. `tmdb_id` is unique per run so concurrent
 /// tests never collide on the id.
-async fn seed_movie(pool: &sqlx::PgPool, tmdb_id: i32, poster: Option<&str>, backdrop: Option<&str>) {
+async fn seed_movie(
+    pool: &sqlx::PgPool,
+    tmdb_id: i32,
+    poster: Option<&str>,
+    backdrop: Option<&str>,
+) {
     let filename = format!("rust_tmdbart_test_{}_{}.mkv", std::process::id(), tmdb_id);
     // `added_at` is a bigint epoch column, not a timestamp.
     sqlx::query(
@@ -203,20 +223,58 @@ async fn test_poster_downloads_once_then_serves_from_cache() {
     seed_movie(&f.pool, id, Some("/abc.jpg"), None).await;
 
     let uri = format!("/tmdb-poster/{}", id);
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK, "first request must download");
     assert_eq!(res.headers()[header::CONTENT_TYPE], "image/jpeg");
     let first = res.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(_g.mock.hits.load(Ordering::SeqCst), 1, "exactly one upstream fetch");
+    assert_eq!(
+        _g.mock.hits.load(Ordering::SeqCst),
+        1,
+        "exactly one upstream fetch"
+    );
 
     // Second request must be served from cache with no further upstream hit.
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let second = res.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(first.as_ref(), second.as_ref(), "cached bytes must be identical");
-    assert_eq!(_g.mock.hits.load(Ordering::SeqCst), 1, "cache hit must not refetch");
+    assert_eq!(
+        first.as_ref(),
+        second.as_ref(),
+        "cached bytes must be identical"
+    );
+    assert_eq!(
+        _g.mock.hits.load(Ordering::SeqCst),
+        1,
+        "cache hit must not refetch"
+    );
 
-    assert!(f.cache_dir.join("posters").join(format!("{}.jpg", id)).is_file());
+    assert!(f
+        .cache_dir
+        .join("posters")
+        .join(format!("{}.jpg", id))
+        .is_file());
     cleanup_movies(&f.pool).await;
 }
 
@@ -233,10 +291,16 @@ async fn test_concurrent_requests_cause_one_download() {
         let app = f.app.clone();
         let u = uri.clone();
         tasks.push(tokio::spawn(async move {
-            app.oneshot(Request::builder().method(Method::GET).uri(&u).body(Body::empty()).unwrap())
-                .await
-                .unwrap()
-                .status()
+            app.oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(&u)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
         }));
     }
     for t in tasks {
@@ -258,14 +322,31 @@ async fn test_backdrop_uses_its_own_cache_dir_and_size() {
     seed_movie(&f.pool, id, Some("/p.jpg"), Some("/b.jpg")).await;
 
     let uri = format!("/tmdb-backdrop/{}", id);
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     assert!(
-        f.cache_dir.join("backdrops").join(format!("{}.jpg", id)).is_file(),
+        f.cache_dir
+            .join("backdrops")
+            .join(format!("{}.jpg", id))
+            .is_file(),
         "backdrop must land in cache/backdrops, not cache/posters"
     );
     assert!(
-        !f.cache_dir.join("posters").join(format!("{}.jpg", id)).exists(),
+        !f.cache_dir
+            .join("posters")
+            .join(format!("{}.jpg", id))
+            .exists(),
         "a backdrop must not create a poster cache entry"
     );
     cleanup_movies(&f.pool).await;
@@ -277,7 +358,18 @@ async fn test_unknown_tmdb_id_is_404_with_no_upstream_call() {
     let f = fixture().await;
 
     for uri in ["/tmdb-poster/999999", "/tmdb-backdrop/999999"] {
-        let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+        let res = f
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND, "{} should be 404", uri);
     }
     assert_eq!(
@@ -297,7 +389,18 @@ async fn test_download_failure_is_404_not_500_and_leaves_no_file() {
     seed_movie(&f.pool, id, Some("/fail/x.jpg"), None).await;
 
     let uri = format!("/tmdb-poster/{}", id);
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(
         res.status(),
         StatusCode::NOT_FOUND,
@@ -325,10 +428,24 @@ async fn test_undersized_response_is_rejected_not_cached() {
     seed_movie(&f.pool, id, Some("/tiny/x.jpg"), None).await;
 
     let uri = format!("/tmdb-poster/{}", id);
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
     assert!(
-        !f.cache_dir.join("posters").join(format!("{}.jpg", id)).exists(),
+        !f.cache_dir
+            .join("posters")
+            .join(format!("{}.jpg", id))
+            .exists(),
         "a response below the size guard must not be cached"
     );
     cleanup_movies(&f.pool).await;
@@ -340,7 +457,18 @@ async fn test_invalid_and_negative_ids_are_404() {
     let f = fixture().await;
 
     for uri in ["/tmdb-poster/abc", "/tmdb-poster/-5", "/tmdb-backdrop/abc"] {
-        let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+        let res = f
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(
             res.status(),
             StatusCode::NOT_FOUND,
@@ -361,19 +489,42 @@ async fn test_empty_column_is_404_without_download() {
     seed_movie(&f.pool, id, Some("   "), None).await;
 
     let uri = format!("/tmdb-poster/{}", id);
-    let res = f.app.clone().oneshot(Request::builder().method(Method::GET).uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+    let res = f
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    assert_eq!(_g.mock.hits.load(Ordering::SeqCst), 0, "blank path must not be fetched");
+    assert_eq!(
+        _g.mock.hits.load(Ordering::SeqCst),
+        0,
+        "blank path must not be fetched"
+    );
     cleanup_movies(&f.pool).await;
 }
 
 #[tokio::test]
 async fn test_service_rejects_negative_id_without_touching_cache() {
     let f = fixture().await;
-    let err = TmdbArtworkService::get(&f.pool, &f.cache_dir, -1, media_server_api::services::tmdb_artwork::ArtworkKind::Poster)
-        .await
-        .expect_err("negative id must be refused");
-    assert!(matches!(err, media_server_api::error::AppError::NotFound(_)));
+    let err = TmdbArtworkService::get(
+        &f.pool,
+        &f.cache_dir,
+        -1,
+        media_server_api::services::tmdb_artwork::ArtworkKind::Poster,
+    )
+    .await
+    .expect_err("negative id must be refused");
+    assert!(matches!(
+        err,
+        media_server_api::error::AppError::NotFound(_)
+    ));
 }
 
 #[tokio::test]
@@ -383,12 +534,11 @@ async fn test_no_test_movies_remain() {
     let _g = mock_tmdb().await;
     let f = fixture().await;
     cleanup_movies(&f.pool).await;
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM movies WHERE filename LIKE 'rust_tmdbart_test_%'",
-    )
-    .fetch_one(&f.pool)
-    .await
-    .unwrap();
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM movies WHERE filename LIKE 'rust_tmdbart_test_%'")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
     assert_eq!(remaining, 0, "movies table must retain no test rows");
     REQUEST_COUNTER.fetch_add(0, Ordering::SeqCst);
 }

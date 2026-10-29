@@ -1,6 +1,4 @@
-use super::models::{
-    TmdbFindResponse, TmdbMovieDetails, TmdbMovieResult, TmdbSearchResponse,
-};
+use super::models::{TmdbFindResponse, TmdbMovieDetails, TmdbMovieResult, TmdbSearchResponse};
 use crate::error::AppError;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use serde_json::json;
@@ -27,7 +25,9 @@ impl TmdbClient {
         default_headers.insert(AUTHORIZATION, auth_val);
         default_headers.insert(
             USER_AGENT,
-            HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) LocalMediaServer/1.0"),
+            HeaderValue::from_static(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LocalMediaServer/1.0",
+            ),
         );
 
         let client = reqwest::Client::builder()
@@ -36,13 +36,10 @@ impl TmdbClient {
             .build()
             .unwrap_or_default();
 
-        let base_url = std::env::var("TMDB_API_BASE_URL")
-            .unwrap_or_else(|_| TMDB_API_BASE.to_string());
+        let base_url =
+            std::env::var("TMDB_API_BASE_URL").unwrap_or_else(|_| TMDB_API_BASE.to_string());
 
-        Self {
-            client,
-            base_url,
-        }
+        Self { client, base_url }
     }
 
     /// Execute a GET request against TMDb with rate-limit backoff and automatic retry.
@@ -85,7 +82,10 @@ impl TmdbClient {
                     }
 
                     if status.as_u16() == 404 {
-                        return Err(AppError::NotFound(format!("TMDb resource not found: {}", url)));
+                        return Err(AppError::NotFound(format!(
+                            "TMDb resource not found: {}",
+                            url
+                        )));
                     }
 
                     warn!(
@@ -160,7 +160,10 @@ impl TmdbClient {
         &self,
         imdb_id: &str,
     ) -> Result<Option<TmdbMovieResult>, AppError> {
-        let clean_id = format!("tt{}", imdb_id.trim().trim_start_matches(|c| c == 't' || c == 'T'));
+        let clean_id = format!(
+            "tt{}",
+            imdb_id.trim().trim_start_matches(|c| c == 't' || c == 'T')
+        );
         let endpoint = format!("/find/{}", clean_id);
         let params = [("external_source", "imdb_id")];
 

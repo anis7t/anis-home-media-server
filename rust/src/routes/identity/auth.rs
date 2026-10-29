@@ -223,7 +223,8 @@ pub async fn google_start_handler(
         return Ok(Redirect::temporary("/account?error=oauth_unconfigured").into_response());
     }
     let redirect_uri = get_redirect_uri(&headers);
-    let auth_url = AuthService::oauth_start(&state.pool, &redirect_uri, query.next.as_deref()).await?;
+    let auth_url =
+        AuthService::oauth_start(&state.pool, &redirect_uri, query.next.as_deref()).await?;
     Ok(Redirect::temporary(&auth_url).into_response())
 }
 
@@ -234,17 +235,23 @@ pub async fn google_callback_handler(
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     if let Some(err) = query.error {
-        return Err(AppError::BadRequest(format!("Google returned an error: {}", err)));
+        return Err(AppError::BadRequest(format!(
+            "Google returned an error: {}",
+            err
+        )));
     }
 
     let code = query.code.ok_or_else(|| {
         AppError::BadRequest("Google did not return an authorization code.".to_string())
     })?;
     let oauth_state = query.state.ok_or_else(|| {
-        AppError::BadRequest("Sign-in state is missing. Start again from the sign-in link.".to_string())
+        AppError::BadRequest(
+            "Sign-in state is missing. Start again from the sign-in link.".to_string(),
+        )
     })?;
 
-    let (session_token, next_path) = AuthService::oauth_callback(&state.pool, &code, &oauth_state).await?;
+    let (session_token, next_path) =
+        AuthService::oauth_callback(&state.pool, &code, &oauth_state).await?;
 
     let mut dest = next_path;
     if !dest.starts_with('/') || dest.starts_with("//") {

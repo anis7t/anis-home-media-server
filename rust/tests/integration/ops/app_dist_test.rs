@@ -3,9 +3,7 @@ use axum::{
     http::{header, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_with_static, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_with_static, db, services::system_service::SystemService};
 use tower::ServiceExt;
 
 async fn setup_test_app() -> axum::Router {

@@ -44,9 +44,18 @@ pub async fn get_preview_thumb_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -60,16 +69,17 @@ pub async fn get_preview_thumb_handler(
         return Err(AppError::NotFound("Invalid thumbnail format".to_string()));
     }
     let digits = &thumb_name[6..thumb_name.len() - 4];
-    let index: u64 = digits.parse().map_err(|_| {
-        AppError::NotFound("Invalid thumbnail index".to_string())
-    })?;
+    let index: u64 = digits
+        .parse()
+        .map_err(|_| AppError::NotFound("Invalid thumbnail index".to_string()))?;
 
     let video_path = PathResolver::resolve_media_path(rel_video, &state.media_roots)?;
     let duration = PreviewService::get_duration(&video_path, rel_video, &state.pool).await?;
     let meta = PreviewService::calculate_meta(duration, rel_video);
 
     let clamped_index = index.min(meta.count.saturating_sub(1));
-    let preview_dir = PreviewService::get_preview_dir(&video_path, &state.cache_dir, &state.media_roots);
+    let preview_dir =
+        PreviewService::get_preview_dir(&video_path, &state.cache_dir, &state.media_roots);
     let target = PreviewService::ensure_thumbnail(
         &video_path,
         clamped_index,
@@ -99,11 +109,20 @@ pub async fn get_preview_thumb_handler(
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
     h.insert(header::CONTENT_LENGTH, total_size.into());
-    h.insert(header::CACHE_CONTROL, "public, max-age=86400".parse().unwrap());
+    h.insert(
+        header::CACHE_CONTROL,
+        "public, max-age=86400".parse().unwrap(),
+    );
     h.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-    h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+    h.insert(
+        "access-control-allow-methods",
+        "GET, HEAD, OPTIONS".parse().unwrap(),
+    );
+    h.insert(
+        "cross-origin-resource-policy",
+        "cross-origin".parse().unwrap(),
+    );
 
     Ok(res)
 }
@@ -119,9 +138,18 @@ pub async fn get_preview_vtt_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -139,11 +167,23 @@ pub async fn get_preview_vtt_handler(
 
     *res.status_mut() = StatusCode::OK;
     let h = res.headers_mut();
-    h.insert(header::CONTENT_TYPE, "text/vtt; charset=utf-8".parse().unwrap());
-    h.insert(header::CACHE_CONTROL, "private, max-age=3600".parse().unwrap());
+    h.insert(
+        header::CONTENT_TYPE,
+        "text/vtt; charset=utf-8".parse().unwrap(),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        "private, max-age=3600".parse().unwrap(),
+    );
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-    h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+    h.insert(
+        "access-control-allow-methods",
+        "GET, HEAD, OPTIONS".parse().unwrap(),
+    );
+    h.insert(
+        "cross-origin-resource-policy",
+        "cross-origin".parse().unwrap(),
+    );
 
     Ok(res)
 }

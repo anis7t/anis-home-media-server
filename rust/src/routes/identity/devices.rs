@@ -1,9 +1,7 @@
 use crate::error::AppError;
 use crate::services::audit_service::AuditService;
 use crate::services::auth_service::{AuthService, ResolvedIdentity};
-use crate::services::device_service::{
-    ClientHints, ConnectionInfo, DeviceService, RequestFacts,
-};
+use crate::services::device_service::{ClientHints, ConnectionInfo, DeviceService, RequestFacts};
 use axum::{
     body::Body,
     extract::{ConnectInfo, State},
@@ -125,12 +123,7 @@ fn resolve_device_id(headers: &HeaderMap, remote_addr: &str, user_agent: &str) -
         remote_addr,
     )
     .client_ip;
-    DeviceService::get_or_create_device_id(
-        cookie.as_deref(),
-        header.as_deref(),
-        &ip,
-        user_agent,
-    )
+    DeviceService::get_or_create_device_id(cookie.as_deref(), header.as_deref(), &ip, user_agent)
 }
 
 /// Resolve the signed-in caller, and claim an unowned device for them.
@@ -185,7 +178,9 @@ pub async fn heartbeat_handler(
     DeviceService::record_heartbeat(&state.pool, &device_id, &ctx).await;
     resolve_and_claim(&state.pool, &headers, &device_id).await;
 
-    Ok(json_response(json!({ "success": true, "device_id": device_id })))
+    Ok(json_response(
+        json!({ "success": true, "device_id": device_id }),
+    ))
 }
 
 /// `POST /api/devices/client-hints`
@@ -331,7 +326,8 @@ pub async fn rename_device_handler(
     DeviceService::rename_device(&state.pool, &target_id, payload.name.as_deref()).await?;
 
     let ip = AuditService::extract_client_ip(&headers);
-    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
+    let (actor_type, actor_id) =
+        AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
     AuditService::record_event(
         &state.pool,
         actor_type,
@@ -407,7 +403,8 @@ pub async fn delete_device_handler(
     DeviceService::delete_device(&state.pool, &target_id).await?;
 
     let ip = AuditService::extract_client_ip(&headers);
-    let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
+    let (actor_type, actor_id) =
+        AuditService::extract_actor(&state.pool, &headers, payload.admin_pin.as_deref()).await;
     AuditService::record_event(
         &state.pool,
         actor_type,

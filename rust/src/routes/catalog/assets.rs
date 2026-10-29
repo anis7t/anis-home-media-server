@@ -75,8 +75,7 @@ async fn tmdb_artwork(
         .as_ref()
         .ok_or_else(|| AppError::Internal("artwork routes require a database pool".to_string()))?;
 
-    let path =
-        TmdbArtworkService::get(pool, &state.cache_dir, parsed, kind).await?;
+    let path = TmdbArtworkService::get(pool, &state.cache_dir, parsed, kind).await?;
     AssetService::serve_image(path, headers, method, ARTWORK_MAX_AGE_SECS).await
 }
 

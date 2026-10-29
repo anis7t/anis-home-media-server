@@ -41,7 +41,10 @@ const RECEIVER_CORS_PATHS: [&str; 2] = ["/media/", "/hls/"];
 ///
 /// Measured on both engines before this change: Flask sent no
 /// `Access-Control-Allow-Origin` on `/api/movies`; Rust sent `*`.
-async fn receiver_cors(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+async fn receiver_cors(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
     let path = req.uri().path();
     if !RECEIVER_CORS_PATHS.iter().any(|p| path.starts_with(p)) {
         return next.run(req).await;
@@ -98,7 +101,14 @@ pub fn create_app_with_static(
     cache_dir: PathBuf,
     static_dir: Option<PathBuf>,
 ) -> Router {
-    create_app_full(pool, system_service, media_roots, cache_dir, static_dir, None)
+    create_app_full(
+        pool,
+        system_service,
+        media_roots,
+        cache_dir,
+        static_dir,
+        None,
+    )
 }
 
 pub fn create_app_full(
@@ -110,12 +120,18 @@ pub fn create_app_full(
     _flask_origin: Option<String>,
 ) -> Router {
     let system_routes = Router::new()
-        .route("/api/system-status", get(routes::system::system_status_handler))
+        .route(
+            "/api/system-status",
+            get(routes::system::system_status_handler),
+        )
         .with_state(system_service.clone());
 
     let movie_routes = Router::new()
         .route("/api/movies", get(routes::movies::list_movies_handler))
-        .route("/api/movie/{*filename}", get(routes::movies::get_movie_details_handler))
+        .route(
+            "/api/movie/{*filename}",
+            get(routes::movies::get_movie_details_handler),
+        )
         .with_state(pool.clone());
 
     let progress_routes = Router::new()
@@ -237,9 +253,15 @@ pub fn create_app_full(
     // two patterns conflict and the router panics at startup - which is what
     // broke every other suite until it was found.
     let job_routes = Router::new()
-        .route("/api/transcodes", get(routes::jobs::active_transcodes_handler))
+        .route(
+            "/api/transcodes",
+            get(routes::jobs::active_transcodes_handler),
+        )
         .route("/api/transcode/jobs", get(routes::jobs::list_jobs_handler))
-        .route("/api/transcode/dashboard", get(routes::jobs::transcode_dashboard_handler))
+        .route(
+            "/api/transcode/dashboard",
+            get(routes::jobs::transcode_dashboard_handler),
+        )
         .route(
             "/api/transcode/jobs/{*path}",
             axum::routing::post(routes::jobs::jobs_dispatch_handler),
@@ -312,12 +334,12 @@ pub fn create_app_full(
     };
 
     let cast_routes = Router::new()
-        .route(
-            "/api/cast/devices",
-            get(routes::cast::devices),
-        )
+        .route("/api/cast/devices", get(routes::cast::devices))
         .route("/api/cast/play", axum::routing::post(routes::cast::play))
-        .route("/api/cast/control", axum::routing::post(routes::cast::control))
+        .route(
+            "/api/cast/control",
+            axum::routing::post(routes::cast::control),
+        )
         .route("/api/cast/status", get(routes::cast::status))
         .with_state(cast_state);
 
@@ -378,8 +400,7 @@ pub fn create_app_full(
     let scan_routes = Router::new()
         .route(
             "/api/scan",
-            get(routes::scan::get_scan_handler)
-                .post(routes::scan::post_scan_handler),
+            get(routes::scan::get_scan_handler).post(routes::scan::post_scan_handler),
         )
         .with_state(scan_state);
 
@@ -462,7 +483,10 @@ pub fn create_app_full(
     };
 
     let admin_routes = Router::new()
-        .route("/api/admin/status", get(routes::admin::admin_status_handler))
+        .route(
+            "/api/admin/status",
+            get(routes::admin::admin_status_handler),
+        )
         .route("/api/admin/users", get(routes::admin::admin_users_handler))
         .route(
             "/api/admin/devices/assign",
@@ -495,8 +519,7 @@ pub fn create_app_full(
         .route("/api/auth/me", get(routes::auth::auth_me_handler))
         .route(
             "/api/auth/allowlist",
-            get(routes::auth::get_allowlist_handler)
-                .post(routes::auth::post_allowlist_handler),
+            get(routes::auth::get_allowlist_handler).post(routes::auth::post_allowlist_handler),
         )
         .route("/auth/google", get(routes::auth::google_start_handler))
         .route(
@@ -509,8 +532,7 @@ pub fn create_app_full(
         )
         .route(
             "/auth/logout",
-            get(routes::auth::logout_handler)
-                .post(routes::auth::logout_handler),
+            get(routes::auth::logout_handler).post(routes::auth::logout_handler),
         )
         .route(
             "/api/auth/login-pin",

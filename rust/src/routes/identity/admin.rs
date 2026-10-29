@@ -1,8 +1,8 @@
 use crate::error::AppError;
-use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse};
 use crate::models::audit::{AuditLogQuery, AuditLogResponse};
-use crate::services::auth_service::AuthService;
+use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse};
 use crate::services::audit_service::AuditService;
+use crate::services::auth_service::AuthService;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -73,9 +73,7 @@ pub struct AdminAssignDevicePayload {
 
 /// Maps a present `null` to `Some(None)`, a present number to `Some(Some(n))`,
 /// and leaves an absent key to `#[serde(default)]` (`None`).
-fn deserialize_explicit_nullable<'de, D>(
-    deserializer: D,
-) -> Result<Option<Option<i64>>, D::Error>
+fn deserialize_explicit_nullable<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -160,9 +158,7 @@ pub async fn admin_users_handler(
             id: r.try_get("id").unwrap_or_default(),
             email: r.try_get("email").unwrap_or_default(),
             name: r.try_get("name").ok().flatten(),
-            role: r
-                .try_get("role")
-                .unwrap_or_else(|_| "viewer".to_string()),
+            role: r.try_get("role").unwrap_or_else(|_| "viewer".to_string()),
             created_at: r
                 .try_get::<Option<DateTime<Utc>>, _>("created_at")
                 .ok()
@@ -216,13 +212,7 @@ pub async fn admin_pin_handler(
         None => (String::new(), None),
     };
 
-    AuthService::update_admin_pin(
-        &state.pool,
-        &headers,
-        current_pin.as_deref(),
-        &new_pin,
-    )
-    .await?;
+    AuthService::update_admin_pin(&state.pool, &headers, current_pin.as_deref(), &new_pin).await?;
 
     let ip = extract_client_ip(&headers);
     let (actor_type, actor_id) = extract_actor(&state.pool, &headers).await;
@@ -264,16 +254,12 @@ pub async fn admin_assign_device_handler(
         return Err(AppError::BadRequest("device_id is required".to_string()));
     }
 
-    let device_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
-            .bind(&device_id)
-            .fetch_one(state.pool.as_ref())
-            .await?;
+    let device_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
+        .bind(&device_id)
+        .fetch_one(state.pool.as_ref())
+        .await?;
     if device_count == 0 {
-        return Err(AppError::NotFound(format!(
-            "Unknown device: {}",
-            device_id
-        )));
+        return Err(AppError::NotFound(format!("Unknown device: {}", device_id)));
     }
 
     let target_user = match payload.user_id {
@@ -345,16 +331,12 @@ pub async fn admin_delete_device_history_handler(
         return Err(AppError::BadRequest("device_id is required".to_string()));
     }
 
-    let device_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
-            .bind(&device_id)
-            .fetch_one(state.pool.as_ref())
-            .await?;
+    let device_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id = $1")
+        .bind(&device_id)
+        .fetch_one(state.pool.as_ref())
+        .await?;
     if device_count == 0 {
-        return Err(AppError::NotFound(format!(
-            "Unknown device: {}",
-            device_id
-        )));
+        return Err(AppError::NotFound(format!("Unknown device: {}", device_id)));
     }
 
     let filename = payload
@@ -378,13 +360,11 @@ pub async fn admin_delete_device_history_handler(
             }
             result.rows_affected()
         }
-        None => {
-            sqlx::query("DELETE FROM device_watch_history WHERE device_id = $1")
-                .bind(&device_id)
-                .execute(state.pool.as_ref())
-                .await?
-                .rows_affected()
-        }
+        None => sqlx::query("DELETE FROM device_watch_history WHERE device_id = $1")
+            .bind(&device_id)
+            .execute(state.pool.as_ref())
+            .await?
+            .rows_affected(),
     };
 
     let ip = extract_client_ip(&headers);

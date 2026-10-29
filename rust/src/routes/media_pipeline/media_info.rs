@@ -1,10 +1,10 @@
 use crate::error::AppError;
 use crate::models::transcode::QualityOption;
 use crate::services::hls_service::HlsService;
+use crate::services::path_resolver::PathResolver;
 use crate::services::probe_service::{
     cached_probe, cached_source_video_duration, ffmpeg_binary, ffprobe_binary, ProbeResult,
 };
-use crate::services::path_resolver::PathResolver;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, Method, Response, StatusCode},
@@ -33,9 +33,7 @@ const DIRECT_PLAY_EXTENSIONS: [&str; 3] = ["mp4", "m4v", "webm"];
 /// Video extensions, mirroring Flask's `VIDEO_EXTENSIONS` for the `is_video`
 /// gate. `is_video` also requires a non-zero size, so an empty placeholder is
 /// a 404 rather than a zero-length "film".
-const VIDEO_EXTENSIONS: [&str; 8] = [
-    "mp4", "m4v", "webm", "mkv", "avi", "mov", "wmv", "flv",
-];
+const VIDEO_EXTENSIONS: [&str; 8] = ["mp4", "m4v", "webm", "mkv", "avi", "mov", "wmv", "flv"];
 
 fn extension_of(path: &FsPath) -> String {
     path.extension()
@@ -51,13 +49,19 @@ pub fn is_android_client(query_client: Option<&str>, headers: &HeaderMap) -> boo
             return true;
         }
     }
-    if let Some(p) = headers.get("x-client-platform").and_then(|v| v.to_str().ok()) {
+    if let Some(p) = headers
+        .get("x-client-platform")
+        .and_then(|v| v.to_str().ok())
+    {
         let p_lower = p.to_ascii_lowercase();
         if p_lower.contains("android") || p_lower.contains("firetv") {
             return true;
         }
     }
-    if let Some(ua) = headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()) {
+    if let Some(ua) = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+    {
         let ua_lower = ua.to_ascii_lowercase();
         if ua_lower.contains("android") || ua_lower.contains("aft") || ua_lower.contains("firetv") {
             return true;
@@ -142,7 +146,8 @@ fn build_quality_ladder(
 
         // Calculate aspect-ratio scaled width, guaranteed even (divisible by 2)
         // w = (round((source_w * effective_h) / source_h)) & !1
-        let scaled_w = ((source_w as u64 * effective_h as u64 + (source_h as u64 / 2)) / source_h as u64) as u32;
+        let scaled_w = ((source_w as u64 * effective_h as u64 + (source_h as u64 / 2))
+            / source_h as u64) as u32;
         let even_w = scaled_w & !1;
 
         let q_dir = HlsService::find_hls_quality_dir(video_path, roots, cache_dir, Some(label));
@@ -179,7 +184,9 @@ fn is_video(path: &FsPath) -> bool {
     if !VIDEO_EXTENSIONS.contains(&extension_of(path).as_str()) {
         return false;
     }
-    std::fs::metadata(path).map(|m| m.is_file() && m.len() > 0).unwrap_or(false)
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() > 0)
+        .unwrap_or(false)
 }
 
 /// Minimum coverage ratio for an in-progress playlist to read as ready.
@@ -388,14 +395,26 @@ async fn movie_metadata(state: &MediaInfoState, filename: &str) -> serde_json::M
     };
 
     let mut map = serde_json::Map::new();
-    map.insert("title".into(), title.map(Value::from).unwrap_or(Value::Null));
+    map.insert(
+        "title".into(),
+        title.map(Value::from).unwrap_or(Value::Null),
+    );
     map.insert("year".into(), year.map(Value::from).unwrap_or(Value::Null));
-    map.insert("overview".into(), overview.map(Value::from).unwrap_or(Value::Null));
-    map.insert("genres".into(), genres.map(Value::from).unwrap_or(Value::Null));
+    map.insert(
+        "overview".into(),
+        overview.map(Value::from).unwrap_or(Value::Null),
+    );
+    map.insert(
+        "genres".into(),
+        genres.map(Value::from).unwrap_or(Value::Null),
+    );
     map.insert(
         "vote_average".into(),
         rating.map(|v| Value::from(v as f64)).unwrap_or(Value::Null),
     );
-    map.insert("runtime".into(), runtime.map(Value::from).unwrap_or(Value::Null));
+    map.insert(
+        "runtime".into(),
+        runtime.map(Value::from).unwrap_or(Value::Null),
+    );
     map
 }

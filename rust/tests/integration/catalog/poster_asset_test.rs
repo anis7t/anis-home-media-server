@@ -8,10 +8,7 @@ use axum::{
     http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app,
-    services::system_service::SystemService,
-};
+use media_server_api::{create_app, services::system_service::SystemService};
 use std::fs;
 use std::path::PathBuf;
 use tower::ServiceExt;
@@ -44,8 +41,18 @@ async fn fixture(tag: &str) -> Fixture {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let media_root = std::env::temp_dir().join(format!("rust_poster_media_{}_{}_{}", tag, std::process::id(), n));
-    let cache_dir = std::env::temp_dir().join(format!("rust_poster_cache_{}_{}_{}", tag, std::process::id(), n));
+    let media_root = std::env::temp_dir().join(format!(
+        "rust_poster_media_{}_{}_{}",
+        tag,
+        std::process::id(),
+        n
+    ));
+    let cache_dir = std::env::temp_dir().join(format!(
+        "rust_poster_cache_{}_{}_{}",
+        tag,
+        std::process::id(),
+        n
+    ));
     fs::create_dir_all(&media_root).unwrap();
     fs::create_dir_all(&cache_dir).unwrap();
     fs::create_dir_all(media_root.join("posters")).unwrap();
@@ -65,7 +72,11 @@ async fn fixture(tag: &str) -> Fixture {
         vec![media_root.clone()],
         cache_dir.clone(),
     );
-    Fixture { app, media_root, cache_dir }
+    Fixture {
+        app,
+        media_root,
+        cache_dir,
+    }
 }
 
 #[tokio::test]
@@ -119,7 +130,10 @@ async fn test_poster_conditional_get_returns_304() {
         .unwrap();
     let first = f.app.clone().oneshot(req).await.unwrap();
     let etag = first.headers()[header::ETAG].to_str().unwrap().to_string();
-    let last_modified = first.headers()[header::LAST_MODIFIED].to_str().unwrap().to_string();
+    let last_modified = first.headers()[header::LAST_MODIFIED]
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let req = Request::builder()
         .method(Method::GET)
@@ -171,10 +185,11 @@ async fn test_poster_rejects_non_image_extension() {
 async fn test_poster_rejects_directory_traversal() {
     let f = fixture("traversal").await;
     // Written outside the media root; must never be reachable.
-    let secret = f.media_root.parent().unwrap().join(format!(
-        "rust_poster_secret_{}.png",
-        std::process::id()
-    ));
+    let secret = f
+        .media_root
+        .parent()
+        .unwrap()
+        .join(format!("rust_poster_secret_{}.png", std::process::id()));
     fs::write(&secret, b"secret").unwrap();
 
     for uri in [
@@ -214,7 +229,10 @@ async fn test_poster_missing_file_is_404_and_head_has_no_body() {
         .uri("/poster/does-not-exist.png")
         .body(Body::empty())
         .unwrap();
-    assert_eq!(f.app.clone().oneshot(req).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        f.app.clone().oneshot(req).await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
 
     let req = Request::builder()
         .method(Method::HEAD)

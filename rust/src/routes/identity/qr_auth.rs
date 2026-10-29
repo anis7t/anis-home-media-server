@@ -139,7 +139,11 @@ pub struct SsePermit {
 
 impl Drop for SsePermit {
     fn drop(&mut self) {
-        let mut by_identity = self.gate.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+        let mut by_identity = self
+            .gate
+            .by_identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(count) = by_identity.get_mut(&self.identity) {
             *count -= 1;
             if *count == 0 {
@@ -159,8 +163,7 @@ impl SseGate {
 
     fn try_acquire(self: &Arc<Self>, identity: &str) -> Option<SsePermit> {
         {
-            let mut by_identity =
-                self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+            let mut by_identity = self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
             let count = by_identity.entry(identity.to_string()).or_insert(0);
             if *count >= SSE_MAX_PER_IP {
                 return None;
@@ -177,8 +180,7 @@ impl SseGate {
             Err(_) => {
                 // The global pool is full: undo the per-identity reservation so
                 // a later attempt is judged on the pool alone.
-                let mut by_identity =
-                    self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
+                let mut by_identity = self.by_identity.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(count) = by_identity.get_mut(identity) {
                     *count -= 1;
                     if *count == 0 {
@@ -212,7 +214,6 @@ impl QrAuthState {
         }
     }
 }
-
 
 // ─── Request / Response shapes ───────────────────────────────────────────────
 
@@ -602,9 +603,12 @@ pub async fn qr_finalize_handler(
 
     // If TV has a device_id cookie or header and we have a friendly device name, record it in `devices`
     if let Some(dev_name) = device_name {
-        if let Some(dev_id) = cookie_value(&headers, "ms_device_id")
-            .or_else(|| headers.get("x-device-id").and_then(|v| v.to_str().ok()).map(|s| s.to_string()))
-        {
+        if let Some(dev_id) = cookie_value(&headers, "ms_device_id").or_else(|| {
+            headers
+                .get("x-device-id")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        }) {
             let _ = sqlx::query("UPDATE devices SET custom_name = $1 WHERE device_id = $2")
                 .bind(&dev_name)
                 .bind(&dev_id)

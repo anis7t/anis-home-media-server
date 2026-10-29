@@ -3,10 +3,7 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db,
-    services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use sqlx::PgPool;
 use std::fs;
 use std::path::PathBuf;
@@ -24,7 +21,11 @@ async fn setup_test_app_with_temp_media() -> (PgPool, axum::Router, PathBuf) {
 
     // Use a clean temporary media root for deterministic isolation
     let count = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let raw_temp = std::env::temp_dir().join(format!("rust_test_transcode_start_{}_{}", std::process::id(), count));
+    let raw_temp = std::env::temp_dir().join(format!(
+        "rust_test_transcode_start_{}_{}",
+        std::process::id(),
+        count
+    ));
     let _ = fs::create_dir_all(&raw_temp);
     let temp_dir = raw_temp.canonicalize().unwrap_or(raw_temp);
 
@@ -141,7 +142,11 @@ async fn test_transcode_start_quality_specific_enqueues_quality_job() {
 
     let sample_name = format!("rust_test_job_start_q_{}.mkv", std::process::id());
     let sample_path = temp_dir.join(&sample_name);
-    fs::write(&sample_path, b"dummy mkv bytes for quality transcode start test").unwrap();
+    fs::write(
+        &sample_path,
+        b"dummy mkv bytes for quality transcode start test",
+    )
+    .unwrap();
 
     let _ = sqlx::query("DELETE FROM transcode_jobs WHERE filename = $1")
         .bind(&sample_name)
@@ -164,13 +169,12 @@ async fn test_transcode_start_quality_specific_enqueues_quality_job() {
     assert_eq!(json["quality"], "720p");
 
     // Verify row in database has mode "hls:720p" and priority 10 (interactive)
-    let row: (String, String, i32) = sqlx::query_as(
-        "SELECT mode, status, priority FROM transcode_jobs WHERE filename = $1",
-    )
-    .bind(&sample_name)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let row: (String, String, i32) =
+        sqlx::query_as("SELECT mode, status, priority FROM transcode_jobs WHERE filename = $1")
+            .bind(&sample_name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(row.0, "hls:720p");
     assert_eq!(row.1, "queued");
     assert_eq!(row.2, 10);
@@ -178,7 +182,10 @@ async fn test_transcode_start_quality_specific_enqueues_quality_job() {
     // 2. GET /api/transcode-status/{sample_name}?quality=720p returns queued
     let req_status = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/transcode-status/{}?quality=720p", sample_name))
+        .uri(format!(
+            "/api/transcode-status/{}?quality=720p",
+            sample_name
+        ))
         .body(Body::empty())
         .unwrap();
     let res_status = app.clone().oneshot(req_status).await.unwrap();
@@ -203,7 +210,8 @@ async fn test_transcode_start_and_status_when_quality_already_complete() {
     let config = media_server_api::test_support::test_config().await;
 
     let count = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let temp_cache = std::env::temp_dir().join(format!("rust_test_cache_{}_{}", std::process::id(), count));
+    let temp_cache =
+        std::env::temp_dir().join(format!("rust_test_cache_{}_{}", std::process::id(), count));
     let _ = fs::create_dir_all(&temp_cache);
 
     let mut media_roots = config.media_roots.clone();
@@ -233,7 +241,10 @@ async fn test_transcode_start_and_status_when_quality_already_complete() {
     // 1. GET /api/transcode-status/{sample_name}?quality=720p should report complete
     let req_status = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/transcode-status/{}?quality=720p", sample_name))
+        .uri(format!(
+            "/api/transcode-status/{}?quality=720p",
+            sample_name
+        ))
         .body(Body::empty())
         .unwrap();
     let res_status = app.clone().oneshot(req_status).await.unwrap();
@@ -262,4 +273,3 @@ async fn test_transcode_start_and_status_when_quality_already_complete() {
     let _ = fs::remove_dir_all(&temp_dir);
     let _ = fs::remove_dir_all(&temp_cache);
 }
-

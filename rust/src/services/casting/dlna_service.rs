@@ -32,7 +32,9 @@ pub const DLNA_CONTENT_FEATURES: &str =
 /// UPnP faults worth explaining rather than echoing as "HTTP 500".
 pub fn upnp_fault(code: &str) -> Option<&'static str> {
     match code {
-        "701" => Some("The device refused that in its current state - nothing loaded, or it cannot do that."),
+        "701" => Some(
+            "The device refused that in its current state - nothing loaded, or it cannot do that.",
+        ),
         "702" => Some("The device refused to play that in its current state."),
         "710" => Some("The device is busy - try again in a moment."),
         "711" => Some("The device rejected that position."),
@@ -156,7 +158,12 @@ pub fn dlna_duration(seconds: f64) -> String {
 /// `HH:MM:SS`, the AVTransport `Target` format.
 pub fn hhmmss(seconds: f64) -> String {
     let total = if seconds > 0.0 { seconds as i64 } else { 0 };
-    format!("{:02}:{:02}:{:02}", total / 3600, (total % 3600) / 60, total % 60)
+    format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        (total % 3600) / 60,
+        total % 60
+    )
 }
 
 pub fn parse_hhmmss(value: Option<&str>) -> f64 {
@@ -400,14 +407,19 @@ pub async fn discover(timeout: Duration) -> DlnaResult<Vec<DlnaDevice>> {
             }
             for sock in &sockets {
                 let mut buf = vec![0u8; 4096];
-                match tokio::time::timeout(remaining.min(Duration::from_millis(500)), sock.recv_from(&mut buf)).await {
+                match tokio::time::timeout(
+                    remaining.min(Duration::from_millis(500)),
+                    sock.recv_from(&mut buf),
+                )
+                .await
+                {
                     Ok(Ok((n, addr))) => {
                         let text = String::from_utf8_lossy(&buf[..n]).to_string();
                         for line in text.lines() {
                             if line.to_lowercase().starts_with("location:") {
-                                locations
-                                    .entry(addr.ip().to_string())
-                                    .or_insert_with(|| line.splitn(2, ':').nth(1).unwrap_or("").trim().to_string());
+                                locations.entry(addr.ip().to_string()).or_insert_with(|| {
+                                    line.splitn(2, ':').nth(1).unwrap_or("").trim().to_string()
+                                });
                             }
                         }
                     }
@@ -489,14 +501,21 @@ async fn describe_device(http: &reqwest::Client, location: &str) -> Option<DlnaD
         .and_then(|h| h.split(':').next())
         .unwrap_or("")
         .to_string();
-    let udn = find_text(&body, "UDN").filter(|u| !u.is_empty()).unwrap_or_else(|| {
-        if host.is_empty() { location.to_string() } else { host.clone() }
-    });
+    let udn = find_text(&body, "UDN")
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| {
+            if host.is_empty() {
+                location.to_string()
+            } else {
+                host.clone()
+            }
+        });
 
     Some(DlnaDevice {
         id: format!("dlna:{}", udn),
         kind: "dlna".into(),
-        name: find_text(&body, "friendlyName").filter(|n| !n.is_empty())
+        name: find_text(&body, "friendlyName")
+            .filter(|n| !n.is_empty())
             .unwrap_or_else(|| "DLNA device".into()),
         model: find_text(&body, "modelName").unwrap_or_default(),
         host,
@@ -558,7 +577,15 @@ pub async fn wait_for_transport(http: &reqwest::Client, device: &DlnaDevice, wan
     let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
     let mut state = "unknown".to_string();
     loop {
-        match soap_call(http, &device.control_url, AVTRANSPORT_ST, "GetTransportInfo", &[("InstanceID", "0".into())]).await {
+        match soap_call(
+            http,
+            &device.control_url,
+            AVTRANSPORT_ST,
+            "GetTransportInfo",
+            &[("InstanceID", "0".into())],
+        )
+        .await
+        {
             Ok(info) => state = map_state(find_text(&info, "CurrentTransportState").as_deref()),
             Err(_) => return state,
         }
@@ -597,7 +624,14 @@ pub async fn load(
         ],
     )
     .await?;
-    soap_call(http, &device.control_url, AVTRANSPORT_ST, "Play", &[("InstanceID", "0".into()), ("Speed", "1".into())]).await?;
+    soap_call(
+        http,
+        &device.control_url,
+        AVTRANSPORT_ST,
+        "Play",
+        &[("InstanceID", "0".into()), ("Speed", "1".into())],
+    )
+    .await?;
 
     if let Some(pos) = position.filter(|p| *p != 0.0) {
         // Seek only after the renderer has the media: a stopped Samsung answers
@@ -608,28 +642,76 @@ pub async fn load(
             &device.control_url,
             AVTRANSPORT_ST,
             "Seek",
-            &[("InstanceID", "0".into()), ("Unit", "REL_TIME".into()), ("Target", hhmmss(pos))],
+            &[
+                ("InstanceID", "0".into()),
+                ("Unit", "REL_TIME".into()),
+                ("Target", hhmmss(pos)),
+            ],
         )
         .await?;
     }
     Ok(())
 }
 
-pub async fn command(http: &reqwest::Client, device: &DlnaDevice, action: &str, value: Option<f64>) -> DlnaResult<()> {
+pub async fn command(
+    http: &reqwest::Client,
+    device: &DlnaDevice,
+    action: &str,
+    value: Option<f64>,
+) -> DlnaResult<()> {
     let url = &device.control_url;
     match action {
-        "play" => soap_call(http, url, AVTRANSPORT_ST, "Play", &[("InstanceID", "0".into()), ("Speed", "1".into())]).await.map(|_| ()),
-        "pause" => soap_call(http, url, AVTRANSPORT_ST, "Pause", &[("InstanceID", "0".into())]).await.map(|_| ()),
-        "stop" => soap_call(http, url, AVTRANSPORT_ST, "Stop", &[("InstanceID", "0".into())]).await.map(|_| ()),
+        "play" => soap_call(
+            http,
+            url,
+            AVTRANSPORT_ST,
+            "Play",
+            &[("InstanceID", "0".into()), ("Speed", "1".into())],
+        )
+        .await
+        .map(|_| ()),
+        "pause" => soap_call(
+            http,
+            url,
+            AVTRANSPORT_ST,
+            "Pause",
+            &[("InstanceID", "0".into())],
+        )
+        .await
+        .map(|_| ()),
+        "stop" => soap_call(
+            http,
+            url,
+            AVTRANSPORT_ST,
+            "Stop",
+            &[("InstanceID", "0".into())],
+        )
+        .await
+        .map(|_| ()),
         "seek" => {
             // A paused renderer ignores a seek and a stopped one errors, so start
             // playback first when needed - seeking is a request to watch from there.
-            let state = match soap_call(http, url, AVTRANSPORT_ST, "GetTransportInfo", &[("InstanceID", "0".into())]).await {
+            let state = match soap_call(
+                http,
+                url,
+                AVTRANSPORT_ST,
+                "GetTransportInfo",
+                &[("InstanceID", "0".into())],
+            )
+            .await
+            {
                 Ok(info) => map_state(find_text(&info, "CurrentTransportState").as_deref()),
                 Err(_) => "unknown".into(),
             };
             if state != "playing" {
-                soap_call(http, url, AVTRANSPORT_ST, "Play", &[("InstanceID", "0".into()), ("Speed", "1".into())]).await?;
+                soap_call(
+                    http,
+                    url,
+                    AVTRANSPORT_ST,
+                    "Play",
+                    &[("InstanceID", "0".into()), ("Speed", "1".into())],
+                )
+                .await?;
                 wait_for_transport(http, device, "playing").await;
             }
             match soap_call(
@@ -686,7 +768,14 @@ pub async fn command(http: &reqwest::Client, device: &DlnaDevice, action: &str, 
                 &[
                     ("InstanceID", "0".into()),
                     ("Channel", "Master".into()),
-                    ("DesiredMute", if value.unwrap_or(0.0) != 0.0 { "1".into() } else { "0".into() }),
+                    (
+                        "DesiredMute",
+                        if value.unwrap_or(0.0) != 0.0 {
+                            "1".into()
+                        } else {
+                            "0".into()
+                        },
+                    ),
                 ],
             )
             .await
@@ -698,14 +787,30 @@ pub async fn command(http: &reqwest::Client, device: &DlnaDevice, action: &str, 
 }
 
 pub async fn status(http: &reqwest::Client, device: &DlnaDevice) -> DlnaStatus {
-    let state = match soap_call(http, &device.control_url, AVTRANSPORT_ST, "GetTransportInfo", &[("InstanceID", "0".into())]).await {
+    let state = match soap_call(
+        http,
+        &device.control_url,
+        AVTRANSPORT_ST,
+        "GetTransportInfo",
+        &[("InstanceID", "0".into())],
+    )
+    .await
+    {
         Ok(info) => map_state(find_text(&info, "CurrentTransportState").as_deref()),
         Err(_) => "unknown".into(),
     };
 
     let mut position = 0.0;
     let mut duration = 0.0;
-    if let Ok(info) = soap_call(http, &device.control_url, AVTRANSPORT_ST, "GetPositionInfo", &[("InstanceID", "0".into())]).await {
+    if let Ok(info) = soap_call(
+        http,
+        &device.control_url,
+        AVTRANSPORT_ST,
+        "GetPositionInfo",
+        &[("InstanceID", "0".into())],
+    )
+    .await
+    {
         position = parse_hhmmss(find_text(&info, "RelTime").as_deref());
         duration = parse_hhmmss(find_text(&info, "TrackDuration").as_deref());
     }
@@ -735,13 +840,21 @@ pub async fn status(http: &reqwest::Client, device: &DlnaDevice) -> DlnaStatus {
         )
         .await
         {
-            if let Some(m) = find_text(&res, "CurrentMute").and_then(|m| m.trim().parse::<i64>().ok()) {
+            if let Some(m) =
+                find_text(&res, "CurrentMute").and_then(|m| m.trim().parse::<i64>().ok())
+            {
                 muted = m != 0;
             }
         }
     }
 
-    DlnaStatus { state, position, duration, volume, muted }
+    DlnaStatus {
+        state,
+        position,
+        duration,
+        volume,
+        muted,
+    }
 }
 
 /// File size and video duration for the DIDL metadata, both best-effort.
@@ -749,7 +862,10 @@ pub async fn status(http: &reqwest::Client, device: &DlnaDevice) -> DlnaStatus {
 /// Memoized: the same title is often cast repeatedly, and ffprobe costs
 /// hundreds of milliseconds per call.
 pub async fn size_and_duration(path: &Path) -> (Option<u64>, Option<f64>) {
-    let size = std::fs::metadata(path).ok().map(|m| m.len()).filter(|s| *s > 0);
+    let size = std::fs::metadata(path)
+        .ok()
+        .map(|m| m.len())
+        .filter(|s| *s > 0);
     let duration = crate::services::probe_service::cached_source_video_duration(path).await;
     let duration = if duration > 0.0 { Some(duration) } else { None };
     (size, duration)
@@ -776,9 +892,18 @@ mod tests {
         // The 4th field is the whole reason the DU7000 enables FF/prev.
         assert!(DLNA_CONTENT_FEATURES.starts_with("DLNA.ORG_OP=01"));
         assert!(DLNA_CONTENT_FEATURES.contains("DLNA.ORG_CI=0"));
-        let xml = didl_metadata("Title", "http://1.2.3.4:8000/media/x.mkv", "video/x-matroska", Some(1234), Some(90.5));
+        let xml = didl_metadata(
+            "Title",
+            "http://1.2.3.4:8000/media/x.mkv",
+            "video/x-matroska",
+            Some(1234),
+            Some(90.5),
+        );
         let res = xml.split("<res ").nth(1).unwrap();
-        assert!(res.contains(&format!("http-get:*:video/x-matroska:{}", DLNA_CONTENT_FEATURES)));
+        assert!(res.contains(&format!(
+            "http-get:*:video/x-matroska:{}",
+            DLNA_CONTENT_FEATURES
+        )));
         assert!(res.contains("size=\"1234\""));
         assert!(res.contains("duration=\"0:01:30.500\""));
     }
@@ -787,12 +912,21 @@ mod tests {
     fn missing_size_and_duration_omit_the_attributes_entirely() {
         let xml = didl_metadata("T", "http://h/m.mkv", "video/x-matroska", None, None);
         assert!(!xml.contains("size="));
-        assert!(!xml.contains("duration="), "a 0 duration must be omitted, not sent as 0");
+        assert!(
+            !xml.contains("duration="),
+            "a 0 duration must be omitted, not sent as 0"
+        );
     }
 
     #[test]
     fn title_is_xml_escaped() {
-        let xml = didl_metadata("Fast & Furious <part 1>", "http://h/m.mkv", "video/x-matroska", None, None);
+        let xml = didl_metadata(
+            "Fast & Furious <part 1>",
+            "http://h/m.mkv",
+            "video/x-matroska",
+            None,
+            None,
+        );
         assert!(xml.contains("Fast &amp; Furious &lt;part 1&gt;"));
     }
 
@@ -823,7 +957,10 @@ mod tests {
         let xml = r#"<s:Envelope xmlns:s="urn:x"><s:Body><u:GetPositionInfoResponse xmlns:u="urn:y">
             <TrackDuration>0:02:03.000</TrackDuration><RelTime>0:00:10.000</RelTime>
             </u:GetPositionInfoResponse></s:Body></s:Envelope>"#;
-        assert_eq!(find_text(xml, "TrackDuration").as_deref(), Some("0:02:03.000"));
+        assert_eq!(
+            find_text(xml, "TrackDuration").as_deref(),
+            Some("0:02:03.000")
+        );
         assert_eq!(find_text(xml, "RelTime").as_deref(), Some("0:00:10.000"));
         assert_eq!(find_text(xml, "Missing"), None);
     }
@@ -837,12 +974,19 @@ mod tests {
         let blocks = split_services(xml);
         assert_eq!(blocks.len(), 2);
         assert!(blocks[0].contains("AVTransport1"));
-        assert!(!blocks[0].contains("RenderingControl1"), "a field must not leak into the next block");
+        assert!(
+            !blocks[0].contains("RenderingControl1"),
+            "a field must not leak into the next block"
+        );
     }
 
     #[test]
     fn soap_envelope_escapes_argument_values() {
-        let xml = soap_envelope(AVTRANSPORT_ST, "Seek", &[("Target", "00:00:01".into()), ("Note", "a&b".into())]);
+        let xml = soap_envelope(
+            AVTRANSPORT_ST,
+            "Seek",
+            &[("Target", "00:00:01".into()), ("Note", "a&b".into())],
+        );
         assert!(xml.contains("<Target>00:00:01</Target>"));
         assert!(xml.contains("a&amp;b"));
         assert!(xml.contains(&format!("xmlns:u=\"{}\"", AVTRANSPORT_ST)));

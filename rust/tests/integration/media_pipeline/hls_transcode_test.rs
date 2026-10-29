@@ -35,8 +35,18 @@ async fn setup_hls_test() -> TestHlsHarness {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let media_dir = std::env::temp_dir().join(format!("rust_hls_media_{}_{}_{}", std::process::id(), now, count));
-    let cache_dir = std::env::temp_dir().join(format!("rust_hls_cache_{}_{}_{}", std::process::id(), now, count));
+    let media_dir = std::env::temp_dir().join(format!(
+        "rust_hls_media_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
+    let cache_dir = std::env::temp_dir().join(format!(
+        "rust_hls_cache_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
     fs::create_dir_all(&media_dir).expect("Failed to create media directory");
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
@@ -104,7 +114,11 @@ async fn test_hls_playlist_delivery_200_and_cors() {
     fs::write(&video_path, b"dummy mkv video content").unwrap();
 
     // Create candidate HLS cache dir
-    let hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        &[harness.media_dir.clone()],
+        &harness.cache_dir,
+    );
     fs::create_dir_all(&hls_dir).unwrap();
 
     let playlist_content = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.500000,\nsegment_000000.ts\n#EXT-X-ENDLIST\n";
@@ -119,13 +133,28 @@ async fn test_hls_playlist_delivery_200_and_cors() {
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let content_type = res.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+    let content_type = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(content_type, "application/vnd.apple.mpegurl");
 
-    let cache_control = res.headers().get(header::CACHE_CONTROL).unwrap().to_str().unwrap();
+    let cache_control = res
+        .headers()
+        .get(header::CACHE_CONTROL)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(cache_control, "no-cache, max-age=0");
 
-    let cors_origin = res.headers().get("access-control-allow-origin").unwrap().to_str().unwrap();
+    let cors_origin = res
+        .headers()
+        .get("access-control-allow-origin")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(cors_origin, "*");
 
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
@@ -153,10 +182,20 @@ async fn test_hls_playlist_in_flight_503_retry() {
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
 
-    let retry_after = res.headers().get(header::RETRY_AFTER).unwrap().to_str().unwrap();
+    let retry_after = res
+        .headers()
+        .get(header::RETRY_AFTER)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(retry_after, "1");
 
-    let cache_control = res.headers().get(header::CACHE_CONTROL).unwrap().to_str().unwrap();
+    let cache_control = res
+        .headers()
+        .get(header::CACHE_CONTROL)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(cache_control, "no-cache, no-store, must-revalidate");
 
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
@@ -171,7 +210,11 @@ async fn test_hls_segment_delivery_ts_and_range() {
     let video_path = harness.media_dir.join("Gladiator.mkv");
     fs::write(&video_path, b"gladiator content").unwrap();
 
-    let hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        &[harness.media_dir.clone()],
+        &harness.cache_dir,
+    );
     fs::create_dir_all(&hls_dir).unwrap();
 
     let segment_bytes = vec![0x47u8; 1880]; // 10 TS packets
@@ -187,10 +230,20 @@ async fn test_hls_segment_delivery_ts_and_range() {
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let content_type = res.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+    let content_type = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(content_type, "video/mp2t");
 
-    let cache_control = res.headers().get(header::CACHE_CONTROL).unwrap().to_str().unwrap();
+    let cache_control = res
+        .headers()
+        .get(header::CACHE_CONTROL)
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(cache_control, "public, max-age=3600");
 
     let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
@@ -206,7 +259,10 @@ async fn test_hls_segment_delivery_ts_and_range() {
 
     let range_res = harness.app.clone().oneshot(range_req).await.unwrap();
     assert_eq!(range_res.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(range_res.headers().get(header::CONTENT_RANGE).unwrap(), "bytes 0-187/1880");
+    assert_eq!(
+        range_res.headers().get(header::CONTENT_RANGE).unwrap(),
+        "bytes 0-187/1880"
+    );
     let range_bytes = range_res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(range_bytes.len(), 188);
 }
@@ -218,7 +274,11 @@ async fn test_hls_segment_delivery_m4s_and_init() {
     let video_path = harness.media_dir.join("Dune.mkv");
     fs::write(&video_path, b"dune video").unwrap();
 
-    let hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        &[harness.media_dir.clone()],
+        &harness.cache_dir,
+    );
     fs::create_dir_all(&hls_dir).unwrap();
 
     fs::write(hls_dir.join("init.mp4"), b"ftypisom").unwrap();
@@ -233,7 +293,10 @@ async fn test_hls_segment_delivery_m4s_and_init() {
 
     let res_init = harness.app.clone().oneshot(req_init).await.unwrap();
     assert_eq!(res_init.status(), StatusCode::OK);
-    assert_eq!(res_init.headers().get(header::CONTENT_TYPE).unwrap(), "video/mp4");
+    assert_eq!(
+        res_init.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/mp4"
+    );
 
     // Check segment_000001.m4s
     let req_m4s = Request::builder()
@@ -244,7 +307,10 @@ async fn test_hls_segment_delivery_m4s_and_init() {
 
     let res_m4s = harness.app.clone().oneshot(req_m4s).await.unwrap();
     assert_eq!(res_m4s.status(), StatusCode::OK);
-    assert_eq!(res_m4s.headers().get(header::CONTENT_TYPE).unwrap(), "video/iso.segment");
+    assert_eq!(
+        res_m4s.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/iso.segment"
+    );
 }
 
 #[tokio::test]
@@ -254,7 +320,11 @@ async fn test_hls_quality_tier_subpath_delivery() {
     let video_path = harness.media_dir.join("Matrix.mkv");
     fs::write(&video_path, b"matrix video content").unwrap();
 
-    let base_hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let base_hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        &[harness.media_dir.clone()],
+        &harness.cache_dir,
+    );
     let quality_720_dir = base_hls_dir.join("720p");
     fs::create_dir_all(&quality_720_dir).unwrap();
 
@@ -273,7 +343,10 @@ async fn test_hls_quality_tier_subpath_delivery() {
 
     let res_pl = harness.app.clone().oneshot(req_pl).await.unwrap();
     assert_eq!(res_pl.status(), StatusCode::OK);
-    assert_eq!(res_pl.headers().get(header::CONTENT_TYPE).unwrap(), "application/vnd.apple.mpegurl");
+    assert_eq!(
+        res_pl.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/vnd.apple.mpegurl"
+    );
 
     let pl_bytes = res_pl.into_body().collect().await.unwrap().to_bytes();
     let pl_str = String::from_utf8_lossy(&pl_bytes);
@@ -290,7 +363,10 @@ async fn test_hls_quality_tier_subpath_delivery() {
 
     let res_init = harness.app.clone().oneshot(req_init).await.unwrap();
     assert_eq!(res_init.status(), StatusCode::OK);
-    assert_eq!(res_init.headers().get(header::CONTENT_TYPE).unwrap(), "video/mp4");
+    assert_eq!(
+        res_init.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/mp4"
+    );
 
     // 3. GET /hls/Matrix.mkv/720p/segment_000000.m4s
     let req_seg = Request::builder()
@@ -301,7 +377,10 @@ async fn test_hls_quality_tier_subpath_delivery() {
 
     let res_seg = harness.app.clone().oneshot(req_seg).await.unwrap();
     assert_eq!(res_seg.status(), StatusCode::OK);
-    assert_eq!(res_seg.headers().get(header::CONTENT_TYPE).unwrap(), "video/iso.segment");
+    assert_eq!(
+        res_seg.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/iso.segment"
+    );
 }
 
 #[tokio::test]
@@ -352,9 +431,18 @@ async fn test_transcode_cached_mp4_delivery() {
 
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(res.headers().get(header::CONTENT_TYPE).unwrap(), "video/mp4");
-    assert_eq!(res.headers().get(header::CACHE_CONTROL).unwrap(), "public, max-age=3600");
-    assert_eq!(res.headers().get("access-control-allow-origin").unwrap(), "*");
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "video/mp4"
+    );
+    assert_eq!(
+        res.headers().get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=3600"
+    );
+    assert_eq!(
+        res.headers().get("access-control-allow-origin").unwrap(),
+        "*"
+    );
 
     // Status endpoint should report complete
     let status_req = Request::builder()
@@ -415,8 +503,16 @@ async fn test_hls_and_transcode_options_cors() {
         .unwrap();
     let res1 = harness.app.clone().oneshot(hls_opt).await.unwrap();
     assert_eq!(res1.status(), StatusCode::OK);
-    assert_eq!(res1.headers().get("access-control-allow-origin").unwrap(), "*");
-    let allow_methods = res1.headers().get("access-control-allow-methods").unwrap().to_str().unwrap();
+    assert_eq!(
+        res1.headers().get("access-control-allow-origin").unwrap(),
+        "*"
+    );
+    let allow_methods = res1
+        .headers()
+        .get("access-control-allow-methods")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(allow_methods == "*" || allow_methods.contains("GET"));
 
     let tc_opt = Request::builder()
@@ -427,7 +523,10 @@ async fn test_hls_and_transcode_options_cors() {
 
     let res2 = harness.app.clone().oneshot(tc_opt).await.unwrap();
     assert_eq!(res2.status(), StatusCode::OK);
-    assert_eq!(res2.headers().get("access-control-allow-origin").unwrap(), "*");
+    assert_eq!(
+        res2.headers().get("access-control-allow-origin").unwrap(),
+        "*"
+    );
 }
 
 #[tokio::test]
@@ -437,7 +536,11 @@ async fn test_hls_master_playlist_multi_tier_delivery() {
     let video_path = harness.media_dir.join("Inception.mkv");
     fs::write(&video_path, b"inception media data").unwrap();
 
-    let base_hls_dir = HlsService::find_hls_dir(&video_path, &[harness.media_dir.clone()], &harness.cache_dir);
+    let base_hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        &[harness.media_dir.clone()],
+        &harness.cache_dir,
+    );
     let q1080 = base_hls_dir.join("1080p");
     let q720 = base_hls_dir.join("720p");
     let q480 = base_hls_dir.join("480p");
@@ -462,7 +565,10 @@ async fn test_hls_master_playlist_multi_tier_delivery() {
 
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(res.headers().get(header::CONTENT_TYPE).unwrap(), "application/vnd.apple.mpegurl");
+    assert_eq!(
+        res.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/vnd.apple.mpegurl"
+    );
 
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let body_str = String::from_utf8_lossy(&body);

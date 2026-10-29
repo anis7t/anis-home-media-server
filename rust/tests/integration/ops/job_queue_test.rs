@@ -13,7 +13,6 @@ use media_server_api::{
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 const TEST_PREFIX: &str = "rust_test_job_";
@@ -130,14 +129,20 @@ async fn test_enqueue_is_idempotent_for_same_filename_and_mode() {
     purge(&pool).await;
     let filename = unique_filename("idem");
 
-    let first = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
-    let second = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    let first = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
+    let second = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
 
     assert_eq!(first.id, second.id, "second enqueue must reuse the row");
     assert_eq!(second.status, "queued");
 
     // A different mode is a different job.
-    let other_mode = JobService::enqueue(&pool, &filename, "compat", false).await.unwrap();
+    let other_mode = JobService::enqueue(&pool, &filename, "compat", false)
+        .await
+        .unwrap();
     assert_ne!(other_mode.id, first.id);
 
     purge(&pool).await;
@@ -148,12 +153,12 @@ async fn test_enqueue_is_idempotent_for_same_filename_and_mode() {
 async fn test_enqueue_rejects_empty_and_traversal_filenames() {
     let _lock = acquire_global_lock().await;
     let pool = pool().await;
-    assert!(JobService::enqueue(&pool, "   ", "hls", false).await.is_err());
-    assert!(
-        JobService::enqueue(&pool, "../../etc/passwd", "hls", false)
-            .await
-            .is_err()
-    );
+    assert!(JobService::enqueue(&pool, "   ", "hls", false)
+        .await
+        .is_err());
+    assert!(JobService::enqueue(&pool, "../../etc/passwd", "hls", false)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -162,10 +167,16 @@ async fn test_claim_is_exclusive_to_one_owner() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("claim");
-    JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
 
-    let a = JobService::claim_next(&pool, "worker-a", 300).await.unwrap();
-    let b = JobService::claim_next(&pool, "worker-b", 300).await.unwrap();
+    let a = JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap();
+    let b = JobService::claim_next(&pool, "worker-b", 300)
+        .await
+        .unwrap();
 
     assert!(a.is_some(), "first worker must claim the job");
     assert!(
@@ -186,13 +197,20 @@ async fn test_expired_lease_is_reclaimable_and_live_lease_is_not() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("lease");
-    let job = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    let job = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
 
     // A live lease blocks other owners.
-    let first = JobService::claim_next(&pool, "worker-a", 300).await.unwrap();
+    let first = JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap();
     assert_eq!(first.unwrap().id, job.id);
     assert!(
-        JobService::claim_next(&pool, "worker-b", 300).await.unwrap().is_none(),
+        JobService::claim_next(&pool, "worker-b", 300)
+            .await
+            .unwrap()
+            .is_none(),
         "a live lease must be exclusive"
     );
 
@@ -206,7 +224,9 @@ async fn test_expired_lease_is_reclaimable_and_live_lease_is_not() {
     .await
     .unwrap();
 
-    let reclaimed = JobService::claim_next(&pool, "worker-b", 300).await.unwrap();
+    let reclaimed = JobService::claim_next(&pool, "worker-b", 300)
+        .await
+        .unwrap();
     assert!(reclaimed.is_some(), "expired lease must be reclaimable");
     assert_eq!(reclaimed.unwrap().lease_owner.as_deref(), Some("worker-b"));
 
@@ -220,8 +240,13 @@ async fn test_progress_and_completion_require_lease_ownership() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("progress");
-    JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
-    let job = JobService::claim_next(&pool, "worker-a", 300).await.unwrap().unwrap();
+    JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
+    let job = JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap()
+        .unwrap();
 
     // The wrong owner cannot write.
     assert!(
@@ -230,17 +255,30 @@ async fn test_progress_and_completion_require_lease_ownership() {
             .unwrap()
     );
     assert!(
-        JobService::complete(&pool, job.id, "worker-b").await.unwrap() == false
+        JobService::complete(&pool, job.id, "worker-b")
+            .await
+            .unwrap()
+            == false
     );
 
     // The right owner can.
-    assert!(
-        JobService::update_progress(&pool, job.id, "worker-a", Some(42.5), Some(2.0), Some(24.0), Some(30.0))
-            .await
-            .unwrap()
-    );
-    assert!(JobService::renew_lease(&pool, job.id, "worker-a", 300).await.unwrap());
-    assert!(JobService::complete(&pool, job.id, "worker-a").await.unwrap());
+    assert!(JobService::update_progress(
+        &pool,
+        job.id,
+        "worker-a",
+        Some(42.5),
+        Some(2.0),
+        Some(24.0),
+        Some(30.0)
+    )
+    .await
+    .unwrap());
+    assert!(JobService::renew_lease(&pool, job.id, "worker-a", 300)
+        .await
+        .unwrap());
+    assert!(JobService::complete(&pool, job.id, "worker-a")
+        .await
+        .unwrap());
 
     let done = JobService::get_by_id(&pool, job.id).await.unwrap().unwrap();
     assert_eq!(done.status, "completed");
@@ -257,10 +295,19 @@ async fn test_failure_records_error_and_releases_lease() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("fail");
-    JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
-    let job = JobService::claim_next(&pool, "worker-a", 300).await.unwrap().unwrap();
+    JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
+    let job = JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap()
+        .unwrap();
 
-    assert!(JobService::fail(&pool, job.id, "worker-a", "ffmpeg exited 1").await.unwrap());
+    assert!(
+        JobService::fail(&pool, job.id, "worker-a", "ffmpeg exited 1")
+            .await
+            .unwrap()
+    );
     let failed = JobService::get_by_id(&pool, job.id).await.unwrap().unwrap();
     assert_eq!(failed.status, "failed");
     assert_eq!(failed.error.as_deref(), Some("ffmpeg exited 1"));
@@ -278,20 +325,33 @@ async fn test_cancel_queued_job_and_cancel_refuses_running_job_without_owner() {
 
     // Queued: cancellable without an owner.
     let queued_name = unique_filename("cancelq");
-    let queued = JobService::enqueue(&pool, &queued_name, "hls", false).await.unwrap();
+    let queued = JobService::enqueue(&pool, &queued_name, "hls", false)
+        .await
+        .unwrap();
     assert!(JobService::cancel(&pool, queued.id, None).await.unwrap());
     assert_eq!(
-        JobService::get_by_id(&pool, queued.id).await.unwrap().unwrap().status,
+        JobService::get_by_id(&pool, queued.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
         "canceled"
     );
 
     // Running without an owner: refused, so a stale cancel cannot race a
     // legitimate worker.
     let running_name = unique_filename("cancelr");
-    JobService::enqueue(&pool, &running_name, "hls", false).await.unwrap();
-    let running = JobService::claim_next(&pool, "worker-a", 300).await.unwrap().unwrap();
+    JobService::enqueue(&pool, &running_name, "hls", false)
+        .await
+        .unwrap();
+    let running = JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!JobService::cancel(&pool, running.id, None).await.unwrap());
-    assert!(JobService::cancel(&pool, running.id, Some("worker-a")).await.unwrap());
+    assert!(JobService::cancel(&pool, running.id, Some("worker-a"))
+        .await
+        .unwrap());
 
     purge(&pool).await;
     pool.close().await;
@@ -303,16 +363,27 @@ async fn test_force_reopens_terminal_job_without_force_keeps_it() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("force");
-    let job = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
-    JobService::claim_next(&pool, "worker-a", 300).await.unwrap().unwrap();
-    JobService::complete(&pool, job.id, "worker-a").await.unwrap();
+    let job = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
+    JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    JobService::complete(&pool, job.id, "worker-a")
+        .await
+        .unwrap();
 
     // Without force, a completed job stays completed.
-    let same = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    let same = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
     assert_eq!(same.status, "completed");
 
     // With force it reopens as queued (a measured frame deficit).
-    let forced = JobService::enqueue(&pool, &filename, "hls", true).await.unwrap();
+    let forced = JobService::enqueue(&pool, &filename, "hls", true)
+        .await
+        .unwrap();
     assert_eq!(forced.id, job.id, "row identity is stable across reopen");
     assert_eq!(forced.status, "queued");
 
@@ -326,9 +397,16 @@ async fn test_terminal_jobs_are_never_claimed() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("terminal");
-    let job = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
-    JobService::claim_next(&pool, "worker-a", 300).await.unwrap().unwrap();
-    JobService::complete(&pool, job.id, "worker-a").await.unwrap();
+    let job = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
+    JobService::claim_next(&pool, "worker-a", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    JobService::complete(&pool, job.id, "worker-a")
+        .await
+        .unwrap();
     // Clear any lease defensively; completion already released it.
     sqlx::query("UPDATE transcode_jobs SET lease_expires_at = NULL WHERE id = $1")
         .bind(job.id)
@@ -336,11 +414,10 @@ async fn test_terminal_jobs_are_never_claimed() {
         .await
         .unwrap();
 
-    let claimed = JobService::claim_next(&pool, "worker-b", 300).await.unwrap();
-    assert!(
-        claimed.is_none(),
-        "a completed job must never be reclaimed"
-    );
+    let claimed = JobService::claim_next(&pool, "worker-b", 300)
+        .await
+        .unwrap();
+    assert!(claimed.is_none(), "a completed job must never be reclaimed");
 
     purge(&pool).await;
     pool.close().await;
@@ -352,7 +429,9 @@ async fn test_status_classification_and_listing() {
     let pool = pool().await;
     purge(&pool).await;
     let filename = unique_filename("list");
-    JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
 
     let all = JobService::list(&pool, 100).await.unwrap();
     assert!(all.iter().any(|j| j.filename == filename));
@@ -377,15 +456,27 @@ async fn test_list_for_dashboard_always_prioritizes_active_jobs() {
 
     // 1. Enqueue and claim a running job
     let running_file = unique_filename("active_dash");
-    let job1 = JobService::enqueue(&pool, &running_file, "hls", false).await.unwrap();
-    let claimed = JobService::claim_next(&pool, "worker-dash", 300).await.unwrap().unwrap();
+    let job1 = JobService::enqueue(&pool, &running_file, "hls", false)
+        .await
+        .unwrap();
+    let claimed = JobService::claim_next(&pool, "worker-dash", 300)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(claimed.id, job1.id);
 
     // 2. Enqueue and complete a completed job
     let completed_file = unique_filename("completed_dash");
-    let _job2 = JobService::enqueue(&pool, &completed_file, "hls", false).await.unwrap();
-    let claimed2 = JobService::claim_next(&pool, "worker-dash", 300).await.unwrap().unwrap();
-    JobService::complete(&pool, claimed2.id, "worker-dash").await.unwrap();
+    let _job2 = JobService::enqueue(&pool, &completed_file, "hls", false)
+        .await
+        .unwrap();
+    let claimed2 = JobService::claim_next(&pool, "worker-dash", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    JobService::complete(&pool, claimed2.id, "worker-dash")
+        .await
+        .unwrap();
 
     // 3. Query list_for_dashboard
     let dashboard_jobs = JobService::list_for_dashboard(&pool, 10).await.unwrap();
@@ -457,7 +548,9 @@ async fn test_recover_stale_jobs_marks_running_jobs_failed() {
     purge(&pool).await;
 
     let filename = unique_filename("orphan_crash");
-    let job = JobService::enqueue(&pool, &filename, "hls", false).await.unwrap();
+    let job = JobService::enqueue(&pool, &filename, "hls", false)
+        .await
+        .unwrap();
 
     // Claim so it enters 'running' state with an active lease
     let claimed = JobService::claim_next(&pool, "worker-crashed", 300)
@@ -469,7 +562,10 @@ async fn test_recover_stale_jobs_marks_running_jobs_failed() {
 
     // Server abruptly restarted -> invoke recovery routine
     let recovered_count = JobService::recover_stale_jobs(&pool).await.unwrap();
-    assert!(recovered_count >= 1, "must recover at least the orphaned test job");
+    assert!(
+        recovered_count >= 1,
+        "must recover at least the orphaned test job"
+    );
 
     // Inspect job row: must be failed with server restart error and lease cleared
     let recovered = JobService::get_by_id(&pool, job.id)
@@ -497,14 +593,28 @@ async fn test_transcode_sweeper_file_needs_transcode() {
     use media_server_api::services::transcode_sweeper::TranscodeSweeperService;
     use std::path::Path;
 
-    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("video.mkv")));
-    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("video.avi")));
-    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("movie.FLV")));
-    assert!(TranscodeSweeperService::file_needs_transcode(Path::new("clip.ts")));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new(
+        "video.mkv"
+    )));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new(
+        "video.avi"
+    )));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new(
+        "movie.FLV"
+    )));
+    assert!(TranscodeSweeperService::file_needs_transcode(Path::new(
+        "clip.ts"
+    )));
 
-    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("stream.mp4")));
-    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("movie.m4v")));
-    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new("clip.webm")));
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new(
+        "stream.mp4"
+    )));
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new(
+        "movie.m4v"
+    )));
+    assert!(!TranscodeSweeperService::file_needs_transcode(Path::new(
+        "clip.webm"
+    )));
 }
 
 #[tokio::test]

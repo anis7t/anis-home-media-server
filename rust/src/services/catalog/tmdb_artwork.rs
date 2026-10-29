@@ -201,9 +201,7 @@ async fn download(art_path: &str, kind: ArtworkKind, target: &PathBuf) -> bool {
                             "tmdb artwork {} attempt {} rejected ({} bytes)",
                             art_path,
                             attempt,
-                            other
-                                .map(|b| b.len())
-                                .unwrap_or(0)
+                            other.map(|b| b.len()).unwrap_or(0)
                         );
                     }
                 }

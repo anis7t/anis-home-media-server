@@ -267,7 +267,8 @@ impl ChunkTranscodeService {
         if let Ok(rd) = fs::read_dir(hls_dir) {
             for entry in rd.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("segment_") && (name.ends_with(".ts") || name.ends_with(".m4s")) {
+                if name.starts_with("segment_") && (name.ends_with(".ts") || name.ends_with(".m4s"))
+                {
                     if let Ok(m) = entry.metadata() {
                         if m.len() > 0 {
                             if name.ends_with(".m4s") {
@@ -319,7 +320,9 @@ impl ChunkTranscodeService {
         let mut current_chunk_id: Option<usize> = None;
 
         for seg_name in disk_segs {
-            let dur = *durations_map.get(&seg_name).unwrap_or(&SEGMENT_TARGET_DURATION);
+            let dur = *durations_map
+                .get(&seg_name)
+                .unwrap_or(&SEGMENT_TARGET_DURATION);
             let seg_idx = seg_name
                 .strip_prefix("segment_")
                 .and_then(|s| s.strip_suffix(".ts").or_else(|| s.strip_suffix(".m4s")))

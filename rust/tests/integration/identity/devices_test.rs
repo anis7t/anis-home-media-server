@@ -26,8 +26,7 @@ const TEST_WEB_PREFIX: &str = "web_rustc3a_";
 /// so cleanup can never touch a real account.
 const TEST_USER_SUB_PREFIX: &str = "sub_dev_phase2_";
 const TEST_SESSION_PREFIX: &str = "sess_dev_phase2_";
-const UA_WINDOWS: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36";
+const UA_WINDOWS: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36";
 
 /// Serialized because these tests share one table and a prefix-wide cleanup:
 /// a sibling running in parallel would have its rows deleted mid-test, and
@@ -114,7 +113,9 @@ fn request_with_headers(
     if body.is_some() {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
     }
-    let mut req = builder.body(Body::from(body.unwrap_or("").to_string())).unwrap();
+    let mut req = builder
+        .body(Body::from(body.unwrap_or("").to_string()))
+        .unwrap();
     let peer: SocketAddr = "192.168.1.50:51000".parse().unwrap();
     req.extensions_mut().insert(ConnectInfo(peer));
     req
@@ -124,15 +125,25 @@ async fn call(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
-async fn call_full(app: &axum::Router, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Value) {
+async fn call_full(
+    app: &axum::Router,
+    req: Request<Body>,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let headers = res.headers().clone();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        headers,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// Create (or reuse) a viewer account and a live session for it.
@@ -218,7 +229,13 @@ async fn test_heartbeat_registers_a_new_device_with_telemetry() {
 
     let (status, body) = call(
         &app,
-        request(Method::POST, "/api/devices/heartbeat", Some(&id), None, Some(UA_WINDOWS)),
+        request(
+            Method::POST,
+            "/api/devices/heartbeat",
+            Some(&id),
+            None,
+            Some(UA_WINDOWS),
+        ),
     )
     .await;
 
@@ -269,7 +286,13 @@ async fn test_heartbeat_updates_last_seen_for_a_known_device() {
 
     let (status, _) = call(
         &app,
-        request(Method::POST, "/api/devices/heartbeat", Some(&id), None, Some(UA_WINDOWS)),
+        request(
+            Method::POST,
+            "/api/devices/heartbeat",
+            Some(&id),
+            None,
+            Some(UA_WINDOWS),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -303,7 +326,13 @@ async fn test_client_hints_updates_a_known_device() {
     let body = r#"{"model":"SM-A536E","platform":"Android","platformVersion":"13.0.0"}"#;
     let (status, json) = call(
         &app,
-        request(Method::POST, "/api/devices/client-hints", Some(&id), Some(body), None),
+        request(
+            Method::POST,
+            "/api/devices/client-hints",
+            Some(&id),
+            Some(body),
+            None,
+        ),
     )
     .await;
 
@@ -367,22 +396,13 @@ fn test_device_id_resolution_prefers_the_client_id_then_hashes() {
 
     // The SPA's own id family. The old `dev_`-only filter discarded this and
     // answered with a fingerprint row, which is the bug this pins.
-    let (web, is_new) = DeviceService::get_or_create_device_id(
-        None,
-        Some("web_4f30657458814841"),
-        "1.2.3.4",
-        "ua",
-    );
+    let (web, is_new) =
+        DeviceService::get_or_create_device_id(None, Some("web_4f30657458814841"), "1.2.3.4", "ua");
     assert_eq!(web, "web_4f30657458814841");
     assert!(!is_new);
     assert_eq!(
-        DeviceService::get_or_create_device_id(
-            Some("web_4f30657458814841"),
-            None,
-            "1.2.3.4",
-            "ua"
-        )
-        .0,
+        DeviceService::get_or_create_device_id(Some("web_4f30657458814841"), None, "1.2.3.4", "ua")
+            .0,
         "web_4f30657458814841",
         "a legacy cookie carrying the SPA's id is still its identity"
     );
@@ -437,7 +457,13 @@ async fn test_heartbeat_accepts_get_like_flask() {
     let id = format!("{}get", TEST_PREFIX);
     let (status, body) = call(
         &app,
-        request(Method::GET, "/api/devices/heartbeat", Some(&id), None, Some(UA_WINDOWS)),
+        request(
+            Method::GET,
+            "/api/devices/heartbeat",
+            Some(&id),
+            None,
+            Some(UA_WINDOWS),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -466,8 +492,10 @@ async fn test_non_ascii_user_agent_keeps_its_identity() {
         .unwrap();
     let peer: SocketAddr = "192.168.1.50:51000".parse().unwrap();
     req.extensions_mut().insert(ConnectInfo(peer));
-    req.headers_mut()
-        .append(header::USER_AGENT, header::HeaderValue::from_bytes(b"caf\xe9-tracker/1.0").unwrap());
+    req.headers_mut().append(
+        header::USER_AGENT,
+        header::HeaderValue::from_bytes(b"caf\xe9-tracker/1.0").unwrap(),
+    );
 
     let (status, body) = call(&app, req).await;
     assert_eq!(status, StatusCode::OK);
@@ -509,13 +537,23 @@ async fn test_get_devices_unauthenticated_returns_only_current_device() {
 
     let (status, body) = call(
         &app,
-        request(Method::GET, "/api/devices", Some(&id1), None, Some(UA_WINDOWS)),
+        request(
+            Method::GET,
+            "/api/devices",
+            Some(&id1),
+            None,
+            Some(UA_WINDOWS),
+        ),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK);
     let devices = body["devices"].as_array().expect("devices array");
-    assert_eq!(devices.len(), 1, "unauthenticated user must only see own device");
+    assert_eq!(
+        devices.len(),
+        1,
+        "unauthenticated user must only see own device"
+    );
     assert_eq!(devices[0]["device_id"], id1.as_str());
     assert_eq!(devices[0]["is_current"], true);
     assert_eq!(body["current_device_id"], id1.as_str());
@@ -552,7 +590,8 @@ async fn test_web_client_id_is_the_device_that_owns_its_history() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        body["current_device_id"], web_id.as_str(),
+        body["current_device_id"],
+        web_id.as_str(),
         "the client's own id must win over the IP+UA fingerprint"
     );
 
@@ -617,10 +656,16 @@ async fn test_get_devices_with_admin_pin_returns_all_devices() {
     let devices = body["devices"].as_array().expect("devices array");
     assert!(devices.len() >= 2, "admin must see all devices");
 
-    let d1 = devices.iter().find(|d| d["device_id"] == id1.as_str()).unwrap();
+    let d1 = devices
+        .iter()
+        .find(|d| d["device_id"] == id1.as_str())
+        .unwrap();
     assert_eq!(d1["is_current"], true);
 
-    let d2 = devices.iter().find(|d| d["device_id"] == id2.as_str()).unwrap();
+    let d2 = devices
+        .iter()
+        .find(|d| d["device_id"] == id2.as_str())
+        .unwrap();
     assert_eq!(d2["is_current"], false);
 
     cleanup(&pool).await;
@@ -648,17 +693,24 @@ async fn test_rename_own_device_succeeds() {
     })
     .to_string();
 
-    let req = request(Method::POST, "/api/devices/rename", Some(&id), Some(&body_payload), Some(UA_WINDOWS));
+    let req = request(
+        Method::POST,
+        "/api/devices/rename",
+        Some(&id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+    );
     let (status, body) = call(&app, req).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
 
-    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
-        .bind(&id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let custom_name: Option<String> =
+        sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(custom_name.as_deref(), Some("My Custom Laptop"));
 
     cleanup(&pool).await;
@@ -690,17 +742,24 @@ async fn test_rename_other_device_without_admin_is_forbidden_403() {
     })
     .to_string();
 
-    let req = request(Method::POST, "/api/devices/rename", Some(&caller_id), Some(&body_payload), Some(UA_WINDOWS));
+    let req = request(
+        Method::POST,
+        "/api/devices/rename",
+        Some(&caller_id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+    );
     let (status, body) = call(&app, req).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(body["error"].as_str().unwrap().contains("Unauthorized"));
 
-    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
-        .bind(&target_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let custom_name: Option<String> =
+        sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+            .bind(&target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(custom_name, None);
 
     cleanup(&pool).await;
@@ -749,11 +808,12 @@ async fn test_rename_other_device_with_admin_pin_succeeds() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
 
-    let custom_name: Option<String> = sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
-        .bind(&target_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let custom_name: Option<String> =
+        sqlx::query_scalar("SELECT custom_name FROM devices WHERE device_id = $1")
+            .bind(&target_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(custom_name.as_deref(), Some("Admin Authorized Rename"));
 
     cleanup(&pool).await;
@@ -771,7 +831,13 @@ async fn test_rename_missing_device_id_returns_400() {
     })
     .to_string();
 
-    let req = request(Method::POST, "/api/devices/rename", None, Some(&body_payload), Some(UA_WINDOWS));
+    let req = request(
+        Method::POST,
+        "/api/devices/rename",
+        None,
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+    );
     let (status, body) = call(&app, req).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -826,8 +892,14 @@ async fn test_delete_own_device_succeeds_and_unsets_cookie() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
 
-    let set_cookie = headers.get(header::SET_COOKIE).and_then(|v| v.to_str().ok()).unwrap_or("");
-    assert!(set_cookie.contains("ms_device_id=; Max-Age=0"), "cookie must be cleared on self delete");
+    let set_cookie = headers
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        set_cookie.contains("ms_device_id=; Max-Age=0"),
+        "cookie must be cleared on self delete"
+    );
 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id = $1")
         .bind(&id)
@@ -836,11 +908,12 @@ async fn test_delete_own_device_succeeds_and_unsets_cookie() {
         .unwrap();
     assert_eq!(count, 0);
 
-    let h_count: i64 = sqlx::query_scalar("SELECT count(*) FROM device_watch_history WHERE device_id = $1")
-        .bind(&id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let h_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM device_watch_history WHERE device_id = $1")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(h_count, 0);
 
     cleanup(&pool).await;
@@ -871,7 +944,13 @@ async fn test_delete_other_device_without_admin_is_forbidden_403() {
     })
     .to_string();
 
-    let req = request(Method::POST, "/api/devices/delete", Some(&caller_id), Some(&body_payload), Some(UA_WINDOWS));
+    let req = request(
+        Method::POST,
+        "/api/devices/delete",
+        Some(&caller_id),
+        Some(&body_payload),
+        Some(UA_WINDOWS),
+    );
     let (status, body) = call(&app, req).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -946,13 +1025,11 @@ async fn test_suite_leaves_no_test_devices() {
     let _serial = SERIAL.lock().await;
     let (_app, pool) = harness().await;
     cleanup(&pool).await;
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM devices WHERE device_id LIKE $1",
-    )
-    .bind(format!("{}%", TEST_PREFIX))
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM devices WHERE device_id LIKE $1")
+        .bind(format!("{}%", TEST_PREFIX))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(remaining, 0, "devices table must retain no test rows");
 
     let users: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE google_sub LIKE $1")
@@ -967,7 +1044,10 @@ async fn test_suite_leaves_no_test_devices() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(sessions, 0, "sessions table must retain no Phase 2 test rows");
+    assert_eq!(
+        sessions, 0,
+        "sessions table must retain no Phase 2 test rows"
+    );
 
     let _ = header::CONTENT_TYPE;
 }
@@ -1010,12 +1090,27 @@ async fn test_signed_in_user_sees_only_their_devices_and_history() {
 
     assert_eq!(status, StatusCode::OK);
     let devices = body["devices"].as_array().expect("devices array");
-    let ids: Vec<&str> = devices.iter().filter_map(|d| d["device_id"].as_str()).collect();
+    let ids: Vec<&str> = devices
+        .iter()
+        .filter_map(|d| d["device_id"].as_str())
+        .collect();
 
-    assert!(ids.contains(&alice_phone.as_str()), "current device must be listed");
-    assert!(ids.contains(&alice_tv.as_str()), "a device the user owns must be listed");
-    assert!(!ids.contains(&bob_phone.as_str()), "another user's device must not be listed");
-    assert!(!ids.contains(&unowned.as_str()), "an unowned device must not be listed");
+    assert!(
+        ids.contains(&alice_phone.as_str()),
+        "current device must be listed"
+    );
+    assert!(
+        ids.contains(&alice_tv.as_str()),
+        "a device the user owns must be listed"
+    );
+    assert!(
+        !ids.contains(&bob_phone.as_str()),
+        "another user's device must not be listed"
+    );
+    assert!(
+        !ids.contains(&unowned.as_str()),
+        "an unowned device must not be listed"
+    );
     assert_eq!(devices.len(), 2, "exactly the user's own two devices");
     assert_eq!(body["stats"]["total_devices"], 2);
 
@@ -1057,7 +1152,11 @@ async fn test_owner_can_rename_a_device_they_are_not_using() {
     );
     let (status, body) = call(&app, req).await;
 
-    assert_eq!(status, StatusCode::OK, "a user may rename a device they own");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a user may rename a device they own"
+    );
     assert_eq!(body["success"], true);
 
     let name: Option<String> =
@@ -1077,7 +1176,8 @@ async fn test_other_user_cannot_rename_or_delete_my_device() {
     let (app, pool) = harness().await;
     cleanup(&pool).await;
 
-    let (alice_id, _) = make_user_and_session(&pool, "alice_cross", "alice_cross@example.com").await;
+    let (alice_id, _) =
+        make_user_and_session(&pool, "alice_cross", "alice_cross@example.com").await;
     let (bob_id, bob_session) =
         make_user_and_session(&pool, "bob_cross", "bob_cross@example.com").await;
 
@@ -1128,7 +1228,10 @@ async fn test_other_user_cannot_rename_or_delete_my_device() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(still_there, 1, "the target device must survive a refused delete");
+    assert_eq!(
+        still_there, 1,
+        "the target device must survive a refused delete"
+    );
 
     cleanup(&pool).await;
 }
@@ -1161,13 +1264,16 @@ async fn test_first_signed_in_request_claims_an_unowned_device_once() {
     let (status, _) = call(&app, req).await;
     assert_eq!(status, StatusCode::OK);
 
-    let owner: Option<i64> =
-        sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
-            .bind(&shared)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(owner, Some(alice_id), "first signed-in request must claim the device");
+    let owner: Option<i64> = sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
+        .bind(&shared)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        owner,
+        Some(alice_id),
+        "first signed-in request must claim the device"
+    );
 
     // Alice watches something on it.
     insert_history(&pool, &shared, "alice_secret.mp4").await;
@@ -1186,13 +1292,16 @@ async fn test_first_signed_in_request_claims_an_unowned_device_once() {
     let (status, body) = call(&app, req).await;
     assert_eq!(status, StatusCode::OK);
 
-    let owner: Option<i64> =
-        sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
-            .bind(&shared)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(owner, Some(alice_id), "an already-owned device must never be reassigned");
+    let owner: Option<i64> = sqlx::query_scalar("SELECT user_id FROM devices WHERE device_id = $1")
+        .bind(&shared)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        owner,
+        Some(alice_id),
+        "an already-owned device must never be reassigned"
+    );
 
     let listed = body["devices"]
         .as_array()

@@ -250,12 +250,18 @@ impl CastConnection {
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(format!("no response to request {} in {:?}", request_id, IO_TIMEOUT));
+                return Err(format!(
+                    "no response to request {} in {:?}",
+                    request_id, IO_TIMEOUT
+                ));
             }
             let msg = match timeout(remaining, self.read_frame()).await {
                 Ok(result) => result?,
                 Err(_) => {
-                    return Err(format!("no response to request {} in {:?}", request_id, IO_TIMEOUT));
+                    return Err(format!(
+                        "no response to request {} in {:?}",
+                        request_id, IO_TIMEOUT
+                    ));
                 }
             };
 
@@ -264,8 +270,12 @@ impl CastConnection {
             // connection down, and the symptom is a CLOSE arriving mid-request
             // with no further replies.
             if msg.namespace == NS_HEARTBEAT && msg.message_type().as_deref() == Some("PING") {
-                self.send_raw(NS_HEARTBEAT, &msg.source_id, serde_json::json!({ "type": "PONG" }))
-                    .await?;
+                self.send_raw(
+                    NS_HEARTBEAT,
+                    &msg.source_id,
+                    serde_json::json!({ "type": "PONG" }),
+                )
+                .await?;
                 continue;
             }
 
@@ -291,14 +301,22 @@ impl CastConnection {
         if self.last_activity.elapsed() < HEARTBEAT_AFTER_IDLE {
             return Ok(());
         }
-        self.send_raw(NS_HEARTBEAT, DEFAULT_RECEIVER_ID, serde_json::json!({ "type": "PING" }))
-            .await
+        self.send_raw(
+            NS_HEARTBEAT,
+            DEFAULT_RECEIVER_ID,
+            serde_json::json!({ "type": "PING" }),
+        )
+        .await
     }
 
     /// POLL_AFTER_HANDSHAKE, then a bounded wait for the receiver's reply.
     pub async fn poll_after_handshake(&mut self) -> Result<(), String> {
         let pong = self
-            .request(NS_CONNECTION, DEFAULT_RECEIVER_ID, serde_json::json!({ "type": "POLL_AFTER_HANDSHAKE" }))
+            .request(
+                NS_CONNECTION,
+                DEFAULT_RECEIVER_ID,
+                serde_json::json!({ "type": "POLL_AFTER_HANDSHAKE" }),
+            )
             .await?;
         let _ = pong;
         Ok(())
@@ -332,7 +350,12 @@ mod tests {
         assert_ne!(a, b, "two casts must not share a sender id");
         assert!(a.starts_with("sender-"), "{}", a);
         // UUID-shaped, because that is what every real Cast client sends.
-        assert_eq!(a.len(), "sender-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".len(), "{}", a);
+        assert_eq!(
+            a.len(),
+            "sender-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".len(),
+            "{}",
+            a
+        );
         assert_eq!(a.chars().filter(|c| *c == '-').count(), 5, "{}", a);
     }
 
@@ -345,7 +368,11 @@ mod tests {
 
     #[tokio::test]
     async fn connecting_to_a_dead_port_fails_rather_than_hanging() {
-        let result = timeout(Duration::from_secs(20), CastConnection::connect("127.0.0.1")).await;
+        let result = timeout(
+            Duration::from_secs(20),
+            CastConnection::connect("127.0.0.1"),
+        )
+        .await;
         assert!(result.is_ok(), "the connect attempt itself must finish");
         match result {
             Ok(Ok(_)) => panic!("nothing is listening on 127.0.0.1:8009"),
