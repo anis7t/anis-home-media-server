@@ -59,11 +59,12 @@ void main() {
     });
 
     test('carries nothing but the score and the television\'s sequence', () {
-      final files = Directory('assets')
+      final files = (Directory('assets')
           .listSync(recursive: true)
           .whereType<File>()
           .map((f) => f.path.replaceAll('\\', '/'))
-          .toList();
+          .toList())
+        ..sort();
       expect(files, [
         'assets/audio/intro-theme.m4a',
         'assets/intro/intro-tv-1080p.mp4',

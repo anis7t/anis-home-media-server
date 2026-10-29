@@ -16,6 +16,7 @@ const String libmpvPath =
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
+    if (!liveServerTestsEnabled) return;
     if (File(libmpvPath).existsSync()) {
       MediaKit.ensureInitialized(libmpv: libmpvPath);
     } else {
@@ -29,7 +30,7 @@ void main() {
       expect(prodAdapter, isA<prod.PlayerControllerInterface>());
 
       await prodAdapter.dispose();
-    });
+    }, skip: liveServerSkip);
 
     // Tests 2 and 5 play real media from the running server, so they are live-server tests.
     test('2. Direct MP4 playback & progression (Batman Knightfall)', () async {

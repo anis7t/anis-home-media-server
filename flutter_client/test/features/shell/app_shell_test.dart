@@ -128,10 +128,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() {
-    if (File(libmpvPath).existsSync()) {
-      MediaKit.ensureInitialized(libmpv: libmpvPath);
-    } else {
-      MediaKit.ensureInitialized();
+    try {
+      if (File(libmpvPath).existsSync()) {
+        MediaKit.ensureInitialized(libmpv: libmpvPath);
+      } else {
+        MediaKit.ensureInitialized();
+      }
+    } catch (_) {
+      // Graceful fallback for headless environments where native libmpv binaries are absent.
     }
     // Installed after the binding so a stray request fails loudly instead of being
     // swallowed by the binding's 400-returning HTTP mock.
