@@ -102,3 +102,13 @@ _installed.apk
 # comparison encodes live here. It is scratch, never an artifact - the shipped
 # video is flutter_client/assets/intro/intro-tv-1080p.mp4.
 /build/
+
+# Router diagnostic scripts, documentation, and sensitive network configurations
+scripts/*router*
+scripts/*wan*
+docs/*router*
+docs/*wan*
+*router*
+*wan*
+*.cfg
+*.romfile
