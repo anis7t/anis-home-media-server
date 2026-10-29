@@ -1,0 +1,21 @@
+title = "Gitleaks Configuration for Anis' Home Media Server"
+
+[allowlist]
+description = "Global allowlist for intentional test fixtures, synthetic tokens, and lockfiles"
+paths = [
+  '''(^|/)tests/''',
+  '''(^|/)test/''',
+  '''(^|/)e2e/''',
+  '''(^|/)Handoffs/''',
+  '''(^|/)docs/''',
+  '''package-lock\.json$''',
+  '''Cargo\.lock$''',
+  '''pubspec\.lock$'''
+]
+regexes = [
+  '''5832f2953110ba7783bcbe8fb1e8d2e6c9b09cbc979d3cb6919335576502f4d0''',
+  '''test-device-uuid''',
+  '''dev_phase[0-9a-z_]+''',
+  '''postgresql://postgres:postgres@127\.0\.0\.1:5432/media_server_test''',
+  '''http://test\.invalid:8000'''
+]
