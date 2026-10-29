@@ -200,7 +200,7 @@ async fn test_get_preview_thumb_cached_serving() {
     let preview_dir = PreviewService::get_preview_dir(
         &video_path,
         &harness.cache_dir,
-        &[harness.test_dir.clone()],
+        std::slice::from_ref(&harness.test_dir),
     );
     fs::create_dir_all(&preview_dir).unwrap();
 
@@ -250,7 +250,7 @@ async fn test_preview_thumb_head_and_options() {
     let preview_dir = PreviewService::get_preview_dir(
         &video_path,
         &harness.cache_dir,
-        &[harness.test_dir.clone()],
+        std::slice::from_ref(&harness.test_dir),
     );
     fs::create_dir_all(&preview_dir).unwrap();
     let fake_jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0];

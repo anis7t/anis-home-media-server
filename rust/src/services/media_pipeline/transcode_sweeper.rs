@@ -136,12 +136,8 @@ impl TranscodeSweeperService {
                 // Check applicability (with widescreen support without upscaling)
                 let is_applicable = if tier_h <= source_h {
                     true
-                } else if source_w >= tier_w.saturating_sub(32)
-                    && (source_h as u64 * 2 >= tier_h as u64)
-                {
-                    true
                 } else {
-                    false
+                    source_w >= tier_w.saturating_sub(32) && (source_h as u64 * 2 >= tier_h as u64)
                 };
 
                 if !is_applicable {

@@ -254,12 +254,9 @@ async fn test_progress_and_completion_require_lease_ownership() {
             .await
             .unwrap()
     );
-    assert!(
-        JobService::complete(&pool, job.id, "worker-b")
-            .await
-            .unwrap()
-            == false
-    );
+    assert!(!JobService::complete(&pool, job.id, "worker-b")
+        .await
+        .unwrap());
 
     // The right owner can.
     assert!(JobService::update_progress(
@@ -497,7 +494,7 @@ async fn test_enqueue_request_defaults_to_hls_mode() {
         priority: None,
     };
     assert_eq!(req.mode.clone().unwrap_or_else(|| "hls".to_string()), "hls");
-    assert_eq!(req.force.unwrap_or(false), false);
+    assert!(!req.force.unwrap_or(false));
     assert_eq!(req.priority.unwrap_or(0), 0);
 }
 

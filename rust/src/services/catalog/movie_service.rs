@@ -224,10 +224,10 @@ impl MovieService {
                 });
             }
             "year" => {
-                movie_list.sort_by(|a, b| b.year.cmp(&a.year));
+                movie_list.sort_by_key(|a| std::cmp::Reverse(a.year));
             }
             _ => {
-                movie_list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+                movie_list.sort_by_key(|a| a.title.to_lowercase());
             }
         }
 
@@ -443,7 +443,7 @@ impl MovieService {
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_else(|| serde_json::json!({}));
 
-        let ext = fname.split('.').last().unwrap_or("MP4").to_uppercase();
+        let ext = fname.split('.').next_back().unwrap_or("MP4").to_uppercase();
 
         let specs = TechnicalSpecs {
             resolution: Some("1080p".to_string()),

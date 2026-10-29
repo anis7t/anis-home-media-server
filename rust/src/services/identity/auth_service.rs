@@ -489,7 +489,7 @@ impl AuthService {
 
     fn split_emails(raw: &str) -> Vec<String> {
         let mut out = Vec::new();
-        for item in raw.replace(';', ",").replace('\n', ",").split(',') {
+        for item in raw.replace([';', '\n'], ",").split(',') {
             let trimmed = item.trim().to_lowercase();
             if !trimmed.is_empty() && !out.contains(&trimmed) {
                 out.push(trimmed);
@@ -583,7 +583,7 @@ impl AuthService {
     /// Unpadded URL-safe Base64 encoder per RFC 4648 §5 / RFC 7636 §4.2 (OAuth 2.0 PKCE).
     pub fn base64url_encode(data: &[u8]) -> String {
         const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+        let mut result = String::with_capacity((data.len() * 4).div_ceil(3));
         let mut i = 0;
         while i < data.len() {
             let b0 = data[i];

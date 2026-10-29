@@ -384,6 +384,7 @@ pub async fn active_transcodes_handler(
 }
 
 /// `GET /api/transcode/dashboard` - full admin transcoding telemetry & command center.
+#[allow(clippy::type_complexity)]
 pub async fn transcode_dashboard_handler(
     State(state): State<JobState>,
     headers: HeaderMap,

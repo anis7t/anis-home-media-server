@@ -87,7 +87,7 @@ pub async fn subtitle_stream_handler(
         return Ok(res);
     }
 
-    let clean = subpath.trim_start_matches(|c| c == '/' || c == '\\');
+    let clean = subpath.trim_start_matches(['/', '\\']);
 
     // 1. Embedded subtitles: /subtitles/embedded/<rel_video>/<stream_idx>.vtt
     if let Some(rest) = clean.strip_prefix("embedded/") {

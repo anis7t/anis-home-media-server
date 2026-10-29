@@ -212,10 +212,7 @@ impl ChunkTranscodeService {
             let init_fallback = hls_dir.join("init.mp4");
             let has_valid_init = match fs::metadata(&init_file) {
                 Ok(m) if m.len() > 0 => true,
-                _ => match fs::metadata(&init_fallback) {
-                    Ok(m) if m.len() > 0 => true,
-                    _ => false,
-                },
+                _ => matches!(fs::metadata(&init_fallback), Ok(m) if m.len() > 0),
             };
             if !has_valid_init {
                 return false;

@@ -21,14 +21,14 @@ impl SubtitleService {
         for line in normalized.lines() {
             let trimmed = line.trim();
             // Skip SRT cue index numbers (lines consisting only of digits)
-            if trimmed.chars().all(|c| c.is_ascii_digit()) && !trimmed.is_empty() {
-                if out
+            if trimmed.chars().all(|c| c.is_ascii_digit())
+                && !trimmed.is_empty()
+                && out
                     .last()
                     .map(|l| l.is_empty() || l.starts_with("WEBVTT"))
                     .unwrap_or(true)
-                {
-                    continue;
-                }
+            {
+                continue;
             }
 
             if line.contains("-->") {
@@ -408,14 +408,13 @@ impl SubtitleService {
                     // Read content for language detection
                     let text = fs::read_to_string(&sub_path).unwrap_or_default();
                     let mut lang = Self::detect_subtitle_language(&text);
-                    if lang == "und" {
-                        if sub_stem.ends_with(".en")
+                    if lang == "und"
+                        && (sub_stem.ends_with(".en")
                             || sub_stem.ends_with(".eng")
                             || sub_stem.contains("_en_")
-                            || sub_stem.ends_with("_en")
-                        {
-                            lang = "en".to_string();
-                        }
+                            || sub_stem.ends_with("_en"))
+                    {
+                        lang = "en".to_string();
                     }
 
                     let label = match lang.as_str() {
@@ -737,7 +736,7 @@ impl SubtitleService {
     /// Probe container media streams via ffprobe for embedded subtitle tracks.
     pub async fn probe_embedded_subtitles(video_path: &Path) -> Vec<EmbeddedSubtitleStream> {
         let output = match tokio::process::Command::new("ffprobe")
-            .args(&[
+            .args([
                 "-v",
                 "quiet",
                 "-print_format",
@@ -843,7 +842,7 @@ impl SubtitleService {
 
         let temp_target = embed_cache_dir.join(format!("{}_{}.part.vtt", short_hash, stream_idx));
         let status = tokio::process::Command::new("ffmpeg")
-            .args(&[
+            .args([
                 "-y",
                 "-i",
                 video_path.to_str().unwrap_or(""),

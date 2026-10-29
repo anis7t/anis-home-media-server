@@ -10,7 +10,7 @@ impl PathResolver {
             return Err(AppError::NotFound("Invalid filename".to_string()));
         }
 
-        let clean = filename.trim_start_matches(|c| c == '/' || c == '\\');
+        let clean = filename.trim_start_matches(['/', '\\']);
         if clean.is_empty() {
             return Err(AppError::BadRequest("Filename cannot be empty".to_string()));
         }

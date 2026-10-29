@@ -48,8 +48,8 @@ fn test_plan_chunks_stride_and_boundary_invariants() {
     assert_eq!(chunks[3].expected_segs, 1); // round(5 / 4)
 
     // Stride monotonicity
-    for i in 0..chunks.len() {
-        assert_eq!(chunks[i].start_seg, i * SEGMENTS_PER_CHUNK_STRIDE);
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(chunk.start_seg, i * SEGMENTS_PER_CHUNK_STRIDE);
     }
 }
 

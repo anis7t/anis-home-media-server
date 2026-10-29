@@ -257,6 +257,7 @@ fn parse_duration_value(raw: &str) -> Option<f64> {
 
 /// Memoized `source_video_duration`, keyed by path + size + mtime so an
 /// edited or replaced file is re-measured rather than served a stale answer.
+#[allow(clippy::type_complexity)]
 fn duration_cache() -> &'static Mutex<HashMap<(String, u64, i128), f64>> {
     static CACHE: std::sync::OnceLock<Mutex<HashMap<(String, u64, i128), f64>>> =
         std::sync::OnceLock::new();
@@ -299,6 +300,7 @@ pub async fn cached_source_video_duration(path: &Path) -> f64 {
 
 /// Memoized full probe, so one request that needs both the container
 /// duration and the video end runs ffprobe once rather than twice.
+#[allow(clippy::type_complexity)]
 pub async fn cached_probe(path: &Path) -> ProbeResult {
     static PROBES: std::sync::OnceLock<
         Mutex<HashMap<(String, u64, i128), std::sync::Arc<ProbeResult>>>,
@@ -418,7 +420,6 @@ mod tests {
             format: ProbeFormat {
                 duration: Some("8931.59".into()),
                 bit_rate: Some("4500000".into()),
-                ..Default::default()
             },
             ..Default::default()
         };

@@ -408,7 +408,7 @@ impl DeviceService {
                 "6.3" => "Windows 8.1".into(),
                 "6.2" => "Windows 8".into(),
                 "6.1" => "Windows 7".into(),
-                other if other.is_empty() => "Windows NT".into(),
+                "" => "Windows NT".into(),
                 other => format!("Windows NT {}", other),
             };
             device_name = "Windows PC".into();

@@ -696,9 +696,11 @@ fn test_scanner_report_telemetry_includes_subtitles() {
     use media_server_api::scanner::ScannerReport;
     use media_server_api::services::scan_service::ScanResponse;
 
-    let mut report = ScannerReport::default();
-    report.files_discovered = 10;
-    report.subtitles_acquired = 3;
+    let report = ScannerReport {
+        files_discovered: 10,
+        subtitles_acquired: 3,
+        ..Default::default()
+    };
 
     assert_eq!(report.subtitles_acquired, 3);
 

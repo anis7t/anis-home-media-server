@@ -160,10 +160,7 @@ impl TmdbClient {
         &self,
         imdb_id: &str,
     ) -> Result<Option<TmdbMovieResult>, AppError> {
-        let clean_id = format!(
-            "tt{}",
-            imdb_id.trim().trim_start_matches(|c| c == 't' || c == 'T')
-        );
+        let clean_id = format!("tt{}", imdb_id.trim().trim_start_matches(['t', 'T']));
         let endpoint = format!("/find/{}", clean_id);
         let params = [("external_source", "imdb_id")];
 

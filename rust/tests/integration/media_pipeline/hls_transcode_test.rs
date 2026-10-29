@@ -116,7 +116,7 @@ async fn test_hls_playlist_delivery_200_and_cors() {
     // Create candidate HLS cache dir
     let hls_dir = HlsService::find_hls_dir(
         &video_path,
-        &[harness.media_dir.clone()],
+        std::slice::from_ref(&harness.media_dir),
         &harness.cache_dir,
     );
     fs::create_dir_all(&hls_dir).unwrap();
@@ -212,7 +212,7 @@ async fn test_hls_segment_delivery_ts_and_range() {
 
     let hls_dir = HlsService::find_hls_dir(
         &video_path,
-        &[harness.media_dir.clone()],
+        std::slice::from_ref(&harness.media_dir),
         &harness.cache_dir,
     );
     fs::create_dir_all(&hls_dir).unwrap();
@@ -276,7 +276,7 @@ async fn test_hls_segment_delivery_m4s_and_init() {
 
     let hls_dir = HlsService::find_hls_dir(
         &video_path,
-        &[harness.media_dir.clone()],
+        std::slice::from_ref(&harness.media_dir),
         &harness.cache_dir,
     );
     fs::create_dir_all(&hls_dir).unwrap();
@@ -322,7 +322,7 @@ async fn test_hls_quality_tier_subpath_delivery() {
 
     let base_hls_dir = HlsService::find_hls_dir(
         &video_path,
-        &[harness.media_dir.clone()],
+        std::slice::from_ref(&harness.media_dir),
         &harness.cache_dir,
     );
     let quality_720_dir = base_hls_dir.join("720p");
@@ -538,7 +538,7 @@ async fn test_hls_master_playlist_multi_tier_delivery() {
 
     let base_hls_dir = HlsService::find_hls_dir(
         &video_path,
-        &[harness.media_dir.clone()],
+        std::slice::from_ref(&harness.media_dir),
         &harness.cache_dir,
     );
     let q1080 = base_hls_dir.join("1080p");

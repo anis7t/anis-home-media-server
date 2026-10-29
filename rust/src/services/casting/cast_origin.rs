@@ -139,10 +139,7 @@ pub fn resolve_origin(
     }
 
     if let Some(base) = request_base.filter(|b| !b.is_empty()) {
-        let (scheme, rest) = match base.split_once("://") {
-            Some(v) => v,
-            None => return None,
-        };
+        let (scheme, rest) = base.split_once("://")?;
         let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
         let (host, port) = match authority.rsplit_once(':') {
             Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty() => {

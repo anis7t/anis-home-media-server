@@ -45,6 +45,7 @@ impl AuditService {
 
     /// Persist an administrative mutation event into `audit_logs`.
     /// Logging failures are caught and logged via tracing without failing caller operations.
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_event(
         pool: &PgPool,
         actor_type: &str,

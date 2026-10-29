@@ -388,7 +388,7 @@ fn test_real_hardware_amf_scaling_and_nv12() {
             assert_eq!(height, 720, "Output height must be 720p");
             let width: u32 = fields[1].parse().unwrap_or(0);
             assert!(
-                width > 0 && width % 2 == 0,
+                width > 0 && width.is_multiple_of(2),
                 "Width must be even (divisible by 2)"
             );
             assert_eq!(

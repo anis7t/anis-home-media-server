@@ -221,6 +221,7 @@ fn session_cookie(session_id: &str) -> String {
 }
 
 #[tokio::test]
+#[allow(clippy::type_complexity)]
 async fn test_heartbeat_registers_a_new_device_with_telemetry() {
     let _serial = SERIAL.lock().await;
     let (app, pool) = harness().await;

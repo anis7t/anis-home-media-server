@@ -50,8 +50,7 @@ impl ProcessGuard {
         if let Some(mut child) = self.child.take() {
             child.wait().await
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "Process already waited or terminated",
             ))
         }

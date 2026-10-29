@@ -166,8 +166,7 @@ impl TranscodeWorker {
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
         let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
-        if effective_target_height.map_or(false, |h| h >= 2160)
-            || effective_quality_label == "2160p"
+        if effective_target_height.is_some_and(|h| h >= 2160) || effective_quality_label == "2160p"
         {
             if workers.len() > 1 {
                 if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
@@ -654,8 +653,7 @@ impl TranscodeWorker {
             let stderr_text = String::from_utf8_lossy(&output.stderr);
             let last_err = stderr_text
                 .lines()
-                .filter(|l| !l.trim().is_empty())
-                .last()
+                .rfind(|l| !l.trim().is_empty())
                 .unwrap_or("unknown FFmpeg failure");
 
             // Log explicit diagnostic if AMF / D3D11 device error is detected

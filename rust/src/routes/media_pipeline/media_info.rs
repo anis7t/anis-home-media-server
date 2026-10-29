@@ -93,6 +93,7 @@ pub fn evaluate_direct_play(
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_quality_ladder(
     source_w: u32,
     source_h: u32,

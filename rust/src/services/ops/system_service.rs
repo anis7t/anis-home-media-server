@@ -179,3 +179,9 @@ impl SystemService {
         }
     }
 }
+
+impl Default for SystemService {
+    fn default() -> Self {
+        Self::new()
+    }
+}

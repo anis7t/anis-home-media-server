@@ -58,10 +58,7 @@ pub fn sanitize_filename(raw: &str) -> Result<String, AppError> {
         cleaned.push(c);
     }
 
-    let cleaned = cleaned
-        .trim()
-        .trim_end_matches(|c| c == '.' || c == ' ')
-        .to_string();
+    let cleaned = cleaned.trim().trim_end_matches(['.', ' ']).to_string();
 
     if cleaned.is_empty() || cleaned == "." || cleaned == ".." {
         return Err(AppError::BadRequest("Invalid media filename".to_string()));
@@ -100,7 +97,7 @@ pub fn sanitize_title(raw: &str) -> String {
     out.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .trim_end_matches(|c| c == '.' || c == ' ')
+        .trim_end_matches(['.', ' '])
         .to_string()
 }
 

@@ -35,6 +35,7 @@ impl HttpRange {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn resolve(self, total: u64) -> Result<(u64, u64), ()> {
         if total == 0 {
             return Err(());

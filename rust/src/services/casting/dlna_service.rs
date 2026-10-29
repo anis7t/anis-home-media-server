@@ -418,7 +418,11 @@ pub async fn discover(timeout: Duration) -> DlnaResult<Vec<DlnaDevice>> {
                         for line in text.lines() {
                             if line.to_lowercase().starts_with("location:") {
                                 locations.entry(addr.ip().to_string()).or_insert_with(|| {
-                                    line.splitn(2, ':').nth(1).unwrap_or("").trim().to_string()
+                                    line.split_once(':')
+                                        .map(|x| x.1)
+                                        .unwrap_or("")
+                                        .trim()
+                                        .to_string()
                                 });
                             }
                         }
@@ -599,6 +603,7 @@ pub async fn wait_for_transport(http: &reqwest::Client, device: &DlnaDevice, wan
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn load(
     http: &reqwest::Client,
     device: &DlnaDevice,

@@ -150,7 +150,7 @@ pub async fn transcode_handler(
         "no-cache, no-store, must-revalidate".parse().unwrap(),
     );
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    return Ok(res);
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize, Default)]

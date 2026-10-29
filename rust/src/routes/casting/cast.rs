@@ -135,9 +135,7 @@ pub async fn control(
     let raw = payload.value.unwrap_or(Value::Null);
     let value = match action.as_str() {
         // Every arm yields Option<f64>; mute's truthiness is carried as 0.0/1.0.
-        "mute" => Some(if raw.is_null() {
-            1.0
-        } else if truthy(&raw) {
+        "mute" => Some(if raw.is_null() || truthy(&raw) {
             1.0
         } else {
             0.0

@@ -26,7 +26,7 @@ pub async fn get_preview_meta_handler(
     State(state): State<Arc<PreviewState>>,
     Path(filename): Path<String>,
 ) -> Result<Json<SeekPreviewMetaResponse>, AppError> {
-    let clean = filename.trim_start_matches(|c| c == '/' || c == '\\');
+    let clean = filename.trim_start_matches(['/', '\\']);
     let video_path = PathResolver::resolve_media_path(clean, &state.media_roots)?;
     let duration = PreviewService::get_duration(&video_path, clean, &state.pool).await?;
     let meta = PreviewService::calculate_meta(duration, clean);
@@ -59,7 +59,7 @@ pub async fn get_preview_thumb_handler(
         return Ok(res);
     }
 
-    let clean = subpath.trim_start_matches(|c| c == '/' || c == '\\');
+    let clean = subpath.trim_start_matches(['/', '\\']);
     let (rel_video, thumb_name) = clean.rsplit_once('/').ok_or_else(|| {
         AppError::BadRequest("Preview path must include video path and thumbnail name".to_string())
     })?;
@@ -153,7 +153,7 @@ pub async fn get_preview_vtt_handler(
         return Ok(res);
     }
 
-    let clean = filename.trim_start_matches(|c| c == '/' || c == '\\');
+    let clean = filename.trim_start_matches(['/', '\\']);
     let video_path = PathResolver::resolve_media_path(clean, &state.media_roots)?;
     let duration = PreviewService::get_duration(&video_path, clean, &state.pool).await?;
     let meta = PreviewService::calculate_meta(duration, clean);
