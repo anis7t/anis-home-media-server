@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-10-24
+Last reviewed: 2026-10-29
 Repository: `anis7t/media-server`
 Working branch: `feat/rust-react-postgres-migration`
 
@@ -28,6 +28,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 10 | Native Rust Media Scanner & Ingestion Engine | ✅ COMPLETE — 100% Native Rust Scanner Engine in Axum (Slices 10.1–10.5, Options 1A & 2A, 21/21 tests passed, scanner.py decommissioned); [`docs/PHASE_10_WALKTHROUGH.md`](PHASE_10_WALKTHROUGH.md) |
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
+| 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+
+## 2026-10-29 — Production-Quality CI/CD Foundations (GitHub Actions)
+
+Delivered production-grade Continuous Integration for Anis' Home Media Server:
+- **Unified GitHub Actions Pipeline:** Automated validation pipeline in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) with two isolated, concurrent jobs: `backend` (Rust Axum) and `frontend` (React 19 SPA).
+- **Backend Job (`backend`):** Spins up ephemeral PostgreSQL 17 container on port 5432 with healthchecks, installs system dependencies (`pkg-config`, `libssl-dev`, `ffmpeg`), caches Cargo registry/targets, checks formatting (`cargo fmt --check`), enforces zero Clippy warnings (`cargo clippy --all-targets -- -D warnings`), synthesizes a 1s test media fixture via `ffmpeg` to isolate from private media roots, and executes the full test suite (`cargo test --no-fail-fast -- --test-threads=1`).
+- **Frontend Job (`frontend`):** Clean install via `npm ci`, TypeScript typechecking (`npm run typecheck`), linting (`npm run lint`), Vitest unit testing (`npm run test`), and production bundling (`npm run build`).
+- **Strict Database & Secret Safety:** Explicit CI environment overrides (`MEDIA_SERVER_DATABASE_URL`, `MEDIA_SERVER_TEST_DATABASE_URL`, `DATABASE_URL`) guarantee 100% isolation from production data. No production secrets or paths exist in workflow definitions.
+- **Workflow Security & Performance:** Actions pinned to immutable commit SHAs with version comments, least-privilege permissions (`contents: read`), and concurrency cancellation on outdated pull requests.
+- **Documentation & Verification Guide:** Created [`docs/TESTING.md`](TESTING.md) detailing test architecture, local reproduction commands, troubleshooting, and staging/live probe exclusions. Added live workflow status badge to [`README.md`](../README.md).
+
 
 ## 2026-10-25 — Phase 13: Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation (Flutter Mobile & TV)
 

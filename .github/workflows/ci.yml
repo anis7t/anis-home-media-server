@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - android/antigravity-work
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  backend:
+    name: Rust Backend (Axum)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+      RUST_TEST_THREADS: 1
+      MEDIA_SERVER_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/media_server_test
+      MEDIA_SERVER_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/media_server_test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/media_server_test
+      MEDIA_SERVER_MEDIA_ROOT: /tmp/ms_test_fixtures/media
+      MEDIA_SERVER_MEDIA_ROOTS: /tmp/ms_test_fixtures/media
+      MEDIA_SERVER_CACHE_DIR: /tmp/ms_cache
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install system dependencies (pkg-config, OpenSSL, FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev ffmpeg
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4dd2834b071a938c5f5905eb5fc6cbdd9454170d # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Verify Rust code formatting (cargo fmt)
+        run: cargo fmt --check --manifest-path rust/Cargo.toml
+
+      - name: Clippy static analysis
+        run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+
+      - name: Generate synthetic test media fixture
+        run: |
+          mkdir -p /tmp/ms_test_fixtures/media /tmp/ms_cache
+          ffmpeg -f lavfi -i testsrc=duration=1:size=320x240:rate=30 \
+                 -f lavfi -i sine=frequency=1000:duration=1 \
+                 -c:v libx264 -c:a aac -shortest /tmp/ms_test_fixtures/media/sample_test_movie.mp4
+
+      - name: Run Rust unit and integration tests
+        run: cargo test --manifest-path rust/Cargo.toml --no-fail-fast -- --test-threads=1
+
+  frontend:
+    name: React 19 Frontend (SPA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22 LTS
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Frontend lint (oxlint)
+        run: npm run lint
+
+      - name: Run Vitest unit tests
+        run: npm run test
+
+      - name: Build production bundle (Vite)
+        run: npm run build
