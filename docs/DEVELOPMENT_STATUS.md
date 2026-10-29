@@ -168,7 +168,7 @@ The Cloudflared service has been **decommissioned and removed**. The legacy `Med
 ## 3. Active Next Steps & Immediate Queue
 
 1. **Close the public `:8000` origin forward:**
-   - The router forwards 443, 80 **and 8000** to the host, so `http://122.163.124.18:8000/health` answers 200 from the internet, bypassing Caddy and TLS entirely. Port 8000 should not be forwarded.
+   - The router forwards 443, 80 **and 8000** to the host, so `http://171.50.176.119:8000/health` answers 200 from the internet, bypassing Caddy and TLS entirely. Port 8000 should not be forwarded.
 2. **Add `Secure` to the session cookie:**
    - Pre-existing and codebase-wide — `auth.rs:345,405,424,467` and `qr_auth.rs:345` are all identical. Do this *after* the forward above, or LAN clients break.
 3. **Pin a public base URL:**

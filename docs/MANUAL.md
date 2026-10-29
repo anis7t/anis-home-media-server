@@ -86,7 +86,7 @@ Browser / Mobile / TV Client
          │
          ├── LAN Ingress: http://192.168.x.x:8000
          └── WAN Ingress: https://media.anisparvez.in
-                  │  (Airtel static IP 122.163.124.18, Let's Encrypt TLS)
+                  │  (Airtel static IP 171.50.176.119, Let's Encrypt TLS)
                   ▼
          Caddy Reverse Proxy (80/443) [NSSM Service: MediaServerCaddy]
                   │
@@ -129,7 +129,7 @@ Direct connection over your home Wi-Fi or Ethernet:
 - Instantaneous seeking and lowest possible latency.
 
 ### Remote Access via Static IP & Caddy (WAN)
-- The server sits behind an **Airtel Xstream Fiber static IP** (`122.163.124.18`) — no CGNAT, so no
+- The server sits behind an **Airtel Xstream Fiber static IP** (`171.50.176.119`) — no CGNAT, so no
   dynamic-IP or tunnel complications.
 - **Caddy** (`MediaServerCaddy`) terminates TLS on ports 80/443 and reverse-proxies to the Rust
   backend on `127.0.0.1:8000`. Certificates are issued by **Let's Encrypt** (TLS 1.3) via an

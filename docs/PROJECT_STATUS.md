@@ -272,9 +272,9 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - Passed video dimensions from `PlayerPage.tsx`. Unlocks Direct Play for 4K HEVC MP4 streams on supported platforms.
    - Committed in `62d4984`; Walkthrough in [`docs/SLICE_D_WALKTHROUGH.md`](SLICE_D_WALKTHROUGH.md).
 
-5. **Static Public IP & Caddy Let's Encrypt HTTPS Migration** — ✅ **RESOLVED (2026-10-19)**:
-   - Migrated from Cloudflare Tunnel to direct public IP (`122.163.124.18`) on Airtel Xstream Fiber with zero CGNAT.
-   - Decommissioned and removed `Cloudflared` persistent Windows Service; set Cloudflare DNS to DNS-only (`media.anisparvez.in` $\rightarrow$ `122.163.124.18`).
+5. **Static Public IP & Caddy Let's Encrypt HTTPS Migration** — ✅ **RESOLVED (2026-10-19, updated 2026-10-22)**:
+   - Migrated from Cloudflare Tunnel to direct public IP (`171.50.176.119`, formerly `122.163.124.18`) on Airtel Xstream Fiber with zero CGNAT.
+   - Decommissioned and removed `Cloudflared` persistent Windows Service; set Cloudflare DNS to DNS-only (`media.anisparvez.in` $\rightarrow$ `171.50.176.119`).
    - Configured automated Port Forwarding on Zyxel router (`AOT5222ZY`): Ports `443` (HTTPS), `80` (HTTP), and `8000` (Direct) $\rightarrow$ `192.168.1.16`.
    - Deployed Caddy reverse proxy (`E:\MediaServer\bin\caddy_custom.exe`) with Cloudflare DNS module as Windows Service `MediaServerCaddy` via NSSM.
    - Provisioned Let's Encrypt TLS 1.3 certificate via automated DNS-01 challenge with lifetime background renewal.
@@ -333,7 +333,7 @@ All 4 reported issues were grouped into Slices A–D, implemented, thoroughly ve
    - **Orphaned bytecode purged.** 168 `.pyc` files whose source modules no longer exist were removed across `app/`, `tests/`, `tests/integration/`, `scripts/` and the repository root; `app/` and `tests/integration/` are now gone entirely. `tests/load/` (7 git-tracked benchmark JSONs) and `tests/screenshots/` (17 verification screenshots) were deliberately kept.
 
 13. **Public Ingress Hardening — TLS-Only Exposure** — ✅ **RESOLVED (2026-10-20)**:
-   - **The origin was reachable over plain HTTP from the internet.** The router forwarded 443, 80 **and 8000**, so `http://122.163.124.18:8000/health` answered 200 from the public internet, bypassing Caddy and TLS entirely — taking the `session_token` cookie and the Admin PIN header with it. The `MediaServer` forward was removed; only 443 and 80 now reach the host. The LAN path (`http://192.168.1.16:8000`) and loopback are unaffected, because LAN traffic never traverses the forward.
+   - **The origin was reachable over plain HTTP from the internet.** The router forwarded 443, 80 **and 8000**, so `http://171.50.176.119:8000/health` answered 200 from the public internet, bypassing Caddy and TLS entirely — taking the `session_token` cookie and the Admin PIN header with it. The `MediaServer` forward was removed; only 443 and 80 now reach the host. The LAN path (`http://192.168.1.16:8000`) and loopback are unaffected, because LAN traffic never traverses the forward.
    - **New [`scripts/router_port_forward.ps1`](../scripts/router_port_forward.ps1)** manages the Airtel Zyxel gateway's NAT table (`-Action List | Remove | Add`). The router's `delnum` is **zero-based** while the table displays 1-based row numbers, so a naive delete would have taken down the **HTTPS** rule and with it the public site. The script identifies a rule by its *content* and only then acts on the index, and re-reads the table afterwards to confirm every other rule survived. Both directions were proven by a round-trip on a throwaway port before the real rule was touched.
    - **Obsolete firewall rule removed.** `Media Server WSGI (Waitress Port 8000)` allowed *any* program on port 8000 under *any* profile — for a service decommissioned in Slice 7E. The program-scoped `MediaServerRust` rule remains.
    - **Conditional `Secure` cookie flag.** `AuthService::session_cookie()` now appends `Secure` **only when the request arrived over TLS** (`X-Forwarded-Proto: https`, which Caddy sets and overwrites). It cannot be unconditional: the LAN path is plain HTTP, and a browser refuses to store or send a `Secure` cookie over plain HTTP, so an unconditional flag would break LAN sign-in. All five cookie sites now use the shared helper.

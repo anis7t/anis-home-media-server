@@ -2,14 +2,14 @@
 
 ## 1. Overview & Architecture
 
-We have successfully migrated the media server from raw unencrypted port-specified URLs to a **clean, production-grade HTTPS architecture** using Caddy, Let's Encrypt, and your direct static/public IP (`122.163.124.18`).
+We have successfully migrated the media server from raw unencrypted port-specified URLs to a **clean, production-grade HTTPS architecture** using Caddy, Let's Encrypt, and your direct static/public IP (`171.50.176.119`, formerly `122.163.124.18`).
 
 ```text
 Browser / Mobile (4G/5G) / Smart TV Client
       │
       │ https://media.anisparvez.in (Clean URL — No port number!)
       ▼
-Airtel Fiber Gateway (122.163.124.18)
+Airtel Fiber Gateway (171.50.176.119)
       │
       │ Port 443 (TCP) Port Forward
       ▼

@@ -198,7 +198,7 @@ Browser / Client (Desktop, Tablet, Mobile) / Android App / Fire TV Stick 4K
                    │
                    ▼
        Caddy Reverse Proxy (80/443, Let's Encrypt TLS) [MediaServerCaddy]
-                   │  (Airtel static IP 122.163.124.18 -> media.anisparvez.in)
+                   │  (Airtel static IP 171.50.176.119 -> media.anisparvez.in)
                    ▼
        Rust Axum Server (127.0.0.1:8000) [MediaServerRust NSSM Service]
                    │
@@ -235,14 +235,15 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 - PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).
-- Static Public IP (`122.163.124.18`, Airtel Xstream Fiber) with Router Port Forwarding (`443`, `80` → `192.168.1.16`). Port `8000` is **not** forwarded — the origin is reachable only through Caddy and TLS from the internet.
+- Static Public IP (`171.50.176.119`, Airtel Xstream Fiber) with Router Port Forwarding (`443`, `80` → `192.168.1.16`). Port `8000` is **not** forwarded — the origin is reachable only through Caddy and TLS from the internet.
 
 ### Persistent Services via NSSM
 The server runs persistently as automatic Windows Services:
 1. **MediaServerRust**: Native Rust Axum binary (`rust\target\release\media-server-api.exe`) listening on `0.0.0.0:8000`.
 2. **MediaServerCaddy**: Reverse proxy and TLS terminator on `80`/`443`, fronting `127.0.0.1:8000` with a Let's Encrypt certificate.
 3. **MediaServerPG**: PostgreSQL 18.4 server listening on `127.0.0.1:5432`.
-4. **Public Ingress**: Direct WAN routing via Static IP (`122.163.124.18`) and A-record `media.anisparvez.in`.
+4. **Public Ingress**: Direct WAN routing via Static IP (`171.50.176.119`) and A-record `media.anisparvez.in`.
+
 
 ### Service Control
 - Restart Server: `scripts\restart_rust_service.bat`
@@ -293,7 +294,7 @@ MEDIA_SERVER_ENABLE_AMF=1
 Remote access is powered by a **static public IP** fronted by **Caddy**:
 
 ```text
-Hostname: media.anisparvez.in  (A-record -> 122.163.124.18, Airtel Xstream Fiber)
+Hostname: media.anisparvez.in  (A-record -> 171.50.176.119, Airtel Xstream Fiber)
 Ingress:  Caddy on 80/443, Let's Encrypt TLS 1.3 (DNS-01 challenge, auto-renewed)
 Origin:   http://127.0.0.1:8000
 Service:  MediaServerCaddy (Automatic Windows Service)

@@ -100,7 +100,7 @@ Runs as an automatic NSSM Windows Service, fronting the Rust origin with a Let's
 - **Caddy binary:** `C:\MediaServer\bin\caddy_custom.exe` (copied from `E:\MediaServer\bin\caddy_custom.exe` for `E:` resilience; built with the Cloudflare DNS module for the DNS-01 challenge)
 - **Config:** `C:\MediaServer\Caddyfile` (copied from `E:\MediaServer\Caddyfile`) — **untracked / gitignored**, because it contains a live Cloudflare API token
 - **Listener:** ports 80 and 443, TLS 1.3, reverse-proxying to `http://127.0.0.1:8000`
-- **Hostname:** `media.anisparvez.in` → the Airtel Xstream Fiber static IP `122.163.124.18`
+- **Hostname:** `media.anisparvez.in` → the Airtel Xstream Fiber static IP `171.50.176.119`
 - **Router Port Forwarding:** only 443 and 80 reach the host. The `MediaServer` forward for 8000 was
   removed on 2026-10-20 — the origin must not be reachable from the internet over plain HTTP.
   Managed with [`scripts\router_port_forward.ps1`](../scripts/router_port_forward.ps1)
@@ -146,7 +146,7 @@ media.anisparvez.in {
 ## 5. Active Next Steps & Engineering Tasks
 
 1. **Close the public `:8000` origin forward.** — ✅ **DONE 2026-10-20**
-   The router forwarded 443, 80 **and 8000**, so `http://122.163.124.18:8000/health` answered 200
+   The router forwarded 443, 80 **and 8000**, so `http://171.50.176.119:8000/health` answered 200
    from the internet, bypassing Caddy and TLS entirely. The `MediaServer` rule was removed with
    [`scripts\router_port_forward.ps1`](../scripts/router_port_forward.ps1). Port 8000 is **no longer
    forwarded**; only 443 and 80 are. The origin is still reachable on the LAN

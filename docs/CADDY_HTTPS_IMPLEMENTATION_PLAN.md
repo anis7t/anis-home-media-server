@@ -33,7 +33,7 @@
 - **Rust Backend:** Axum production server (`MediaServerRust`) continues running natively on `127.0.0.1:8000`. No code changes to Axum.
 - **Database:** PostgreSQL 18.4 (`MediaServerPG`) remains on port 5432.
 - **Media & Transcode Pipeline:** Video storage (`D:\Flicks`), dual-GPU transcode engine, and caches remain 100% untouched.
-- **Cloudflare DNS:** Cloudflare continues serving authoritative DNS-only (Grey Cloud) for `media.anisparvez.in` $\rightarrow$ `122.163.124.18`.
+- **Cloudflare DNS:** Cloudflare continues serving authoritative DNS-only (Grey Cloud) for `media.anisparvez.in` $\rightarrow$ `171.50.176.119`.
 
 ---
 
