@@ -48,6 +48,8 @@ jobs:
       MEDIA_SERVER_MEDIA_ROOT: /tmp/ms_test_fixtures/media
       MEDIA_SERVER_MEDIA_ROOTS: /tmp/ms_test_fixtures/media
       MEDIA_SERVER_CACHE_DIR: /tmp/ms_cache
+      MEDIA_SERVER_BASE_DIR: ${{ github.workspace }}
+      MEDIA_SERVER_STATIC_DIR: ${{ github.workspace }}/web/dist
 
     steps:
       - name: Checkout repository
@@ -82,12 +84,39 @@ jobs:
       - name: Clippy static analysis
         run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 
-      - name: Generate synthetic test media fixture
+      - name: Generate synthetic test fixtures (media, SPA, app dist)
         run: |
           mkdir -p /tmp/ms_test_fixtures/media /tmp/ms_cache
           ffmpeg -f lavfi -i testsrc=duration=1:size=320x240:rate=30 \
                  -f lavfi -i sine=frequency=1000:duration=1 \
                  -c:v libx264 -c:a aac -shortest /tmp/ms_test_fixtures/media/sample_test_movie.mp4
+
+          # Synthetic SPA build fixture for static serving tests
+          mkdir -p web/dist/assets
+          echo '<!DOCTYPE html><html><head><title>Anis Media Server</title></head><body><div id="root"></div></body></html>' > web/dist/index.html
+          echo 'console.log("synthetic test asset");' > web/dist/assets/test.js
+
+          # Synthetic APK and update manifest fixtures for app distribution tests
+          mkdir -p updates/production
+          cat << 'EOF' > updates/production/manifest.json
+          {
+            "channel": "production",
+            "version": "1.4.0",
+            "versionCode": 146,
+            "releaseDate": "2026-10-24T19:42:35.982809+00:00",
+            "minAndroidSdk": 24,
+            "targetAndroidSdk": 36,
+            "packageId": "in.anisparvez.media_server_client",
+            "apkUrl": "/api/app/download?channel=production",
+            "sha256": "5832f2953110ba7783bcbe8fb1e8d2e6c9b09cbc979d3cb6919335576502f4d0",
+            "fileSizeBytes": 11534336,
+            "releaseNotes": "CI Synthetic Test Release",
+            "mandatory": false,
+            "minSupportedVersionCode": 1,
+            "gitCommit": "c7861ed"
+          }
+          EOF
+          head -c 11534336 /dev/zero > updates/production/media-server-client.apk
 
       - name: Run Rust unit and integration tests
         run: cargo test --manifest-path rust/Cargo.toml --no-fail-fast -- --test-threads=1
