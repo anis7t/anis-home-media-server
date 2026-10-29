@@ -136,10 +136,8 @@ impl TranscodeSweeperService {
                 // Check applicability (with widescreen support without upscaling)
                 let is_applicable = if tier_h <= source_h {
                     true
-                } else if source_w >= tier_w.saturating_sub(32) && (source_h as u64 * 2 >= tier_h as u64) {
-                    true
                 } else {
-                    false
+                    source_w >= tier_w.saturating_sub(32) && (source_h as u64 * 2 >= tier_h as u64)
                 };
 
                 if !is_applicable {
@@ -152,7 +150,8 @@ impl TranscodeSweeperService {
                 }
 
                 // Check if already 100% complete on disk with #EXT-X-ENDLIST
-                let q_dir = HlsService::find_hls_quality_dir(&video_path, roots, cache_dir, Some(label));
+                let q_dir =
+                    HlsService::find_hls_quality_dir(&video_path, roots, cache_dir, Some(label));
                 let q_pl = q_dir.join("playlist.m3u8");
                 if q_pl.is_file() {
                     if let Ok(content) = std::fs::read_to_string(&q_pl) {
@@ -190,23 +189,39 @@ impl TranscodeSweeperService {
                             continue;
                         }
                         // Reopen failed or stale job with force=true
-                        if let Err(e) = JobService::enqueue_with_priority(pool, &rel_key, &mode, true, priority).await {
-                            warn!("Failed to re-enqueue transcode for {} ({}): {}", rel_key, mode, e);
+                        if let Err(e) =
+                            JobService::enqueue_with_priority(pool, &rel_key, &mode, true, priority)
+                                .await
+                        {
+                            warn!(
+                                "Failed to re-enqueue transcode for {} ({}): {}",
+                                rel_key, mode, e
+                            );
                             stats.errors += 1;
                         } else {
                             stats.queued += 1;
                         }
                     }
                     Ok(None) => {
-                        if let Err(e) = JobService::enqueue_with_priority(pool, &rel_key, &mode, false, priority).await {
-                            warn!("Failed to enqueue transcode for {} ({}): {}", rel_key, mode, e);
+                        if let Err(e) = JobService::enqueue_with_priority(
+                            pool, &rel_key, &mode, false, priority,
+                        )
+                        .await
+                        {
+                            warn!(
+                                "Failed to enqueue transcode for {} ({}): {}",
+                                rel_key, mode, e
+                            );
                             stats.errors += 1;
                         } else {
                             stats.queued += 1;
                         }
                     }
                     Err(e) => {
-                        warn!("Database error checking job for {} ({}): {}", rel_key, mode, e);
+                        warn!(
+                            "Database error checking job for {} ({}): {}",
+                            rel_key, mode, e
+                        );
                         stats.errors += 1;
                     }
                 }
@@ -229,7 +244,10 @@ impl TranscodeSweeperService {
         interval: Duration,
     ) {
         tokio::spawn(async move {
-            info!("Transcode sweeper daemon started (interval: {:?})", interval);
+            info!(
+                "Transcode sweeper daemon started (interval: {:?})",
+                interval
+            );
             // Initial delay before first sweep to let server boot cleanly
             tokio::time::sleep(Duration::from_secs(10)).await;
 

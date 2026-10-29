@@ -164,8 +164,14 @@ async fn test_movie_details_endpoint() {
         "the real media file must be probed, so the container is known"
     );
     // Assert synchronized TechnicalSpecs fields
-    assert!(details.specs.resolution_badge.is_some(), "resolution_badge must be populated");
-    assert!(!details.specs.subtitles.is_empty(), "subtitles list must be populated");
+    assert!(
+        details.specs.resolution_badge.is_some(),
+        "resolution_badge must be populated"
+    );
+    assert!(
+        !details.specs.subtitles.is_empty(),
+        "subtitles list must be populated"
+    );
 
     // Query non-existent movie -> expect 404
     let req_not_found = Request::builder()
@@ -206,8 +212,13 @@ async fn test_media_info_quality_ladder_contract() {
     assert!(json["needs_transcode"].is_boolean());
 
     // Quality ladder contract assert
-    let ladder = json["quality_ladder"].as_array().expect("quality_ladder must be an array");
-    assert!(!ladder.is_empty(), "quality_ladder must have at least Direct Play option");
+    let ladder = json["quality_ladder"]
+        .as_array()
+        .expect("quality_ladder must be an array");
+    assert!(
+        !ladder.is_empty(),
+        "quality_ladder must have at least Direct Play option"
+    );
 
     for opt in ladder {
         assert!(opt["label"].is_string());

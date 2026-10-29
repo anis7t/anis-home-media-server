@@ -1,8 +1,6 @@
 //! Tests for GpuService (pixel format detection, AMF strategy selection, and worker expansion).
 
-use media_server_api::services::gpu_service::{
-    GpuBackend, GPUWorkerConfig, GpuService,
-};
+use media_server_api::services::gpu_service::{GPUWorkerConfig, GpuBackend, GpuService};
 use media_server_api::services::probe_service::ProbeStream;
 
 #[test]
@@ -61,11 +59,18 @@ fn test_select_amf_strategy_requirements() {
 
     // 4. Missing/unknown stream -> fails safe to vpp_amf = true
     let (needs_vpp_unknown, _) = GpuService::select_amf_strategy(None, None);
-    assert!(needs_vpp_unknown, "unknown stream must fail safe to vpp_amf");
+    assert!(
+        needs_vpp_unknown,
+        "unknown stream must fail safe to vpp_amf"
+    );
 
     // 5. 1080p source scaled to 720p target -> vpp_amf IS required for scaling
-    let (needs_vpp_720, count_720) = GpuService::select_amf_strategy(Some(&stream_1080p), Some(720));
-    assert!(needs_vpp_720, "1080p source scaled to 720p requires vpp_amf");
+    let (needs_vpp_720, count_720) =
+        GpuService::select_amf_strategy(Some(&stream_1080p), Some(720));
+    assert!(
+        needs_vpp_720,
+        "1080p source scaled to 720p requires vpp_amf"
+    );
     assert_eq!(count_720, 2, "downscaling defaults to 2 workers");
 }
 
@@ -116,7 +121,10 @@ fn test_is_ten_bit_detection_extended() {
 
     // 8-bit formats must NOT trigger
     assert!(!GpuService::is_ten_bit(Some("yuv420p")));
-    assert!(!GpuService::is_ten_bit(Some("nv12")), "nv12 is 8-bit and must not be flagged");
+    assert!(
+        !GpuService::is_ten_bit(Some("nv12")),
+        "nv12 is 8-bit and must not be flagged"
+    );
     assert!(!GpuService::is_ten_bit(Some("nv21")));
     assert!(!GpuService::is_ten_bit(Some("yuvj420p")));
     assert!(!GpuService::is_ten_bit(Some("yuv422p")));
@@ -140,15 +148,27 @@ fn test_select_amf_strategy_all_qualities() {
 
     // 4K downscaling across all quality tiers
     for (target_h, expected_workers) in [(1440, 2), (1080, 2), (720, 2), (480, 2), (360, 2)] {
-        let (needs_vpp, count) = GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(target_h));
+        let (needs_vpp, count) =
+            GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(target_h));
         assert!(needs_vpp, "4K downscale to {}p requires vpp_amf", target_h);
-        assert_eq!(count, expected_workers, "4K downscale to {}p should allocate {} workers", target_h, expected_workers);
+        assert_eq!(
+            count, expected_workers,
+            "4K downscale to {}p should allocate {} workers",
+            target_h, expected_workers
+        );
     }
 
     // 4K target on 4K 8-bit source -> no scaling needed, 1 dedicated worker to avoid bus contention
-    let (needs_vpp_4k, count_4k) = GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(2160));
-    assert!(!needs_vpp_4k, "4K source at 4K target does not require scaling");
-    assert_eq!(count_4k, 1, "4K target allocates 1 dedicated worker to avoid bus contention");
+    let (needs_vpp_4k, count_4k) =
+        GpuService::select_amf_strategy(Some(&stream_4k_8bit), Some(2160));
+    assert!(
+        !needs_vpp_4k,
+        "4K source at 4K target does not require scaling"
+    );
+    assert_eq!(
+        count_4k, 1,
+        "4K target allocates 1 dedicated worker to avoid bus contention"
+    );
 
     // 1080p source -> 720p downscaling
     let stream_1080p_8bit = ProbeStream {
@@ -159,7 +179,8 @@ fn test_select_amf_strategy_all_qualities() {
         pix_fmt: Some("yuv420p".into()),
         ..Default::default()
     };
-    let (needs_vpp_720, count_720) = GpuService::select_amf_strategy(Some(&stream_1080p_8bit), Some(720));
+    let (needs_vpp_720, count_720) =
+        GpuService::select_amf_strategy(Some(&stream_1080p_8bit), Some(720));
     assert!(needs_vpp_720, "1080p to 720p requires vpp_amf");
     assert_eq!(count_720, 2, "downscale requires 2 workers");
 
@@ -172,7 +193,8 @@ fn test_select_amf_strategy_all_qualities() {
         pix_fmt: Some("yuv420p".into()),
         ..Default::default()
     };
-    let (needs_vpp_same, count_same) = GpuService::select_amf_strategy(Some(&stream_720p_8bit), Some(720));
+    let (needs_vpp_same, count_same) =
+        GpuService::select_amf_strategy(Some(&stream_720p_8bit), Some(720));
     assert!(!needs_vpp_same, "720p to 720p does not require vpp_amf");
     assert_eq!(count_same, 2, "720p native uses 2 workers");
 }
@@ -296,11 +318,16 @@ fn test_real_hardware_amf_scaling_and_nv12() {
     }
 
     cmd.args([
-        "-f", "lavfi",
-        "-i", "testsrc2=s=1920x1080:d=1.0,format=yuv420p10le",
-        "-f", "lavfi",
-        "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", "1.0",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=s=1920x1080:d=1.0,format=yuv420p10le",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=44100:cl=stereo",
+        "-t",
+        "1.0",
     ]);
 
     for arg in worker.get_ffmpeg_video_args(true, Some(720)) {
@@ -308,12 +335,18 @@ fn test_real_hardware_amf_scaling_and_nv12() {
     }
 
     cmd.args([
-        "-c:a", "aac",
-        "-f", "hls",
-        "-hls_time", "1.0",
-        "-hls_segment_type", "fmp4",
-        "-hls_fmp4_init_filename", "init_chunk_0.mp4",
-        "-hls_segment_filename", "segment_%06d.m4s",
+        "-c:a",
+        "aac",
+        "-f",
+        "hls",
+        "-hls_time",
+        "1.0",
+        "-hls_segment_type",
+        "fmp4",
+        "-hls_fmp4_init_filename",
+        "init_chunk_0.mp4",
+        "-hls_segment_filename",
+        "segment_%06d.m4s",
         "chunk_0.m3u8",
     ]);
 
@@ -333,10 +366,14 @@ fn test_real_hardware_amf_scaling_and_nv12() {
     // 3. Probe with ffprobe to verify exact dimensions and NV12 color depth
     let mut probe_cmd = std::process::Command::new("ffprobe");
     probe_cmd.args([
-        "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,pix_fmt,codec_name",
-        "-of", "csv=p=0",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,pix_fmt,codec_name",
+        "-of",
+        "csv=p=0",
         seg_file.to_str().unwrap(),
     ]);
 
@@ -350,8 +387,14 @@ fn test_real_hardware_amf_scaling_and_nv12() {
             let height: u32 = fields[2].parse().unwrap_or(0);
             assert_eq!(height, 720, "Output height must be 720p");
             let width: u32 = fields[1].parse().unwrap_or(0);
-            assert!(width > 0 && width % 2 == 0, "Width must be even (divisible by 2)");
-            assert_eq!(fields[3], "nv12", "Color depth must be converted to 8-bit nv12");
+            assert!(
+                width > 0 && width.is_multiple_of(2),
+                "Width must be even (divisible by 2)"
+            );
+            assert_eq!(
+                fields[3], "nv12",
+                "Color depth must be converted to 8-bit nv12"
+            );
         }
     }
 

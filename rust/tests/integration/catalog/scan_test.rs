@@ -3,10 +3,7 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db,
-    services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use sqlx::PgPool;
 use tower::ServiceExt;
 

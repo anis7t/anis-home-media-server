@@ -72,7 +72,9 @@ fn test_anonymous_stem_detection() {
     assert!(FilenameParser::is_anonymous_name("upload_98765"));
     assert!(FilenameParser::is_anonymous_name("part1"));
     assert!(FilenameParser::is_anonymous_name("123456789"));
-    assert!(FilenameParser::is_anonymous_name("6a9cd0a9-32b2-88ce-19d1-94fa"));
+    assert!(FilenameParser::is_anonymous_name(
+        "6a9cd0a9-32b2-88ce-19d1-94fa"
+    ));
     assert!(FilenameParser::is_anonymous_name(""));
     assert!(FilenameParser::is_anonymous_name("   "));
 

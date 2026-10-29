@@ -40,7 +40,8 @@ impl TranscodeWorker {
             tokio::time::sleep(Duration::from_secs(3)).await;
 
             while !shutdown.load(Ordering::SeqCst) {
-                match Self::process_next_job(&pool, &roots, &cache_dir, &worker_id, &shutdown).await {
+                match Self::process_next_job(&pool, &roots, &cache_dir, &worker_id, &shutdown).await
+                {
                     Ok(true) => {
                         // Work was done; check for next job immediately
                     }
@@ -105,15 +106,23 @@ impl TranscodeWorker {
         let total_duration = ProbeService::source_video_duration(&video_path).await;
 
         if total_duration <= 0.0 {
-            return Err(AppError::Internal("Source video duration is zero or unreadable".into()));
+            return Err(AppError::Internal(
+                "Source video duration is zero or unreadable".into(),
+            ));
         }
 
         // Determine quality tier and target height from job mode
-        let (_job_type, target_height, quality_label) = ChunkTranscodeService::parse_job_mode(&job.mode);
-        let source_height = probe.first_stream("video").and_then(|s| s.height).unwrap_or(0) as u32;
+        let (_job_type, target_height, quality_label) =
+            ChunkTranscodeService::parse_job_mode(&job.mode);
+        let source_height = probe
+            .first_stream("video")
+            .and_then(|s| s.height)
+            .unwrap_or(0) as u32;
 
         // Option 1C: If default baseline pre-transcode (mode "hls"), match native source resolution (up to 4K / 2160p)
-        let (effective_target_height, effective_quality_label) = if job.mode.trim() == "hls" || target_height.is_none() {
+        let (effective_target_height, effective_quality_label) = if job.mode.trim() == "hls"
+            || target_height.is_none()
+        {
             let (target_h, label) = if source_height >= 1800 {
                 (2160, "2160p")
             } else if source_height >= 1200 {
@@ -144,7 +153,8 @@ impl TranscodeWorker {
         };
 
         let base_hls_dir = HlsService::find_hls_dir(&video_path, roots, cache_dir);
-        let hls_dir = ChunkTranscodeService::get_quality_hls_dir(&base_hls_dir, &effective_quality_label);
+        let hls_dir =
+            ChunkTranscodeService::get_quality_hls_dir(&base_hls_dir, &effective_quality_label);
         tokio::fs::create_dir_all(&hls_dir).await.map_err(|e| {
             AppError::Internal(format!("Failed to create HLS cache directory: {}", e))
         })?;
@@ -156,7 +166,8 @@ impl TranscodeWorker {
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
         let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
-        if effective_target_height.map_or(false, |h| h >= 2160) || effective_quality_label == "2160p" {
+        if effective_target_height.is_some_and(|h| h >= 2160) || effective_quality_label == "2160p"
+        {
             if workers.len() > 1 {
                 if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
                     workers = vec![d];
@@ -219,7 +230,16 @@ impl TranscodeWorker {
         .unwrap_or(0.0);
 
         let initial_pct = (initial_encoded / total_duration * 100.0).clamp(0.0, 100.0);
-        let _ = JobService::update_progress(pool, job.id, worker_id, Some(initial_pct), None, None, None).await;
+        let _ = JobService::update_progress(
+            pool,
+            job.id,
+            worker_id,
+            Some(initial_pct),
+            None,
+            None,
+            None,
+        )
+        .await;
 
         let start_time = Instant::now();
         let active_pids: Arc<Mutex<HashSet<u32>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -399,7 +419,10 @@ impl TranscodeWorker {
                 if all_finished {
                     for t in worker_tasks {
                         if let Err(join_err) = t.await {
-                            return Err(AppError::Internal(format!("Worker task join error: {}", join_err)));
+                            return Err(AppError::Internal(format!(
+                                "Worker task join error: {}",
+                                join_err
+                            )));
                         }
                     }
                     let guard = worker_error.lock().await;
@@ -413,7 +436,9 @@ impl TranscodeWorker {
 
                 if shutdown.load(Ordering::SeqCst) {
                     cancel_requested_clone.store(true, Ordering::Relaxed);
-                    return Err(AppError::Internal("Worker interrupted by server shutdown".into()));
+                    return Err(AppError::Internal(
+                        "Worker interrupted by server shutdown".into(),
+                    ));
                 }
 
                 // Check if job was cancelled in DB
@@ -437,7 +462,9 @@ impl TranscodeWorker {
                     let renewed = JobService::renew_lease(pool, job.id, worker_id, 300).await?;
                     if !renewed {
                         cancel_requested_clone.store(true, Ordering::Relaxed);
-                        return Err(AppError::Internal("Lost lease ownership of transcode job".into()));
+                        return Err(AppError::Internal(
+                            "Lost lease ownership of transcode job".into(),
+                        ));
                     }
                     last_lease_renew = Instant::now();
                 }
@@ -461,7 +488,10 @@ impl TranscodeWorker {
         }
 
         if was_canceled.load(Ordering::Relaxed) {
-            info!("Job #{} was canceled; skipping final playlist publish", job.id);
+            info!(
+                "Job #{} was canceled; skipping final playlist publish",
+                job.id
+            );
             return Ok(());
         }
 
@@ -593,7 +623,10 @@ impl TranscodeWorker {
                 if let Some(pid) = child_pid {
                     active_pids.lock().await.remove(&pid);
                 }
-                return Err(AppError::Internal(format!("FFmpeg wait error on chunk {}: {}", chunk.chunk_id, e)));
+                return Err(AppError::Internal(format!(
+                    "FFmpeg wait error on chunk {}: {}",
+                    chunk.chunk_id, e
+                )));
             }
             Err(_) => {
                 // Timeout elapsed - kill child process to release GPU contexts
@@ -605,7 +638,9 @@ impl TranscodeWorker {
                 }
                 return Err(AppError::Internal(format!(
                     "Chunk {} on {} timed out after {}s (possible GPU hang/TDR)",
-                    chunk.chunk_id, worker.name, timeout_duration.as_secs()
+                    chunk.chunk_id,
+                    worker.name,
+                    timeout_duration.as_secs()
                 )));
             }
         };
@@ -618,12 +653,14 @@ impl TranscodeWorker {
             let stderr_text = String::from_utf8_lossy(&output.stderr);
             let last_err = stderr_text
                 .lines()
-                .filter(|l| !l.trim().is_empty())
-                .last()
+                .rfind(|l| !l.trim().is_empty())
                 .unwrap_or("unknown FFmpeg failure");
 
             // Log explicit diagnostic if AMF / D3D11 device error is detected
-            if stderr_text.contains("AMF_") || stderr_text.contains("DXGI_ERROR") || stderr_text.contains("D3D11") {
+            if stderr_text.contains("AMF_")
+                || stderr_text.contains("DXGI_ERROR")
+                || stderr_text.contains("D3D11")
+            {
                 error!(
                     "AMF/GPU driver error on adapter {} ({}): stderr: {}",
                     worker.adapter_id, worker.name, last_err

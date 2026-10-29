@@ -40,7 +40,8 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $1
                 ORDER BY m.title ASC
-                "#)
+                "#,
+            )
             .bind(uid)
             .fetch_all(pool)
             .await?
@@ -66,7 +67,8 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $1
                 ORDER BY m.title ASC
-                "#)
+                "#,
+            )
             .bind(dev_id)
             .fetch_all(pool)
             .await?
@@ -92,7 +94,8 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 ORDER BY m.title ASC
-                "#)
+                "#,
+            )
             .fetch_all(pool)
             .await?
         };
@@ -118,7 +121,12 @@ impl MovieService {
                 .try_get::<Option<i64>, _>("tmdb_id")
                 .ok()
                 .flatten()
-                .or_else(|| r.try_get::<Option<i32>, _>("tmdb_id").ok().flatten().map(|id| id as i64));
+                .or_else(|| {
+                    r.try_get::<Option<i32>, _>("tmdb_id")
+                        .ok()
+                        .flatten()
+                        .map(|id| id as i64)
+                });
             let overview: Option<String> = r.try_get("overview").ok();
             let poster_path: Option<String> = r.try_get("poster_path").ok();
             let backdrop_path: Option<String> = r.try_get("backdrop_path").ok();
@@ -216,10 +224,10 @@ impl MovieService {
                 });
             }
             "year" => {
-                movie_list.sort_by(|a, b| b.year.cmp(&a.year));
+                movie_list.sort_by_key(|a| std::cmp::Reverse(a.year));
             }
             _ => {
-                movie_list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+                movie_list.sort_by_key(|a| a.title.to_lowercase());
             }
         }
 
@@ -267,7 +275,7 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $2
                 WHERE m.filename = $1
-                "#
+                "#,
             )
             .bind(filename)
             .bind(uid)
@@ -296,7 +304,7 @@ impl MovieService {
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $2
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 WHERE m.filename = $1
-                "#
+                "#,
             )
             .bind(filename)
             .bind(dev)
@@ -324,7 +332,7 @@ impl MovieService {
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 WHERE m.filename = $1
-                "#
+                "#,
             )
             .bind(filename)
             .fetch_optional(pool)
@@ -333,7 +341,12 @@ impl MovieService {
 
         let r = match row {
             Some(r) => r,
-            None => return Err(AppError::NotFound(format!("Movie '{}' not found", filename))),
+            None => {
+                return Err(AppError::NotFound(format!(
+                    "Movie '{}' not found",
+                    filename
+                )))
+            }
         };
 
         let fname: String = r.get("filename");
@@ -354,7 +367,12 @@ impl MovieService {
             .try_get::<Option<i64>, _>("tmdb_id")
             .ok()
             .flatten()
-            .or_else(|| r.try_get::<Option<i32>, _>("tmdb_id").ok().flatten().map(|id| id as i64));
+            .or_else(|| {
+                r.try_get::<Option<i32>, _>("tmdb_id")
+                    .ok()
+                    .flatten()
+                    .map(|id| id as i64)
+            });
         let overview: Option<String> = r.try_get("overview").ok();
         let poster_path: Option<String> = r.try_get("poster_path").ok();
         let backdrop_path: Option<String> = r.try_get("backdrop_path").ok();
@@ -425,12 +443,16 @@ impl MovieService {
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_else(|| serde_json::json!({}));
 
-        let ext = fname.split('.').last().unwrap_or("MP4").to_uppercase();
+        let ext = fname.split('.').next_back().unwrap_or("MP4").to_uppercase();
 
         let specs = TechnicalSpecs {
             resolution: Some("1080p".to_string()),
             resolution_badge: Some("1080p".to_string()),
-            video_codec: Some(if is_mkv { "HEVC (H.265)".to_string() } else { "H.264 (AVC)".to_string() }),
+            video_codec: Some(if is_mkv {
+                "HEVC (H.265)".to_string()
+            } else {
+                "H.264 (AVC)".to_string()
+            }),
             audio_codec: Some("AAC".to_string()),
             audio_channels: Some("2.0 Stereo".to_string()),
             container: Some(ext),

@@ -98,7 +98,11 @@ pub fn validate_origin(origin: &str, public_host: Option<&str>) -> Option<String
         return None;
     }
 
-    let parsed = ParsedOrigin { scheme: scheme.to_string(), host, port };
+    let parsed = ParsedOrigin {
+        scheme: scheme.to_string(),
+        host,
+        port,
+    };
     Some(render(&parsed))
 }
 
@@ -135,10 +139,7 @@ pub fn resolve_origin(
     }
 
     if let Some(base) = request_base.filter(|b| !b.is_empty()) {
-        let (scheme, rest) = match base.split_once("://") {
-            Some(v) => v,
-            None => return None,
-        };
+        let (scheme, rest) = base.split_once("://")?;
         let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
         let (host, port) = match authority.rsplit_once(':') {
             Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty() => {
@@ -259,7 +260,10 @@ mod tests {
 
     #[test]
     fn a_non_origin_url_is_refused() {
-        assert_eq!(validate_origin("http://192.168.1.5/media/secret.mkv", None), None);
+        assert_eq!(
+            validate_origin("http://192.168.1.5/media/secret.mkv", None),
+            None
+        );
         assert_eq!(validate_origin("http://192.168.1.5/?a=b", None), None);
         assert_eq!(validate_origin("ftp://192.168.1.5", None), None);
         assert_eq!(validate_origin("not a url", None), None);
@@ -295,7 +299,11 @@ mod tests {
     #[test]
     fn media_urls_quote_the_path_but_keep_separators() {
         assert_eq!(
-            build_media_url("2001 A Space Odyssey (1968).mkv", Some("http://192.168.1.2:8000"), false),
+            build_media_url(
+                "2001 A Space Odyssey (1968).mkv",
+                Some("http://192.168.1.2:8000"),
+                false
+            ),
             "http://192.168.1.2:8000/media/2001%20A%20Space%20Odyssey%20%281968%29.mkv"
         );
         assert_eq!(

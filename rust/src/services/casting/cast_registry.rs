@@ -232,7 +232,11 @@ impl CastRegistry {
             match outcome {
                 Ok(v) => return Ok(v),
                 Err(e) if attempt == 0 => {
-                    tracing::debug!("Cast status on {} failed ({:?}); redialling once", device_id, e);
+                    tracing::debug!(
+                        "Cast status on {} failed ({:?}); redialling once",
+                        device_id,
+                        e
+                    );
                     self.redial(device_id).await?;
                 }
                 Err(e) => return Err(e),
@@ -293,7 +297,10 @@ impl CastRegistry {
         match dlna_service::discover(Duration::from_secs(3)).await {
             Ok(devices) => {
                 for d in devices {
-                    found.insert(d.id.clone(), serde_json::to_value(&d).unwrap_or(serde_json::Value::Null));
+                    found.insert(
+                        d.id.clone(),
+                        serde_json::to_value(&d).unwrap_or(serde_json::Value::Null),
+                    );
                 }
             }
             Err(e) => {
@@ -340,7 +347,10 @@ impl CastRegistry {
                     cast_discovery::enrich_model_from_dlna(d, &dlna_pairs);
                 }
                 for d in devices {
-                    found.insert(d.id.clone(), serde_json::to_value(&d).unwrap_or(serde_json::Value::Null));
+                    found.insert(
+                        d.id.clone(),
+                        serde_json::to_value(&d).unwrap_or(serde_json::Value::Null),
+                    );
                 }
             }
             Err(e) => {
@@ -395,7 +405,10 @@ impl CastRegistry {
             None => return err("Unknown device - rescan and try again."),
         };
 
-        let path = match crate::services::path_resolver::PathResolver::resolve_media_path(filename, &self.roots) {
+        let path = match crate::services::path_resolver::PathResolver::resolve_media_path(
+            filename,
+            &self.roots,
+        ) {
             Ok(p) => p,
             Err(_) => return err("Unknown media file."),
         };
@@ -435,8 +448,16 @@ impl CastRegistry {
                 ext
             ));
         }
-        let content_type = if use_hls { "application/x-mpegURL".into() } else { content_type };
-        let title = if use_hls { format!("{} (transcoded)", title) } else { title };
+        let content_type = if use_hls {
+            "application/x-mpegURL".into()
+        } else {
+            content_type
+        };
+        let title = if use_hls {
+            format!("{} (transcoded)", title)
+        } else {
+            title
+        };
 
         // Subtitle tracks must be fully-qualified: a receiver fetches them
         // itself and cannot resolve a relative path.
@@ -463,7 +484,11 @@ impl CastRegistry {
             };
             subtitle_tracks.push(SubtitleTrack {
                 track_id: idx as i64 + 1,
-                label: if !track.label.is_empty() { track.label.clone() } else { track.name.clone() },
+                label: if !track.label.is_empty() {
+                    track.label.clone()
+                } else {
+                    track.name.clone()
+                },
                 lang: track.lang.clone(),
                 src,
             });
@@ -480,7 +505,11 @@ impl CastRegistry {
             subtitle_offset: offset,
             subtitles: subtitle_tracks
                 .iter()
-                .map(|t| SubtitleSummary { track_id: t.track_id, label: t.label.clone(), lang: t.lang.clone() })
+                .map(|t| SubtitleSummary {
+                    track_id: t.track_id,
+                    label: t.label.clone(),
+                    lang: t.lang.clone(),
+                })
                 .collect(),
             active_subtitle_id: selected.unwrap_or(0),
         };
@@ -512,26 +541,24 @@ impl CastRegistry {
                     )
                     .await
                 }
-                ("cast", _) => {
-                    match registry.connection(&device_id_owned).await {
-                        Err(e) => Err(e),
-                        Ok(mut conns) => match conns.get_mut(&device_id_owned) {
-                            Some(conn) => {
-                                cast_control::load(
-                                    conn,
-                                    &url_for_load,
-                                    &title_for_load,
-                                    &content_type,
-                                    position,
-                                    &subtitle_tracks,
-                                    selected,
-                                )
-                                .await
-                            }
-                            None => Err("could not open a Cast session".to_string()),
-                        },
-                    }
-                }
+                ("cast", _) => match registry.connection(&device_id_owned).await {
+                    Err(e) => Err(e),
+                    Ok(mut conns) => match conns.get_mut(&device_id_owned) {
+                        Some(conn) => {
+                            cast_control::load(
+                                conn,
+                                &url_for_load,
+                                &title_for_load,
+                                &content_type,
+                                position,
+                                &subtitle_tracks,
+                                selected,
+                            )
+                            .await
+                        }
+                        None => Err("could not open a Cast session".to_string()),
+                    },
+                },
                 (other, _) => Err(format!("device kind {} not supported yet", other)),
             };
             let mut inner = registry.inner.write().await;
@@ -663,7 +690,10 @@ impl CastRegistry {
                 .get(device_id)
                 .map(|a| a.public_fields())
                 .unwrap_or(serde_json::Value::Null);
-            (fields, inner.errors.get(&format!("play:{}", device_id)).cloned())
+            (
+                fields,
+                inner.errors.get(&format!("play:{}", device_id)).cloned(),
+            )
         };
 
         let mut out = payload;
@@ -763,7 +793,10 @@ fn err(message: &str) -> serde_json::Value {
 
 fn is_video(path: &Path) -> bool {
     matches!(
-        path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref(),
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .as_deref(),
         Some("mkv" | "mp4" | "m4v" | "webm" | "mov" | "avi")
     )
 }
@@ -793,7 +826,10 @@ mod tests {
             active_subtitle_id: 0,
         };
         let fields = a.public_fields();
-        assert!(fields.get("url").is_none(), "the LAN URL is an internal detail");
+        assert!(
+            fields.get("url").is_none(),
+            "the LAN URL is an internal detail"
+        );
         assert_eq!(fields["filename"], "f.mkv");
         assert_eq!(fields["title"], "f.mkv");
     }

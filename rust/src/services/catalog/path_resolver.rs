@@ -10,7 +10,7 @@ impl PathResolver {
             return Err(AppError::NotFound("Invalid filename".to_string()));
         }
 
-        let clean = filename.trim_start_matches(|c| c == '/' || c == '\\');
+        let clean = filename.trim_start_matches(['/', '\\']);
         if clean.is_empty() {
             return Err(AppError::BadRequest("Filename cannot be empty".to_string()));
         }
@@ -21,7 +21,9 @@ impl PathResolver {
         for comp in rel_path.components() {
             match comp {
                 Component::ParentDir | Component::Prefix(_) | Component::RootDir => {
-                    return Err(AppError::Forbidden("Directory traversal or absolute path denied".to_string()));
+                    return Err(AppError::Forbidden(
+                        "Directory traversal or absolute path denied".to_string(),
+                    ));
                 }
                 _ => {}
             }
@@ -31,7 +33,9 @@ impl PathResolver {
         for root in roots {
             let candidate = root.join(rel_path);
             if candidate.is_file() {
-                if let (Ok(canon_cand), Ok(canon_root)) = (candidate.canonicalize(), root.canonicalize()) {
+                if let (Ok(canon_cand), Ok(canon_root)) =
+                    (candidate.canonicalize(), root.canonicalize())
+                {
                     if canon_cand.starts_with(&canon_root) {
                         return Ok(canon_cand);
                     }
@@ -52,7 +56,10 @@ impl PathResolver {
             }
         }
 
-        Err(AppError::NotFound(format!("Media file '{}' not found", filename)))
+        Err(AppError::NotFound(format!(
+            "Media file '{}' not found",
+            filename
+        )))
     }
 
     fn find_in_dir(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {

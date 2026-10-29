@@ -156,7 +156,10 @@ impl SystemService {
                 free_str: storage_free_str.clone(),
                 total_str: storage_total_str.clone(),
                 label: "Storage Pool".to_string(),
-                display: format!("{:.1}% · {} / {}", pool_pct, storage_used_str, storage_total_str),
+                display: format!(
+                    "{:.1}% · {} / {}",
+                    pool_pct, storage_used_str, storage_total_str
+                ),
                 sub: if drives_sub.is_empty() {
                     format!("{} remaining free", storage_free_str)
                 } else {
@@ -174,5 +177,11 @@ impl SystemService {
                 sub: "In: 0.0 KB/s · Out: 0.0 KB/s".to_string(),
             },
         }
+    }
+}
+
+impl Default for SystemService {
+    fn default() -> Self {
+        Self::new()
     }
 }

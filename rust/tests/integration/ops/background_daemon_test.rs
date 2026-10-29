@@ -1,7 +1,5 @@
 use media_server_api::{
-    db,
-    services::scan_service::ScanService,
-    services::storage_service::StorageService,
+    db, services::scan_service::ScanService, services::storage_service::StorageService,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -37,8 +35,14 @@ async fn test_scan_service_daemon_lifecycle_and_shutdown() {
 
     // Assert that the daemon loop terminates cleanly within 200ms
     let wait_res = tokio::time::timeout(Duration::from_millis(500), handle).await;
-    assert!(wait_res.is_ok(), "ScanService daemon failed to terminate on shutdown signal");
-    assert!(wait_res.unwrap().is_ok(), "ScanService daemon task panicked");
+    assert!(
+        wait_res.is_ok(),
+        "ScanService daemon failed to terminate on shutdown signal"
+    );
+    assert!(
+        wait_res.unwrap().is_ok(),
+        "ScanService daemon task panicked"
+    );
 
     // Allow in-flight scan to settle so subsequent tests don't see a busy scanner
     let _ = ScanService::wait_until_idle(Duration::from_millis(100)).await;
@@ -74,6 +78,12 @@ async fn test_storage_service_daemon_lifecycle_and_shutdown() {
 
     // Assert that the daemon terminates cleanly
     let wait_res = tokio::time::timeout(Duration::from_millis(500), handle).await;
-    assert!(wait_res.is_ok(), "StorageService daemon failed to terminate on shutdown signal");
-    assert!(wait_res.unwrap().is_ok(), "StorageService daemon task panicked");
+    assert!(
+        wait_res.is_ok(),
+        "StorageService daemon failed to terminate on shutdown signal"
+    );
+    assert!(
+        wait_res.unwrap().is_ok(),
+        "StorageService daemon task panicked"
+    );
 }

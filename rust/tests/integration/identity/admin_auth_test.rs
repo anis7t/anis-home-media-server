@@ -4,9 +4,7 @@ use axum::{
     http::{header, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
@@ -156,7 +154,8 @@ async fn test_verify_pin_success_variations() {
         .unwrap();
     let resp1 = ctx.app.clone().oneshot(req1).await.unwrap();
     assert_eq!(resp1.status(), StatusCode::OK);
-    let body1: Value = serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body1: Value =
+        serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body1["success"], true);
     assert_eq!(body1["admin"], true);
     assert_eq!(body1["method"], "pin");
@@ -170,7 +169,8 @@ async fn test_verify_pin_success_variations() {
         .unwrap();
     let resp2 = ctx.app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::OK);
-    let body2: Value = serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body2: Value =
+        serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body2["success"], true);
 
     // 3. Alternate key 'admin_pin'
@@ -182,7 +182,8 @@ async fn test_verify_pin_success_variations() {
         .unwrap();
     let resp3 = ctx.app.clone().oneshot(req3).await.unwrap();
     assert_eq!(resp3.status(), StatusCode::OK);
-    let body3: Value = serde_json::from_slice(&resp3.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body3: Value =
+        serde_json::from_slice(&resp3.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body3["success"], true);
 
     // 4. Header X-Admin-Pin
@@ -194,7 +195,8 @@ async fn test_verify_pin_success_variations() {
         .unwrap();
     let resp4 = ctx.app.clone().oneshot(req4).await.unwrap();
     assert_eq!(resp4.status(), StatusCode::OK);
-    let body4: Value = serde_json::from_slice(&resp4.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body4: Value =
+        serde_json::from_slice(&resp4.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body4["success"], true);
 
     // 5. Header with leading/trailing whitespace
@@ -206,7 +208,8 @@ async fn test_verify_pin_success_variations() {
         .unwrap();
     let resp5 = ctx.app.clone().oneshot(req5).await.unwrap();
     assert_eq!(resp5.status(), StatusCode::OK);
-    let body5: Value = serde_json::from_slice(&resp5.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body5: Value =
+        serde_json::from_slice(&resp5.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body5["success"], true);
 }
 
@@ -239,7 +242,8 @@ async fn test_verify_pin_failure_cases() {
             .unwrap();
         let resp = ctx.app.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        let body: Value = serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let body: Value =
+            serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(body["success"], false);
         assert_eq!(body["admin"], false);
     }
@@ -315,7 +319,9 @@ async fn test_admin_pin_rotation_lifecycle() {
         .unwrap();
     let resp_valid = ctx.app.clone().oneshot(req_valid).await.unwrap();
     assert_eq!(resp_valid.status(), StatusCode::OK);
-    let body_valid: Value = serde_json::from_slice(&resp_valid.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body_valid: Value =
+        serde_json::from_slice(&resp_valid.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
     assert_eq!(body_valid["success"], true);
 
     // D. Old PIN '97531' is now rejected (401)

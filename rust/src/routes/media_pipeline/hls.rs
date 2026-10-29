@@ -27,10 +27,24 @@ pub async fn hls_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -47,7 +61,9 @@ pub async fn hls_handler(
     // Check if filename contains a quality subpath e.g. "movie.mkv/1080p"
     let (raw_filename, quality) = match filename.rsplit_once('/') {
         Some((parent, possible_quality))
-            if crate::services::chunk_transcode::ChunkTranscodeService::is_quality_string(possible_quality) =>
+            if crate::services::chunk_transcode::ChunkTranscodeService::is_quality_string(
+                possible_quality,
+            ) =>
         {
             (parent, Some(possible_quality))
         }
@@ -56,7 +72,8 @@ pub async fn hls_handler(
 
     let video_path = PathResolver::resolve_media_path(raw_filename, &state.roots)?;
     let base_hls_dir = HlsService::find_hls_dir(&video_path, &state.roots, &state.cache_dir);
-    let hls_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, quality);
+    let hls_dir =
+        HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, quality);
 
     // 1. Multi-Variant Master Playlist request: GET /hls/{path}/master.m3u8
     if target == "master.m3u8" {
@@ -83,14 +100,34 @@ pub async fn hls_handler(
                     let mut res = Response::new(Body::from(empty_body));
                     *res.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
                     let h = res.headers_mut();
-                    h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
-                    h.insert(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+                    h.insert(
+                        header::CONTENT_TYPE,
+                        "application/vnd.apple.mpegurl".parse().unwrap(),
+                    );
+                    h.insert(
+                        header::CACHE_CONTROL,
+                        "no-cache, no-store, must-revalidate".parse().unwrap(),
+                    );
                     h.insert(header::RETRY_AFTER, "1".parse().unwrap());
                     h.insert("access-control-allow-origin", "*".parse().unwrap());
-                    h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-                    h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-                    h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-                    h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+                    h.insert(
+                        "access-control-allow-methods",
+                        "GET, HEAD, OPTIONS".parse().unwrap(),
+                    );
+                    h.insert(
+                        "access-control-allow-headers",
+                        "Range, Origin, Accept, Content-Type".parse().unwrap(),
+                    );
+                    h.insert(
+                        "access-control-expose-headers",
+                        "Content-Length, Content-Range, Accept-Ranges"
+                            .parse()
+                            .unwrap(),
+                    );
+                    h.insert(
+                        "cross-origin-resource-policy",
+                        "cross-origin".parse().unwrap(),
+                    );
                     return Ok(res);
                 }
             },
@@ -99,13 +136,33 @@ pub async fn hls_handler(
         let mut res = Response::new(Body::from(content));
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
-        h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
-        h.insert(header::CACHE_CONTROL, "no-cache, max-age=0".parse().unwrap());
+        h.insert(
+            header::CONTENT_TYPE,
+            "application/vnd.apple.mpegurl".parse().unwrap(),
+        );
+        h.insert(
+            header::CACHE_CONTROL,
+            "no-cache, max-age=0".parse().unwrap(),
+        );
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -117,13 +174,33 @@ pub async fn hls_handler(
                 let mut res = Response::new(Body::from(master_content));
                 *res.status_mut() = StatusCode::OK;
                 let h = res.headers_mut();
-                h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
-                h.insert(header::CACHE_CONTROL, "no-cache, max-age=0".parse().unwrap());
+                h.insert(
+                    header::CONTENT_TYPE,
+                    "application/vnd.apple.mpegurl".parse().unwrap(),
+                );
+                h.insert(
+                    header::CACHE_CONTROL,
+                    "no-cache, max-age=0".parse().unwrap(),
+                );
                 h.insert("access-control-allow-origin", "*".parse().unwrap());
-                h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-                h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-                h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-                h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+                h.insert(
+                    "access-control-allow-methods",
+                    "GET, HEAD, OPTIONS".parse().unwrap(),
+                );
+                h.insert(
+                    "access-control-allow-headers",
+                    "Range, Origin, Accept, Content-Type".parse().unwrap(),
+                );
+                h.insert(
+                    "access-control-expose-headers",
+                    "Content-Length, Content-Range, Accept-Ranges"
+                        .parse()
+                        .unwrap(),
+                );
+                h.insert(
+                    "cross-origin-resource-policy",
+                    "cross-origin".parse().unwrap(),
+                );
                 return Ok(res);
             }
         }
@@ -140,13 +217,33 @@ pub async fn hls_handler(
                 let mut res = Response::new(Body::from(honest_content));
                 *res.status_mut() = StatusCode::OK;
                 let h = res.headers_mut();
-                h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
-                h.insert(header::CACHE_CONTROL, "no-cache, max-age=0".parse().unwrap());
+                h.insert(
+                    header::CONTENT_TYPE,
+                    "application/vnd.apple.mpegurl".parse().unwrap(),
+                );
+                h.insert(
+                    header::CACHE_CONTROL,
+                    "no-cache, max-age=0".parse().unwrap(),
+                );
                 h.insert("access-control-allow-origin", "*".parse().unwrap());
-                h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-                h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-                h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-                h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+                h.insert(
+                    "access-control-allow-methods",
+                    "GET, HEAD, OPTIONS".parse().unwrap(),
+                );
+                h.insert(
+                    "access-control-allow-headers",
+                    "Range, Origin, Accept, Content-Type".parse().unwrap(),
+                );
+                h.insert(
+                    "access-control-expose-headers",
+                    "Content-Length, Content-Range, Accept-Ranges"
+                        .parse()
+                        .unwrap(),
+                );
+                h.insert(
+                    "cross-origin-resource-policy",
+                    "cross-origin".parse().unwrap(),
+                );
                 return Ok(res);
             }
         }
@@ -156,14 +253,34 @@ pub async fn hls_handler(
         let mut res = Response::new(Body::from(empty_body));
         *res.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
         let h = res.headers_mut();
-        h.insert(header::CONTENT_TYPE, "application/vnd.apple.mpegurl".parse().unwrap());
-        h.insert(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+        h.insert(
+            header::CONTENT_TYPE,
+            "application/vnd.apple.mpegurl".parse().unwrap(),
+        );
+        h.insert(
+            header::CACHE_CONTROL,
+            "no-cache, no-store, must-revalidate".parse().unwrap(),
+        );
         h.insert(header::RETRY_AFTER, "1".parse().unwrap());
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -184,14 +301,34 @@ pub async fn hls_handler(
 
         let h = res.headers_mut();
         h.insert(header::CONTENT_TYPE, seg_mimetype.parse().unwrap());
-        h.insert(header::CACHE_CONTROL, "public, max-age=3600".parse().unwrap());
+        h.insert(
+            header::CACHE_CONTROL,
+            "public, max-age=3600".parse().unwrap(),
+        );
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
-    Err(AppError::NotFound(format!("Unrecognized HLS target: {}", target)))
+    Err(AppError::NotFound(format!(
+        "Unrecognized HLS target: {}",
+        target
+    )))
 }

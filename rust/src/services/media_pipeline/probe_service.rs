@@ -60,7 +60,9 @@ impl ProbeResult {
     /// the first video stream is the display video, matching Flask's
     /// `next((s for s in ... if codec_type == 'video'), {})`.
     pub fn first_stream(&self, kind: &str) -> Option<&ProbeStream> {
-        self.streams.iter().find(|s| s.codec_type.as_deref() == Some(kind))
+        self.streams
+            .iter()
+            .find(|s| s.codec_type.as_deref() == Some(kind))
     }
 }
 
@@ -158,12 +160,10 @@ impl ProbeService {
     async fn scan_packets(path: &Path, seek_pct: f64) -> Option<f64> {
         let probe = ffprobe_binary()?;
         let mut cmd = tokio::process::Command::new(probe);
-        cmd.arg("-v")
-            .arg("error")
-            .arg("-select_streams")
-            .arg("v:0");
+        cmd.arg("-v").arg("error").arg("-select_streams").arg("v:0");
         if seek_pct > 0.0 {
-            cmd.arg("-read_intervals").arg(format!("{:.3}%+99999", seek_pct));
+            cmd.arg("-read_intervals")
+                .arg(format!("{:.3}%+99999", seek_pct));
         }
         cmd.arg("-show_entries")
             .arg("packet=pts_time,duration_time")
@@ -171,13 +171,10 @@ impl ProbeService {
             .arg("csv=p=0")
             .arg(path);
 
-        let out = tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            cmd.output(),
-        )
-        .await
-        .ok()?
-        .ok()?;
+        let out = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output())
+            .await
+            .ok()?
+            .ok()?;
         if !out.status.success() {
             return None;
         }
@@ -260,6 +257,7 @@ fn parse_duration_value(raw: &str) -> Option<f64> {
 
 /// Memoized `source_video_duration`, keyed by path + size + mtime so an
 /// edited or replaced file is re-measured rather than served a stale answer.
+#[allow(clippy::type_complexity)]
 fn duration_cache() -> &'static Mutex<HashMap<(String, u64, i128), f64>> {
     static CACHE: std::sync::OnceLock<Mutex<HashMap<(String, u64, i128), f64>>> =
         std::sync::OnceLock::new();
@@ -302,6 +300,7 @@ pub async fn cached_source_video_duration(path: &Path) -> f64 {
 
 /// Memoized full probe, so one request that needs both the container
 /// duration and the video end runs ffprobe once rather than twice.
+#[allow(clippy::type_complexity)]
 pub async fn cached_probe(path: &Path) -> ProbeResult {
     static PROBES: std::sync::OnceLock<
         Mutex<HashMap<(String, u64, i128), std::sync::Arc<ProbeResult>>>,
@@ -342,7 +341,11 @@ fn which(bin: &str) -> Option<PathBuf> {
         .split(';')
         .map(|e| e.to_ascii_lowercase())
         .collect();
-    let exts = if cfg!(windows) { exts } else { vec![String::new()] };
+    let exts = if cfg!(windows) {
+        exts
+    } else {
+        vec![String::new()]
+    };
 
     for dir in std::env::split_paths(&path_var) {
         for ext in &exts {
@@ -385,7 +388,10 @@ mod tests {
         // lookup misses it and silently falls back to container duration.
         let mut tags = HashMap::new();
         tags.insert("DURATION-eng".to_string(), "1234.5".to_string());
-        let s = ProbeStream { tags, ..Default::default() };
+        let s = ProbeStream {
+            tags,
+            ..Default::default()
+        };
         assert_eq!(video_stream_end(&s), 1234.5);
     }
 
@@ -414,7 +420,6 @@ mod tests {
             format: ProbeFormat {
                 duration: Some("8931.59".into()),
                 bit_rate: Some("4500000".into()),
-                ..Default::default()
             },
             ..Default::default()
         };

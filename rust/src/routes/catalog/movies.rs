@@ -22,9 +22,7 @@ pub async fn list_movies_handler(
     headers: HeaderMap,
     Query(query): Query<MovieListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let device_id = headers
-        .get("x-device-id")
-        .and_then(|v| v.to_str().ok());
+    let device_id = headers.get("x-device-id").and_then(|v| v.to_str().ok());
 
     let user_id = AuthService::resolve_effective_user_id(&pool, &headers, device_id).await;
 
@@ -45,9 +43,7 @@ pub async fn get_movie_details_handler(
     headers: HeaderMap,
     Path(filename): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let device_id = headers
-        .get("x-device-id")
-        .and_then(|v| v.to_str().ok());
+    let device_id = headers.get("x-device-id").and_then(|v| v.to_str().ok());
 
     let user_id = AuthService::resolve_effective_user_id(&pool, &headers, device_id).await;
 

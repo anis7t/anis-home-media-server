@@ -33,10 +33,7 @@ impl StorageService {
     }
 
     /// Read current storage settings from PostgreSQL `settings` table.
-    pub async fn get_settings(
-        pool: &PgPool,
-        media_roots: &[PathBuf],
-    ) -> StorageSettingsResponse {
+    pub async fn get_settings(pool: &PgPool, media_roots: &[PathBuf]) -> StorageSettingsResponse {
         let policy: Option<String> =
             sqlx::query_scalar("SELECT value FROM settings WHERE key = 'retention_policy'")
                 .fetch_optional(pool)
@@ -362,7 +359,8 @@ impl StorageService {
         }
 
         // Audit current cache state (force refresh)
-        let audit_res = Self::audit_caches(pool, media_roots, cache_dir, system_service, true).await;
+        let audit_res =
+            Self::audit_caches(pool, media_roots, cache_dir, system_service, true).await;
         let audit = audit_res.audit;
 
         if audit.degraded {
@@ -404,7 +402,10 @@ impl StorageService {
 
             // Fail-closed security: Ensure directory is strictly within approved cache root
             if !Self::is_within_cache_dir(&target, cache_dir) {
-                warn!("Refusing to purge path outside cache root: {}", target.display());
+                warn!(
+                    "Refusing to purge path outside cache root: {}",
+                    target.display()
+                );
                 failed_dirs.push(serde_json::json!({
                     "path": item.path,
                     "remaining": "refused: outside approved cache root"
@@ -415,7 +416,10 @@ impl StorageService {
             // Live transcode grace window check
             if !dry_run && Self::looks_like_live_transcode(&target, now) {
                 skipped_live.push(item.path.clone());
-                warn!("Skipping cache directory in active use: {}", target.display());
+                warn!(
+                    "Skipping cache directory in active use: {}",
+                    target.display()
+                );
                 continue;
             }
 
@@ -437,7 +441,11 @@ impl StorageService {
                         "path": item.path,
                         "remaining": err_msg
                     }));
-                    warn!("Failed to purge orphaned directory {}: {}", target.display(), err_msg);
+                    warn!(
+                        "Failed to purge orphaned directory {}: {}",
+                        target.display(),
+                        err_msg
+                    );
                 }
             }
         }
@@ -491,12 +499,19 @@ impl StorageService {
         fs::create_dir_all(&archive_base)
             .map_err(|e| AppError::Internal(format!("Failed to create archive dir: {}", e)))?;
 
-        let canon_source = media_path.canonicalize().unwrap_or_else(|_| media_path.clone());
-        let canon_archive = archive_base.canonicalize().unwrap_or_else(|_| archive_base.clone());
+        let canon_source = media_path
+            .canonicalize()
+            .unwrap_or_else(|_| media_path.clone());
+        let canon_archive = archive_base
+            .canonicalize()
+            .unwrap_or_else(|_| archive_base.clone());
 
         // Skip redundant move if source is already inside archive directory
         if canon_source.starts_with(&canon_archive) {
-            info!("File is already in archive directory: {}", media_path.display());
+            info!(
+                "File is already in archive directory: {}",
+                media_path.display()
+            );
             return Ok(ArchiveResult {
                 status: "archived".to_string(),
                 policy: "archive".to_string(),
@@ -534,7 +549,11 @@ impl StorageService {
         }
 
         // Atomic move with copy fallback across Windows drives
-        if canon_source != target_path.canonicalize().unwrap_or_else(|_| target_path.clone()) {
+        if canon_source
+            != target_path
+                .canonicalize()
+                .unwrap_or_else(|_| target_path.clone())
+        {
             let _ = fs::remove_file(&target_path);
             if let Err(rename_err) = fs::rename(&media_path, &target_path) {
                 warn!(
@@ -543,12 +562,15 @@ impl StorageService {
                     media_path.display(),
                     target_path.display()
                 );
-                fs::copy(&media_path, &target_path).map_err(|e| {
-                    AppError::Internal(format!("Cross-volume copy failed: {}", e))
-                })?;
+                fs::copy(&media_path, &target_path)
+                    .map_err(|e| AppError::Internal(format!("Cross-volume copy failed: {}", e)))?;
                 let _ = fs::remove_file(&media_path);
             }
-            info!("Archived source media: {} -> {}", media_path.display(), target_path.display());
+            info!(
+                "Archived source media: {} -> {}",
+                media_path.display(),
+                target_path.display()
+            );
         }
 
         Ok(ArchiveResult {
@@ -619,14 +641,13 @@ impl StorageService {
         }
 
         // 5. Query TMDb ID and poster path before deleting rows
-        let meta: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
-            "SELECT tmdb_id::BIGINT, poster_path FROM movies WHERE filename = $1",
-        )
-        .bind(clean_filename)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let meta: Option<(Option<i64>, Option<String>)> =
+            sqlx::query_as("SELECT tmdb_id::BIGINT, poster_path FROM movies WHERE filename = $1")
+                .bind(clean_filename)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
 
         let (tmdb_id, poster_path) = match meta {
             Some((t, p)) => (t, p),
@@ -642,8 +663,13 @@ impl StorageService {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if path.is_file() {
-                            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default();
-                            if name.starts_with(stem) && (name.ends_with(".srt") || name.ends_with(".vtt")) {
+                            let name = path
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or_default();
+                            if name.starts_with(stem)
+                                && (name.ends_with(".srt") || name.ends_with(".vtt"))
+                            {
                                 let _ = fs::remove_file(&path);
                                 purged_subtitles.push(name.to_string());
                             }
@@ -827,7 +853,12 @@ impl StorageService {
         (total_size, file_count, latest_mtime)
     }
 
-    fn collect_dir_stats(dir: &Path, total_size: &mut u64, file_count: &mut usize, latest_mtime: &mut f64) {
+    fn collect_dir_stats(
+        dir: &Path,
+        total_size: &mut u64,
+        file_count: &mut usize,
+        latest_mtime: &mut f64,
+    ) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -863,10 +894,7 @@ impl StorageService {
                         .and_then(|e| e.to_str())
                         .map(|s| s.to_lowercase())
                         .unwrap_or_default();
-                    if matches!(
-                        ext.as_str(),
-                        "mp4" | "m4v" | "mkv" | "webm" | "avi" | "mov"
-                    ) {
+                    if matches!(ext.as_str(), "mp4" | "m4v" | "mkv" | "webm" | "avi" | "mov") {
                         out.insert(p);
                     }
                 }

@@ -21,13 +21,22 @@ impl AuditService {
         headers: &axum::http::HeaderMap,
         explicit_pin: Option<&str>,
     ) -> (&'static str, String) {
-        if let Some(identity) = crate::services::auth_service::AuthService::resolve_session_identity(pool, headers).await {
+        if let Some(identity) =
+            crate::services::auth_service::AuthService::resolve_session_identity(pool, headers)
+                .await
+        {
             if identity.is_admin {
                 ("admin_session", identity.email)
             } else {
                 ("user_session", identity.email)
             }
-        } else if crate::services::auth_service::AuthService::is_admin_authorized(pool, headers, explicit_pin).await {
+        } else if crate::services::auth_service::AuthService::is_admin_authorized(
+            pool,
+            headers,
+            explicit_pin,
+        )
+        .await
+        {
             ("admin_pin", "pin".to_string())
         } else {
             ("guest", "anonymous".to_string())
@@ -36,6 +45,7 @@ impl AuditService {
 
     /// Persist an administrative mutation event into `audit_logs`.
     /// Logging failures are caught and logged via tracing without failing caller operations.
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_event(
         pool: &PgPool,
         actor_type: &str,
@@ -88,10 +98,11 @@ impl AuditService {
         let clamped_offset = offset.unwrap_or(0).max(0);
 
         let (rows, total) = if let Some(act) = action_filter.filter(|a| !a.trim().is_empty()) {
-            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE action = $1")
-                .bind(act)
-                .fetch_one(pool)
-                .await?;
+            let total: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE action = $1")
+                    .bind(act)
+                    .fetch_one(pool)
+                    .await?;
 
             let rows = sqlx::query(
                 r#"

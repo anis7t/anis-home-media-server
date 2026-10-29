@@ -24,7 +24,10 @@ fn test_compute_relative_path() {
     let roots = vec![root.clone()];
 
     let file1 = root.join("Movie.mp4");
-    assert_eq!(ScannerEngine::compute_relative_path(&file1, &roots), "Movie.mp4");
+    assert_eq!(
+        ScannerEngine::compute_relative_path(&file1, &roots),
+        "Movie.mp4"
+    );
 
     let file2 = root.join("Subfolder").join("Movie.mkv");
     assert_eq!(
@@ -40,7 +43,8 @@ async fn test_reconcile_orphans_prunes_missing_files() {
         .await
         .expect("Database connection");
 
-    let temp_root = std::env::temp_dir().join(format!("rust_test_scan_reconcile_{}", std::process::id()));
+    let temp_root =
+        std::env::temp_dir().join(format!("rust_test_scan_reconcile_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_root);
     fs::create_dir_all(&temp_root).unwrap();
 
@@ -79,7 +83,10 @@ async fn test_reconcile_orphans_prunes_missing_files() {
         .await
         .expect("Reconciliation succeeds");
 
-    assert!(pruned >= 1, "Expected at least the orphan test movie to be pruned");
+    assert!(
+        pruned >= 1,
+        "Expected at least the orphan test movie to be pruned"
+    );
 
     // Verify orphan is gone from PostgreSQL
     let row = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies WHERE filename = $1")
@@ -88,14 +95,18 @@ async fn test_reconcile_orphans_prunes_missing_files() {
         .await
         .unwrap();
 
-    assert!(row.is_none(), "Orphaned movie record was pruned as expected (Decision 1A)");
+    assert!(
+        row.is_none(),
+        "Orphaned movie record was pruned as expected (Decision 1A)"
+    );
 
     // Verify the movie whose file still exists is preserved
-    let present_row = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies WHERE filename = $1")
-        .bind(&present_filename)
-        .fetch_optional(&pool)
-        .await
-        .unwrap();
+    let present_row =
+        sqlx::query_as::<_, (String,)>("SELECT filename FROM movies WHERE filename = $1")
+            .bind(&present_filename)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
     assert!(
         present_row.is_some(),
         "A movie whose file still exists must be preserved and not pruned"

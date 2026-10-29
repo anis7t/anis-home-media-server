@@ -69,9 +69,7 @@ async fn require_admin(state: &UploadState, headers: &HeaderMap) -> Result<(), A
 fn multipart_error(err: impl std::fmt::Display) -> AppError {
     let message = err.to_string();
     let lower = message.to_ascii_lowercase();
-    if lower.contains("length limit")
-        || lower.contains("too large")
-        || lower.contains("body limit")
+    if lower.contains("length limit") || lower.contains("too large") || lower.contains("body limit")
     {
         AppError::PayloadTooLarge("Upload exceeds the route body limit.".to_string())
     } else {
@@ -86,9 +84,7 @@ fn offset_from_headers(headers: &HeaderMap) -> Result<u64, AppError> {
             .to_str()
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
-            .ok_or_else(|| {
-                AppError::BadRequest("Invalid X-Upload-Offset header".to_string())
-            }),
+            .ok_or_else(|| AppError::BadRequest("Invalid X-Upload-Offset header".to_string())),
     }
 }
 
@@ -246,12 +242,8 @@ pub async fn complete_handler(
     uploads::validate_upload_id(&upload_id)?;
 
     let manifest = uploads::read_manifest(&state.upload_tmp, &upload_id).await?;
-    let target = uploads::finalize_session(
-        &state.upload_tmp,
-        &state.upload_target_dir,
-        &upload_id,
-    )
-    .await?;
+    let target =
+        uploads::finalize_session(&state.upload_tmp, &state.upload_target_dir, &upload_id).await?;
 
     let response = build_success(
         &state,
@@ -294,7 +286,11 @@ async fn build_success(
     .execute(&*state.pool)
     .await
     {
-        tracing::warn!("Failed to insert fallback movie row for {}: {}", filename, err);
+        tracing::warn!(
+            "Failed to insert fallback movie row for {}: {}",
+            filename,
+            err
+        );
     }
 
     let _ = (state.scan_trigger.as_ref())();
@@ -332,11 +328,7 @@ pub async fn single_file_handler(
     let mut overwrite = false;
     let mut wrote_file = false;
 
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(multipart_error)?
-    {
+    while let Some(mut field) = multipart.next_field().await.map_err(multipart_error)? {
         match field.name().unwrap_or("") {
             "file" => {
                 if wrote_file {
@@ -351,9 +343,9 @@ pub async fn single_file_handler(
                 original_name = Some(sanitized);
 
                 let stream_result: Result<(), AppError> = async {
-                    let mut file = tokio::fs::File::create(&temp_path)
-                        .await
-                        .map_err(|e| AppError::Internal(format!("Failed to create upload temp file: {}", e)))?;
+                    let mut file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+                        AppError::Internal(format!("Failed to create upload temp file: {}", e))
+                    })?;
                     while let Some(chunk) = field.chunk().await.map_err(multipart_error)? {
                         file.write_all(&chunk).await.map_err(|e| {
                             AppError::Internal(format!("Failed to write upload temp file: {}", e))
@@ -375,14 +367,15 @@ pub async fn single_file_handler(
             "title" => {
                 let value = field.text().await.map_err(multipart_error)?;
                 let cleaned = uploads::sanitize_title(&value);
-                title = if cleaned.is_empty() { None } else { Some(cleaned) };
+                title = if cleaned.is_empty() {
+                    None
+                } else {
+                    Some(cleaned)
+                };
             }
             "overwrite" => {
                 let value = field.text().await.map_err(multipart_error)?;
-                overwrite = matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true"
-                );
+                overwrite = matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true");
             }
             _ => {}
         }
@@ -408,11 +401,7 @@ pub async fn single_file_handler(
             return Err(err);
         }
     };
-    let target = uploads::unique_target_path(
-        &state.upload_target_dir,
-        &target_name,
-        overwrite,
-    );
+    let target = uploads::unique_target_path(&state.upload_target_dir, &target_name, overwrite);
 
     if overwrite && target.exists() {
         let _ = tokio::fs::remove_file(&target).await;

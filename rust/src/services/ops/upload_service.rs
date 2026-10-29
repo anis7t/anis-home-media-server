@@ -58,15 +58,10 @@ pub fn sanitize_filename(raw: &str) -> Result<String, AppError> {
         cleaned.push(c);
     }
 
-    let cleaned = cleaned
-        .trim()
-        .trim_end_matches(|c| c == '.' || c == ' ')
-        .to_string();
+    let cleaned = cleaned.trim().trim_end_matches(['.', ' ']).to_string();
 
     if cleaned.is_empty() || cleaned == "." || cleaned == ".." {
-        return Err(AppError::BadRequest(
-            "Invalid media filename".to_string(),
-        ));
+        return Err(AppError::BadRequest("Invalid media filename".to_string()));
     }
 
     let ext = extension_of(&cleaned);
@@ -102,7 +97,7 @@ pub fn sanitize_title(raw: &str) -> String {
     out.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .trim_end_matches(|c| c == '.' || c == ' ')
+        .trim_end_matches(['.', ' '])
         .to_string()
 }
 
@@ -121,7 +116,10 @@ pub fn build_target_name(original: &str, title: Option<&str>) -> Result<String, 
         let title = sanitize_title(title);
         if !title.is_empty() {
             let suffix = format!(".{}", ext);
-            if title.to_ascii_lowercase().ends_with(&suffix.to_ascii_lowercase()) {
+            if title
+                .to_ascii_lowercase()
+                .ends_with(&suffix.to_ascii_lowercase())
+            {
                 return Ok(title);
             }
             return Ok(format!("{}{}", title, suffix));
@@ -434,10 +432,8 @@ mod tests {
 
     #[test]
     fn unique_names_increment_without_overwriting() {
-        let dir = std::env::temp_dir().join(format!(
-            "ms_upload_unit_unique_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ms_upload_unit_unique_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("Movie.mp4"), b"existing").unwrap();

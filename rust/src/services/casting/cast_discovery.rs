@@ -45,7 +45,9 @@ pub struct CastDevice {
 #[cfg(windows)]
 pub fn neighbour_table() -> Vec<Ipv4Addr> {
     use std::mem::size_of;
-    use windows_sys::Win32::NetworkManagement::IpHelper::{GetIpNetTable, MIB_IPNETTABLE, MIB_IPNETROW_LH};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GetIpNetTable, MIB_IPNETROW_LH, MIB_IPNETTABLE,
+    };
 
     const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
     const MAX_PHYS_ADDR_LEN: u32 = 6;
@@ -221,7 +223,10 @@ mod tests {
         let hosts = candidate_hosts(
             &["192.168.1.8".to_string()],
             &["192.168.1.44".to_string()],
-            &[Ipv4Addr::new(192, 168, 1, 70), Ipv4Addr::new(192, 168, 1, 8)],
+            &[
+                Ipv4Addr::new(192, 168, 1, 70),
+                Ipv4Addr::new(192, 168, 1, 8),
+            ],
         );
         assert!(hosts.contains(&"192.168.1.8".to_string()), "DLNA host");
         assert!(hosts.contains(&"192.168.1.44".to_string()), "cached host");
@@ -287,7 +292,10 @@ mod tests {
             &mut d,
             &[("192.168.1.8".to_string(), "UA43DU7000KLXL".to_string())],
         );
-        assert_eq!(d.model, "Chromecast", "a model from another host would be a lie");
+        assert_eq!(
+            d.model, "Chromecast",
+            "a model from another host would be a lie"
+        );
     }
 
     #[tokio::test]

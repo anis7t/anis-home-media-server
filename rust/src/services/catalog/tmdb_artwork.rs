@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::Mutex as AsyncMutex;
@@ -62,7 +62,9 @@ fn image_base() -> String {
 /// distinct assets at concurrency 12, zero failures. It is that 12 cards
 /// showing the same title would otherwise each pull the identical ~120 KB.
 /// Waiters queue, then find the file in cache.
+#[allow(clippy::type_complexity)]
 fn key_locks() -> &'static Mutex<HashMap<(ArtworkKind, i64), Arc<AsyncMutex<()>>>> {
+    #[allow(clippy::type_complexity)]
     static LOCKS: OnceLock<Mutex<HashMap<(ArtworkKind, i64), Arc<AsyncMutex<()>>>>> =
         OnceLock::new();
     LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -93,7 +95,7 @@ impl TmdbArtworkService {
     /// look the TMDb path up in the database, else download.
     pub async fn get(
         pool: &PgPool,
-        cache_dir: &PathBuf,
+        cache_dir: &Path,
         tmdb_id: i64,
         kind: ArtworkKind,
     ) -> Result<PathBuf, AppError> {
@@ -201,9 +203,7 @@ async fn download(art_path: &str, kind: ArtworkKind, target: &PathBuf) -> bool {
                             "tmdb artwork {} attempt {} rejected ({} bytes)",
                             art_path,
                             attempt,
-                            other
-                                .map(|b| b.len())
-                                .unwrap_or(0)
+                            other.map(|b| b.len()).unwrap_or(0)
                         );
                     }
                 }

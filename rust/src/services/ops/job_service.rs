@@ -245,11 +245,7 @@ impl JobService {
         Ok(res.rows_affected() > 0)
     }
 
-    pub async fn complete(
-        pool: &PgPool,
-        id: i64,
-        owner: &str,
-    ) -> Result<bool, AppError> {
+    pub async fn complete(pool: &PgPool, id: i64, owner: &str) -> Result<bool, AppError> {
         let res = sqlx::query(
             r#"
             UPDATE transcode_jobs
@@ -325,13 +321,11 @@ impl JobService {
         filename: &str,
         mode: &str,
     ) -> Result<Option<TranscodeJob>, AppError> {
-        let row = sqlx::query(
-            "SELECT * FROM transcode_jobs WHERE filename = $1 AND mode = $2",
-        )
-        .bind(filename.trim())
-        .bind(mode)
-        .fetch_optional(pool)
-        .await?;
+        let row = sqlx::query("SELECT * FROM transcode_jobs WHERE filename = $1 AND mode = $2")
+            .bind(filename.trim())
+            .bind(mode)
+            .fetch_optional(pool)
+            .await?;
         Ok(row.map(|r| map_job(&r)))
     }
 
@@ -355,18 +349,19 @@ impl JobService {
     }
 
     pub async fn list(pool: &PgPool, limit: i64) -> Result<Vec<TranscodeJob>, AppError> {
-        let rows = sqlx::query(
-            "SELECT * FROM transcode_jobs ORDER BY created_at DESC LIMIT $1",
-        )
-        .bind(limit.clamp(1, 500))
-        .fetch_all(pool)
-        .await?;
+        let rows = sqlx::query("SELECT * FROM transcode_jobs ORDER BY created_at DESC LIMIT $1")
+            .bind(limit.clamp(1, 500))
+            .fetch_all(pool)
+            .await?;
         Ok(rows.iter().map(map_job).collect())
     }
 
     /// Return all active (running/queued) jobs followed by the most recently updated finished jobs.
     /// This guarantees that running/queued jobs are never truncated or omitted regardless of their creation timestamp.
-    pub async fn list_for_dashboard(pool: &PgPool, recent_limit: i64) -> Result<Vec<TranscodeJob>, AppError> {
+    pub async fn list_for_dashboard(
+        pool: &PgPool,
+        recent_limit: i64,
+    ) -> Result<Vec<TranscodeJob>, AppError> {
         let rows = sqlx::query(
             r#"
             WITH active AS (

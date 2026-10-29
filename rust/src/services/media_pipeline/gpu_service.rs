@@ -50,8 +50,7 @@ impl ProcessGuard {
         if let Some(mut child) = self.child.take() {
             child.wait().await
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "Process already waited or terminated",
             ))
         }
@@ -97,11 +96,15 @@ static PLAYBACK_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static BACKGROUND_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
 fn playback_semaphore() -> Arc<Semaphore> {
-    PLAYBACK_SEMAPHORE.get_or_init(|| Arc::new(Semaphore::new(4))).clone()
+    PLAYBACK_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(4)))
+        .clone()
 }
 
 fn background_semaphore() -> Arc<Semaphore> {
-    BACKGROUND_SEMAPHORE.get_or_init(|| Arc::new(Semaphore::new(2))).clone()
+    BACKGROUND_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(2)))
+        .clone()
 }
 
 pub const HLS_MAX_HEIGHT: i64 = 1080;
@@ -159,7 +162,11 @@ impl GPUWorkerConfig {
     /// feed the encoder directly. That is only valid when the source needs neither a resize
     /// nor a depth change: h264_amf cannot accept 10-bit on drivers older than 23.30,
     /// and a source taller than the target profile would be emitted at full height.
-    pub fn get_ffmpeg_video_args(&self, use_vpp_amf: bool, target_height: Option<u32>) -> Vec<String> {
+    pub fn get_ffmpeg_video_args(
+        &self,
+        use_vpp_amf: bool,
+        target_height: Option<u32>,
+    ) -> Vec<String> {
         let height = target_height.unwrap_or(HLS_MAX_HEIGHT as u32);
         let is_4k = height >= 2160;
         match self.backend {
@@ -169,18 +176,20 @@ impl GPUWorkerConfig {
                 } else {
                     "null".to_string()
                 };
-                let quality = std::env::var("MEDIA_SERVER_AMF_QUALITY")
-                    .unwrap_or_else(|_| "speed".into());
-                let qp_i = std::env::var("MEDIA_SERVER_AMF_QP_I")
-                    .unwrap_or_else(|_| "22".into());
-                let qp_p = std::env::var("MEDIA_SERVER_AMF_QP_P")
-                    .unwrap_or_else(|_| "24".into());
+                let quality =
+                    std::env::var("MEDIA_SERVER_AMF_QUALITY").unwrap_or_else(|_| "speed".into());
+                let qp_i = std::env::var("MEDIA_SERVER_AMF_QP_I").unwrap_or_else(|_| "22".into());
+                let qp_p = std::env::var("MEDIA_SERVER_AMF_QP_P").unwrap_or_else(|_| "24".into());
 
                 let mut args = vec![
                     "-vf".into(),
                     vf,
                     "-c:v".into(),
-                    if is_4k { "hevc_amf".into() } else { "h264_amf".into() },
+                    if is_4k {
+                        "hevc_amf".into()
+                    } else {
+                        "h264_amf".into()
+                    },
                 ];
                 if is_4k {
                     args.push("-tag:v".into());
@@ -199,36 +208,38 @@ impl GPUWorkerConfig {
                 args
             }
             GpuBackend::Vaapi => {
-                let qp = std::env::var("MEDIA_SERVER_VAAPI_QP")
-                    .unwrap_or_else(|_| "24".into());
+                let qp = std::env::var("MEDIA_SERVER_VAAPI_QP").unwrap_or_else(|_| "24".into());
                 let mut args = vec![
                     "-vf".into(),
                     format!("format=nv12,hwupload,scale_vaapi=w=-2:h={}", height),
                     "-c:v".into(),
-                    if is_4k { "hevc_vaapi".into() } else { "h264_vaapi".into() },
+                    if is_4k {
+                        "hevc_vaapi".into()
+                    } else {
+                        "h264_vaapi".into()
+                    },
                 ];
                 if is_4k {
                     args.push("-tag:v".into());
                     args.push("hvc1".into());
                 }
-                args.extend([
-                    "-qp".into(),
-                    qp,
-                    "-pix_fmt".into(),
-                    "nv12".into(),
-                ]);
+                args.extend(["-qp".into(), qp, "-pix_fmt".into(), "nv12".into()]);
                 args
             }
             GpuBackend::Cpu => {
                 let preset = std::env::var("MEDIA_SERVER_TRANSCODE_PRESET")
                     .unwrap_or_else(|_| "superfast".into());
-                let crf = std::env::var("MEDIA_SERVER_TRANSCODE_CRF")
-                    .unwrap_or_else(|_| "23".into());
+                let crf =
+                    std::env::var("MEDIA_SERVER_TRANSCODE_CRF").unwrap_or_else(|_| "23".into());
                 let mut args = vec![
                     "-vf".into(),
                     format!("scale=-2:'min(ih,{})',format=yuv420p", height),
                     "-c:v".into(),
-                    if is_4k { "libx265".into() } else { "libx264".into() },
+                    if is_4k {
+                        "libx265".into()
+                    } else {
+                        "libx264".into()
+                    },
                 ];
                 if is_4k {
                     args.push("-tag:v".into());
@@ -282,7 +293,10 @@ impl GpuService {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                debug!("Cannot spawn ffmpeg to probe D3D11 adapter {}: {}", adapter_idx, e);
+                debug!(
+                    "Cannot spawn ffmpeg to probe D3D11 adapter {}: {}",
+                    adapter_idx, e
+                );
                 return None;
             }
         };
@@ -632,19 +646,30 @@ mod tests {
             .iter()
             .find(|(label, _, _, _, _)| *label == "2160p")
             .expect("2160p tier must exist");
-        assert!(q_2160.4.contains("hvc1"), "2160p must declare hvc1 codec: {}", q_2160.4);
+        assert!(
+            q_2160.4.contains("hvc1"),
+            "2160p must declare hvc1 codec: {}",
+            q_2160.4
+        );
 
         let q_1440 = HlsService::STANDARD_QUALITIES
             .iter()
             .find(|(label, _, _, _, _)| *label == "1440p")
             .expect("1440p tier must exist");
-        assert!(q_1440.4.contains("avc1"), "1440p must declare avc1 codec: {}", q_1440.4);
+        assert!(
+            q_1440.4.contains("avc1"),
+            "1440p must declare avc1 codec: {}",
+            q_1440.4
+        );
     }
 
     #[test]
     fn test_select_amf_strategy_2160p_selects_single_worker() {
         let (_, count) = GpuService::select_amf_strategy(None, Some(2160));
-        assert_eq!(count, 1, "4K 2160p must strictly use 1 worker to prevent dual-GPU bus contention");
+        assert_eq!(
+            count, 1,
+            "4K 2160p must strictly use 1 worker to prevent dual-GPU bus contention"
+        );
     }
 
     #[test]
@@ -672,7 +697,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_subprocess_priority_ordering() {
-        assert!(SubprocessPriority::InteractivePlayback < SubprocessPriority::BackgroundPreTranscode);
+        assert!(
+            SubprocessPriority::InteractivePlayback < SubprocessPriority::BackgroundPreTranscode
+        );
         assert!(SubprocessPriority::InteractiveProbe < SubprocessPriority::BackgroundExtract);
     }
 
@@ -688,4 +715,3 @@ mod tests {
         }
     }
 }
-

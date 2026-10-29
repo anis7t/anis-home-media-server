@@ -4,9 +4,7 @@ use axum::{
     http::{header, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
@@ -101,9 +99,10 @@ impl TestContext {
         // teardown. Only *expired* sessions are removed: a live pairing
         // session belongs to whichever test is running right now, and the
         // Rust harness runs the tests in this binary in parallel.
-        let _ = sqlx::query("DELETE FROM device_pair_sessions WHERE expires_at < CURRENT_TIMESTAMP")
-            .execute(pool)
-            .await;
+        let _ =
+            sqlx::query("DELETE FROM device_pair_sessions WHERE expires_at < CURRENT_TIMESTAMP")
+                .execute(pool)
+                .await;
     }
 
     /// Explicit teardown hook (AGENTS.md s9: a suite that writes rows must
@@ -202,7 +201,8 @@ async fn test_allowlist_endpoints_and_validation() {
 
     let resp_get = ctx.app.clone().oneshot(req_get).await.unwrap();
     assert_eq!(resp_get.status(), StatusCode::OK);
-    let body_get: Value = serde_json::from_slice(&resp_get.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body_get: Value =
+        serde_json::from_slice(&resp_get.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert!(body_get["stored"].is_array());
     assert!(body_get["environment"].is_array());
     assert!(body_get["effective"].is_array());
@@ -222,12 +222,15 @@ async fn test_allowlist_endpoints_and_validation() {
         .uri("/api/auth/allowlist")
         .header("X-Admin-Pin", "97531")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "emails": ["Operator@Example.com", "second@example.com"] }).to_string()))
+        .body(Body::from(
+            json!({ "emails": ["Operator@Example.com", "second@example.com"] }).to_string(),
+        ))
         .unwrap();
 
     let resp_post = ctx.app.clone().oneshot(req_post).await.unwrap();
     assert_eq!(resp_post.status(), StatusCode::OK);
-    let body_post: Value = serde_json::from_slice(&resp_post.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let body_post: Value =
+        serde_json::from_slice(&resp_post.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body_post["success"], true);
 
     let stored = body_post["stored"].as_array().unwrap();
@@ -369,27 +372,33 @@ async fn qr_device_auth_flow_test() {
     assert!(qr_secret_cookie.contains("SameSite=Lax"));
     assert!(qr_secret_cookie.contains("Max-Age=130"));
     assert!(!qr_secret_cookie.contains("session_token="));
-    let qr_secret_cookie_val = qr_secret_cookie
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
+    let qr_secret_cookie_val = qr_secret_cookie.split(';').next().unwrap().to_string();
     let qr_secret = qr_secret_cookie_val
         .trim_start_matches("ms_qr_secret=")
         .to_string();
     assert!(!qr_secret.is_empty());
 
-    let body_bytes = resp_qr_create.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = resp_qr_create
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     // The secret must not be readable from the page: it is not in the body.
     assert!(
         !String::from_utf8_lossy(&body_bytes).contains(&qr_secret),
         "the response body must not contain the pairing secret"
     );
     let body_create: Value = serde_json::from_slice(&body_bytes).unwrap();
-    let qr_id = body_create["qr_id"].as_str().expect("qr_id must be a string");
+    let qr_id = body_create["qr_id"]
+        .as_str()
+        .expect("qr_id must be a string");
     let code = body_create["code"].as_str().expect("code must be a string");
     assert_eq!(code.len(), 5);
-    assert!(body_create["qr_url"].as_str().unwrap().contains("/remotelogin"));
+    assert!(body_create["qr_url"]
+        .as_str()
+        .unwrap()
+        .contains("/remotelogin"));
     assert!(
         qr_secret_cookie.contains(&format!("Path=/api/auth/qr/{}", qr_id)),
         "the secret cookie must be scoped to this session's own path"
@@ -403,9 +412,15 @@ async fn qr_device_auth_flow_test() {
         .unwrap();
     let resp_status_1 = ctx.app.clone().oneshot(req_status_1).await.unwrap();
     assert_eq!(resp_status_1.status(), StatusCode::OK);
-    let body_status_1: Value =
-        serde_json::from_slice(&resp_status_1.into_body().collect().await.unwrap().to_bytes())
-            .unwrap();
+    let body_status_1: Value = serde_json::from_slice(
+        &resp_status_1
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes(),
+    )
+    .unwrap();
     assert_eq!(body_status_1["status"], "pending");
 
     // 4. Phone manual entry flow: POST /api/auth/qr/lookup with the 5-char code.
@@ -434,9 +449,15 @@ async fn qr_device_auth_flow_test() {
         .unwrap();
     let resp_lookup_valid = ctx.app.clone().oneshot(req_lookup_valid).await.unwrap();
     assert_eq!(resp_lookup_valid.status(), StatusCode::OK);
-    let body_lookup: Value =
-        serde_json::from_slice(&resp_lookup_valid.into_body().collect().await.unwrap().to_bytes())
-            .unwrap();
+    let body_lookup: Value = serde_json::from_slice(
+        &resp_lookup_valid
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes(),
+    )
+    .unwrap();
     assert_eq!(body_lookup["qr_id"], qr_id);
 
     // 5. Phone confirms pairing: POST /api/auth/qr/{qr_id}/confirm
@@ -469,9 +490,15 @@ async fn qr_device_auth_flow_test() {
         .unwrap();
     let resp_status_2 = ctx.app.clone().oneshot(req_status_2).await.unwrap();
     assert_eq!(resp_status_2.status(), StatusCode::OK);
-    let body_status_2: Value =
-        serde_json::from_slice(&resp_status_2.into_body().collect().await.unwrap().to_bytes())
-            .unwrap();
+    let body_status_2: Value = serde_json::from_slice(
+        &resp_status_2
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes(),
+    )
+    .unwrap();
     assert_eq!(body_status_2["status"], "confirmed");
 
     // 7. Finalize is bound to the waiting device. The refusals come first,
@@ -483,7 +510,12 @@ async fn qr_device_auth_flow_test() {
         .uri(format!("/api/auth/qr/{}/finalize", qr_id))
         .body(Body::empty())
         .unwrap();
-    let resp_no_secret = ctx.app.clone().oneshot(req_finalize_no_secret).await.unwrap();
+    let resp_no_secret = ctx
+        .app
+        .clone()
+        .oneshot(req_finalize_no_secret)
+        .await
+        .unwrap();
     assert_eq!(resp_no_secret.status(), StatusCode::FORBIDDEN);
     assert!(
         resp_no_secret.headers().get(header::SET_COOKIE).is_none(),
@@ -621,7 +653,8 @@ async fn qr_device_auth_flow_test() {
     let resp_tv_me = ctx.app.clone().oneshot(req_tv_me).await.unwrap();
     assert_eq!(resp_tv_me.status(), StatusCode::OK);
     let body_tv_me: Value =
-        serde_json::from_slice(&resp_tv_me.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        serde_json::from_slice(&resp_tv_me.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
     assert_eq!(body_tv_me["authenticated"], true);
     assert_eq!(body_tv_me["email"], "phone@example.com");
     assert_eq!(body_tv_me["name"], "Phone User");

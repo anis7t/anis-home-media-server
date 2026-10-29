@@ -4,9 +4,7 @@ use axum::{
     Router,
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -32,11 +30,8 @@ impl StorageTestContext {
             .expect("Failed to connect to test database");
 
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let temp_dir = std::env::temp_dir().join(format!(
-            "rust_storage_test_{}_{}",
-            std::process::id(),
-            id
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("rust_storage_test_{}_{}", std::process::id(), id));
         let _ = fs::remove_dir_all(&temp_dir);
         let _ = fs::create_dir_all(&temp_dir);
 
@@ -122,7 +117,9 @@ async fn test_storage_settings_get_and_post() {
         .method("POST")
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "retention_policy": "archive" }).to_string()))
+        .body(Body::from(
+            json!({ "retention_policy": "archive" }).to_string(),
+        ))
         .unwrap();
 
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -134,7 +131,9 @@ async fn test_storage_settings_get_and_post() {
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-Admin-Pin", "9999")
-        .body(Body::from(json!({ "retention_policy": "archive" }).to_string()))
+        .body(Body::from(
+            json!({ "retention_policy": "archive" }).to_string(),
+        ))
         .unwrap();
 
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -146,7 +145,9 @@ async fn test_storage_settings_get_and_post() {
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-Admin-Pin", "97531")
-        .body(Body::from(json!({ "retention_policy": "invalid_mode" }).to_string()))
+        .body(Body::from(
+            json!({ "retention_policy": "invalid_mode" }).to_string(),
+        ))
         .unwrap();
 
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -158,7 +159,9 @@ async fn test_storage_settings_get_and_post() {
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-Admin-Pin", "97531")
-        .body(Body::from(json!({ "retention_policy": "archive" }).to_string()))
+        .body(Body::from(
+            json!({ "retention_policy": "archive" }).to_string(),
+        ))
         .unwrap();
 
     let res = ctx.app.clone().oneshot(req).await.unwrap();
@@ -273,7 +276,10 @@ async fn test_storage_audit_and_purge() {
 
     assert_eq!(body["success"], false);
     assert_eq!(body["result"]["refused"], true);
-    assert!(body["result"]["reason"].as_str().unwrap().contains("Transcode in progress"));
+    assert!(body["result"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("Transcode in progress"));
 
     // Cleanup active job and test movie
     sqlx::query("DELETE FROM transcode_jobs WHERE filename = 'ActiveJob.mp4'")

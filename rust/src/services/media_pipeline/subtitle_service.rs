@@ -21,10 +21,14 @@ impl SubtitleService {
         for line in normalized.lines() {
             let trimmed = line.trim();
             // Skip SRT cue index numbers (lines consisting only of digits)
-            if trimmed.chars().all(|c| c.is_ascii_digit()) && !trimmed.is_empty() {
-                if out.last().map(|l| l.is_empty() || l.starts_with("WEBVTT")).unwrap_or(true) {
-                    continue;
-                }
+            if trimmed.chars().all(|c| c.is_ascii_digit())
+                && !trimmed.is_empty()
+                && out
+                    .last()
+                    .map(|l| l.is_empty() || l.starts_with("WEBVTT"))
+                    .unwrap_or(true)
+            {
+                continue;
             }
 
             if line.contains("-->") {
@@ -209,14 +213,17 @@ impl SubtitleService {
 
     /// Derive normalized short movie name (e.g. "gladiator", "the_odyssey").
     pub fn get_short_movie_name(path: &Path) -> String {
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("video");
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("video");
 
         let clean: String = stem
             .chars()
-            .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
             .collect();
 
         let trimmed = clean.trim_matches('_');
@@ -255,9 +262,9 @@ impl SubtitleService {
             }
         }
 
-        let parent_dir = video_path.parent().ok_or_else(|| {
-            AppError::NotFound("Video directory not found".to_string())
-        })?;
+        let parent_dir = video_path
+            .parent()
+            .ok_or_else(|| AppError::NotFound("Video directory not found".to_string()))?;
 
         // 1. Direct sibling in video's directory
         let direct_candidate = parent_dir.join(name);
@@ -307,7 +314,9 @@ impl SubtitleService {
                 }
             }
         }
-        Err(AppError::Forbidden("Subtitle outside authorized media roots".to_string()))
+        Err(AppError::Forbidden(
+            "Subtitle outside authorized media roots".to_string(),
+        ))
     }
 
     /// Discover available local sidecar subtitle tracks for a movie.
@@ -399,14 +408,13 @@ impl SubtitleService {
                     // Read content for language detection
                     let text = fs::read_to_string(&sub_path).unwrap_or_default();
                     let mut lang = Self::detect_subtitle_language(&text);
-                    if lang == "und" {
-                        if sub_stem.ends_with(".en")
+                    if lang == "und"
+                        && (sub_stem.ends_with(".en")
                             || sub_stem.ends_with(".eng")
                             || sub_stem.contains("_en_")
-                            || sub_stem.ends_with("_en")
-                        {
-                            lang = "en".to_string();
-                        }
+                            || sub_stem.ends_with("_en"))
+                    {
+                        lang = "en".to_string();
                     }
 
                     let label = match lang.as_str() {
@@ -553,7 +561,9 @@ impl SubtitleService {
                     if let Ok(items) = res.json::<serde_json::Value>().await {
                         if let Some(arr) = items.as_array() {
                             for item in arr {
-                                if let Some(link) = item.get("SubDownloadLink").and_then(|l| l.as_str()) {
+                                if let Some(link) =
+                                    item.get("SubDownloadLink").and_then(|l| l.as_str())
+                                {
                                     download_url = Some(link.to_string());
                                     break;
                                 }
@@ -586,7 +596,9 @@ impl SubtitleService {
                         if let Ok(items) = res.json::<serde_json::Value>().await {
                             if let Some(arr) = items.as_array() {
                                 for item in arr {
-                                    if let Some(link) = item.get("SubDownloadLink").and_then(|l| l.as_str()) {
+                                    if let Some(link) =
+                                        item.get("SubDownloadLink").and_then(|l| l.as_str())
+                                    {
                                         download_url = Some(link.to_string());
                                         break;
                                     }
@@ -662,7 +674,10 @@ impl SubtitleService {
             let mut hasher = Sha256::new();
             hasher.update(stamp.as_bytes());
             let short_hash = &hex::encode(hasher.finalize())[..16];
-            let online_target = cache_dir.join("subtitles").join("online").join(format!("{}.vtt", short_hash));
+            let online_target = cache_dir
+                .join("subtitles")
+                .join("online")
+                .join(format!("{}.vtt", short_hash));
             if online_target.is_file() {
                 if let Ok(m) = online_target.metadata() {
                     if m.len() > 0 {
@@ -698,13 +713,22 @@ impl SubtitleService {
             return false;
         }
 
-        info!("Proactive subtitles: acquiring English subtitles for '{}' (rel: '{}')", title, rel_filename);
+        info!(
+            "Proactive subtitles: acquiring English subtitles for '{}' (rel: '{}')",
+            title, rel_filename
+        );
         let result = Self::fetch_online_subtitle(video_path, title, cache_dir).await;
         if result.is_some() {
-            info!("Proactive subtitles: successfully cached English subtitles for '{}'", title);
+            info!(
+                "Proactive subtitles: successfully cached English subtitles for '{}'",
+                title
+            );
             true
         } else {
-            debug!("Proactive subtitles: no OpenSubtitles match for '{}'", title);
+            debug!(
+                "Proactive subtitles: no OpenSubtitles match for '{}'",
+                title
+            );
             false
         }
     }
@@ -712,7 +736,7 @@ impl SubtitleService {
     /// Probe container media streams via ffprobe for embedded subtitle tracks.
     pub async fn probe_embedded_subtitles(video_path: &Path) -> Vec<EmbeddedSubtitleStream> {
         let output = match tokio::process::Command::new("ffprobe")
-            .args(&[
+            .args([
                 "-v",
                 "quiet",
                 "-print_format",
@@ -785,9 +809,8 @@ impl SubtitleService {
         stream_idx: usize,
         cache_dir: &Path,
     ) -> Result<PathBuf, AppError> {
-        let meta = fs::metadata(video_path).map_err(|e| {
-            AppError::NotFound(format!("Video file metadata not found: {}", e))
-        })?;
+        let meta = fs::metadata(video_path)
+            .map_err(|e| AppError::NotFound(format!("Video file metadata not found: {}", e)))?;
         let size = meta.len();
         let mtime = meta
             .modified()
@@ -819,7 +842,7 @@ impl SubtitleService {
 
         let temp_target = embed_cache_dir.join(format!("{}_{}.part.vtt", short_hash, stream_idx));
         let status = tokio::process::Command::new("ffmpeg")
-            .args(&[
+            .args([
                 "-y",
                 "-i",
                 video_path.to_str().unwrap_or(""),
@@ -849,9 +872,14 @@ impl SubtitleService {
             .unwrap_or_default();
         let vtt = Self::srt_to_vtt(&content, 0.0);
         let _ = tokio::fs::write(&temp_target, vtt.as_bytes()).await;
-        tokio::fs::rename(&temp_target, &target).await.map_err(|e| {
-            AppError::Internal(format!("Failed to rename extracted subtitle to target: {}", e))
-        })?;
+        tokio::fs::rename(&temp_target, &target)
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to rename extracted subtitle to target: {}",
+                    e
+                ))
+            })?;
 
         Ok(target)
     }

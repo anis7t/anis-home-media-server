@@ -79,7 +79,12 @@ impl PreviewService {
 
                 for other_root in roots {
                     let cand_path = other_root.join(&clean_rel);
-                    let cand_sig = format!("preview:{}:{}:{}", cand_path.to_string_lossy(), size, mtime_ns);
+                    let cand_sig = format!(
+                        "preview:{}:{}:{}",
+                        cand_path.to_string_lossy(),
+                        size,
+                        mtime_ns
+                    );
                     let mut h = Sha256::new();
                     h.update(cand_sig.as_bytes());
                     candidates.push(hex::encode(h.finalize()));
@@ -262,10 +267,7 @@ impl PreviewService {
     }
 
     /// Generate standard WebVTT storyboard mapping time intervals to thumbnail URLs.
-    pub fn generate_storyboard_vtt(
-        meta: &SeekPreviewMetaResponse,
-        rel_filename: &str,
-    ) -> String {
+    pub fn generate_storyboard_vtt(meta: &SeekPreviewMetaResponse, rel_filename: &str) -> String {
         let mut lines = vec!["WEBVTT\n".to_string()];
 
         for i in 0..meta.count {

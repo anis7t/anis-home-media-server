@@ -30,10 +30,7 @@ impl AssetService {
     /// Traversal defence is `PathResolver`'s, not a second implementation:
     /// it rejects `..`/absolute components up front and re-checks
     /// canonicalized containment before returning.
-    pub fn resolve_local_image(
-        roots: &[PathBuf],
-        filename: &str,
-    ) -> Result<PathBuf, AppError> {
+    pub fn resolve_local_image(roots: &[PathBuf], filename: &str) -> Result<PathBuf, AppError> {
         let path = PathResolver::resolve_media_path(filename, roots)?;
 
         // `Path::extension` yields "png", the allowlist holds ".png" - compare
@@ -104,16 +101,21 @@ impl AssetService {
             *res.status_mut() = StatusCode::NOT_MODIFIED;
             let h = res.headers_mut();
             h.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
-            h.insert(header::LAST_MODIFIED, HeaderValue::from_str(&last_modified).unwrap());
-            h.insert(header::CACHE_CONTROL, HeaderValue::from_str(&max_age).unwrap());
+            h.insert(
+                header::LAST_MODIFIED,
+                HeaderValue::from_str(&last_modified).unwrap(),
+            );
+            h.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_str(&max_age).unwrap(),
+            );
             h.insert("access-control-allow-origin", HeaderValue::from_static("*"));
             return Ok(res);
         }
 
-        let mut res = crate::services::range_service::RangeService::stream_file(
-            path, headers, method,
-        )
-        .await?;
+        let mut res =
+            crate::services::range_service::RangeService::stream_file(path, headers, method)
+                .await?;
 
         // The shared streamer adds DLNA advertisement headers because it
         // serves video. They are additive and harmless, but they describe
@@ -123,8 +125,14 @@ impl AssetService {
         h.remove("contentfeatures.dlna.org");
         h.remove("transfermode.dlna.org");
         h.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
-        h.insert(header::LAST_MODIFIED, HeaderValue::from_str(&last_modified).unwrap());
-        h.insert(header::CACHE_CONTROL, HeaderValue::from_str(&max_age).unwrap());
+        h.insert(
+            header::LAST_MODIFIED,
+            HeaderValue::from_str(&last_modified).unwrap(),
+        );
+        h.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_str(&max_age).unwrap(),
+        );
 
         Ok(res)
     }
@@ -162,7 +170,11 @@ fn parse_http_date(s: &str) -> Option<SystemTime> {
     //    rejects a format with no offset specifier, so a trailing literal
     //    "GMT" is not enough to make it parse. HTTP dates are UTC by
     //    definition, so the offset is known rather than parsed.
-    let rest = s.trim().split_once(", ").map(|(_, r)| r).unwrap_or(s.trim());
+    let rest = s
+        .trim()
+        .split_once(", ")
+        .map(|(_, r)| r)
+        .unwrap_or(s.trim());
     // Strip the trailing zone token too: leaving it in while omitting it
     // from the format is trailing input, which chrono rejects.
     let rest = rest
@@ -171,17 +183,14 @@ fn parse_http_date(s: &str) -> Option<SystemTime> {
         .trim_end_matches('+')
         .trim();
     let naive = chrono::NaiveDateTime::parse_from_str(rest, "%d %b %Y %H:%M:%S").ok()?;
-    Some(SystemTime::from(DateTime::<Utc>::from_naive_utc_and_offset(
-        naive, Utc,
-    )))
+    Some(SystemTime::from(
+        DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc),
+    ))
 }
 
 /// Shared by the tmdb artwork routes (C1b) once they land.
 pub fn artwork_cache_paths(cache_dir: &Path) -> (PathBuf, PathBuf) {
-    (
-        cache_dir.join("posters"),
-        cache_dir.join("backdrops"),
-    )
+    (cache_dir.join("posters"), cache_dir.join("backdrops"))
 }
 
 #[cfg(test)]

@@ -102,7 +102,10 @@ async fn call(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// A JSON POST to an admin mutation. The Admin PIN travels in the header, which
@@ -241,7 +244,10 @@ async fn test_device_owner_is_populated_for_admins_only() {
         .iter()
         .find(|d| d["device_id"] == "dev_oversight_alice")
         .expect("admin sees every device");
-    assert_eq!(alice_device["owner"]["email"], "oversight.alice@example.test");
+    assert_eq!(
+        alice_device["owner"]["email"],
+        "oversight.alice@example.test"
+    );
     assert_eq!(alice_device["owner"]["role"], "viewer");
     assert_eq!(alice_device["owner"]["id"], alice_id);
     let guest_device = devices
@@ -270,7 +276,9 @@ async fn test_device_owner_is_populated_for_admins_only() {
     assert_eq!(status, StatusCode::OK);
     let devices = body["devices"].as_array().expect("devices array");
     assert!(
-        devices.iter().all(|d| d["device_id"] != "dev_oversight_guest"),
+        devices
+            .iter()
+            .all(|d| d["device_id"] != "dev_oversight_guest"),
         "a viewer must not see an unrelated unowned device"
     );
     assert!(
@@ -402,12 +410,11 @@ async fn test_suite_leaves_no_oversight_residue() {
     let (_, pool) = harness().await;
     cleanup(&pool).await;
 
-    let devices: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id LIKE $1")
-            .bind(format!("{}%", DEVICE_PREFIX))
-            .fetch_one(&pool)
-            .await
-            .expect("device residue count");
+    let devices: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices WHERE device_id LIKE $1")
+        .bind(format!("{}%", DEVICE_PREFIX))
+        .fetch_one(&pool)
+        .await
+        .expect("device residue count");
     let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE google_sub LIKE $1")
         .bind(format!("{}%", USER_SUB_PREFIX))
         .fetch_one(&pool)

@@ -126,8 +126,9 @@ impl AppConfig {
             }
         }
 
-        let database_url = env::var("MEDIA_SERVER_DATABASE_URL")
-            .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string());
+        let database_url = env::var("MEDIA_SERVER_DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string()
+        });
 
         // 0.0.0.0, not 127.0.0.1.
         //

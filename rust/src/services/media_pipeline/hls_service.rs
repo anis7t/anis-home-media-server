@@ -55,7 +55,10 @@ impl HlsService {
         }
 
         let rel_clean = rel.as_ref().and_then(|r| {
-            let clean_parts: Vec<_> = r.components().filter(|c| c.as_os_str() != ".archive").collect();
+            let clean_parts: Vec<_> = r
+                .components()
+                .filter(|c| c.as_os_str() != ".archive")
+                .collect();
             if clean_parts.is_empty() {
                 None
             } else {
@@ -75,14 +78,24 @@ impl HlsService {
         if let (Some(s), Some(mt)) = (size, mtime_ns) {
             for root in roots {
                 let root_file = root.join(&file_name);
-                let k1 = format!("hls:{}:{}:{}", Self::strip_verbatim(&root_file.to_string_lossy()), s, mt);
+                let k1 = format!(
+                    "hls:{}:{}:{}",
+                    Self::strip_verbatim(&root_file.to_string_lossy()),
+                    s,
+                    mt
+                );
                 let mut h1 = Sha256::new();
                 h1.update(k1.as_bytes());
                 candidates.insert(hex::encode(h1.finalize()));
 
                 if let Some(ref r) = rel {
                     let root_rel = root.join(r);
-                    let k2 = format!("hls:{}:{}:{}", Self::strip_verbatim(&root_rel.to_string_lossy()), s, mt);
+                    let k2 = format!(
+                        "hls:{}:{}:{}",
+                        Self::strip_verbatim(&root_rel.to_string_lossy()),
+                        s,
+                        mt
+                    );
                     let mut h2 = Sha256::new();
                     h2.update(k2.as_bytes());
                     candidates.insert(hex::encode(h2.finalize()));
@@ -90,13 +103,23 @@ impl HlsService {
 
                 if let Some(ref rc) = rel_clean {
                     let root_rc = root.join(rc);
-                    let k3 = format!("hls:{}:{}:{}", Self::strip_verbatim(&root_rc.to_string_lossy()), s, mt);
+                    let k3 = format!(
+                        "hls:{}:{}:{}",
+                        Self::strip_verbatim(&root_rc.to_string_lossy()),
+                        s,
+                        mt
+                    );
                     let mut h3 = Sha256::new();
                     h3.update(k3.as_bytes());
                     candidates.insert(hex::encode(h3.finalize()));
 
                     let root_arch = root.join(".archive").join(rc);
-                    let k4 = format!("hls:{}:{}:{}", Self::strip_verbatim(&root_arch.to_string_lossy()), s, mt);
+                    let k4 = format!(
+                        "hls:{}:{}:{}",
+                        Self::strip_verbatim(&root_arch.to_string_lossy()),
+                        s,
+                        mt
+                    );
                     let mut h4 = Sha256::new();
                     h4.update(k4.as_bytes());
                     candidates.insert(hex::encode(h4.finalize()));
@@ -131,12 +154,20 @@ impl HlsService {
         };
 
         let primary_key = if let (Some(s), Some(mt)) = (size, mtime_ns) {
-            let k = format!("hls:{}:{}:{}", Self::strip_verbatim(&path.to_string_lossy()), s, mt);
+            let k = format!(
+                "hls:{}:{}:{}",
+                Self::strip_verbatim(&path.to_string_lossy()),
+                s,
+                mt
+            );
             let mut hasher = Sha256::new();
             hasher.update(k.as_bytes());
             hex::encode(hasher.finalize())
         } else {
-            let fn_str = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+            let fn_str = path
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
             let k = format!("hls:{}:0", fn_str);
             let mut hasher = Sha256::new();
             hasher.update(k.as_bytes());
@@ -352,14 +383,19 @@ impl HlsService {
                     _ => q_lower.as_str(),
                 };
                 let q_dir = base_dir.join(norm);
-                if norm == "1080p" && !q_dir.join("playlist.m3u8").is_file() && base_dir.join("playlist.m3u8").is_file() {
+                if norm == "1080p"
+                    && !q_dir.join("playlist.m3u8").is_file()
+                    && base_dir.join("playlist.m3u8").is_file()
+                {
                     base_dir
                 } else {
                     q_dir
                 }
             }
             _ => {
-                if !base_dir.join("playlist.m3u8").is_file() && base_dir.join("1080p").join("playlist.m3u8").is_file() {
+                if !base_dir.join("playlist.m3u8").is_file()
+                    && base_dir.join("1080p").join("playlist.m3u8").is_file()
+                {
                     base_dir.join("1080p")
                 } else {
                     base_dir
@@ -382,7 +418,10 @@ impl HlsService {
         }
         if let Some(rest) = segment.strip_prefix("segment_") {
             if let Some((num, ext)) = rest.split_once('.') {
-                if (ext == "ts" || ext == "m4s") && num.len() == 6 && num.chars().all(|c| c.is_ascii_digit()) {
+                if (ext == "ts" || ext == "m4s")
+                    && num.len() == 6
+                    && num.chars().all(|c| c.is_ascii_digit())
+                {
                     return true;
                 }
             }

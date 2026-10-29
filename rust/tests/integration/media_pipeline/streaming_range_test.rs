@@ -3,10 +3,7 @@ use axum::{
     http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app, db,
-    services::system_service::SystemService,
-};
+use media_server_api::{create_app, db, services::system_service::SystemService};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -35,7 +32,12 @@ async fn setup_media_test() -> TestMediaHarness {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let test_dir = std::env::temp_dir().join(format!("rust_media_test_{}_{}_{}", std::process::id(), now, count));
+    let test_dir = std::env::temp_dir().join(format!(
+        "rust_media_test_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
     fs::create_dir_all(&test_dir).expect("Failed to create test directory");
 
     // 10,000 bytes with predictable byte pattern
@@ -80,14 +82,8 @@ async fn test_full_file_stream_200() {
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    assert_eq!(
-        res.headers().get(header::ACCEPT_RANGES).unwrap(),
-        "bytes"
-    );
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "10000"
-    );
+    assert_eq!(res.headers().get(header::ACCEPT_RANGES).unwrap(), "bytes");
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "10000");
     assert_eq!(
         res.headers().get(header::CONTENT_TYPE).unwrap(),
         "video/mp4"
@@ -118,14 +114,8 @@ async fn test_head_request_empty_body() {
 
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "10000"
-    );
-    assert_eq!(
-        res.headers().get(header::ACCEPT_RANGES).unwrap(),
-        "bytes"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "10000");
+    assert_eq!(res.headers().get(header::ACCEPT_RANGES).unwrap(), "bytes");
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.len(), 0);
@@ -173,10 +163,7 @@ async fn test_range_initial_chunk() {
         res.headers().get(header::CONTENT_RANGE).unwrap(),
         "bytes 0-1023/10000"
     );
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "1024"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "1024");
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.len(), 1024);
@@ -200,10 +187,7 @@ async fn test_range_midstream_chunk() {
         res.headers().get(header::CONTENT_RANGE).unwrap(),
         "bytes 1000-1999/10000"
     );
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "1000"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "1000");
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.len(), 1000);
@@ -227,10 +211,7 @@ async fn test_range_open_ended() {
         res.headers().get(header::CONTENT_RANGE).unwrap(),
         "bytes 9000-9999/10000"
     );
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "1000"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "1000");
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.len(), 1000);
@@ -254,10 +235,7 @@ async fn test_range_suffix() {
         res.headers().get(header::CONTENT_RANGE).unwrap(),
         "bytes 9500-9999/10000"
     );
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "500"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "500");
 
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(bytes.len(), 500);
@@ -298,10 +276,7 @@ async fn test_nested_subdirectory_stream() {
 
     let res = harness.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        res.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "2048"
-    );
+    assert_eq!(res.headers().get(header::CONTENT_LENGTH).unwrap(), "2048");
     assert_eq!(
         res.headers().get(header::CONTENT_TYPE).unwrap(),
         "video/mp4"

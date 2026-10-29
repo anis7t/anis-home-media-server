@@ -126,13 +126,22 @@ impl DeviceService {
         }
         let seed = format!("{}|{}", client_ip, user_agent);
         let digest = Sha256::digest(seed.as_bytes());
-        let prefix: String = digest.iter().take(8).map(|b| format!("{:02x}", b)).collect();
+        let prefix: String = digest
+            .iter()
+            .take(8)
+            .map(|b| format!("{:02x}", b))
+            .collect();
         (format!("dev_{}", prefix), true)
     }
 
     /// Friendly make/model from a raw model code or Client Hints.
     pub fn resolve_device_make_model(model_raw: Option<&str>, ua: &str) -> (String, String) {
-        let mut clean = model_raw.unwrap_or("").trim().trim_matches(['"', '\'', ' ']).trim().to_string();
+        let mut clean = model_raw
+            .unwrap_or("")
+            .trim()
+            .trim_matches(['"', '\'', ' '])
+            .trim()
+            .to_string();
         // Chromium's UA-reduction dummy placeholder carries no information.
         if clean == "K" || clean == "Unknown" || clean.is_empty() {
             clean = String::new();
@@ -231,8 +240,16 @@ impl DeviceService {
 
     /// OS label, refined by Client Hints where they are more precise.
     pub fn resolve_device_os(ua_os: &str, platform_raw: &str, platform_ver_raw: &str) -> String {
-        let plat = platform_raw.trim().trim_matches(['"', '\'', ' ']).trim().to_lowercase();
-        let ver = platform_ver_raw.trim().trim_matches(['"', '\'', ' ']).trim().to_string();
+        let plat = platform_raw
+            .trim()
+            .trim_matches(['"', '\'', ' '])
+            .trim()
+            .to_lowercase();
+        let ver = platform_ver_raw
+            .trim()
+            .trim_matches(['"', '\'', ' '])
+            .trim()
+            .to_string();
         let ua_lower = ua_os.to_lowercase();
 
         if plat.contains("android") || ua_lower.contains("android") {
@@ -243,15 +260,27 @@ impl DeviceService {
                     }
                 }
             }
-            return if ua_os.is_empty() { "Android".into() } else { ua_os.to_string() };
+            return if ua_os.is_empty() {
+                "Android".into()
+            } else {
+                ua_os.to_string()
+            };
         }
         if plat.contains("windows") || ua_lower.contains("windows") {
             if !ver.is_empty() {
                 if let Some(major) = ver.split('.').next().and_then(|m| m.parse::<u32>().ok()) {
-                    return if major >= 13 { "Windows 11".into() } else { "Windows 10".into() };
+                    return if major >= 13 {
+                        "Windows 11".into()
+                    } else {
+                        "Windows 10".into()
+                    };
                 }
             }
-            return if ua_os.is_empty() { "Windows".into() } else { ua_os.to_string() };
+            return if ua_os.is_empty() {
+                "Windows".into()
+            } else {
+                ua_os.to_string()
+            };
         }
         if plat.contains("macos") || ua_lower.contains("mac") {
             if !ver.is_empty() {
@@ -259,7 +288,11 @@ impl DeviceService {
                     return format!("macOS {}", major);
                 }
             }
-            return if ua_os.is_empty() { "macOS".into() } else { ua_os.to_string() };
+            return if ua_os.is_empty() {
+                "macOS".into()
+            } else {
+                ua_os.to_string()
+            };
         }
         if ua_os.is_empty() {
             "Unknown OS".into()
@@ -273,8 +306,16 @@ impl DeviceService {
         if ua.is_empty() {
             let (name, model) = Self::resolve_device_make_model(ch.model.as_deref(), "");
             return ParsedAgent {
-                device_type: if ch.mobile.as_deref() == Some("?1") { "Mobile".into() } else { "Other".into() },
-                device_os: Self::resolve_device_os("Unknown OS", ch.platform.as_deref().unwrap_or(""), ch.platform_version.as_deref().unwrap_or("")),
+                device_type: if ch.mobile.as_deref() == Some("?1") {
+                    "Mobile".into()
+                } else {
+                    "Other".into()
+                },
+                device_os: Self::resolve_device_os(
+                    "Unknown OS",
+                    ch.platform.as_deref().unwrap_or(""),
+                    ch.platform_version.as_deref().unwrap_or(""),
+                ),
                 browser: "Unknown Browser".into(),
                 device_name: name,
                 device_model: Some(model),
@@ -282,8 +323,12 @@ impl DeviceService {
         }
 
         let lower = ua.to_lowercase();
-        let (mut device_type, mut device_os, mut device_name, mut device_model) =
-            ("Desktop".to_string(), "Unknown OS".to_string(), "Desktop PC".to_string(), None);
+        let (mut device_type, mut device_os, mut device_name, mut device_model) = (
+            "Desktop".to_string(),
+            "Unknown OS".to_string(),
+            "Desktop PC".to_string(),
+            None,
+        );
         let mut browser = "Unknown Browser".to_string();
 
         // 1. TV / console
@@ -327,12 +372,16 @@ impl DeviceService {
         // 2. Mobile / tablet / desktop
         else if lower.contains("ipad") {
             device_type = "Tablet".into();
-            device_os = format_optional("iPadOS", capture_digits(ua, "OS ").map(|v| v.replace('_', ".")));
+            device_os = format_optional(
+                "iPadOS",
+                capture_digits(ua, "OS ").map(|v| v.replace('_', ".")),
+            );
             device_name = "Apple iPad".into();
             device_model = Some("iPad".into());
         } else if lower.contains("iphone") {
             device_type = "Mobile".into();
-            device_os = format_optional("iOS", after(ua, "iPhone OS ").map(|v| v.replace('_', ".")));
+            device_os =
+                format_optional("iOS", after(ua, "iPhone OS ").map(|v| v.replace('_', ".")));
             device_name = "Apple iPhone".into();
             device_model = Some("iPhone".into());
         } else if lower.contains("android") {
@@ -340,7 +389,11 @@ impl DeviceService {
             if lower.contains("mobile") || ch.mobile.as_deref() == Some("?1") {
                 device_type = "Mobile".into();
                 let (n, m) = Self::resolve_device_make_model(ch.model.as_deref(), ua);
-                device_name = if n.is_empty() { "Android Smartphone".into() } else { n };
+                device_name = if n.is_empty() {
+                    "Android Smartphone".into()
+                } else {
+                    n
+                };
                 device_model = Some(m);
             } else {
                 device_type = "Tablet".into();
@@ -355,14 +408,15 @@ impl DeviceService {
                 "6.3" => "Windows 8.1".into(),
                 "6.2" => "Windows 8".into(),
                 "6.1" => "Windows 7".into(),
-                other if other.is_empty() => "Windows NT".into(),
+                "" => "Windows NT".into(),
                 other => format!("Windows NT {}", other),
             };
             device_name = "Windows PC".into();
             device_model = Some("PC".into());
         } else if lower.contains("macintosh") || lower.contains("mac os x") {
             device_type = "Desktop".into();
-            device_os = format_optional("macOS", after(ua, "Mac OS X").map(|v| v.replace('_', ".")));
+            device_os =
+                format_optional("macOS", after(ua, "Mac OS X").map(|v| v.replace('_', ".")));
             device_name = "Apple Mac".into();
             device_model = Some("Mac".into());
         } else if lower.contains("cros") {
@@ -378,7 +432,11 @@ impl DeviceService {
         }
 
         // 3. Browser, applied after the device branch exactly as in Python.
-        if let Some(v) = after(ua, "Edg/").or_else(|| after(ua, "EdgA/")).or_else(|| after(ua, "EdgiOS/")).or_else(|| after(ua, "Edge/")) {
+        if let Some(v) = after(ua, "Edg/")
+            .or_else(|| after(ua, "EdgA/"))
+            .or_else(|| after(ua, "EdgiOS/"))
+            .or_else(|| after(ua, "Edge/"))
+        {
             browser = format!("Edge {}", major_of(&v));
         } else if let Some(v) = after(ua, "SamsungBrowser/") {
             browser = format!("Samsung Internet {}", major_of(&v));
@@ -392,7 +450,10 @@ impl DeviceService {
             }
         } else if lower.contains("safari") && !lower.contains("chrome") {
             browser = "Safari".into();
-        } else if ["curl", "python-requests", "wget"].iter().any(|t| lower.contains(t)) {
+        } else if ["curl", "python-requests", "wget"]
+            .iter()
+            .any(|t| lower.contains(t))
+        {
             browser = ua.split('/').next().unwrap_or("").to_string();
             device_type = "Tool/Bot".into();
             device_name = "Automated Client".into();
@@ -415,7 +476,13 @@ impl DeviceService {
             }
         }
 
-        ParsedAgent { device_type, device_os, browser, device_name, device_model }
+        ParsedAgent {
+            device_type,
+            device_os,
+            browser,
+            device_name,
+            device_model,
+        }
     }
 
     /// Cloudflare / Localhost / LAN / Direct, from headers exactly as Flask.
@@ -426,7 +493,9 @@ impl DeviceService {
         x_forwarded_for: Option<&str>,
         remote_addr: &str,
     ) -> ConnectionInfo {
-        let has_cf = cf_connecting_ip.is_some() || cf_ray.is_some() || host.to_lowercase().contains("trycloudflare.com");
+        let has_cf = cf_connecting_ip.is_some()
+            || cf_ray.is_some()
+            || host.to_lowercase().contains("trycloudflare.com");
         if has_cf {
             let ip = cf_connecting_ip
                 .map(|s| s.to_string())
@@ -499,13 +568,25 @@ impl DeviceService {
         connection_type: &str,
     ) -> GeoInfo {
         if connection_type == "Localhost (127.0.0.1)" {
-            return GeoInfo { isp: "Local Loopback".into(), city: "Localhost".into(), country: "Local System".into() };
+            return GeoInfo {
+                isp: "Local Loopback".into(),
+                city: "Localhost".into(),
+                country: "Local System".into(),
+            };
         }
         if connection_type == "Local Network (LAN)" {
-            return GeoInfo { isp: "Local Network (LAN)".into(), city: "Home Network".into(), country: "Local Subnet".into() };
+            return GeoInfo {
+                isp: "Local Network (LAN)".into(),
+                city: "Home Network".into(),
+                country: "Local Subnet".into(),
+            };
         }
         if ip.is_empty() || is_private_ip(ip) {
-            return GeoInfo { isp: "Private Network".into(), city: "LAN".into(), country: "Internal".into() };
+            return GeoInfo {
+                isp: "Private Network".into(),
+                city: "LAN".into(),
+                country: "Internal".into(),
+            };
         }
 
         if let Some(pool) = pool {
@@ -519,10 +600,18 @@ impl DeviceService {
                     if !isp.is_empty() {
                         return GeoInfo {
                             isp,
-                            city: row.try_get::<Option<String>, _>("city").ok().flatten()
-                                .filter(|c| !c.is_empty()).unwrap_or_else(|| "Unknown".into()),
-                            country: row.try_get::<Option<String>, _>("country").ok().flatten()
-                                .filter(|c| !c.is_empty()).unwrap_or_else(|| "Unknown".into()),
+                            city: row
+                                .try_get::<Option<String>, _>("city")
+                                .ok()
+                                .flatten()
+                                .filter(|c| !c.is_empty())
+                                .unwrap_or_else(|| "Unknown".into()),
+                            country: row
+                                .try_get::<Option<String>, _>("country")
+                                .ok()
+                                .flatten()
+                                .filter(|c| !c.is_empty())
+                                .unwrap_or_else(|| "Unknown".into()),
                         };
                     }
                 }
@@ -541,7 +630,10 @@ impl DeviceService {
         );
         // GeoIP is best-effort: a failure here must degrade to the default
         // label, never surface as an error on a keepalive request.
-        let client = match reqwest::Client::builder().timeout(Duration::from_millis(1500)).build() {
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_millis(1500))
+            .build()
+        {
             Ok(c) => c,
             Err(_) => return default,
         };
@@ -562,24 +654,45 @@ impl DeviceService {
         if fetched.get("status").and_then(|s| s.as_str()) != Some("success") {
             return default;
         }
-        let isp = fetched.get("isp").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+        let isp = fetched
+            .get("isp")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .or_else(|| fetched.get("org").and_then(|v| v.as_str()))
-            .unwrap_or("External ISP").to_string();
-        let city = fetched.get("city").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-            .unwrap_or("Remote").to_string();
-        let country = fetched.get("country").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-            .unwrap_or("Internet").to_string();
+            .unwrap_or("External ISP")
+            .to_string();
+        let city = fetched
+            .get("city")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Remote")
+            .to_string();
+        let country = fetched
+            .get("country")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Internet")
+            .to_string();
 
         if let Some(pool) = pool {
-            let org = fetched.get("org").and_then(|v| v.as_str()).unwrap_or(&isp).to_string();
+            let org = fetched
+                .get("org")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&isp)
+                .to_string();
             let _ = sqlx::query(
                 "INSERT INTO ip_cache (ip, isp, org, city, country, updated_at) \
                  VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) \
                  ON CONFLICT (ip) DO UPDATE SET isp = EXCLUDED.isp, org = EXCLUDED.org, \
                  city = EXCLUDED.city, country = EXCLUDED.country, updated_at = CURRENT_TIMESTAMP",
             )
-            .bind(ip).bind(&isp).bind(&org).bind(&city).bind(&country)
-            .execute(pool).await;
+            .bind(ip)
+            .bind(&isp)
+            .bind(&org)
+            .bind(&city)
+            .bind(&country)
+            .execute(pool)
+            .await;
         }
 
         GeoInfo { isp, city, country }
@@ -655,19 +768,14 @@ impl DeviceService {
     ///
     /// First contact falls through to a full registration, exactly as in
     /// Flask, so a new client is not recorded as a bare row.
-    pub async fn record_heartbeat(
-        pool: &PgPool,
-        device_id: &str,
-        ctx: &RequestFacts,
-    ) {
-        let updated = sqlx::query(
-            "UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE device_id = $1",
-        )
-        .bind(device_id)
-        .execute(pool)
-        .await
-        .map(|r| r.rows_affected())
-        .unwrap_or(0);
+    pub async fn record_heartbeat(pool: &PgPool, device_id: &str, ctx: &RequestFacts) {
+        let updated =
+            sqlx::query("UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE device_id = $1")
+                .bind(device_id)
+                .execute(pool)
+                .await
+                .map(|r| r.rows_affected())
+                .unwrap_or(0);
 
         if updated == 0 {
             Self::register_from_facts(pool, device_id, ctx).await;
@@ -684,7 +792,16 @@ impl DeviceService {
             &ctx.conn.connection_type,
         )
         .await;
-        Self::register_device(pool, device_id, &ctx.user_agent, &parsed, &ctx.conn, &mac, &geo).await;
+        Self::register_device(
+            pool,
+            device_id,
+            &ctx.user_agent,
+            &parsed,
+            &ctx.conn,
+            &mac,
+            &geo,
+        )
+        .await;
     }
 
     /// Apply high-entropy Client Hints to a known device.
@@ -712,10 +829,26 @@ impl DeviceService {
             _ => return false,
         };
 
-        let ua_str: String = row.try_get::<Option<String>, _>("user_agent").ok().flatten().unwrap_or_default();
-        let current_os: String = row.try_get::<Option<String>, _>("device_os").ok().flatten().unwrap_or_default();
-        let current_name: String = row.try_get::<Option<String>, _>("device_name").ok().flatten().unwrap_or_default();
-        let current_model: String = row.try_get::<Option<String>, _>("device_model").ok().flatten().unwrap_or_default();
+        let ua_str: String = row
+            .try_get::<Option<String>, _>("user_agent")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let current_os: String = row
+            .try_get::<Option<String>, _>("device_os")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let current_name: String = row
+            .try_get::<Option<String>, _>("device_name")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let current_model: String = row
+            .try_get::<Option<String>, _>("device_model")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
 
         let (mut name, mut resolved_model) = Self::resolve_device_make_model(model, &ua_str);
         if name.is_empty() || name == "Android Smartphone" {
@@ -926,15 +1059,13 @@ impl DeviceService {
             let m_title: Option<String> = h.try_get("title").ok();
             let m_year: Option<i32> = h.try_get("year").ok();
 
-            let title = m_title
-                .filter(|t| !t.trim().is_empty())
-                .unwrap_or_else(|| {
-                    Path::new(&fname)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or(&fname)
-                        .to_string()
-                });
+            let title = m_title.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| {
+                Path::new(&fname)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&fname)
+                    .to_string()
+            });
 
             let year_val = match m_year {
                 Some(y) => serde_json::json!(y),
@@ -1137,10 +1268,7 @@ impl DeviceService {
     }
 
     /// Permanently delete a device and its recorded watch history.
-    pub async fn delete_device(
-        pool: &PgPool,
-        device_id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn delete_device(pool: &PgPool, device_id: &str) -> Result<(), AppError> {
         let mut tx = pool.begin().await?;
         sqlx::query("DELETE FROM device_watch_history WHERE device_id = $1")
             .bind(device_id)
@@ -1264,7 +1392,6 @@ pub fn device_icon(device_type: Option<&str>) -> &'static str {
     }
 }
 
-
 /// Request facts gathered once, so several calls do not re-derive them.
 pub struct RequestFacts {
     pub user_agent: String,
@@ -1290,11 +1417,16 @@ fn is_vivo_code(upper: &str) -> bool {
 fn is_xiaomi_code(upper: &str) -> bool {
     // ^(2[1-5]\d{2}|M2\d{3})
     if let Some(rest) = upper.strip_prefix('M') {
-        return rest.len() >= 4 && rest.starts_with('2') && rest[1..4].chars().all(|c| c.is_ascii_digit());
+        return rest.len() >= 4
+            && rest.starts_with('2')
+            && rest[1..4].chars().all(|c| c.is_ascii_digit());
     }
     upper.len() >= 4
-        && (upper.starts_with("21") || upper.starts_with("22") || upper.starts_with("23")
-            || upper.starts_with("24") || upper.starts_with("25"))
+        && (upper.starts_with("21")
+            || upper.starts_with("22")
+            || upper.starts_with("23")
+            || upper.starts_with("24")
+            || upper.starts_with("25"))
         && upper[..4].chars().all(|c| c.is_ascii_digit())
 }
 
@@ -1440,10 +1572,14 @@ mod tests {
 
     #[test]
     fn different_agents_and_addresses_hash_differently() {
-        let base = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
-        let again = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
-        let other_ua = DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "curl/8.0");
-        let other_ip = DeviceService::get_or_create_device_id(None, None, "192.168.1.6", "Mozilla/5.0 (X11)");
+        let base =
+            DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
+        let again =
+            DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "Mozilla/5.0 (X11)");
+        let other_ua =
+            DeviceService::get_or_create_device_id(None, None, "192.168.1.5", "curl/8.0");
+        let other_ip =
+            DeviceService::get_or_create_device_id(None, None, "192.168.1.6", "Mozilla/5.0 (X11)");
         assert_eq!(base.0, again.0, "deterministic");
         assert_ne!(base.0, other_ua.0, "UA participates in the hash");
         assert_ne!(base.0, other_ip.0, "client IP participates in the hash");
@@ -1451,28 +1587,39 @@ mod tests {
 
     #[test]
     fn explicit_cookie_and_header_win_over_the_hash() {
-        let (id, is_new) = DeviceService::get_or_create_device_id(Some("dev_abc"), None, "1.2.3.4", "ua");
+        let (id, is_new) =
+            DeviceService::get_or_create_device_id(Some("dev_abc"), None, "1.2.3.4", "ua");
         assert_eq!(id, "dev_abc");
         assert!(!is_new);
 
-        let (id, _) = DeviceService::get_or_create_device_id(Some("bogus"), Some("dev_hdr"), "1.2.3.4", "ua");
+        let (id, _) =
+            DeviceService::get_or_create_device_id(Some("bogus"), Some("dev_hdr"), "1.2.3.4", "ua");
         assert_eq!(id, "dev_hdr", "a non-dev_ cookie must be ignored");
     }
 
     #[test]
     fn windows_and_lan_are_classified_from_headers() {
-        let cf = DeviceService::classify_connection(Some("1.2.3.4"), None, "media.anisparvez.in", None, "127.0.0.1");
+        let cf = DeviceService::classify_connection(
+            Some("1.2.3.4"),
+            None,
+            "media.anisparvez.in",
+            None,
+            "127.0.0.1",
+        );
         assert!(cf.is_cloudflare);
         assert_eq!(cf.connection_type, "Internet (Cloudflare Tunnel)");
         assert_eq!(cf.client_ip, "1.2.3.4");
 
-        let loopback = DeviceService::classify_connection(None, None, "localhost:8000", None, "127.0.0.1");
+        let loopback =
+            DeviceService::classify_connection(None, None, "localhost:8000", None, "127.0.0.1");
         assert_eq!(loopback.connection_type, "Localhost (127.0.0.1)");
 
-        let lan = DeviceService::classify_connection(None, None, "192.168.1.9:8000", None, "192.168.1.9");
+        let lan =
+            DeviceService::classify_connection(None, None, "192.168.1.9:8000", None, "192.168.1.9");
         assert_eq!(lan.connection_type, "Local Network (LAN)");
 
-        let direct = DeviceService::classify_connection(None, None, "example:8000", None, "8.8.8.8");
+        let direct =
+            DeviceService::classify_connection(None, None, "example:8000", None, "8.8.8.8");
         assert_eq!(direct.connection_type, "Internet (Direct)");
     }
 
@@ -1495,7 +1642,13 @@ mod tests {
 
     #[test]
     fn private_ip_detection() {
-        for ip in ["192.168.1.5", "10.0.0.1", "172.16.0.1", "127.0.0.1", "169.254.1.1"] {
+        for ip in [
+            "192.168.1.5",
+            "10.0.0.1",
+            "172.16.0.1",
+            "127.0.0.1",
+            "169.254.1.1",
+        ] {
             assert!(is_private_ip(ip), "{} should be private", ip);
         }
         for ip in ["8.8.8.8", "1.1.1.1", "172.32.0.1"] {
@@ -1513,7 +1666,10 @@ mod tests {
         assert_eq!(tizen.device_type, "Smart TV");
         assert_eq!(tizen.device_os, "Tizen OS 6.0");
 
-        let xbox = DeviceService::parse_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; Xbox; Xbox One)", &ch);
+        let xbox = DeviceService::parse_user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; Xbox; Xbox One)",
+            &ch,
+        );
         assert_eq!(xbox.device_type, "Console");
         assert_eq!(xbox.device_os, "Xbox OS");
     }

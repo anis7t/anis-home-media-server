@@ -48,8 +48,8 @@ fn test_plan_chunks_stride_and_boundary_invariants() {
     assert_eq!(chunks[3].expected_segs, 1); // round(5 / 4)
 
     // Stride monotonicity
-    for i in 0..chunks.len() {
-        assert_eq!(chunks[i].start_seg, i * SEGMENTS_PER_CHUNK_STRIDE);
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(chunk.start_seg, i * SEGMENTS_PER_CHUNK_STRIDE);
     }
 }
 
@@ -66,7 +66,8 @@ fn test_plan_chunks_drops_zero_frame_float_residue() {
 #[test]
 fn test_update_master_playlist_discontinuities_and_healing() {
     let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let hls_dir = std::env::temp_dir().join(format!("rust_chunk_test_{}_{}", std::process::id(), count));
+    let hls_dir =
+        std::env::temp_dir().join(format!("rust_chunk_test_{}_{}", std::process::id(), count));
     let _ = fs::remove_dir_all(&hls_dir);
     fs::create_dir_all(&hls_dir).unwrap();
     let playlist_path = hls_dir.join("playlist.m3u8");
@@ -80,20 +81,18 @@ fn test_update_master_playlist_discontinuities_and_healing() {
     fs::write(hls_dir.join("segment_000033.ts"), b"data33").unwrap();
 
     // Create chunk playlist with custom durations
-    let chunk0_pl = "#EXTM3U\n#EXTINF:4.123456,\nsegment_000000.ts\n#EXTINF:3.876544,\nsegment_000001.ts\n";
+    let chunk0_pl =
+        "#EXTM3U\n#EXTINF:4.123456,\nsegment_000000.ts\n#EXTINF:3.876544,\nsegment_000001.ts\n";
     fs::write(hls_dir.join("chunk_0.m3u8"), chunk0_pl).unwrap();
 
-    let chunk1_pl = "#EXTM3U\n#EXTINF:4.000000,\nsegment_000032.ts\n#EXTINF:4.000000,\nsegment_000033.ts\n";
+    let chunk1_pl =
+        "#EXTM3U\n#EXTINF:4.000000,\nsegment_000032.ts\n#EXTINF:4.000000,\nsegment_000033.ts\n";
     fs::write(hls_dir.join("chunk_1.m3u8"), chunk1_pl).unwrap();
 
     // 1. Partial update (in progress)
-    let encoded_sec = ChunkTranscodeService::update_master_playlist(
-        &hls_dir,
-        &playlist_path,
-        120.0,
-        false,
-    )
-    .unwrap();
+    let encoded_sec =
+        ChunkTranscodeService::update_master_playlist(&hls_dir, &playlist_path, 120.0, false)
+            .unwrap();
 
     assert!(encoded_sec > 15.0);
     let content = fs::read_to_string(&playlist_path).unwrap();
@@ -103,18 +102,18 @@ fn test_update_master_playlist_discontinuities_and_healing() {
     assert!(!content.contains("#EXT-X-ENDLIST"));
 
     // Verify #EXT-X-DISCONTINUITY is placed right before chunk 1's start segment (segment_000032.ts)
-    let disc_pos = content.find("#EXT-X-DISCONTINUITY").expect("must contain discontinuity");
-    let seg32_pos = content.find("segment_000032.ts").expect("must contain segment_000032.ts");
+    let disc_pos = content
+        .find("#EXT-X-DISCONTINUITY")
+        .expect("must contain discontinuity");
+    let seg32_pos = content
+        .find("segment_000032.ts")
+        .expect("must contain segment_000032.ts");
     assert!(disc_pos < seg32_pos);
 
     // 2. Complete update (finished)
-    let final_sec = ChunkTranscodeService::update_master_playlist(
-        &hls_dir,
-        &playlist_path,
-        120.0,
-        true,
-    )
-    .unwrap();
+    let final_sec =
+        ChunkTranscodeService::update_master_playlist(&hls_dir, &playlist_path, 120.0, true)
+            .unwrap();
 
     assert_eq!(final_sec, encoded_sec);
     let final_content = fs::read_to_string(&playlist_path).unwrap();
@@ -197,7 +196,8 @@ fn test_parse_job_mode_and_qualities() {
 #[test]
 fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
     let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let hls_dir = std::env::temp_dir().join(format!("rust_fmp4_test_{}_{}", std::process::id(), count));
+    let hls_dir =
+        std::env::temp_dir().join(format!("rust_fmp4_test_{}_{}", std::process::id(), count));
     let _ = fs::remove_dir_all(&hls_dir);
     fs::create_dir_all(&hls_dir).unwrap();
     let playlist_path = hls_dir.join("playlist.m3u8");
@@ -231,13 +231,9 @@ fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
     assert!(ChunkTranscodeService::chunk_output_ok(&hls_dir, &chunk0));
 
     // Update master playlist
-    let encoded_sec = ChunkTranscodeService::update_master_playlist(
-        &hls_dir,
-        &playlist_path,
-        120.0,
-        true,
-    )
-    .unwrap();
+    let encoded_sec =
+        ChunkTranscodeService::update_master_playlist(&hls_dir, &playlist_path, 120.0, true)
+            .unwrap();
 
     assert_eq!(encoded_sec, 16.0);
     let content = fs::read_to_string(&playlist_path).unwrap();
@@ -250,13 +246,23 @@ fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
     assert!(content.contains("#EXT-X-ENDLIST"));
 
     // Verify ordering: init_chunk_0.mp4 before segment 0, and discontinuity + init_chunk_1.mp4 before segment 32
-    let map0_pos = content.find("init_chunk_0.mp4").expect("must have init_chunk_0");
-    let seg0_pos = content.find("segment_000000.m4s").expect("must have segment 0");
+    let map0_pos = content
+        .find("init_chunk_0.mp4")
+        .expect("must have init_chunk_0");
+    let seg0_pos = content
+        .find("segment_000000.m4s")
+        .expect("must have segment 0");
     assert!(map0_pos < seg0_pos);
 
-    let disc_pos = content.find("#EXT-X-DISCONTINUITY").expect("must have discontinuity");
-    let map1_pos = content.find("init_chunk_1.mp4").expect("must have init_chunk_1");
-    let seg32_pos = content.find("segment_000032.m4s").expect("must have segment 32");
+    let disc_pos = content
+        .find("#EXT-X-DISCONTINUITY")
+        .expect("must have discontinuity");
+    let map1_pos = content
+        .find("init_chunk_1.mp4")
+        .expect("must have init_chunk_1");
+    let seg32_pos = content
+        .find("segment_000032.m4s")
+        .expect("must have segment 32");
     assert!(disc_pos < map1_pos);
     assert!(map1_pos < seg32_pos);
 
@@ -266,7 +272,11 @@ fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
 #[test]
 fn test_fmp4_real_ffmpeg_chunk_generation_and_probe() {
     let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let hls_dir = std::env::temp_dir().join(format!("rust_ffmpeg_fmp4_test_{}_{}", std::process::id(), count));
+    let hls_dir = std::env::temp_dir().join(format!(
+        "rust_ffmpeg_fmp4_test_{}_{}",
+        std::process::id(),
+        count
+    ));
     let _ = fs::remove_dir_all(&hls_dir);
     fs::create_dir_all(&hls_dir).unwrap();
 
@@ -306,7 +316,11 @@ fn test_fmp4_real_ffmpeg_chunk_generation_and_probe() {
     ]);
 
     let output = cmd.output().expect("ffmpeg must execute");
-    assert!(output.status.success(), "ffmpeg command failed: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "ffmpeg command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify files on disk
     let init_path = hls_dir.join("init_chunk_0.mp4");

@@ -1,5 +1,7 @@
 # Anis' Home Media Server
 
+[![CI](https://github.com/anis7t/anis-home-media-server/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anis7t/anis-home-media-server/actions/workflows/ci.yml)
+
 A modern, high-performance, self-hosted **personal home media server** built with **Rust (Axum)**, **React 19**, and **PostgreSQL 18** for streaming a private movie library over a local network, with secure remote access over a static public IP behind **Caddy** and Let's Encrypt TLS.
 
 The platform includes 100% native Rust routes, services, background workers, PostgreSQL persistence, dynamic multi-GPU chunked FFmpeg transcoding (AMD Radeon RX 560X + Vega 8), TMDb metadata ingestion, native subtitle extraction with automatic language detection, OTT-style QR device sign-in for camera-less devices, dual-drive storage tiering, resumable uploads, connected-device telemetry, live video seek preview thumbnails, an in-app User Manual, and persistent Windows Service hosting.

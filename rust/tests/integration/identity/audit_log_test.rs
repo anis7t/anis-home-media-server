@@ -4,9 +4,7 @@ use axum::{
     http::{header, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::fs;
@@ -231,7 +229,11 @@ async fn test_device_mutations_create_audit_records() {
             .to_string(),
         ))
         .unwrap();
-    req.extensions_mut().insert(axum::extract::ConnectInfo("192.168.1.50:51000".parse::<std::net::SocketAddr>().unwrap()));
+    req.extensions_mut().insert(axum::extract::ConnectInfo(
+        "192.168.1.50:51000"
+            .parse::<std::net::SocketAddr>()
+            .unwrap(),
+    ));
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -266,7 +268,11 @@ async fn test_device_mutations_create_audit_records() {
             .to_string(),
         ))
         .unwrap();
-    req.extensions_mut().insert(axum::extract::ConnectInfo("192.168.1.50:51000".parse::<std::net::SocketAddr>().unwrap()));
+    req.extensions_mut().insert(axum::extract::ConnectInfo(
+        "192.168.1.50:51000"
+            .parse::<std::net::SocketAddr>()
+            .unwrap(),
+    ));
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

@@ -4,8 +4,10 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    create_app_full, db, routes::upload::{build_upload_routes, UploadState},
-    services::system_service::SystemService, test_support,
+    create_app_full, db,
+    routes::upload::{build_upload_routes, UploadState},
+    services::system_service::SystemService,
+    test_support,
 };
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -96,12 +98,16 @@ async fn role_for_email_reflects_admin_list() {
         "admin"
     );
     assert_eq!(
-        media_server_api::services::auth_service::AuthService::role_for_email("someone@example.com"),
+        media_server_api::services::auth_service::AuthService::role_for_email(
+            "someone@example.com"
+        ),
         "viewer"
     );
     // Case-insensitive + trimmed.
     assert_eq!(
-        media_server_api::services::auth_service::AuthService::role_for_email("  ANIS7T@GMAIL.COM  "),
+        media_server_api::services::auth_service::AuthService::role_for_email(
+            "  ANIS7T@GMAIL.COM  "
+        ),
         "admin"
     );
 
@@ -194,14 +200,18 @@ async fn upload_init_requires_admin_session() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root = std::env::temp_dir().join(format!("ms_upload_admin_{}_{}", std::process::id(), nonce));
+    let root =
+        std::env::temp_dir().join(format!("ms_upload_admin_{}_{}", std::process::id(), nonce));
     let target = root.join("media");
     let tmp = root.join("tmp");
     std::fs::create_dir_all(&target).unwrap();
     std::fs::create_dir_all(&tmp).unwrap();
 
     // Two users: one admin, one viewer.
-    for (sub, email, role) in [(ADMIN_SUB, ADMIN_EMAIL, "admin"), (VIEWER_SUB, VIEWER_EMAIL, "viewer")] {
+    for (sub, email, role) in [
+        (ADMIN_SUB, ADMIN_EMAIL, "admin"),
+        (VIEWER_SUB, VIEWER_EMAIL, "viewer"),
+    ] {
         sqlx::query(
             r#"
             INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)

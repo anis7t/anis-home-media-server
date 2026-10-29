@@ -182,7 +182,8 @@ pub async fn storage_post_settings_handler(
     match StorageService::set_settings(&state.pool, &policy).await {
         Ok(saved_policy) => {
             let ip = AuditService::extract_client_ip(&headers);
-            let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, body_pin).await;
+            let (actor_type, actor_id) =
+                AuditService::extract_actor(&state.pool, &headers, body_pin).await;
             AuditService::record_event(
                 &state.pool,
                 actor_type,
@@ -236,7 +237,14 @@ pub async fn storage_archive_media_handler(
         ));
     }
 
-    match StorageService::archive_media(&state.pool, &filename, &state.media_roots, &state.cache_dir).await {
+    match StorageService::archive_media(
+        &state.pool,
+        &filename,
+        &state.media_roots,
+        &state.cache_dir,
+    )
+    .await
+    {
         Ok(res) => Ok(Json(serde_json::json!({
             "success": true,
             "result": res
@@ -288,10 +296,13 @@ pub async fn storage_delete_media_handler(
         ));
     }
 
-    match StorageService::purge_media(&state.pool, &filename, &state.media_roots, &state.cache_dir).await {
+    match StorageService::purge_media(&state.pool, &filename, &state.media_roots, &state.cache_dir)
+        .await
+    {
         Ok(res) => {
             let ip = AuditService::extract_client_ip(&headers);
-            let (actor_type, actor_id) = AuditService::extract_actor(&state.pool, &headers, None).await;
+            let (actor_type, actor_id) =
+                AuditService::extract_actor(&state.pool, &headers, None).await;
             AuditService::record_event(
                 &state.pool,
                 actor_type,

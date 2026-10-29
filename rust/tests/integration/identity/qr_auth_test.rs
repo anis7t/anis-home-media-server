@@ -4,9 +4,7 @@ use axum::{
     http::{header, StatusCode},
 };
 use http_body_util::BodyExt;
-use media_server_api::{
-    create_app_full, db, services::system_service::SystemService,
-};
+use media_server_api::{create_app_full, db, services::system_service::SystemService};
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::fs;
@@ -272,7 +270,10 @@ async fn test_qr_boundary_expiry_grace_extension() {
         .await
         .unwrap();
     let has_grace: bool = row.get("has_grace");
-    assert!(has_grace, "expires_at must be extended by at least 60s grace window upon confirmation");
+    assert!(
+        has_grace,
+        "expires_at must be extended by at least 60s grace window upon confirmation"
+    );
 
     // 5. TV finalizes cleanly without 400 Bad Request
     let req = Request::builder()
@@ -292,7 +293,8 @@ async fn test_qr_boundary_expiry_grace_extension() {
 #[tokio::test]
 async fn test_qr_finalize_idempotency_window() {
     let ctx = TestContext::new().await;
-    let (_user_id, phone_session) = create_authenticated_user(&ctx.pool, "qr_user_idempotent").await;
+    let (_user_id, phone_session) =
+        create_authenticated_user(&ctx.pool, "qr_user_idempotent").await;
 
     // 1. Create & Confirm
     let req = Request::builder()
@@ -315,7 +317,9 @@ async fn test_qr_finalize_idempotency_window() {
         .header("x-forwarded-for", "10.10.3.2")
         .header(header::COOKIE, format!("session_token={}", phone_session))
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "code": code, "device_name": "Idempotent TV" }).to_string()))
+        .body(Body::from(
+            json!({ "code": code, "device_name": "Idempotent TV" }).to_string(),
+        ))
         .unwrap();
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
@@ -393,7 +397,9 @@ async fn test_qr_finalize_security_guards() {
         .header("x-forwarded-for", "10.10.4.2")
         .header(header::COOKIE, format!("session_token={}", phone_session))
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "code": code, "device_name": "Sec TV" }).to_string()))
+        .body(Body::from(
+            json!({ "code": code, "device_name": "Sec TV" }).to_string(),
+        ))
         .unwrap();
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();

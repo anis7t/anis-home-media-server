@@ -135,7 +135,11 @@ pub async fn control(
     let raw = payload.value.unwrap_or(Value::Null);
     let value = match action.as_str() {
         // Every arm yields Option<f64>; mute's truthiness is carried as 0.0/1.0.
-        "mute" => Some(if raw.is_null() { 1.0 } else if truthy(&raw) { 1.0 } else { 0.0 }),
+        "mute" => Some(if raw.is_null() || truthy(&raw) {
+            1.0
+        } else {
+            0.0
+        }),
         "subtitle" => Some(raw.as_i64().unwrap_or_else(|| {
             raw.as_str()
                 .and_then(|s| s.parse::<i64>().ok())
@@ -232,7 +236,16 @@ mod tests {
 
     #[test]
     fn every_documented_action_is_accepted() {
-        for a in ["play", "pause", "stop", "seek", "volume", "mute", "subtitle", "subtitle_offset"] {
+        for a in [
+            "play",
+            "pause",
+            "stop",
+            "seek",
+            "volume",
+            "mute",
+            "subtitle",
+            "subtitle_offset",
+        ] {
             assert!(ACTIONS.contains(&a), "{}", a);
         }
         assert_eq!(ACTIONS.len(), 8);

@@ -25,7 +25,8 @@ use serde_json::json;
 pub const MEDIA_RECEIVER_ID: &str = cast_proto::MEDIA_RECEIVER_TRANSPORT_FALLBACK;
 
 /// Containers a Cast receiver can play straight from the file.
-pub const CAST_DIRECT_EXTENSIONS: [&str; 7] = [".mp4", ".m4v", ".webm", ".mov", ".mp3", ".m4a", ".aac"];
+pub const CAST_DIRECT_EXTENSIONS: [&str; 7] =
+    [".mp4", ".m4v", ".webm", ".mov", ".mp3", ".m4a", ".aac"];
 
 pub fn needs_hls(path: &std::path::Path) -> bool {
     // `Path::extension` yields "mp4", not ".mp4" - the table is dotted, so the
@@ -55,11 +56,19 @@ impl SubtitleTrack {
         MediaTrack {
             track_id: self.track_id,
             track_content_id: self.src.clone(),
-            language: if self.lang.is_empty() { "en".into() } else { self.lang.clone() },
+            language: if self.lang.is_empty() {
+                "en".into()
+            } else {
+                self.lang.clone()
+            },
             subtype: "SUBTITLES".into(),
             kind: "TEXT".into(),
             track_content_type: "text/vtt".into(),
-            name: if self.label.is_empty() { format!("Subtitle {}", self.track_id) } else { self.label.clone() },
+            name: if self.label.is_empty() {
+                format!("Subtitle {}", self.track_id)
+            } else {
+                self.label.clone()
+            },
         }
     }
 }
@@ -143,18 +152,25 @@ async fn connect_app(conn: &mut CastConnection, transport_id: &str) -> Result<()
 /// are checked, because reading only one reports a working app as absent.
 async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
     let reply = conn
-        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .request(
+            NS_RECEIVER,
+            DEFAULT_RECEIVER_ID,
+            json!({ "type": "GET_STATUS" }),
+        )
         .await
         .ok()?;
     let status = cast_proto::status_object(&reply)?;
 
-    let running = status.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
+    let running = status.get("appId").and_then(|v| v.as_str())
+        == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
         || status
             .get("applications")
             .and_then(|v| v.as_array())
             .map(|apps| {
-                apps.iter()
-                    .any(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+                apps.iter().any(|a| {
+                    a.get("appId").and_then(|v| v.as_str())
+                        == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
+                })
             })
             .unwrap_or(false);
     if !running {
@@ -169,8 +185,10 @@ async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
                 .get("applications")
                 .and_then(|v| v.as_array())
                 .and_then(|apps| {
-                    apps.iter()
-                        .find(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+                    apps.iter().find(|a| {
+                        a.get("appId").and_then(|v| v.as_str())
+                            == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
+                    })
                 })
                 .and_then(|a| a.get("transportId"))
                 .and_then(|v| v.as_str())
@@ -193,7 +211,11 @@ async fn receiver_app_transport(conn: &mut CastConnection) -> Option<String> {
 /// because none of them should stop us sending the quit.
 async fn receiver_app_session_id(conn: &mut CastConnection) -> Option<String> {
     let reply = conn
-        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .request(
+            NS_RECEIVER,
+            DEFAULT_RECEIVER_ID,
+            json!({ "type": "GET_STATUS" }),
+        )
         .await
         .ok()?;
     let status = cast_proto::status_object(&reply)?;
@@ -206,15 +228,16 @@ async fn receiver_app_session_id(conn: &mut CastConnection) -> Option<String> {
                 .get("applications")
                 .and_then(|v| v.as_array())
                 .and_then(|apps| {
-                    apps.iter()
-                        .find(|a| a.get("appId").and_then(|v| v.as_str()) == Some(cast_proto::MEDIA_RECEIVER_APP_ID))
+                    apps.iter().find(|a| {
+                        a.get("appId").and_then(|v| v.as_str())
+                            == Some(cast_proto::MEDIA_RECEIVER_APP_ID)
+                    })
                 })
                 .and_then(|a| a.get("sessionId"))
                 .and_then(|v| v.as_str())
         })
         .map(|s| s.to_string())
 }
-
 
 /// Hand a URL to the receiver.
 ///
@@ -243,9 +266,12 @@ pub async fn load(
     });
 
     if !subtitles.is_empty() {
-        media["tracks"] = json!(subtitles.iter().map(|s| s.to_media_track()).collect::<Vec<_>>());
-        media["textTrackStyle"] = serde_json::to_value(TextTrackStyle::default())
-            .map_err(|e| e.to_string())?;
+        media["tracks"] = json!(subtitles
+            .iter()
+            .map(|s| s.to_media_track())
+            .collect::<Vec<_>>());
+        media["textTrackStyle"] =
+            serde_json::to_value(TextTrackStyle::default()).map_err(|e| e.to_string())?;
     }
 
     // `currentTime` is a **top-level** member of LOAD, a sibling of `media`:
@@ -263,7 +289,9 @@ pub async fn load(
         load["currentTime"] = json!(pos);
     }
 
-    conn.request(NS_MEDIA, &transport_id, load).await.map(|_| ())?;
+    conn.request(NS_MEDIA, &transport_id, load)
+        .await
+        .map(|_| ())?;
 
     if let Some(track_id) = active_subtitle_id.filter(|t| *t > 0) {
         // The receiver may still be opening the session; this is best-effort.
@@ -372,9 +400,13 @@ pub async fn stop_media(conn: &mut CastConnection) -> Result<(), String> {
 /// process the message before the transport went away.
 pub async fn quit_app(conn: &mut CastConnection) -> Result<(), String> {
     let session_id = receiver_app_session_id(conn).await;
-    conn.request(NS_RECEIVER, DEFAULT_RECEIVER_ID, quit_app_payload(session_id.as_deref()))
-        .await
-        .map(|_| ())
+    conn.request(
+        NS_RECEIVER,
+        DEFAULT_RECEIVER_ID,
+        quit_app_payload(session_id.as_deref()),
+    )
+    .await
+    .map(|_| ())
 }
 
 /// The exact quit-app message, separated so the wire shape can be pinned.
@@ -464,7 +496,11 @@ pub async fn set_muted(conn: &mut CastConnection, muted: bool) -> Result<(), Str
 /// Select or clear a subtitle track. `track_id` 0 means "no subtitles".
 pub async fn select_subtitle(conn: &mut CastConnection, track_id: i64) -> Result<(), String> {
     let session = wait_for_session(conn).await;
-    let active = if track_id > 0 { vec![track_id] } else { Vec::new() };
+    let active = if track_id > 0 {
+        vec![track_id]
+    } else {
+        Vec::new()
+    };
     let mut msg = json!({
         "type": "EDIT_TRACKS_INFO",
         "activeTrackIds": active,
@@ -485,15 +521,21 @@ pub async fn status(conn: &mut CastConnection) -> (serde_json::Value, serde_json
         .await
         .unwrap_or(serde_json::Value::Null);
     let receiver = conn
-        .request(NS_RECEIVER, DEFAULT_RECEIVER_ID, json!({ "type": "GET_STATUS" }))
+        .request(
+            NS_RECEIVER,
+            DEFAULT_RECEIVER_ID,
+            json!({ "type": "GET_STATUS" }),
+        )
         .await
         .unwrap_or(serde_json::Value::Null);
     (media, receiver)
 }
 
 /// Turn the receiver's answers into the shape the players already consume.
-pub fn status_payload(media: &serde_json::Value, receiver: &serde_json::Value) -> serde_json::Value {
-
+pub fn status_payload(
+    media: &serde_json::Value,
+    receiver: &serde_json::Value,
+) -> serde_json::Value {
     // `status` is an object per the docs but a list on some receivers, and it is
     // an EMPTY list while nothing is loaded.
     let status_obj = cast_proto::status_object(media);
@@ -565,7 +607,8 @@ pub fn load_message(url: &str, title: &str, content_type: &str) -> CastMessage {
         "sender-preview",
         MEDIA_RECEIVER_ID,
         NS_MEDIA,
-        &json!({ "type": "LOAD", "url": url, "title": title, "contentType": content_type }).to_string(),
+        &json!({ "type": "LOAD", "url": url, "title": title, "contentType": content_type })
+            .to_string(),
     )
 }
 
@@ -691,8 +734,10 @@ mod tests {
         // The second shape is the bug this whole refactor exists to prevent:
         // `media_session_id` read `status` as an object, so on this receiver it
         // found nothing and `seek` refused a cast that was plainly playing.
-        let object = serde_json::json!({ "status": { "mediaSessionId": 3, "playerState": "PLAYING" } });
-        let listed = serde_json::json!({ "status": [{ "mediaSessionId": 3, "playerState": "PLAYING" }] });
+        let object =
+            serde_json::json!({ "status": { "mediaSessionId": 3, "playerState": "PLAYING" } });
+        let listed =
+            serde_json::json!({ "status": [{ "mediaSessionId": 3, "playerState": "PLAYING" }] });
         assert_eq!(media_session_id(&object), Some(3));
         assert_eq!(media_session_id(&listed), Some(3));
         assert_eq!(media_session_id(&serde_json::json!({ "status": [] })), None);
@@ -740,7 +785,10 @@ mod tests {
             "type": "RECEIVER_STATUS",
             "status": { "isActiveInput": false, "applications": [] }
         });
-        assert_eq!(status_payload(&idle, &app_gone)["receiver_app_running"], false);
+        assert_eq!(
+            status_payload(&idle, &app_gone)["receiver_app_running"],
+            false
+        );
     }
 
     #[test]
@@ -760,7 +808,10 @@ mod tests {
             }
         });
         let payload = status_payload(&media, &receiver);
-        assert_eq!(payload["volume"], 30.0, "the reported volume is the audible one");
+        assert_eq!(
+            payload["volume"], 30.0,
+            "the reported volume is the audible one"
+        );
         assert_eq!(payload["muted"], false);
     }
 
@@ -779,7 +830,10 @@ mod tests {
             "status": { "volume": { "level": 0.2, "muted": true }, "isActiveInput": true }
         });
         let payload = status_payload(&media, &receiver);
-        assert_eq!(payload["volume"], 20.0, "the receiver's real volume, not the 100 fallback");
+        assert_eq!(
+            payload["volume"], 20.0,
+            "the receiver's real volume, not the 100 fallback"
+        );
         assert_eq!(payload["muted"], true, "the receiver's real mute state");
     }
 
@@ -801,60 +855,80 @@ mod tests {
     }
 
     /// How long does the television actually take to clear the receiver screen?
-///
-/// The API reports `app_running=false` promptly, yet the screen can still be
-/// showing. "Gone from the receiver's application list" and "cleared from the
-/// television" may be different events, and guessing between them wastes a
-/// restart each time.
-///
-/// This deliberately does **not** send the connection `CLOSE` that the API
-/// sends on teardown, so the two can be compared. Gated like the other live
-/// checks.
-#[tokio::test]
-async fn live_teardown_timeline() {
-    if std::env::var("MEDIA_SERVER_CAST_LIVE_TESTS").is_err() {
-        eprintln!("SKIPPED live_teardown_timeline");
-        return;
-    }
-    let host = match std::env::var("MEDIA_SERVER_CAST_LIVE_HOST") {
-        Ok(h) if !h.is_empty() => h,
-        _ => {
-            eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_HOST not set)");
+    ///
+    /// The API reports `app_running=false` promptly, yet the screen can still be
+    /// showing. "Gone from the receiver's application list" and "cleared from the
+    /// television" may be different events, and guessing between them wastes a
+    /// restart each time.
+    ///
+    /// This deliberately does **not** send the connection `CLOSE` that the API
+    /// sends on teardown, so the two can be compared. Gated like the other live
+    /// checks.
+    #[tokio::test]
+    async fn live_teardown_timeline() {
+        if std::env::var("MEDIA_SERVER_CAST_LIVE_TESTS").is_err() {
+            eprintln!("SKIPPED live_teardown_timeline");
             return;
         }
-    };
-    let url = std::env::var("MEDIA_SERVER_CAST_LIVE_URL").unwrap_or_default();
-    if url.is_empty() {
-        eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_URL not set)");
-        return;
-    }
+        let host = match std::env::var("MEDIA_SERVER_CAST_LIVE_HOST") {
+            Ok(h) if !h.is_empty() => h,
+            _ => {
+                eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_HOST not set)");
+                return;
+            }
+        };
+        let url = std::env::var("MEDIA_SERVER_CAST_LIVE_URL").unwrap_or_default();
+        if url.is_empty() {
+            eprintln!("SKIPPED live_teardown_timeline (MEDIA_SERVER_CAST_LIVE_URL not set)");
+            return;
+        }
 
-    let mut conn = connect_and_handshake(&host).await.expect("handshake");
-    let transport = ensure_media_receiver_session(&mut conn).await.expect("session");
-    conn.set_app_transport(transport);
-    load(&mut conn, &url, "teardown", "video/mp4", Some(600.0), &[], None)
+        let mut conn = connect_and_handshake(&host).await.expect("handshake");
+        let transport = ensure_media_receiver_session(&mut conn)
+            .await
+            .expect("session");
+        conn.set_app_transport(transport);
+        load(
+            &mut conn,
+            &url,
+            "teardown",
+            "video/mp4",
+            Some(600.0),
+            &[],
+            None,
+        )
         .await
         .expect("load");
-    tokio::time::sleep(Duration::from_secs(8)).await;
-    eprintln!("TL playing; app running = {}", media_receiver_still_running(&mut conn).await);
+        tokio::time::sleep(Duration::from_secs(8)).await;
+        eprintln!(
+            "TL playing; app running = {}",
+            media_receiver_still_running(&mut conn).await
+        );
 
-    let t0 = std::time::Instant::now();
-    let _ = stop_media(&mut conn).await;
-    eprintln!("TL +{:.1}s  STOP media sent", t0.elapsed().as_secs_f64());
-    let _ = quit_app(&mut conn).await;
-    eprintln!("TL +{:.1}s  STOP (+sessionId) sent (no CLOSE sent)", t0.elapsed().as_secs_f64());
+        let t0 = std::time::Instant::now();
+        let _ = stop_media(&mut conn).await;
+        eprintln!("TL +{:.1}s  STOP media sent", t0.elapsed().as_secs_f64());
+        let _ = quit_app(&mut conn).await;
+        eprintln!(
+            "TL +{:.1}s  STOP (+sessionId) sent (no CLOSE sent)",
+            t0.elapsed().as_secs_f64()
+        );
 
-    // Poll every second for 25s and print when the app leaves the receiver.
-    for i in 1..=25 {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        let still = media_receiver_still_running(&mut conn).await;
-        eprintln!("TL +{:.1}s  app_running={}", t0.elapsed().as_secs_f64(), still);
-        if !still && i > 1 {
-            break;
+        // Poll every second for 25s and print when the app leaves the receiver.
+        for i in 1..=25 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let still = media_receiver_still_running(&mut conn).await;
+            eprintln!(
+                "TL +{:.1}s  app_running={}",
+                t0.elapsed().as_secs_f64(),
+                still
+            );
+            if !still && i > 1 {
+                break;
+            }
         }
+        conn.close().await;
     }
-    conn.close().await;
-}
 
     /// The quit-app message is `STOP` carrying `sessionId`, matching
     /// pychromecast. `STOP_APP` is not a real message type: the receiver
@@ -871,7 +945,10 @@ async fn live_teardown_timeline() {
     /// to a type the receiver will silently ignore.
     #[test]
     fn quit_app_without_a_session_id_is_still_stop() {
-        assert_eq!(quit_app_payload(None), serde_json::json!({ "type": "STOP" }));
+        assert_eq!(
+            quit_app_payload(None),
+            serde_json::json!({ "type": "STOP" })
+        );
     }
 
     /// Guards the specific regression: the invented message type.
@@ -919,15 +996,26 @@ async fn live_teardown_timeline() {
         assert_eq!(media.subtype, "SUBTITLES");
         assert_eq!(media.kind, "TEXT");
         assert_eq!(media.track_content_type, "text/vtt");
-        assert!(media.track_content_id.starts_with("http://"), "a receiver cannot resolve a relative path");
+        assert!(
+            media.track_content_id.starts_with("http://"),
+            "a receiver cannot resolve a relative path"
+        );
     }
 
     #[test]
     fn a_blank_label_gets_a_generated_name() {
-        let t = SubtitleTrack { track_id: 3, label: String::new(), lang: String::new(), src: "http://h/x.vtt".into() };
+        let t = SubtitleTrack {
+            track_id: 3,
+            label: String::new(),
+            lang: String::new(),
+            src: "http://h/x.vtt".into(),
+        };
         let media = t.to_media_track();
         assert_eq!(media.name, "Subtitle 3");
-        assert_eq!(media.language, "en", "a blank language must not be sent as empty");
+        assert_eq!(
+            media.language, "en",
+            "a blank language must not be sent as empty"
+        );
     }
 
     #[test]
@@ -938,7 +1026,10 @@ async fn live_teardown_timeline() {
             "status": { "isActiveInput": false, "isStandby": true }
         });
         let payload = status_payload(&media, &receiver);
-        assert_eq!(payload["volume"], 100.0, "no volume field must not read as muted");
+        assert_eq!(
+            payload["volume"], 100.0,
+            "no volume field must not read as muted"
+        );
         assert_eq!(payload["muted"], false);
     }
 
@@ -973,7 +1064,10 @@ async fn live_teardown_timeline() {
 
     #[test]
     fn media_commands_address_the_media_receiver_not_receiver_zero() {
-        assert_eq!(MEDIA_RECEIVER_ID, "urn:x-cast:com.google.cast.media-receiver");
+        assert_eq!(
+            MEDIA_RECEIVER_ID,
+            "urn:x-cast:com.google.cast.media-receiver"
+        );
         assert_ne!(
             MEDIA_RECEIVER_ID, DEFAULT_RECEIVER_ID,
             "a PLAY addressed to receiver-0 is silently ignored"

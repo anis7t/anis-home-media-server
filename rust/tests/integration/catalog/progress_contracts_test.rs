@@ -4,9 +4,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use media_server_api::{
-    create_app, db,
-    models::progress::ProgressResponse,
-    services::system_service::SystemService,
+    create_app, db, models::progress::ProgressResponse, services::system_service::SystemService,
 };
 use tower::ServiceExt;
 
@@ -16,7 +14,12 @@ async fn setup_test_app() -> (axum::Router, sqlx::PgPool) {
         .await
         .expect("Failed to connect to test database");
     let system_service = SystemService::new();
-    let app = create_app(pool.clone(), system_service, config.media_roots, config.cache_dir);
+    let app = create_app(
+        pool.clone(),
+        system_service,
+        config.media_roots,
+        config.cache_dir,
+    );
     (app, pool)
 }
 
@@ -123,7 +126,12 @@ async fn test_progress_full_lifecycle() {
         .unwrap();
 
     let res_get_clamped = app.clone().oneshot(req_get_clamped).await.unwrap();
-    let bytes_clamped = res_get_clamped.into_body().collect().await.unwrap().to_bytes();
+    let bytes_clamped = res_get_clamped
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let prog_clamped: ProgressResponse = serde_json::from_slice(&bytes_clamped).unwrap();
     assert_eq!(prog_clamped.position, 3600.0);
     assert_eq!(prog_clamped.duration, 3600.0);
@@ -138,7 +146,10 @@ async fn test_progress_full_lifecycle() {
     .await
     .unwrap();
 
-    assert_eq!(completed_row.0, 1, "Expected completed == 1 when position >= 90% duration");
+    assert_eq!(
+        completed_row.0, 1,
+        "Expected completed == 1 when position >= 90% duration"
+    );
 
     // 7. Error handling: GET without filename returns 400
     let req_bad_get = Request::builder()

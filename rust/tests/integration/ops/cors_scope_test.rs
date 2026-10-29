@@ -74,7 +74,11 @@ async fn hls_paths_are_readable_by_a_receiver() {
 async fn receiver_preflight_advertises_range_because_it_is_not_safelisted() {
     let app = app().await;
     for path in ["/media/x.mkv", "/hls/x/playlist.m3u8"] {
-        let res = app.clone().oneshot(req(Method::OPTIONS, path)).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(req(Method::OPTIONS, path))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::OK, "{}", path);
         assert_eq!(acao(&res).as_deref(), Some("*"), "{}", path);
         let methods = res
@@ -139,7 +143,11 @@ async fn api_paths_are_not_readable_cross_origin() {
 async fn api_preflight_fails_so_the_browser_never_sends_the_write() {
     let app = app().await;
     for path in ["/api/scan", "/api/storage/audit", "/api/admin/purge-cache"] {
-        let res = app.clone().oneshot(req(Method::OPTIONS, path)).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(req(Method::OPTIONS, path))
+            .await
+            .unwrap();
         assert_eq!(
             acao(&res),
             None,

@@ -75,10 +75,24 @@ pub async fn transcode_handler(
         *res.status_mut() = StatusCode::OK;
         let h = res.headers_mut();
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -93,12 +107,29 @@ pub async fn transcode_handler(
     if cached.is_file() {
         let mut res = RangeService::stream_file(cached, headers, method).await?;
         let h = res.headers_mut();
-        h.insert(header::CACHE_CONTROL, "public, max-age=3600".parse().unwrap());
+        h.insert(
+            header::CACHE_CONTROL,
+            "public, max-age=3600".parse().unwrap(),
+        );
         h.insert("access-control-allow-origin", "*".parse().unwrap());
-        h.insert("access-control-allow-methods", "GET, HEAD, OPTIONS".parse().unwrap());
-        h.insert("access-control-allow-headers", "Range, Origin, Accept, Content-Type".parse().unwrap());
-        h.insert("access-control-expose-headers", "Content-Length, Content-Range, Accept-Ranges".parse().unwrap());
-        h.insert("cross-origin-resource-policy", "cross-origin".parse().unwrap());
+        h.insert(
+            "access-control-allow-methods",
+            "GET, HEAD, OPTIONS".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            "Range, Origin, Accept, Content-Type".parse().unwrap(),
+        );
+        h.insert(
+            "access-control-expose-headers",
+            "Content-Length, Content-Range, Accept-Ranges"
+                .parse()
+                .unwrap(),
+        );
+        h.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
         return Ok(res);
     }
 
@@ -114,9 +145,12 @@ pub async fn transcode_handler(
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
     h.insert(header::RETRY_AFTER, "2".parse().unwrap());
-    h.insert(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+    h.insert(
+        header::CACHE_CONTROL,
+        "no-cache, no-store, must-revalidate".parse().unwrap(),
+    );
     h.insert("access-control-allow-origin", "*".parse().unwrap());
-    return Ok(res);
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -135,7 +169,10 @@ pub async fn transcode_status_handler(
     Path(filename): Path<String>,
 ) -> Result<Json<TranscodeStatusResponse>, AppError> {
     let video_path = PathResolver::resolve_media_path(&filename, &state.roots)?;
-    let q_norm = query.quality.as_deref().filter(|q| !q.is_empty() && *q != "default");
+    let q_norm = query
+        .quality
+        .as_deref()
+        .filter(|q| !q.is_empty() && *q != "default");
 
     // 6A: a live job row is authoritative when one exists.
     if let Some(pool) = state.pool.as_ref() {
@@ -143,14 +180,22 @@ pub async fn transcode_status_handler(
         let job_opt = if let Some(q) = q_norm {
             match JobService::get_by_filename(pool, &rel_key, &format!("hls:{}", q)).await {
                 Ok(Some(j)) => Some(j),
-                _ => JobService::get_by_filename(pool, &rel_key, "hls").await.ok().flatten(),
+                _ => JobService::get_by_filename(pool, &rel_key, "hls")
+                    .await
+                    .ok()
+                    .flatten(),
             }
         } else {
-            JobService::get_by_filename(pool, &rel_key, "hls").await.ok().flatten()
+            JobService::get_by_filename(pool, &rel_key, "hls")
+                .await
+                .ok()
+                .flatten()
         };
 
         if let Some(job) = job_opt {
-            let live = JobStatus::parse(&job.status).map(|s| s.is_live()).unwrap_or(false);
+            let live = JobStatus::parse(&job.status)
+                .map(|s| s.is_live())
+                .unwrap_or(false);
             if live {
                 let status = if job.status == "queued" {
                     "queued".to_string()
@@ -173,7 +218,8 @@ pub async fn transcode_status_handler(
         }
     }
 
-    let hls_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, q_norm);
+    let hls_dir =
+        HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, q_norm);
 
     // 1. Check if completed HLS playlist exists in target directory
     let playlist_file = hls_dir.join("playlist.m3u8");
@@ -215,7 +261,8 @@ pub async fn transcode_status_handler(
         }
 
         // 2. Check if direct transcode cache file exists
-        let direct_cache = HlsService::get_transcode_cache_path(&video_path, "direct", &state.cache_dir);
+        let direct_cache =
+            HlsService::get_transcode_cache_path(&video_path, "direct", &state.cache_dir);
         if direct_cache.is_file() {
             return Ok(Json(TranscodeStatusResponse {
                 status: "complete".to_string(),
@@ -261,10 +308,7 @@ pub async fn transcode_start_handler(
         .unwrap_or("")
         .to_lowercase();
 
-    let is_video = matches!(
-        ext.as_str(),
-        "mp4" | "mkv" | "webm" | "mov" | "avi" | "m4v"
-    );
+    let is_video = matches!(ext.as_str(), "mp4" | "mkv" | "webm" | "mov" | "avi" | "m4v");
     if !is_video {
         return Err(AppError::NotFound("Not a video file".to_string()));
     }
@@ -272,15 +316,21 @@ pub async fn transcode_start_handler(
     let body_quality = if !body.is_empty() {
         serde_json::from_slice::<serde_json::Value>(&body)
             .ok()
-            .and_then(|v| v.get("quality").and_then(|q| q.as_str().map(|s| s.to_string())))
+            .and_then(|v| {
+                v.get("quality")
+                    .and_then(|q| q.as_str().map(|s| s.to_string()))
+            })
     } else {
         None
     };
     let quality = query.quality.or(body_quality);
-    let q_norm = quality.as_deref().filter(|q| !q.is_empty() && *q != "source" && *q != "default");
+    let q_norm = quality
+        .as_deref()
+        .filter(|q| !q.is_empty() && *q != "source" && *q != "default");
 
     if let Some(q) = q_norm {
-        let q_dir = HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, Some(q));
+        let q_dir =
+            HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, Some(q));
         let playlist_file = q_dir.join("playlist.m3u8");
         if playlist_file.is_file() {
             if let Ok(content) = std::fs::read_to_string(&playlist_file) {
@@ -365,9 +415,10 @@ pub async fn transcode_start_handler(
 pub async fn transcode_sweep_handler(
     State(state): State<TranscodeState>,
 ) -> Result<Json<crate::services::transcode_sweeper::SweeperStats>, AppError> {
-    let pool = state.pool.as_ref().ok_or_else(|| {
-        AppError::Internal("Database connection pool not available".to_string())
-    })?;
+    let pool = state
+        .pool
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Database connection pool not available".to_string()))?;
     let stats = crate::services::transcode_sweeper::TranscodeSweeperService::sweep_once(
         pool,
         &state.roots,
@@ -376,5 +427,3 @@ pub async fn transcode_sweep_handler(
     .await?;
     Ok(Json(stats))
 }
-
-

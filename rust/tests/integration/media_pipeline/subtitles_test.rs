@@ -35,8 +35,18 @@ async fn setup_subtitle_test() -> TestSubtitleHarness {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let test_dir = std::env::temp_dir().join(format!("rust_sub_test_{}_{}_{}", std::process::id(), now, count));
-    let cache_dir = std::env::temp_dir().join(format!("rust_sub_cache_{}_{}_{}", std::process::id(), now, count));
+    let test_dir = std::env::temp_dir().join(format!(
+        "rust_sub_test_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
+    let cache_dir = std::env::temp_dir().join(format!(
+        "rust_sub_cache_{}_{}_{}",
+        std::process::id(),
+        now,
+        count
+    ));
     fs::create_dir_all(&test_dir).expect("Failed to create test directory");
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
@@ -49,7 +59,11 @@ async fn setup_subtitle_test() -> TestSubtitleHarness {
     let roots = vec![test_dir.clone()];
     let app = create_app(pool, system_service, roots, cache_dir.clone());
 
-    TestSubtitleHarness { app, test_dir, cache_dir }
+    TestSubtitleHarness {
+        app,
+        test_dir,
+        cache_dir,
+    }
 }
 
 #[test]
@@ -409,7 +423,11 @@ async fn test_embedded_subtitle_cached_serving() {
     let embed_dir = harness.cache_dir.join("subtitles").join("embedded");
     fs::create_dir_all(&embed_dir).unwrap();
     let vtt_file = embed_dir.join(format!("{}_2.vtt", short_hash));
-    fs::write(&vtt_file, b"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFollow the white rabbit.\n").unwrap();
+    fs::write(
+        &vtt_file,
+        b"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFollow the white rabbit.\n",
+    )
+    .unwrap();
 
     let req = Request::builder()
         .method(Method::GET)
@@ -452,7 +470,11 @@ async fn test_online_subtitle_cached_serving() {
     let online_dir = harness.cache_dir.join("subtitles").join("online");
     fs::create_dir_all(&online_dir).unwrap();
     let vtt_file = online_dir.join(format!("{}.vtt", short_hash));
-    fs::write(&vtt_file, b"WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nI am sorry Dave, I cannot do that.\n").unwrap();
+    fs::write(
+        &vtt_file,
+        b"WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nI am sorry Dave, I cannot do that.\n",
+    )
+    .unwrap();
 
     let req = Request::builder()
         .method(Method::GET)
@@ -515,11 +537,18 @@ fn test_opensubtitles_hash_computation() {
     drop(file);
 
     let res = SubtitleService::compute_opensubtitles_hash(&video_path);
-    assert!(res.is_some(), "Must successfully compute hash for file >= 128KB");
+    assert!(
+        res.is_some(),
+        "Must successfully compute hash for file >= 128KB"
+    );
 
     let (hash_str, filesize) = res.unwrap();
     assert_eq!(filesize, size as u64);
-    assert_eq!(hash_str.len(), 16, "OpenSubtitles hash must be 16-character hex string");
+    assert_eq!(
+        hash_str.len(),
+        16,
+        "OpenSubtitles hash must be 16-character hex string"
+    );
 
     // For files < 128KB, should return None
     let small_path = dir.path().join("small.mp4");
@@ -544,7 +573,10 @@ async fn test_has_english_subtitles_detection() {
     let rel_filename = "ActionMovie (2024)/ActionMovie.mkv";
 
     // 1. Without any subtitles -> false
-    assert!(!SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await);
+    assert!(
+        !SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir)
+            .await
+    );
 
     // 2. Add an English sidecar `.en.srt` -> true
     let sidecar_srt = movie_dir.join("ActionMovie.en.srt");
@@ -554,11 +586,16 @@ async fn test_has_english_subtitles_detection() {
     )
     .unwrap();
 
-    assert!(SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await);
+    assert!(
+        SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await
+    );
 
     // 3. Remove sidecar, but simulate pre-cached online OpenSubtitles track -> true
     fs::remove_file(&sidecar_srt).unwrap();
-    assert!(!SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await);
+    assert!(
+        !SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir)
+            .await
+    );
 
     // Compute online short_hash
     let meta = fs::metadata(&video_path).unwrap();
@@ -573,9 +610,15 @@ async fn test_has_english_subtitles_detection() {
     let online_dir = cache_dir.join("subtitles").join("online");
     fs::create_dir_all(&online_dir).unwrap();
     let online_vtt = online_dir.join(format!("{}.vtt", short_hash));
-    fs::write(&online_vtt, "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nCached Subtitle\n").unwrap();
+    fs::write(
+        &online_vtt,
+        "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nCached Subtitle\n",
+    )
+    .unwrap();
 
-    assert!(SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await);
+    assert!(
+        SubtitleService::has_english_subtitles(&video_path, rel_filename, &roots, &cache_dir).await
+    );
 }
 
 #[tokio::test]
@@ -603,12 +646,17 @@ async fn test_negative_match_cache_fast_path() {
     fs::write(&nomatch_file, b"no_match").unwrap();
 
     let start = std::time::Instant::now();
-    let res = SubtitleService::fetch_online_subtitle(&video_path, "Mystery Movie", &cache_dir).await;
+    let res =
+        SubtitleService::fetch_online_subtitle(&video_path, "Mystery Movie", &cache_dir).await;
     let elapsed = start.elapsed();
 
     // Must return None instantly (< 100ms) without attempting external HTTP queries
     assert!(res.is_none());
-    assert!(elapsed < std::time::Duration::from_millis(100), "Negative match cache must return instantly, took {:?}", elapsed);
+    assert!(
+        elapsed < std::time::Duration::from_millis(100),
+        "Negative match cache must return instantly, took {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
@@ -637,7 +685,10 @@ async fn test_ensure_subtitles_skips_when_english_present() {
     .await;
 
     // Should return false (skipped because English subtitles already exist)
-    assert!(!acquired, "Must skip subtitle acquisition when English subtitle already exists");
+    assert!(
+        !acquired,
+        "Must skip subtitle acquisition when English subtitle already exists"
+    );
 }
 
 #[test]
@@ -645,9 +696,11 @@ fn test_scanner_report_telemetry_includes_subtitles() {
     use media_server_api::scanner::ScannerReport;
     use media_server_api::services::scan_service::ScanResponse;
 
-    let mut report = ScannerReport::default();
-    report.files_discovered = 10;
-    report.subtitles_acquired = 3;
+    let report = ScannerReport {
+        files_discovered: 10,
+        subtitles_acquired: 3,
+        ..Default::default()
+    };
 
     assert_eq!(report.subtitles_acquired, 3);
 
@@ -669,4 +722,3 @@ fn test_scanner_report_telemetry_includes_subtitles() {
     let json = serde_json::to_string(&res).unwrap();
     assert!(json.contains("\"subtitles_acquired\":3"));
 }
-

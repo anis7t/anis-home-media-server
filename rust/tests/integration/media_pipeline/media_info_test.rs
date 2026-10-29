@@ -46,7 +46,11 @@ async fn get(app: &axum::Router, uri: &str) -> (StatusCode, Value) {
     get_with_headers(app, uri, vec![]).await
 }
 
-async fn get_with_headers(app: &axum::Router, uri: &str, headers: Vec<(&'static str, &'static str)>) -> (StatusCode, Value) {
+async fn get_with_headers(
+    app: &axum::Router,
+    uri: &str,
+    headers: Vec<(&'static str, &'static str)>,
+) -> (StatusCode, Value) {
     let mut builder = Request::builder().method(Method::GET).uri(uri);
     for (k, v) in headers {
         builder = builder.header(k, v);
@@ -106,10 +110,25 @@ async fn test_media_info_returns_every_documented_field() {
 
     assert_eq!(status, StatusCode::OK);
     for field in [
-        "container", "duration", "video_codec", "audio_codec", "width", "height", "direct_play",
-        "needs_transcode", "is_transcode_ready", "ffprobe_available",
-        "transcoding_available", "quality_ladder", "title", "year", "overview", "genres", "rating",
-        "runtime", "reason",
+        "container",
+        "duration",
+        "video_codec",
+        "audio_codec",
+        "width",
+        "height",
+        "direct_play",
+        "needs_transcode",
+        "is_transcode_ready",
+        "ffprobe_available",
+        "transcoding_available",
+        "quality_ladder",
+        "title",
+        "year",
+        "overview",
+        "genres",
+        "rating",
+        "runtime",
+        "reason",
     ] {
         assert!(
             body.get(field).is_some(),
@@ -155,9 +174,15 @@ async fn test_direct_play_and_transcode_flags_are_mutually_sensible() {
     let needs = body["needs_transcode"].as_bool().unwrap();
     // needs_transcode is defined purely as "not a direct-play container",
     // so these must always be exact opposites.
-    assert_eq!(direct, !needs, "direct_play and needs_transcode are complements");
-    assert_eq!(body["is_transcode_ready"].as_bool(), Some(true),
-        "a direct-play title needs no transcode and is therefore always ready");
+    assert_eq!(
+        direct, !needs,
+        "direct_play and needs_transcode are complements"
+    );
+    assert_eq!(
+        body["is_transcode_ready"].as_bool(),
+        Some(true),
+        "a direct-play title needs no transcode and is therefore always ready"
+    );
     cleanup_seeded_movie(&h, &movie).await;
 }
 
@@ -270,7 +295,11 @@ async fn test_reading_status_never_writes_to_the_playlist() {
                     // Legitimate only if it was already sealed before this
                     // run; assert the ENDLIST is the final line, i.e. a
                     // properly completed playlist rather than a mid-file one.
-                    let tail = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+                    let tail = text
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("");
                     assert_eq!(tail.trim(), "#EXT-X-ENDLIST");
                 }
             }
@@ -296,8 +325,10 @@ async fn test_repeated_requests_are_served_from_the_probe_cache() {
 
     assert_eq!(first.0, StatusCode::OK);
     assert_eq!(second.0, StatusCode::OK);
-    assert_eq!(first.1["duration"], second.1["duration"],
-        "a memoized probe must not change the answer");
+    assert_eq!(
+        first.1["duration"], second.1["duration"],
+        "a memoized probe must not change the answer"
+    );
     if cold > std::time::Duration::from_millis(150) {
         assert!(
             warm < cold,
@@ -317,8 +348,13 @@ async fn test_media_info_quality_ladder_structure_and_no_upscaling() {
     let (status, body) = get(&h.app, &uri).await;
 
     assert_eq!(status, StatusCode::OK);
-    let ladder = body["quality_ladder"].as_array().expect("quality_ladder must be an array");
-    assert!(!ladder.is_empty(), "quality_ladder must have at least Direct Play option");
+    let ladder = body["quality_ladder"]
+        .as_array()
+        .expect("quality_ladder must be an array");
+    assert!(
+        !ladder.is_empty(),
+        "quality_ladder must have at least Direct Play option"
+    );
 
     // 1. First option is always Direct Play (Source)
     let direct_opt = &ladder[0];
@@ -338,7 +374,8 @@ async fn test_media_info_quality_ladder_structure_and_no_upscaling() {
         assert!(
             h <= source_h,
             "Quality tier height ({}) must not exceed source height ({}) (Strict No-Upscaling)",
-            h, source_h
+            h,
+            source_h
         );
         assert_eq!(
             w % 2,
@@ -363,13 +400,43 @@ async fn test_client_aware_direct_play_evaluation() {
     use media_server_api::routes::media_info::evaluate_direct_play;
 
     // Unit test direct play rules
-    assert!(evaluate_direct_play("mp4", Some("h264"), Some("aac"), false));
-    assert!(evaluate_direct_play("webm", Some("vp9"), Some("opus"), false));
-    assert!(!evaluate_direct_play("mkv", Some("h264"), Some("aac"), false)); // Web MKV -> transcode
-    assert!(evaluate_direct_play("mkv", Some("h264"), Some("aac"), true));  // Android MKV -> direct
-    assert!(evaluate_direct_play("mkv", Some("hevc"), Some("eac3"), true)); // Android HEVC -> direct
-    assert!(!evaluate_direct_play("mkv", Some("msmpeg4v3"), Some("aac"), true)); // Unsupported codec -> transcode
-    assert!(!evaluate_direct_play("avi", Some("h264"), Some("aac"), true)); // Non-MKV non-web -> transcode
+    assert!(evaluate_direct_play(
+        "mp4",
+        Some("h264"),
+        Some("aac"),
+        false
+    ));
+    assert!(evaluate_direct_play(
+        "webm",
+        Some("vp9"),
+        Some("opus"),
+        false
+    ));
+    assert!(!evaluate_direct_play(
+        "mkv",
+        Some("h264"),
+        Some("aac"),
+        false
+    )); // Web MKV -> transcode
+    assert!(evaluate_direct_play("mkv", Some("h264"), Some("aac"), true)); // Android MKV -> direct
+    assert!(evaluate_direct_play(
+        "mkv",
+        Some("hevc"),
+        Some("eac3"),
+        true
+    )); // Android HEVC -> direct
+    assert!(!evaluate_direct_play(
+        "mkv",
+        Some("msmpeg4v3"),
+        Some("aac"),
+        true
+    )); // Unsupported codec -> transcode
+    assert!(!evaluate_direct_play(
+        "avi",
+        Some("h264"),
+        Some("aac"),
+        true
+    )); // Non-MKV non-web -> transcode
 
     // Integration test with HTTP client / query / headers
     let h = harness().await;
@@ -378,7 +445,10 @@ async fn test_client_aware_direct_play_evaluation() {
         .as_array()
         .and_then(|list| {
             list.iter().find(|m| {
-                m["filename"].as_str().map(|f| f.ends_with(".mkv")).unwrap_or(false)
+                m["filename"]
+                    .as_str()
+                    .map(|f| f.ends_with(".mkv"))
+                    .unwrap_or(false)
             })
         })
         .and_then(|m| m["filename"].as_str());
@@ -399,7 +469,8 @@ async fn test_client_aware_direct_play_evaluation() {
         assert_eq!(body2["needs_transcode"], false);
 
         // 3. With X-Client-Platform: android header: direct_play = true
-        let (st3, body3) = get_with_headers(&h.app, &base_uri, vec![("x-client-platform", "android")]).await;
+        let (st3, body3) =
+            get_with_headers(&h.app, &base_uri, vec![("x-client-platform", "android")]).await;
         assert_eq!(st3, StatusCode::OK);
         assert_eq!(body3["direct_play"], true);
         assert_eq!(body3["needs_transcode"], false);
@@ -408,7 +479,10 @@ async fn test_client_aware_direct_play_evaluation() {
         let (st4, body4) = get_with_headers(
             &h.app,
             &base_uri,
-            vec![("user-agent", "ExoPlayerLib/2.18.1 (Linux; Android 11; AFTMM Build/NS6294)")],
+            vec![(
+                "user-agent",
+                "ExoPlayerLib/2.18.1 (Linux; Android 11; AFTMM Build/NS6294)",
+            )],
         )
         .await;
         assert_eq!(st4, StatusCode::OK);

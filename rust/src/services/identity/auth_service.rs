@@ -44,9 +44,8 @@ impl AuthService {
     /// takes when it is unset.
     pub fn generate_random_token() -> Result<String, AppError> {
         let mut buf = [0u8; 32];
-        getrandom::getrandom(&mut buf).map_err(|e| {
-            AppError::Internal(format!("Secure random source unavailable: {}", e))
-        })?;
+        getrandom::getrandom(&mut buf)
+            .map_err(|e| AppError::Internal(format!("Secure random source unavailable: {}", e)))?;
         Ok(hex::encode(buf))
     }
 
@@ -163,9 +162,7 @@ impl AuthService {
                 .await
                 .unwrap_or(None);
 
-        let has_pin = stored_pin
-            .map(|p| !p.trim().is_empty())
-            .unwrap_or(false);
+        let has_pin = stored_pin.map(|p| !p.trim().is_empty()).unwrap_or(false);
 
         let identity = Self::resolve_session_identity(pool, headers).await;
         let is_pin_authed = Self::is_admin_authorized(pool, headers, None).await;
@@ -245,7 +242,9 @@ impl AuthService {
     ) -> Result<(), AppError> {
         let clean_new = new_pin.trim();
         if clean_new.len() < 4 {
-            return Err(AppError::BadRequest("PIN must be at least 4 digits".to_string()));
+            return Err(AppError::BadRequest(
+                "PIN must be at least 4 digits".to_string(),
+            ));
         }
 
         let stored_pin: Option<String> =
@@ -293,7 +292,10 @@ impl AuthService {
         headers: &HeaderMap,
     ) -> Option<ResolvedIdentity> {
         // Session cookie (`session_token` or `media_session`)
-        if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
+        if let Some(cookie_hdr) = headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+        {
             for part in cookie_hdr.split(';') {
                 let mut kv = part.splitn(2, '=');
                 if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
@@ -346,7 +348,7 @@ impl AuthService {
         }
         if let Some(dev) = device_id.filter(|d| !d.trim().is_empty()) {
             let row = sqlx::query_scalar::<_, Option<i64>>(
-                "SELECT user_id FROM devices WHERE device_id = $1"
+                "SELECT user_id FROM devices WHERE device_id = $1",
             )
             .bind(dev)
             .fetch_optional(pool)
@@ -422,7 +424,10 @@ impl AuthService {
         }
     }
 
-    pub async fn set_allowlist(pool: &PgPool, emails: &[String]) -> Result<AllowlistResponse, AppError> {
+    pub async fn set_allowlist(
+        pool: &PgPool,
+        emails: &[String],
+    ) -> Result<AllowlistResponse, AppError> {
         let mut clean_list: Vec<String> = emails
             .iter()
             .map(|e| e.trim().to_lowercase())
@@ -465,9 +470,7 @@ impl AuthService {
             return true;
         }
         let target = email.trim().to_lowercase();
-        effective
-            .iter()
-            .any(|e| e.trim().to_lowercase() == target)
+        effective.iter().any(|e| e.trim().to_lowercase() == target)
     }
 
     pub async fn is_email_allowed(pool: &PgPool, email: &str) -> bool {
@@ -486,7 +489,7 @@ impl AuthService {
 
     fn split_emails(raw: &str) -> Vec<String> {
         let mut out = Vec::new();
-        for item in raw.replace(';', ",").replace('\n', ",").split(',') {
+        for item in raw.replace([';', '\n'], ",").split(',') {
             let trimmed = item.trim().to_lowercase();
             if !trimmed.is_empty() && !out.contains(&trimmed) {
                 out.push(trimmed);
@@ -568,7 +571,10 @@ impl AuthService {
         .await
         .map_err(|e| AppError::Internal(format!("Failed to store session: {}", e)))?;
 
-        info!("AUTH: Local Admin PIN sign-in successful user_id={}", user_id);
+        info!(
+            "AUTH: Local Admin PIN sign-in successful user_id={}",
+            user_id
+        );
         Ok((session_token, user_id, email))
     }
 
@@ -577,7 +583,7 @@ impl AuthService {
     /// Unpadded URL-safe Base64 encoder per RFC 4648 §5 / RFC 7636 §4.2 (OAuth 2.0 PKCE).
     pub fn base64url_encode(data: &[u8]) -> String {
         const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+        let mut result = String::with_capacity((data.len() * 4).div_ceil(3));
         let mut i = 0;
         while i < data.len() {
             let b0 = data[i];
@@ -697,7 +703,9 @@ impl AuthService {
             .as_secs() as i64;
 
         if (now - started_at) > 600 {
-            return Err(AppError::BadRequest("Sign-in attempt expired. Start again.".to_string()));
+            return Err(AppError::BadRequest(
+                "Sign-in attempt expired. Start again.".to_string(),
+            ));
         }
 
         // Mark attempt used
@@ -734,17 +742,19 @@ impl AuthService {
         if !token_res.status().is_success() {
             let status = token_res.status();
             let err_body = token_res.text().await.unwrap_or_default();
-            error!("Google OAuth token exchange rejected (HTTP {}): {}", status, err_body);
+            error!(
+                "Google OAuth token exchange rejected (HTTP {}): {}",
+                status, err_body
+            );
             return Err(AppError::BadGateway(format!(
                 "Could not complete sign-in with Google: {}",
                 err_body
             )));
         }
 
-        let token_data: serde_json::Value = token_res
-            .json()
-            .await
-            .map_err(|e| AppError::BadGateway(format!("Failed to parse Google token response: {}", e)))?;
+        let token_data: serde_json::Value = token_res.json().await.map_err(|e| {
+            AppError::BadGateway(format!("Failed to parse Google token response: {}", e))
+        })?;
 
         let id_token = token_data
             .get("id_token")
@@ -759,7 +769,10 @@ impl AuthService {
 
         // Verify ID token via Google tokeninfo
         let info_res = http
-            .get(format!("https://oauth2.googleapis.com/tokeninfo?id_token={}", id_token))
+            .get(format!(
+                "https://oauth2.googleapis.com/tokeninfo?id_token={}",
+                id_token
+            ))
             .send()
             .await
             .map_err(|e| {
@@ -858,7 +871,10 @@ impl AuthService {
         .await
         .map_err(|e| AppError::Internal(format!("Failed to store session: {}", e)))?;
 
-        info!("AUTH: Google sign-in successful sub={} email={}", sub, email);
+        info!(
+            "AUTH: Google sign-in successful sub={} email={}",
+            sub, email
+        );
         Ok((session_token, next_path))
     }
 
@@ -887,9 +903,8 @@ impl AuthService {
     pub fn generate_pair_code() -> Result<String, AppError> {
         const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         let mut buf = [0u8; 5];
-        getrandom::getrandom(&mut buf).map_err(|e| {
-            AppError::Internal(format!("Secure random source unavailable: {}", e))
-        })?;
+        getrandom::getrandom(&mut buf)
+            .map_err(|e| AppError::Internal(format!("Secure random source unavailable: {}", e)))?;
         Ok(buf
             .iter()
             .map(|b| CHARS[(*b as usize) % CHARS.len()] as char)
@@ -1023,7 +1038,9 @@ impl AuthService {
 
         let Some(row) = row else { return Ok(false) };
         let stored: Option<String> = row.try_get("secret_hash").ok().flatten();
-        let Some(stored) = stored else { return Ok(false) };
+        let Some(stored) = stored else {
+            return Ok(false);
+        };
         let candidate = Self::hash_token(secret);
         Ok(Self::constant_time_eq(
             candidate.as_bytes(),
@@ -1184,7 +1201,8 @@ impl AuthService {
         // did, so a code typed in lowercase still works.
         let sig_valid = submitted_sig.map(|s| s == stored_sig).unwrap_or(false);
         let submitted_hash = Self::hash_token(&submitted_code.trim().to_uppercase());
-        let code_valid = Self::constant_time_eq(submitted_hash.as_bytes(), stored_code_hash.as_bytes());
+        let code_valid =
+            Self::constant_time_eq(submitted_hash.as_bytes(), stored_code_hash.as_bytes());
 
         if !sig_valid && !code_valid {
             return Err(AppError::Unauthorized(
@@ -1283,7 +1301,9 @@ impl AuthService {
         .await?;
 
         let Some(r) = row else {
-            return Err(AppError::BadRequest("Pair session expired. Please start again.".to_string()));
+            return Err(AppError::BadRequest(
+                "Pair session expired. Please start again.".to_string(),
+            ));
         };
 
         // 1. Secret verification (constant-time)
@@ -1319,23 +1339,30 @@ impl AuthService {
                     return Ok((sid, device_name));
                 }
             }
-            return Err(AppError::BadRequest("Pair session has already been finalized.".to_string()));
+            return Err(AppError::BadRequest(
+                "Pair session has already been finalized.".to_string(),
+            ));
         }
 
         // 3. Must be confirmed
         if !confirmed {
             return Err(AppError::BadRequest(
-                "Pair session not yet confirmed. Please complete the pairing on your phone.".to_string(),
+                "Pair session not yet confirmed. Please complete the pairing on your phone."
+                    .to_string(),
             ));
         }
 
         // 4. Must not be expired
         if now > expires_at {
-            return Err(AppError::BadRequest("Pair session expired. Please start again.".to_string()));
+            return Err(AppError::BadRequest(
+                "Pair session expired. Please start again.".to_string(),
+            ));
         }
 
         let Some(sid) = session_id else {
-            return Err(AppError::Internal("Pair session confirmed but no session token found.".to_string()));
+            return Err(AppError::Internal(
+                "Pair session confirmed but no session token found.".to_string(),
+            ));
         };
 
         // 5. Atomic transition: set finalized = TRUE, finalized_at = CURRENT_TIMESTAMP
@@ -1356,7 +1383,10 @@ impl AuthService {
             return Ok((sid, device_name));
         }
 
-        info!("QR: pair session ref={} successfully finalized", Self::redacted_pair_ref(qr_id));
+        info!(
+            "QR: pair session ref={} successfully finalized",
+            Self::redacted_pair_ref(qr_id)
+        );
         Ok((sid, device_name))
     }
 
@@ -1372,7 +1402,10 @@ impl AuthService {
     }
 
     pub async fn logout_session(pool: &PgPool, headers: &HeaderMap) -> Result<(), AppError> {
-        if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
+        if let Some(cookie_hdr) = headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+        {
             for part in cookie_hdr.split(';') {
                 let mut kv = part.splitn(2, '=');
                 if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
@@ -1403,7 +1436,10 @@ mod tests {
     fn test_allowlist_allows_empty_list_is_open() {
         let empty: Vec<String> = Vec::new();
         assert!(AuthService::allowlist_allows(&empty, "anis7t@gmail.com"));
-        assert!(AuthService::allowlist_allows(&empty, "someone.else@example.test"));
+        assert!(AuthService::allowlist_allows(
+            &empty,
+            "someone.else@example.test"
+        ));
         assert!(AuthService::allowlist_allows(&empty, ""));
     }
 

@@ -32,7 +32,8 @@ impl FilenameParser {
 
         let re_copy = RE_PREFIX_COPY.get_or_init(|| Regex::new(r"(?i)^(?:Copy\s+of\s+)+").unwrap());
         let re_dup = RE_TRAILING_DUP.get_or_init(|| Regex::new(r"\s*\(\d+\)$").unwrap());
-        let re_brackets = RE_LEADING_BRACKETS.get_or_init(|| Regex::new(r"^[【\[].*?[】\]]\s*").unwrap());
+        let re_brackets =
+            RE_LEADING_BRACKETS.get_or_init(|| Regex::new(r"^[【\[].*?[】\]]\s*").unwrap());
         let re_dots = RE_DOTS_UNDERSCORES.get_or_init(|| Regex::new(r"[._]+").unwrap());
         let re_year = RE_YEAR.get_or_init(|| Regex::new(r"\b(19\d{2}|20\d{2})\b").unwrap());
         let re_ws = RE_WHITESPACE.get_or_init(|| Regex::new(r"\s+").unwrap());
@@ -89,7 +90,16 @@ impl FilenameParser {
                 rem_clean = tag_re.replace_all(&rem_clean, "").to_string();
             }
             let rem_trimmed = rem_clean.trim_matches(|c: char| {
-                c == ' ' || c == '-' || c == '.' || c == '_' || c == '\'' || c == '"' || c == '(' || c == ')' || c == '[' || c == ']'
+                c == ' '
+                    || c == '-'
+                    || c == '.'
+                    || c == '_'
+                    || c == '\''
+                    || c == '"'
+                    || c == '('
+                    || c == ')'
+                    || c == '['
+                    || c == ']'
             });
             if rem_trimmed.is_empty() {
                 // The title IS the year, e.g. "1917"
@@ -107,7 +117,16 @@ impl FilenameParser {
         let clean = re_ws.replace_all(&name, " ").to_string();
         let trimmed = clean
             .trim_matches(|c: char| {
-                c == ' ' || c == '-' || c == '.' || c == '_' || c == '\'' || c == '"' || c == '(' || c == ')' || c == '[' || c == ']'
+                c == ' '
+                    || c == '-'
+                    || c == '.'
+                    || c == '_'
+                    || c == '\''
+                    || c == '"'
+                    || c == '('
+                    || c == ')'
+                    || c == '['
+                    || c == ']'
             })
             .to_string();
 

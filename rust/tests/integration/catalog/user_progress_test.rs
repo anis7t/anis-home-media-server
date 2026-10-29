@@ -25,7 +25,8 @@ impl TestContext {
             .await
             .expect("Failed to connect to test db");
 
-        let temp_dir = std::env::temp_dir().join(format!("ms_user_prog_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("ms_user_prog_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         let _ = fs::create_dir_all(&temp_dir);
 
@@ -35,12 +36,7 @@ impl TestContext {
         fs::create_dir_all(&cache_dir).unwrap();
 
         let system_service = SystemService::new();
-        let app = create_app(
-            pool.clone(),
-            system_service,
-            vec![media_dir],
-            cache_dir,
-        );
+        let app = create_app(pool.clone(), system_service, vec![media_dir], cache_dir);
 
         Self {
             app,
@@ -56,7 +52,12 @@ impl Drop for TestContext {
     }
 }
 
-async fn create_test_user_and_session(pool: &PgPool, sub: &str, email: &str, session_id: &str) -> i64 {
+async fn create_test_user_and_session(
+    pool: &PgPool,
+    sub: &str,
+    email: &str,
+    session_id: &str,
+) -> i64 {
     sqlx::query(
         r#"
         INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)
@@ -195,7 +196,12 @@ async fn test_user_progress_isolation() {
 
     let get_res_guest = ctx.app.clone().oneshot(get_guest).await.unwrap();
     assert_eq!(get_res_guest.status(), StatusCode::OK);
-    let bytes_guest = get_res_guest.into_body().collect().await.unwrap().to_bytes();
+    let bytes_guest = get_res_guest
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let json_guest: Value = serde_json::from_slice(&bytes_guest).unwrap();
     assert_eq!(json_guest["position"], 0.0);
 
@@ -323,7 +329,12 @@ async fn test_guest_progress_isolation() {
 
     let get_res_guest = ctx.app.clone().oneshot(get_guest).await.unwrap();
     assert_eq!(get_res_guest.status(), StatusCode::OK);
-    let bytes_guest = get_res_guest.into_body().collect().await.unwrap().to_bytes();
+    let bytes_guest = get_res_guest
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let json_guest: Value = serde_json::from_slice(&bytes_guest).unwrap();
     assert_eq!(json_guest["position"], 75.0);
 
@@ -386,14 +397,13 @@ async fn test_cascading_user_delete_progress() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // 2. Assert progress row exists with user_id
-    let count_before: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM progress WHERE user_id = $1 AND filename = $2"
-    )
-    .bind(user_id)
-    .bind(filename)
-    .fetch_one(&ctx.pool)
-    .await
-    .unwrap();
+    let count_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM progress WHERE user_id = $1 AND filename = $2")
+            .bind(user_id)
+            .bind(filename)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
     assert_eq!(count_before, 1);
 
     // 3. Delete user account
@@ -404,13 +414,12 @@ async fn test_cascading_user_delete_progress() {
         .unwrap();
 
     // 4. Assert ON DELETE CASCADE removed the progress row
-    let count_after: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM progress WHERE user_id = $1 AND filename = $2"
-    )
-    .bind(user_id)
-    .bind(filename)
-    .fetch_one(&ctx.pool)
-    .await
-    .unwrap();
+    let count_after: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM progress WHERE user_id = $1 AND filename = $2")
+            .bind(user_id)
+            .bind(filename)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
     assert_eq!(count_after, 0);
 }
