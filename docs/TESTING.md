@@ -139,13 +139,14 @@ Some features require physical hardware or a running staging server and are **de
 
 ---
 
-## 5. Branch Protection Recommendations
+## 5. Active Branch Protection Configuration (Enforced on `main`)
 
-To maintain codebase health on `main`, configure the following GitHub branch protection rules under **Settings > Branches > Branch protection rules > `main`**:
+Branch protection is active on the `main` branch via GitHub repository policy:
 
-1. **Require status checks to pass before merging**:
-   - Check: `Rust Backend (Axum)`
-   - Check: `React 19 Frontend (SPA)`
-   - Check: `Flutter Client (Android / TV)`
-2. **Require branches to be up to date before merging**: Ensures PRs are tested against the latest `main` commit.
-3. **Do not allow bypassing the above settings**: Enforces uniform quality for all contributors and automated agents.
+1. **Required Status Checks (must pass before merging Pull Requests)**:
+   - `Rust Backend (Axum)`
+   - `React 19 Frontend (SPA)`
+   - `Flutter Client (Android / TV)`
+2. **Strict Up-To-Date Requirement (`strict: true`)**: Branches must be up to date with `main` before merging.
+3. **Admin Flexibility (`enforce_admins: false`, `required_pull_request_reviews: null`)**: Allows the sole maintainer to merge PRs without external approval gates and retains admin hotfix capabilities.
+4. **Implementation Plan & Tracking**: [`docs/PLAN_BRANCH_PROTECTION.md`](PLAN_BRANCH_PROTECTION.md).
