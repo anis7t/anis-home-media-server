@@ -32,7 +32,9 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
 
   bool _hwdecFailed = false;
   bool _firstFrameRendered = false;
+  bool _hasCompletedFirstFrameEver = false;
   Timer? _firstFrameTimeout;
+  StreamSubscription<Duration>? _frameWatchdogSub;
 
   MediaKitPlayerAdapter({Player? player, VideoController? videoController})
       : player = player ?? Player() {
@@ -96,7 +98,10 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
             lower.contains('vd') ||
             lower.contains('decoder') ||
             lower.contains('hwdec') ||
-            lower.contains('surface')) {
+            lower.contains('surface') ||
+            lower.contains('hardware') ||
+            lower.contains('omx') ||
+            lower.contains('c2.')) {
           fallbackToSoftwareDecoder();
           return;
         }
@@ -235,15 +240,24 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
     String? externalSubtitleUrl,
   }) async {
     _updateState(PlayerPlaybackState.opening);
+    final isHls = url.contains('/hls/') || url.contains('.m3u8');
     final media = Media(
       url,
       httpHeaders: headers,
-      start: (startPosition != null && startPosition > Duration.zero)
+      start: (!isHls && startPosition != null && startPosition > Duration.zero)
           ? startPosition
           : null,
     );
 
     await player.open(media, play: false);
+
+    if (isHls && startPosition != null && startPosition > Duration.zero) {
+      try {
+        await player.seek(startPosition);
+      } catch (e) {
+        debugPrint('[MediaKitPlayerAdapter] Initial HLS seek failed: $e');
+      }
+    }
 
     if (externalSubtitleUrl != null && externalSubtitleUrl.isNotEmpty) {
       try {
@@ -257,6 +271,8 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
 
     _firstFrameRendered = false;
     _firstFrameTimeout?.cancel();
+    _frameWatchdogSub?.cancel();
+
     if (!_hwdecFailed && defaultTargetPlatform == TargetPlatform.android) {
       // If hardware decoder drops frames or fails to paint within 4s, fallback to CPU
       _firstFrameTimeout = Timer(const Duration(seconds: 4), () {
@@ -265,12 +281,28 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
           fallbackToSoftwareDecoder();
         }
       });
-      try {
-        videoController.waitUntilFirstFrameRendered.then((_) {
+
+      // 1. Initial cold-start listener on controller texture
+      if (!_hasCompletedFirstFrameEver) {
+        try {
+          videoController.waitUntilFirstFrameRendered.then((_) {
+            _hasCompletedFirstFrameEver = true;
+            _firstFrameRendered = true;
+            _firstFrameTimeout?.cancel();
+            _frameWatchdogSub?.cancel();
+          }).catchError((_) {});
+        } catch (_) {}
+      }
+
+      // 2. Watch position progression to confirm active rendering across quality changes
+      final baselinePos = startPosition ?? Duration.zero;
+      _frameWatchdogSub = player.stream.position.listen((pos) {
+        if ((pos - baselinePos).abs() > const Duration(milliseconds: 200) || pos > Duration.zero) {
           _firstFrameRendered = true;
           _firstFrameTimeout?.cancel();
-        }).catchError((_) {});
-      } catch (_) {}
+          _frameWatchdogSub?.cancel();
+        }
+      });
     }
 
     await player.play();
@@ -340,6 +372,7 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   @override
   Future<void> dispose() async {
     _firstFrameTimeout?.cancel();
+    _frameWatchdogSub?.cancel();
     for (final s in _subscriptions) {
       await s.cancel();
     }

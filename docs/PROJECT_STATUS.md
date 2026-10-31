@@ -55,6 +55,22 @@ Resolved missing metadata for uploaded movies (specifically *Verity 2026 1080p W
   - Android API contract probe: all 23 endpoints pass.
 - **Documentation:** Implementation plan in [`docs/PLAN_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md`](PLAN_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md) and walkthrough in [`docs/WALKTHROUGH_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md`](WALKTHROUGH_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md).
 
+## 2026-11-01 — Fire TV Playback Resume & Transcode Quality Presets Fix
+
+Resolved two playback defects on Fire TV Stick 4K (Android client, account `anis7t@gmail.com`):
+- **Playback Resume Fix (`movie_service.rs`):** PostgreSQL `progress` stores `position` and `duration` as `FLOAT4` (`real`). Rust row decoding called `r.try_get::<f64, _>("position").unwrap_or(0.0)`, silently swallowing SQLx type-coercion errors and returning `position: 0.0` for all movies in `/api/movies` and `/api/movie/{filename}`. Client-side `hasProgress = movie.position > 10` failed, hiding the Resume button. Fixed by casting to `::DOUBLE PRECISION` in SQL and adding resilient `f32`/`f64` fallback decoding in Rust.
+- **Transcode Quality Presets Fix (`gpu_service.rs` & `media_kit_player_adapter.dart`):**
+  - AMD AMF hardware encoder (`h264_amf`) lacked explicit profile and level parameters, defaulting SPS to `level: -99` which Android `MediaCodec` rejected on Fire TV. Fixed by injecting universal `-profile:v high -level 4.1` and `-profile:v main` (for HEVC).
+  - Fixed one-time `waitUntilFirstFrameRendered` completer reuse in Flutter `MediaKitPlayerAdapter`, adding a per-stream watchdog to ensure `fallbackToSoftwareDecoder()` triggers if hardware decoding stalls.
+  - Avoided sequential chunk fetch storms in libmpv by opening HLS streams with `start: null` and dispatching `player.seek(startPosition)` after stream initialization.
+- **Verification:**
+  - `GET /api/movie/Verity...` returns `position: 1412.9`, `duration: 7256.8`, `percent: 19.5%`.
+  - Transcoded HLS chunks verified with `ffprobe` as `profile=High` and `level=41`.
+  - All 131 Rust library tests passed; Android API probe passed 23/23 endpoints.
+  - Flutter client passed `flutter analyze` (0 issues) and `flutter test test/features/player/` (116/116 tests passed).
+  - Production binary rebuilt in `release` mode and deployed under `MediaServerRust` NSSM service.
+- **Documentation:** Implementation plan in [`docs/PLAN_FIRE_TV_RESUME_AND_QUALITY_PRESET_FIX.md`](PLAN_FIRE_TV_RESUME_AND_QUALITY_PRESET_FIX.md) and walkthrough in [`docs/WALKTHROUGH_FIRE_TV_RESUME_AND_QUALITY_PRESETS.md`](WALKTHROUGH_FIRE_TV_RESUME_AND_QUALITY_PRESETS.md).
+
 ## 2026-10-31 — Transcode Single-GPU Hardening & Thermal Pacing (Acer Nitro 5 Multi-GPU Thermal Fix)
 
 Permanently remediated the recurring Kernel-Power Event ID 41 (`BugcheckCode = 0`, `THERMTRIP#` hardware power-loss shutdowns) during heavy video transcoding on the Acer Nitro AN515-43 mobile workstation:

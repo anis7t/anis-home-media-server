@@ -194,6 +194,13 @@ impl GPUWorkerConfig {
                 if is_4k {
                     args.push("-tag:v".into());
                     args.push("hvc1".into());
+                    args.push("-profile:v".into());
+                    args.push("main".into());
+                } else {
+                    args.push("-profile:v".into());
+                    args.push("high".into());
+                    args.push("-level".into());
+                    args.push("4.1".into());
                 }
                 args.extend([
                     "-quality".into(),
@@ -623,6 +630,10 @@ mod tests {
             let cv_idx = args.iter().position(|a| a == "-c:v").unwrap();
             assert_eq!(args[cv_idx + 1], "h264_amf");
             assert!(!args.contains(&"-tag:v".to_string()));
+            let prof_idx = args.iter().position(|a| a == "-profile:v").unwrap();
+            assert_eq!(args[prof_idx + 1], "high");
+            let lvl_idx = args.iter().position(|a| a == "-level").unwrap();
+            assert_eq!(args[lvl_idx + 1], "4.1");
         }
     }
 

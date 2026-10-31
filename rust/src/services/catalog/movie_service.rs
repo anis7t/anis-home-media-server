@@ -34,8 +34,8 @@ impl MovieService {
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
                     m.updated_at,
-                    COALESCE(p.position, 0.0) as position,
-                    COALESCE(p.duration, 0.0) as duration,
+                    COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration,
                     p.updated_at as watch_updated_at
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $1
@@ -61,8 +61,8 @@ impl MovieService {
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
                     m.updated_at,
-                    COALESCE(h.position, 0.0) as position,
-                    COALESCE(h.duration, 0.0) as duration,
+                    COALESCE(h.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(h.duration, 0.0)::DOUBLE PRECISION as duration,
                     h.last_watched as watch_updated_at
                 FROM movies m
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $1
@@ -88,8 +88,8 @@ impl MovieService {
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
                     m.updated_at,
-                    COALESCE(p.position, 0.0) as position,
-                    COALESCE(p.duration, 0.0) as duration,
+                    COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration,
                     p.updated_at as watch_updated_at
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
@@ -143,8 +143,14 @@ impl MovieService {
                         .map(|v| (v as f64 * 10.0).round() / 10.0)
                 });
             let release_date: Option<String> = r.try_get("release_date").ok();
-            let position: f64 = r.try_get("position").unwrap_or(0.0);
-            let duration: f64 = r.try_get("duration").unwrap_or(0.0);
+            let position: f64 = r
+                .try_get::<f64, _>("position")
+                .or_else(|_| r.try_get::<f32, _>("position").map(|v| v as f64))
+                .unwrap_or(0.0);
+            let duration: f64 = r
+                .try_get::<f64, _>("duration")
+                .or_else(|_| r.try_get::<f32, _>("duration").map(|v| v as f64))
+                .unwrap_or(0.0);
 
             // Calculate percent
             let percent = if duration > 0.0 {
@@ -270,8 +276,8 @@ impl MovieService {
                     m.release_date,
                     m.details_json,
                     m.updated_at,
-                    COALESCE(p.position, 0.0) as position,
-                    COALESCE(p.duration, 0.0) as duration
+                    COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $2
                 WHERE m.filename = $1
@@ -298,8 +304,8 @@ impl MovieService {
                     m.release_date,
                     m.details_json,
                     m.updated_at,
-                    COALESCE(h.position, p.position, 0.0) as position,
-                    COALESCE(h.duration, p.duration, 0.0) as duration
+                    COALESCE(h.position, p.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(h.duration, p.duration, 0.0)::DOUBLE PRECISION as duration
                 FROM movies m
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $2
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
@@ -327,8 +333,8 @@ impl MovieService {
                     m.release_date,
                     m.details_json,
                     m.updated_at,
-                    COALESCE(p.position, 0.0) as position,
-                    COALESCE(p.duration, 0.0) as duration
+                    COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
+                    COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 WHERE m.filename = $1
@@ -390,8 +396,14 @@ impl MovieService {
             });
         let release_date: Option<String> = r.try_get("release_date").ok();
         let details_json_str: Option<String> = r.try_get("details_json").ok();
-        let position: f64 = r.try_get("position").unwrap_or(0.0);
-        let duration: f64 = r.try_get("duration").unwrap_or(0.0);
+        let position: f64 = r
+            .try_get::<f64, _>("position")
+            .or_else(|_| r.try_get::<f32, _>("position").map(|v| v as f64))
+            .unwrap_or(0.0);
+        let duration: f64 = r
+            .try_get::<f64, _>("duration")
+            .or_else(|_| r.try_get::<f32, _>("duration").map(|v| v as f64))
+            .unwrap_or(0.0);
 
         let percent = if duration > 0.0 {
             ((position / duration) * 100.0).min(100.0)
