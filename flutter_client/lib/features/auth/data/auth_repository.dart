@@ -37,18 +37,19 @@ class AuthRepository {
 
   /// Authenticates using the configured server-side Admin PIN via `POST /api/auth/login-pin`.
   ///
-  /// Extracts the minted `session_token` from the response body or `Set-Cookie` header,
+  /// Verifies a single-use, 6-digit Admin Access Code (OTP),
+  /// extracts the minted `session_token` from the response body or `Set-Cookie` header,
   /// saves it to hardware-backed secure storage, and returns the authenticated user identity.
   Future<({UserIdentity identity, String sessionToken})> loginWithPin(String pin) async {
     final cleanPin = pin.trim();
-    if (cleanPin.isEmpty) {
-      throw const ValidationException('Please enter the Admin PIN');
+    if (cleanPin.isEmpty || cleanPin.length != 6) {
+      throw const ValidationException('Please enter a 6-digit access code');
     }
 
     try {
       final response = await apiClient.dio.post(
-        ApiEndpoints.loginPin,
-        data: {'pin': cleanPin},
+        ApiEndpoints.adminOtpVerify,
+        data: {'otp': cleanPin},
       );
 
       final data = response.data is Map<String, dynamic>
@@ -72,7 +73,7 @@ class AuthRepository {
 
       if (sessionToken == null || sessionToken.isEmpty) {
         throw const ServerException(
-          'Server did not return a session token upon PIN login',
+          'Server did not return a session token upon access code verification',
         );
       }
 
@@ -84,21 +85,21 @@ class AuthRepository {
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (status == 401 || status == 403) {
-        throw const UnauthorizedException('Invalid Admin PIN. Please try again.');
+        throw const UnauthorizedException('Invalid or expired access code. Please try again.');
       }
       rethrow;
     }
   }
 
-  /// Verifies an Admin PIN without minting a full session token via `POST /api/admin/verify-pin`.
+  /// Verifies an Admin Access Code without minting a full session token via `POST /api/admin/otp/verify`.
   Future<bool> verifyAdminPin(String pin) async {
     final cleanPin = pin.trim();
-    if (cleanPin.isEmpty) return false;
+    if (cleanPin.length != 6) return false;
 
     try {
       final response = await apiClient.dio.post(
-        '/api/admin/verify-pin',
-        data: {'pin': cleanPin, 'admin_pin': cleanPin},
+        ApiEndpoints.adminOtpVerify,
+        data: {'otp': cleanPin},
       );
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;

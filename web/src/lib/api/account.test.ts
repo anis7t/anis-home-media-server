@@ -74,7 +74,7 @@ describe('account client', () => {
     await loginWithPin('97531');
     expect(fetchMock.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });
     expect(fetchMock.mock.calls[1][1].method).toBe('POST');
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ pin: '97531' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ otp: '97531' });
   });
 });
 

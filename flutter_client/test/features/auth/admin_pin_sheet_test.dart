@@ -62,11 +62,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Admin PIN Sign-In'), findsOneWidget);
+      expect(find.text('Administrator Verification'), findsOneWidget);
       expect(find.text('Verify & Sign In'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Remember PIN on this device'), findsOneWidget);
+      expect(find.text('Valid for 5 minutes · Single-use single redemption'), findsOneWidget);
     });
 
     testWidgets('shows validation message on empty submission', (tester) async {
@@ -81,7 +81,7 @@ void main() {
       await tester.tap(find.text('Verify & Sign In'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Please enter your Admin PIN'), findsOneWidget);
+      expect(find.text('Please enter a 6-digit access code'), findsOneWidget);
     });
 
     testWidgets('successfully signs in with valid PIN and closes sheet', (tester) async {
@@ -106,7 +106,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Enter PIN
-      await tester.enterText(find.byType(TextField), '1234');
+      await tester.enterText(find.byType(TextField), '123456');
       await tester.pumpAndSettle();
 
       // Tap submit
@@ -127,14 +127,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Enter wrong PIN
-      await tester.enterText(find.byType(TextField), '0000');
+      await tester.enterText(find.byType(TextField), '000000');
       await tester.pumpAndSettle();
 
       // Tap submit
       await tester.tap(find.text('Verify & Sign In'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Invalid Admin PIN. Please try again.'), findsOneWidget);
+      expect(find.text('Invalid or expired access code. Please try again.'), findsOneWidget);
     });
   });
 }

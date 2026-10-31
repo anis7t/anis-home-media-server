@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::models::auth::{AdminStatusResponse, AdminVerifyResponse, AllowlistResponse};
+use crate::services::identity::AuditService;
 use axum::http::HeaderMap;
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
@@ -107,77 +108,59 @@ impl AuthService {
 
     // --- Admin Authorization & Status ---
 
-    /// Verify whether a request is administrator-authorized (via valid configured Admin PIN or Admin session).
+    /// Constant-time string comparison preventing timing attacks on sensitive tokens/hashes.
+    pub fn constant_time_compare(a: &str, b: &str) -> bool {
+        let a_bytes = a.as_bytes();
+        let b_bytes = b.as_bytes();
+        if a_bytes.len() != b_bytes.len() {
+            return false;
+        }
+        a_bytes
+            .iter()
+            .zip(b_bytes.iter())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
+    }
+
+    /// Compute salted SHA-256 hash for an OTP code.
+    pub fn hash_otp(otp: &str, salt: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(salt.as_bytes());
+        hasher.update(b":");
+        hasher.update(otp.trim().as_bytes());
+        hex::encode(hasher.finalize())
+    }
+
+    /// Verify whether a request is administrator-authorized (via active session with admin role).
     ///
-    /// Per AGENTS.md §4:
-    /// - The Admin PIN fails closed, and has no default.
-    /// - Unset/empty in database means the PIN channel is CLOSED (returns false).
-    /// - Accepts PIN only from `X-Admin-Pin` header or request body. NEVER from query string.
+    /// Static PIN authentication is permanently retired. All administrative operations
+    /// require a valid Google administrator session or elevated session minted via OTP.
     pub async fn is_admin_authorized(
         pool: &PgPool,
         headers: &HeaderMap,
-        body_pin: Option<&str>,
+        _deprecated_pin: Option<&str>,
     ) -> bool {
-        // 1. Check session / bearer token admin role
         if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
             if identity.role == "admin" || identity.is_admin {
                 return true;
             }
         }
-
-        // 2. Query stored pin from PostgreSQL settings table
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let stored = stored_pin.unwrap_or_default().trim().to_string();
-        if stored.is_empty() {
-            // Fail closed: without a deliberately configured PIN, PIN auth is closed.
-            return false;
-        }
-
-        let pin_header = headers
-            .get("X-Admin-Pin")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.trim());
-
-        let candidate_pin = pin_header.or_else(|| body_pin.map(|s| s.trim()));
-
-        if let Some(pin) = candidate_pin {
-            if pin == stored {
-                return true;
-            }
-        }
-
         false
     }
 
     /// `GET /api/admin/status`
     pub async fn get_admin_status(pool: &PgPool, headers: &HeaderMap) -> AdminStatusResponse {
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let has_pin = stored_pin.map(|p| !p.trim().is_empty()).unwrap_or(false);
-
         let identity = Self::resolve_session_identity(pool, headers).await;
-        let is_pin_authed = Self::is_admin_authorized(pool, headers, None).await;
-
-        let is_admin = is_pin_authed
-            || identity
-                .as_ref()
-                .map(|i| i.role == "admin" || i.is_admin)
-                .unwrap_or(false);
+        let is_admin = identity
+            .as_ref()
+            .map(|i| i.role == "admin" || i.is_admin)
+            .unwrap_or(false);
 
         let user = identity.map(|i| i.email);
 
         AdminStatusResponse {
             is_admin,
-            has_pin,
+            has_pin: false, // Legacy static PIN is retired
             user,
         }
     }
@@ -186,7 +169,7 @@ impl AuthService {
     pub async fn verify_admin_pin(
         pool: &PgPool,
         headers: &HeaderMap,
-        body_pin: Option<&str>,
+        candidate_pin: Option<&str>,
     ) -> AdminVerifyResponse {
         // If already recognized via admin session:
         if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
@@ -200,26 +183,19 @@ impl AuthService {
             }
         }
 
-        let pin_header = headers
-            .get("X-Admin-Pin")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.trim());
-        let candidate_pin = pin_header.or_else(|| body_pin.map(|s| s.trim()));
-
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let stored = stored_pin.unwrap_or_default().trim().to_string();
-
+        // If candidate code was passed, attempt single-use OTP verification
         if let Some(pin) = candidate_pin {
-            if !stored.is_empty() && pin == stored {
+            let req = crate::models::auth::AdminOtpVerifyRequest {
+                otp: Some(pin.to_string()),
+                code: None,
+                pin: None,
+                admin_email: None,
+            };
+            if let Ok((resp, _)) = Self::verify_admin_otp(pool, headers, &req).await {
                 return AdminVerifyResponse {
-                    success: true,
-                    admin: true,
-                    method: Some("pin".to_string()),
+                    success: resp.success,
+                    admin: resp.admin,
+                    method: Some("otp".to_string()),
                     error: None,
                 };
             }
@@ -229,56 +205,439 @@ impl AuthService {
             success: false,
             admin: false,
             method: None,
-            error: Some("Invalid Admin PIN".to_string()),
+            error: Some("Invalid or expired access code".to_string()),
         }
     }
 
-    /// `POST /api/admin/pin`
+    /// `POST /api/admin/pin` (Retired)
     pub async fn update_admin_pin(
+        _pool: &PgPool,
+        _headers: &HeaderMap,
+        _current_pin: Option<&str>,
+        _new_pin: &str,
+    ) -> Result<(), AppError> {
+        Err(AppError::BadRequest(
+            "Static Admin PIN rotation is retired. Administrative access is now secured via Google-authenticated OTP.".to_string(),
+        ))
+    }
+
+    // --- Google-Authenticated One-Time Admin Access Codes (OTP) ---
+
+    /// Generate a short-lived (5-minute), single-use 6-digit access code for an authorized Google administrator.
+    pub async fn generate_admin_otp(
         pool: &PgPool,
         headers: &HeaderMap,
-        current_pin: Option<&str>,
-        new_pin: &str,
-    ) -> Result<(), AppError> {
-        let clean_new = new_pin.trim();
-        if clean_new.len() < 4 {
-            return Err(AppError::BadRequest(
-                "PIN must be at least 4 digits".to_string(),
-            ));
-        }
+    ) -> Result<crate::models::auth::AdminOtpGenerateResponse, AppError> {
+        // 1. Must be an authenticated Google session
+        let identity = match Self::resolve_session_identity(pool, headers).await {
+            Some(i) => i,
+            None => {
+                return Err(AppError::Unauthorized(
+                    "Google administrator session required.".to_string(),
+                ));
+            }
+        };
 
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let has_stored = stored_pin
-            .as_ref()
-            .map(|p| !p.trim().is_empty())
-            .unwrap_or(false);
-
-        // If a PIN is currently configured, caller MUST be authorized
-        if has_stored && !Self::is_admin_authorized(pool, headers, current_pin).await {
+        // 2. Must be an administrator
+        if !identity.is_admin && identity.role != "admin" {
             return Err(AppError::Forbidden(
-                "Administrator privileges required to change PIN.".to_string(),
+                "Administrator privileges required to generate access codes.".to_string(),
             ));
         }
+
+        // 3. Email must belong to administrator allowlist if configured
+        let allowlist = crate::config::admin_emails();
+        if !allowlist.is_empty() && !allowlist.contains(&identity.email.trim().to_lowercase()) {
+            return Err(AppError::Forbidden(
+                "Account email is not in the configured administrator allowlist.".to_string(),
+            ));
+        }
+
+        // 4. Rate-limit generation: prevent spamming multiple OTPs within 3 seconds
+        let recent_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM admin_access_otps
+            WHERE admin_user_id = $1 AND created_at > CURRENT_TIMESTAMP - INTERVAL '3 seconds'
+            "#,
+        )
+        .bind(identity.user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        if recent_count > 0 {
+            return Err(AppError::TooManyRequests(3));
+        }
+
+        // 5. Invalidate previous unconsumed OTPs for this administrator
+        sqlx::query(
+            r#"
+            UPDATE admin_access_otps
+            SET consumed_at = CURRENT_TIMESTAMP
+            WHERE admin_user_id = $1 AND consumed_at IS NULL
+            "#,
+        )
+        .bind(identity.user_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to invalidate previous OTPs: {}", e)))?;
+
+        // 6. Generate cryptographically secure 6-digit OTP (100000 - 999999)
+        let mut rand_bytes = [0u8; 4];
+        getrandom::getrandom(&mut rand_bytes)
+            .map_err(|e| AppError::Internal(format!("Secure random source unavailable: {}", e)))?;
+        let raw_val = u32::from_ne_bytes(rand_bytes);
+        let otp_num = 100_000 + (raw_val % 900_000);
+        let otp_code = format!("{:06}", otp_num);
+
+        // 7. Generate random 16-byte salt
+        let mut salt_bytes = [0u8; 16];
+        getrandom::getrandom(&mut salt_bytes)
+            .map_err(|e| AppError::Internal(format!("Secure random source unavailable: {}", e)))?;
+        let salt = hex::encode(salt_bytes);
+
+        // 8. Hash OTP with salt
+        let otp_hash = Self::hash_otp(&otp_code, &salt);
+        let expires_at = Utc::now() + Duration::minutes(5);
 
         sqlx::query(
             r#"
-            INSERT INTO settings (key, value)
-            VALUES ('admin_pin', $1)
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            INSERT INTO admin_access_otps (admin_user_id, otp_hash, salt, expires_at)
+            VALUES ($1, $2, $3, $4)
             "#,
         )
-        .bind(clean_new)
+        .bind(identity.user_id)
+        .bind(&otp_hash)
+        .bind(&salt)
+        .bind(expires_at)
         .execute(pool)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to persist admin PIN: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Failed to record access code: {}", e)))?;
 
-        info!("Admin PIN updated successfully");
-        Ok(())
+        // 9. Record audit event (without logging the secret)
+        let ip = AuditService::extract_client_ip(headers);
+        AuditService::record_event(
+            pool,
+            "admin_session",
+            &identity.email,
+            "otp_generated",
+            Some("admin_access_otps"),
+            None,
+            Some(serde_json::json!({
+                "expires_at": expires_at.to_rfc3339(),
+                "expires_in": 300
+            })),
+            ip.as_deref(),
+        )
+        .await;
+
+        info!(
+            "Admin OTP generated successfully for user_id={} email={}",
+            identity.user_id, identity.email
+        );
+
+        Ok(crate::models::auth::AdminOtpGenerateResponse {
+            otp: otp_code,
+            expires_at,
+            expires_in: 300,
+        })
+    }
+
+    /// Verify and atomically consume a single-use 6-digit access code, establishing an administrative session.
+    pub async fn verify_admin_otp(
+        pool: &PgPool,
+        headers: &HeaderMap,
+        req: &crate::models::auth::AdminOtpVerifyRequest,
+    ) -> Result<(crate::models::auth::AdminOtpVerifyResponse, Option<String>), AppError> {
+        let ip = AuditService::extract_client_ip(headers);
+        let candidate_code = req
+            .otp
+            .as_deref()
+            .or(req.code.as_deref())
+            .or(req.pin.as_deref())
+            .unwrap_or_default()
+            .trim();
+
+        // 1. Strict validation: exactly 6 numeric digits
+        if candidate_code.len() != 6 || !candidate_code.chars().all(|c| c.is_ascii_digit()) {
+            AuditService::record_event(
+                pool,
+                "guest",
+                "anonymous",
+                "otp_verify_failed_malformed",
+                Some("admin_access_otps"),
+                None,
+                None,
+                ip.as_deref(),
+            )
+            .await;
+            return Err(AppError::Unauthorized(
+                "Invalid or expired access code".to_string(),
+            ));
+        }
+
+        // 2. Caller identity check:
+        // If caller is already authenticated as an admin or viewer, bind candidate OTPs
+        // strictly to their user ID (guaranteeing Administrator A cannot redeem Administrator B's OTP).
+        let session_identity = Self::resolve_session_identity(pool, headers).await;
+
+        let targeted_user_id: Option<i64> = if let Some(ref email) = req.admin_email {
+            let clean_email = email.trim().to_lowercase();
+            sqlx::query_scalar("SELECT id FROM users WHERE LOWER(email) = $1")
+                .bind(clean_email)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
+
+        let effective_user_filter: Option<i64> = session_identity
+            .as_ref()
+            .map(|i| i.user_id)
+            .or(targeted_user_id);
+
+        // 3. Query all active, unexpired, non-locked candidate OTPs
+        let rows = sqlx::query(
+            r#"
+            SELECT o.id, o.admin_user_id, o.otp_hash, o.salt, o.failed_attempts,
+                   u.email, u.name, u.role
+            FROM admin_access_otps o
+            JOIN users u ON o.admin_user_id = u.id
+            WHERE o.consumed_at IS NULL
+              AND o.expires_at > CURRENT_TIMESTAMP
+              AND (o.lockout_until IS NULL OR o.lockout_until <= CURRENT_TIMESTAMP)
+              AND o.failed_attempts < 5
+              AND ($1::BIGINT IS NULL OR o.admin_user_id = $1::BIGINT)
+            ORDER BY o.created_at DESC
+            "#,
+        )
+        .bind(effective_user_filter)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to query access codes: {}", e)))?;
+
+        if rows.is_empty() {
+            AuditService::record_event(
+                pool,
+                session_identity
+                    .as_ref()
+                    .map(|i| i.email.as_str())
+                    .unwrap_or("guest"),
+                "anonymous",
+                "otp_verify_failed_no_candidates",
+                Some("admin_access_otps"),
+                None,
+                None,
+                ip.as_deref(),
+            )
+            .await;
+            return Err(AppError::Unauthorized(
+                "Invalid or expired access code".to_string(),
+            ));
+        }
+
+        let mut matched_row = None;
+
+        for row in &rows {
+            let otp_id: i64 = row.get("id");
+            let stored_hash: String = row.get("otp_hash");
+            let salt: String = row.get("salt");
+
+            let candidate_hash = Self::hash_otp(candidate_code, &salt);
+            if Self::constant_time_compare(&candidate_hash, &stored_hash) {
+                matched_row = Some(row);
+                break;
+            } else {
+                // Increment failed attempts on mismatched candidate
+                let _ = sqlx::query(
+                    r#"
+                    UPDATE admin_access_otps
+                    SET failed_attempts = failed_attempts + 1,
+                        lockout_until = CASE WHEN failed_attempts + 1 >= 5 THEN CURRENT_TIMESTAMP + INTERVAL '5 minutes' ELSE NULL END
+                    WHERE id = $1
+                    "#,
+                )
+                .bind(otp_id)
+                .execute(pool)
+                .await;
+            }
+        }
+
+        let row = match matched_row {
+            Some(r) => r,
+            None => {
+                AuditService::record_event(
+                    pool,
+                    session_identity
+                        .as_ref()
+                        .map(|i| i.email.as_str())
+                        .unwrap_or("guest"),
+                    "anonymous",
+                    "otp_verify_failed_mismatch",
+                    Some("admin_access_otps"),
+                    None,
+                    None,
+                    ip.as_deref(),
+                )
+                .await;
+                return Err(AppError::Unauthorized(
+                    "Invalid or expired access code".to_string(),
+                ));
+            }
+        };
+
+        let otp_id: i64 = row.get("id");
+        let admin_user_id: i64 = row.get("admin_user_id");
+        let email: String = row.get("email");
+        let name: Option<String> = row.try_get("name").ok();
+
+        // 4. Atomic conditional consumption: guarantee single-use redemption
+        let update_result = sqlx::query(
+            r#"
+            UPDATE admin_access_otps
+            SET consumed_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+            RETURNING id
+            "#,
+        )
+        .bind(otp_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to consume access code: {}", e)))?;
+
+        if update_result.is_none() {
+            // Already consumed concurrently by another request
+            AuditService::record_event(
+                pool,
+                &email,
+                "anonymous",
+                "otp_verify_failed_concurrent_reuse",
+                Some("admin_access_otps"),
+                Some(&otp_id.to_string()),
+                None,
+                ip.as_deref(),
+            )
+            .await;
+            return Err(AppError::Unauthorized(
+                "Invalid or expired access code".to_string(),
+            ));
+        }
+
+        // 5. Mint new admin session (30 days)
+        let session_token = format!("sess_{}", Self::generate_random_token()?);
+        let expires_at = Utc::now() + Duration::days(30);
+
+        sqlx::query(
+            r#"
+            INSERT INTO sessions (id, user_id, email, role, expires_at)
+            VALUES ($1, $2, $3, 'admin', $4)
+            "#,
+        )
+        .bind(&session_token)
+        .bind(admin_user_id)
+        .bind(&email)
+        .bind(expires_at)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to create admin session: {}", e)))?;
+
+        // 6. Record audit event
+        AuditService::record_event(
+            pool,
+            "admin_session",
+            &email,
+            "otp_redeemed",
+            Some("admin_access_otps"),
+            Some(&otp_id.to_string()),
+            Some(serde_json::json!({
+                "admin_user_id": admin_user_id,
+                "session_expires_at": expires_at.to_rfc3339()
+            })),
+            ip.as_deref(),
+        )
+        .await;
+
+        info!(
+            "Admin OTP redeemed successfully: user_id={} email={} otp_id={}",
+            admin_user_id, email, otp_id
+        );
+
+        let cookie_header = Self::session_cookie(&session_token, headers);
+
+        let resp = crate::models::auth::AdminOtpVerifyResponse {
+            success: true,
+            admin: true,
+            session_token: Some(session_token),
+            user: Some(serde_json::json!({
+                "id": admin_user_id,
+                "email": email,
+                "name": name,
+                "role": "admin",
+                "is_admin": true,
+            })),
+            error: None,
+        };
+
+        Ok((resp, Some(cookie_header)))
+    }
+
+    /// Revoke all outstanding unconsumed access codes for the authenticated Google administrator.
+    pub async fn revoke_admin_otp(
+        pool: &PgPool,
+        headers: &HeaderMap,
+    ) -> Result<crate::models::auth::AdminOtpRevokeResponse, AppError> {
+        let identity = match Self::resolve_session_identity(pool, headers).await {
+            Some(i) => i,
+            None => {
+                return Err(AppError::Unauthorized(
+                    "Google administrator session required.".to_string(),
+                ));
+            }
+        };
+
+        if !identity.is_admin && identity.role != "admin" {
+            return Err(AppError::Forbidden(
+                "Administrator privileges required to revoke access codes.".to_string(),
+            ));
+        }
+
+        let res = sqlx::query(
+            r#"
+            UPDATE admin_access_otps
+            SET consumed_at = CURRENT_TIMESTAMP
+            WHERE admin_user_id = $1 AND consumed_at IS NULL
+            "#,
+        )
+        .bind(identity.user_id)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to revoke access codes: {}", e)))?;
+
+        let revoked_count = res.rows_affected();
+        let ip = AuditService::extract_client_ip(headers);
+
+        AuditService::record_event(
+            pool,
+            "admin_session",
+            &identity.email,
+            "otp_revoked",
+            Some("admin_access_otps"),
+            None,
+            Some(serde_json::json!({ "revoked_count": revoked_count })),
+            ip.as_deref(),
+        )
+        .await;
+
+        info!(
+            "Admin OTP revoked for user_id={} count={}",
+            identity.user_id, revoked_count
+        );
+
+        Ok(crate::models::auth::AdminOtpRevokeResponse {
+            success: true,
+            revoked: revoked_count,
+        })
     }
 
     // --- Identity Resolution (`/api/auth/me`) ---
@@ -304,7 +663,7 @@ impl AuthService {
                     if (key == "session_token" || key == "media_session") && !token.is_empty() {
                         let row = sqlx::query(
                             r#"
-                            SELECT s.user_id, s.email, COALESCE(u.role, s.role) AS role, u.name, u.picture_url
+                            SELECT s.user_id, s.email, COALESCE(u.role, s.role, 'viewer') AS role, u.name, u.picture_url
                             FROM sessions s
                             LEFT JOIN users u ON s.user_id = u.id
                             WHERE s.id = $1 AND s.expires_at > CURRENT_TIMESTAMP
@@ -316,7 +675,8 @@ impl AuthService {
                         .ok()?;
 
                         if let Some(r) = row {
-                            let role: String = r.get("role");
+                            let role: String =
+                                r.try_get("role").unwrap_or_else(|_| "viewer".to_string());
                             let is_admin = role == "admin";
                             return Some(ResolvedIdentity {
                                 user_id: r.try_get("user_id").unwrap_or(0),
@@ -499,83 +859,15 @@ impl AuthService {
         out
     }
 
-    // --- Local PIN Login ---
+    // --- Local PIN Login (Retired) ---
 
     pub async fn login_with_pin(
-        pool: &PgPool,
-        candidate_pin: &str,
+        _pool: &PgPool,
+        _candidate_pin: &str,
     ) -> Result<(String, i64, String), AppError> {
-        let clean_pin = candidate_pin.trim();
-        if clean_pin.is_empty() {
-            return Err(AppError::Unauthorized("PIN is required".to_string()));
-        }
-
-        let stored_pin: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'admin_pin'")
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-        let stored = stored_pin.unwrap_or_default().trim().to_string();
-        if stored.is_empty() {
-            return Err(AppError::Unauthorized(
-                "No Admin PIN configured on this server.".to_string(),
-            ));
-        }
-
-        let is_valid = clean_pin.len() == stored.len()
-            && clean_pin
-                .bytes()
-                .zip(stored.bytes())
-                .fold(0, |acc, (a, b)| acc | (a ^ b))
-                == 0;
-
-        if !is_valid {
-            return Err(AppError::Unauthorized("Invalid Admin PIN".to_string()));
-        }
-
-        // Upsert local admin user row
-        let user_row = sqlx::query(
-            r#"
-            INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)
-            VALUES ('admin_pin', 'admin@local', 'Administrator', 'admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (google_sub) DO UPDATE
-                SET role = 'admin',
-                    last_login_at = CURRENT_TIMESTAMP
-            RETURNING id, email, role
-            "#,
-        )
-        .fetch_one(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to upsert admin user: {}", e)))?;
-
-        let user_id: i64 = user_row.get("id");
-        let email: String = user_row.get("email");
-        let role: String = user_row.get("role");
-
-        let session_token = format!("sess_{}", Self::generate_random_token()?);
-        let expires_at = Utc::now() + Duration::days(30);
-
-        sqlx::query(
-            r#"
-            INSERT INTO sessions (id, user_id, email, role, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-        )
-        .bind(&session_token)
-        .bind(user_id)
-        .bind(&email)
-        .bind(&role)
-        .bind(expires_at)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to store session: {}", e)))?;
-
-        info!(
-            "AUTH: Local Admin PIN sign-in successful user_id={}",
-            user_id
-        );
-        Ok((session_token, user_id, email))
+        Err(AppError::BadRequest(
+            "Static Admin PIN sign-in is retired. Please sign in with your authorized Google Account or redeem a 6-digit One-Time Access Code.".to_string(),
+        ))
     }
 
     // --- Google OAuth ---
@@ -1402,6 +1694,15 @@ impl AuthService {
     }
 
     pub async fn logout_session(pool: &PgPool, headers: &HeaderMap) -> Result<(), AppError> {
+        if let Some(identity) = Self::resolve_session_identity(pool, headers).await {
+            let _ = sqlx::query(
+                "UPDATE admin_access_otps SET consumed_at = CURRENT_TIMESTAMP WHERE admin_user_id = $1 AND consumed_at IS NULL",
+            )
+            .bind(identity.user_id)
+            .execute(pool)
+            .await;
+        }
+
         if let Some(cookie_hdr) = headers
             .get(axum::http::header::COOKIE)
             .and_then(|v| v.to_str().ok())

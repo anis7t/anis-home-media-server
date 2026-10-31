@@ -20,6 +20,7 @@ struct StorageTestContext {
     cache_dir: PathBuf,
     archive_dir: PathBuf,
     pool: sqlx::PgPool,
+    admin_session: String,
 }
 
 impl StorageTestContext {
@@ -47,10 +48,35 @@ impl StorageTestContext {
         fs::create_dir_all(&archive_dir).unwrap();
         std::env::set_var("MEDIA_SERVER_ARCHIVE_DIR", &archive_dir);
 
-        // Ensure admin PIN is configured
+        let admin_sub = format!("sub_storage_admin_{}_{}", std::process::id(), id);
+        let admin_session = format!("sess_storage_admin_{}_{}", std::process::id(), id);
+
         sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
+            "INSERT INTO users (google_sub, email, name, role, created_at, last_login_at) \
+             VALUES ($1, $2, 'Storage Admin', 'admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
+             ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role",
         )
+        .bind(&admin_sub)
+        .bind("admin.storage@example.com")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let admin_user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE google_sub = $1")
+            .bind(&admin_sub)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, email, role, expires_at) \
+             VALUES ($1, $2, $3, 'admin', CURRENT_TIMESTAMP + INTERVAL '30 days') \
+             ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id, \
+                 email = EXCLUDED.email, role = EXCLUDED.role, expires_at = EXCLUDED.expires_at",
+        )
+        .bind(&admin_session)
+        .bind(admin_user_id)
+        .bind("admin.storage@example.com")
         .execute(&pool)
         .await
         .unwrap();
@@ -82,6 +108,7 @@ impl StorageTestContext {
             cache_dir,
             archive_dir,
             pool,
+            admin_session,
         }
     }
 }
@@ -112,7 +139,7 @@ async fn test_storage_settings_get_and_post() {
     assert!(body["allowed_policies"].is_array());
     assert!(body["archive_dir"].is_string());
 
-    // 2. POST without PIN fails 403
+    // 2. POST without session fails 403
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/settings")
@@ -125,26 +152,29 @@ async fn test_storage_settings_get_and_post() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-    // 3. POST with wrong PIN fails 403
-    let req = Request::builder()
-        .method("POST")
-        .uri("/api/storage/settings")
-        .header(header::CONTENT_TYPE, "application/json")
-        .header("X-Admin-Pin", "9999")
-        .body(Body::from(
-            json!({ "retention_policy": "archive" }).to_string(),
-        ))
-        .unwrap();
-
-    let res = ctx.app.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::FORBIDDEN);
-
-    // 4. POST with correct PIN but invalid policy fails 400
+    // 3. POST with static PIN without session fails 403 (decommissioned)
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-Admin-Pin", "97531")
+        .body(Body::from(
+            json!({ "retention_policy": "archive" }).to_string(),
+        ))
+        .unwrap();
+
+    let res = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 4. POST with admin session but invalid policy fails 400
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/storage/settings")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::from(
             json!({ "retention_policy": "invalid_mode" }).to_string(),
         ))
@@ -153,12 +183,15 @@ async fn test_storage_settings_get_and_post() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 
-    // 5. POST with correct PIN in header succeeds
+    // 5. POST with admin session cookie succeeds
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/settings")
         .header(header::CONTENT_TYPE, "application/json")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::from(
             json!({ "retention_policy": "archive" }).to_string(),
         ))
@@ -209,7 +242,7 @@ async fn test_storage_audit_and_purge() {
     .await
     .unwrap();
 
-    // 1. Audit without PIN is 403
+    // 1. Audit without session is 403
     let req = Request::builder()
         .method("GET")
         .uri("/api/storage/audit")
@@ -219,11 +252,14 @@ async fn test_storage_audit_and_purge() {
     let res = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-    // 2. Audit with correct PIN succeeds
+    // 2. Audit with admin session succeeds
     let req = Request::builder()
         .method("GET")
         .uri("/api/storage/audit")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -236,11 +272,14 @@ async fn test_storage_audit_and_purge() {
     assert!(body["audit"].is_object());
     assert_eq!(body["audit"]["degraded"], false);
 
-    // 3. Purge orphans dry-run
+    // 3. Purge orphans dry-run with admin session
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/purge-orphans?dry_run=true")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -264,7 +303,10 @@ async fn test_storage_audit_and_purge() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/purge-orphans")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "dry_run": true }).to_string()))
         .unwrap();
@@ -301,7 +343,7 @@ async fn test_storage_archive_endpoint() {
     fs::write(&raw_video_path, b"archive me video content").unwrap();
     let video_path = raw_video_path.canonicalize().unwrap();
 
-    // 1. Without PIN returns 403
+    // 1. Without session returns 403
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/ArchiveMe.mkv")
@@ -315,7 +357,10 @@ async fn test_storage_archive_endpoint() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/DoesNotExist.mkv")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -326,7 +371,10 @@ async fn test_storage_archive_endpoint() {
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/ArchiveMe.mkv")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::empty())
         .unwrap();
 
@@ -351,11 +399,14 @@ async fn test_storage_archive_endpoint() {
     )
     .unwrap();
 
-    // Re-run archive request
+    // Re-run archive request with admin session
     let req = Request::builder()
         .method("POST")
         .uri("/api/storage/archive/ArchiveMe.mkv")
-        .header("X-Admin-Pin", "97531")
+        .header(
+            header::COOKIE,
+            format!("session_token={}", ctx.admin_session),
+        )
         .body(Body::empty())
         .unwrap();
 

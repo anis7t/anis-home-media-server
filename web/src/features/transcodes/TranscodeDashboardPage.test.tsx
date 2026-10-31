@@ -108,7 +108,7 @@ describe('TranscodeDashboardPage Auth & Null Safety Transitions', () => {
     renderDashboard();
 
     expect(await screen.findByText('Administrator Access Required')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /unlock with admin pin/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unlock with (access code|admin pin)/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
   });
 

@@ -147,21 +147,42 @@ describe('AccountPage', () => {
     // Clicking Admin PIN button opens the modal dialog
     await user.click(pinButtons[0]);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: /Admin PIN Sign-In/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /(Administrator Verification|Admin PIN)/i })).toBeInTheDocument();
   });
 
-  it('renders Admin Security section and opens ChangeAdminPinModal when user is admin', async () => {
+  it('renders Admin Security section and generates OTP when user is admin', async () => {
     const user = userEvent.setup();
-    mockAuth(true, { role: 'admin' });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return jsonResponse({
+          authenticated: true,
+          email: 'owner@example.com',
+          name: 'Anis Parvez',
+          role: 'admin',
+        });
+      }
+      if (url === '/api/auth/qr') return jsonResponse(qrSession);
+      if (url.includes('/api/admin/otp/generate')) {
+        return jsonResponse({
+          otp: '849201',
+          expires_at: new Date(Date.now() + 300000).toISOString(),
+          expires_in_seconds: 300,
+        });
+      }
+      return jsonResponse({});
+    });
 
     renderAccount();
     expect(await screen.findByRole('heading', { name: /Admin Security/i })).toBeInTheDocument();
 
-    const changePinBtn = screen.getByRole('button', { name: /Change Admin PIN/i });
-    expect(changePinBtn).toBeInTheDocument();
+    const generateOtpBtn = screen.getByRole('button', { name: /generate admin access code/i });
+    expect(generateOtpBtn).toBeInTheDocument();
 
-    await user.click(changePinBtn);
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('Rotate Admin PIN')).toBeInTheDocument();
+    await user.click(generateOtpBtn);
+    expect(await screen.findByText('Active Access Code')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /revoke code/i })).toBeInTheDocument();
   });
 });

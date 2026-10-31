@@ -36,7 +36,6 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
   final FocusNode _focusNode = FocusNode();
 
   bool _obscureText = true;
-  bool _rememberPin = true;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -49,9 +48,9 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
 
   Future<void> _submit() async {
     final pin = _pinController.text.trim();
-    if (pin.isEmpty) {
+    if (pin.length != 6) {
       setState(() {
-        _errorMessage = 'Please enter your Admin PIN';
+        _errorMessage = 'Please enter a 6-digit access code';
       });
       return;
     }
@@ -65,7 +64,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
     bool success;
 
     if (widget.isUnlockOnly) {
-      success = await notifier.verifyAndUnlockAdminPin(pin, remember: _rememberPin);
+      success = await notifier.verifyAndUnlockAdminPin(pin);
     } else {
       success = await notifier.loginWithPin(pin);
     }
@@ -77,7 +76,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
     } else {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Invalid Admin PIN. Please try again.';
+        _errorMessage = 'Invalid or expired access code. Please try again.';
       });
       _pinController.clear();
       _focusNode.requestFocus();
@@ -148,7 +147,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.isUnlockOnly ? 'Unlock Admin Tools' : 'Admin PIN Sign-In',
+                        widget.isUnlockOnly ? 'Unlock Administrator Mode' : 'Administrator Verification',
                         style: AppTypography.titleLarge.copyWith(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -156,7 +155,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
                       ),
                       const SizedBox(height: 2),
                       const Text(
-                        'Enter administrator PIN configured on your server.',
+                        'Enter your six-digit one-time access code.',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -208,7 +207,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
               autofocus: true,
               keyboardType: TextInputType.number,
               obscureText: _obscureText,
-              maxLength: 8,
+              maxLength: 6,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.textPrimary,
@@ -218,7 +217,7 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
               ),
               decoration: InputDecoration(
                 counterText: '',
-                hintText: '••••',
+                hintText: '••••••',
                 hintStyle: TextStyle(
                   color: AppColors.textMuted.withValues(alpha: 0.5),
                   fontSize: 24,
@@ -252,35 +251,15 @@ class _AdminPinSheetState extends ConsumerState<AdminPinSheet> {
             ),
             const SizedBox(height: 12),
 
-            // Remember checkbox
-            Row(
-              children: [
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: Checkbox(
-                    value: _rememberPin,
-                    activeColor: AppColors.brandRed,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    side: const BorderSide(color: AppColors.borderMedium),
-                    onChanged: (val) {
-                      setState(() {
-                        _rememberPin = val ?? true;
-                      });
-                    },
-                  ),
+            // Single-use expiry notice
+            const Center(
+              child: Text(
+                'Valid for 5 minutes · Single-use single redemption',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
                 ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Remember PIN on this device',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 24),
 

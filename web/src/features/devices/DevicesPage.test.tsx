@@ -97,7 +97,7 @@ beforeEach(() => {
         ],
       });
     }
-    if (String(input) === '/api/admin/verify') {
+    if (String(input) === '/api/admin/otp/verify' || String(input) === '/api/admin/verify') {
       return jsonResponse({ success: true, admin: true });
     }
     return jsonResponse({});
@@ -174,24 +174,25 @@ describe('DevicesPage', () => {
     });
   });
 
-  it('unlocks fleet telemetry with valid Admin PIN', async () => {
+  it('unlocks fleet telemetry with valid Admin access code', async () => {
     const user = userEvent.setup();
     renderDevices();
 
     const unlockFleetBtn = await screen.findByRole('button', { name: /unlock fleet telemetry/i });
     await user.click(unlockFleetBtn);
 
-    const pinInput = screen.getByPlaceholderText(/admin pin…/i);
+    const pinInput = screen.getByPlaceholderText(/6-digit access code…/i);
     expect(pinInput).toBeInTheDocument();
 
-    await user.type(pinInput, '97531');
+    await user.type(pinInput, '975312');
+
     const submitBtn = screen.getByRole('button', { name: /^Unlock Fleet$/i });
     await user.click(submitBtn);
 
     await waitFor(() => {
       expect(screen.getByText(/fleet admin view/i)).toBeInTheDocument();
     });
-    expect(sessionStorage.getItem('ms_admin_pin')).toBe('97531');
+    expect(sessionStorage.getItem('ms_admin_unlocked')).toBe('true');
   });
 
   it('passes AbortSignal to fetch and aborts on unmount', async () => {
@@ -218,8 +219,6 @@ describe('DevicesPage', () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 });
-
-const ADMIN_PIN = '97531';
 
 const inceptionEntry = {
   filename: 'Inception.2010.mkv',
@@ -323,7 +322,7 @@ function mockAdminFetches() {
 
 describe('DevicesPage admin oversight', () => {
   it('shows owner attribution, the account list and the admin controls', async () => {
-    sessionStorage.setItem('ms_admin_pin', ADMIN_PIN);
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
     mockAdminFetches();
 
     renderDevices();
@@ -342,7 +341,7 @@ describe('DevicesPage admin oversight', () => {
   });
 
   it('reassigns a device to another account through the modal', async () => {
-    sessionStorage.setItem('ms_admin_pin', ADMIN_PIN);
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
     mockAdminFetches();
     const user = userEvent.setup();
 
@@ -371,7 +370,7 @@ describe('DevicesPage admin oversight', () => {
   });
 
   it('clears a device history only after confirmation', async () => {
-    sessionStorage.setItem('ms_admin_pin', ADMIN_PIN);
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     mockAdminFetches();
     const user = userEvent.setup();
@@ -404,7 +403,7 @@ describe('DevicesPage admin oversight', () => {
   });
 
   it('removes a single history entry from the history modal', async () => {
-    sessionStorage.setItem('ms_admin_pin', ADMIN_PIN);
+    sessionStorage.setItem('ms_admin_unlocked', 'true');
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     mockAdminFetches();
     const user = userEvent.setup();

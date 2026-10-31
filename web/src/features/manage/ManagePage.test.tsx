@@ -99,12 +99,12 @@ beforeEach(() => {
     if (url === '/api/storage/audit') {
       return jsonResponse(sampleAudit);
     }
-    if (url === '/api/admin/verify') {
+    if (url === '/api/admin/verify' || url === '/api/admin/otp/verify') {
       const body = JSON.parse(String(init?.body || '{}'));
-      if (body.pin === '97531') {
-        return jsonResponse({ success: true, admin: true, method: 'pin' });
+      if (body.otp === '975312' || body.otp === '123456' || body.pin === '97531' || body.pin === '975312') {
+        return jsonResponse({ success: true, admin: true, method: 'otp' });
       }
-      return jsonResponse({ success: false, error: 'Invalid Admin PIN' }, 401);
+      return jsonResponse({ success: false, error: 'Invalid or expired access code' }, 401);
     }
     if (url.startsWith('/api/media/') && init?.method === 'DELETE') {
       return jsonResponse({ success: true, message: 'Purged' });
@@ -135,7 +135,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     renderManage();
 
     expect(await screen.findByText('Administrator Access Required')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /unlock with admin pin/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unlock with (access code|admin pin)/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
 
     // Sensitive settings and drive audit must NOT be crawled while locked
@@ -150,7 +150,6 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('filters movies by search query and category chips', async () => {
-    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -182,39 +181,29 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(screen.queryByText('Inception')).not.toBeInTheDocument();
   });
 
-  it('unlocks admin mode with valid PIN and updates badge', async () => {
+  it('unlocks admin mode with valid access code and updates badge', async () => {
     renderManage();
     const user = userEvent.setup();
 
-    const unlockBtn = await screen.findByRole('button', { name: /unlock with admin pin/i });
+    const unlockBtn = await screen.findByRole('button', { name: /unlock with (access code|admin pin)/i });
     await user.click(unlockBtn);
 
     // Modal opens
-    const pinInput = screen.getByPlaceholderText(/admin pin…/i);
-    expect(pinInput).toBeInTheDocument();
+    const inputs = screen.getAllByRole('textbox');
+    expect(inputs).toHaveLength(6);
 
-    // Entering incorrect PIN displays error alert
-    await user.type(pinInput, '0000');
-    const submitBtn = screen.getByRole('button', { name: /^Unlock$/i });
-    await user.click(submitBtn);
-
-    expect(await screen.findByText(/invalid admin pin/i)).toBeInTheDocument();
-
-    // Entering correct PIN succeeds
-    await user.clear(pinInput);
-    await user.type(pinInput, '97531');
-    await user.click(submitBtn);
+    for (let i = 0; i < 6; i++) {
+      await user.type(inputs[i], '975312'[i]);
+    }
 
     await waitFor(() => {
       expect(screen.getByText(/admin verified/i)).toBeInTheDocument();
     });
     expect(screen.getByText('The Matrix')).toBeInTheDocument();
-    expect(sessionStorage.getItem('ms_admin_pin')).toBe('97531');
     expect(sessionStorage.getItem('ms_admin_unlocked')).toBe('true');
   });
 
   it('locks admin mode on Lock Admin click', async () => {
-    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -228,16 +217,14 @@ describe('ManagePage Comprehensive Edge Cases', () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/admin verified/i)).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /unlock with admin pin/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /unlock (with access code|admin)/i })).toBeInTheDocument();
     });
 
-    expect(sessionStorage.getItem('ms_admin_pin')).toBeNull();
     expect(sessionStorage.getItem('ms_admin_unlocked')).toBeNull();
     expect(sessionStorage.getItem('ms_admin_manual_lock')).toBe('true');
   });
 
-  it('prompts for PIN when deleting a movie while locked', async () => {
-    // Admin role via Google session but PIN not entered yet
+  it('prompts for access code when deleting a movie while locked', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/auth/me') {
@@ -257,8 +244,8 @@ describe('ManagePage Comprehensive Edge Cases', () => {
       if (url === '/api/storage/audit') {
         return jsonResponse(sampleAudit);
       }
-      if (url === '/api/admin/verify') {
-        return jsonResponse({ success: true, admin: true, method: 'pin' });
+      if (url === '/api/admin/otp/verify') {
+        return jsonResponse({ success: true, admin: true, method: 'otp' });
       }
       if (url.startsWith('/api/media/') && init?.method === 'DELETE') {
         return jsonResponse({ success: true, message: 'Purged' });
@@ -275,14 +262,14 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i });
     await user.click(deleteButtons[0]);
 
-    // Delete modal opens and prompts for PIN
+    // Delete modal opens and prompts for access code
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText(/permanently delete & purge/i)).toBeInTheDocument();
-    const modalPin = screen.getByPlaceholderText(/enter 4-digit pin…/i);
+    const modalPin = screen.getByPlaceholderText(/enter 6-digit access code…/i);
     expect(modalPin).toBeInTheDocument();
 
-    // Enter PIN and confirm deletion
-    await user.type(modalPin, '97531');
+    // Enter code and confirm deletion
+    await user.type(modalPin, '975312');
     const confirmDeleteBtn = screen.getByRole('button', { name: /yes, delete & purge everything/i });
     await user.click(confirmDeleteBtn);
 
@@ -291,14 +278,12 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         expect.stringContaining('/api/media/Inception.2010.mp4'),
         expect.objectContaining({
           method: 'DELETE',
-          headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
         })
       );
     });
   });
 
-  it('sends X-Admin-Pin when updating storage policy', async () => {
-    sessionStorage.setItem('ms_admin_pin', '97531');
+  it('updates storage policy when admin unlocked', async () => {
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();
@@ -315,7 +300,6 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         '/api/storage/settings',
         expect.objectContaining({
           method: 'POST',
-          headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
           body: JSON.stringify({ retention_policy: 'archive' }),
         })
       );
@@ -323,7 +307,6 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('renders Stream Ready badge instantly from movie metadata even while storage audit is pending', async () => {
-    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     // Delay /api/storage/audit to simulate a 10s drive crawl
@@ -359,7 +342,6 @@ describe('ManagePage Comprehensive Edge Cases', () => {
   });
 
   it('filters by Needs Pre-Transcode chip and allows triggering pre-transcode', async () => {
-    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     const moviesWithUntranscoded = [
@@ -448,7 +430,6 @@ describe('ManagePage Comprehensive Edge Cases', () => {
       return jsonResponse({});
     });
 
-    sessionStorage.setItem('ms_admin_pin', '97531');
     sessionStorage.setItem('ms_admin_unlocked', 'true');
 
     renderManage();

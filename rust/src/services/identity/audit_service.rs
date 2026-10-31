@@ -15,11 +15,11 @@ impl AuditService {
             .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
     }
 
-    /// Extract actor type and identifier from request context (admin session, user session, or admin PIN).
+    /// Extract actor type and identifier from request context (admin session, user session, or guest).
     pub async fn extract_actor(
         pool: &PgPool,
         headers: &axum::http::HeaderMap,
-        explicit_pin: Option<&str>,
+        _deprecated_pin: Option<&str>,
     ) -> (&'static str, String) {
         if let Some(identity) =
             crate::services::auth_service::AuthService::resolve_session_identity(pool, headers)
@@ -30,14 +30,6 @@ impl AuditService {
             } else {
                 ("user_session", identity.email)
             }
-        } else if crate::services::auth_service::AuthService::is_admin_authorized(
-            pool,
-            headers,
-            explicit_pin,
-        )
-        .await
-        {
-            ("admin_pin", "pin".to_string())
         } else {
             ("guest", "anonymous".to_string())
         }

@@ -191,11 +191,38 @@ async fn test_allowlist_endpoints_and_validation() {
     let resp_anon_post = ctx.app.clone().oneshot(req_anon_post).await.unwrap();
     assert_eq!(resp_anon_post.status(), StatusCode::UNAUTHORIZED);
 
-    // GET allowlist
-    let req_get = Request::builder()
+    // Legacy static PIN is rejected (401 Unauthorized)
+    let req_pin = Request::builder()
         .method("GET")
         .uri("/api/auth/allowlist")
         .header("X-Admin-Pin", "97531")
+        .body(Body::empty())
+        .unwrap();
+    let resp_pin = ctx.app.clone().oneshot(req_pin).await.unwrap();
+    assert_eq!(resp_pin.status(), StatusCode::UNAUTHORIZED);
+
+    // Create admin session
+    let sess_id = "sess_allowlist_admin_test";
+    let admin_email = "admin.allowlist.test@example.com";
+    let _ = sqlx::query(
+        "INSERT INTO users (email, role, google_sub) VALUES ($1, 'admin', 'sub_allowlist_admin') ON CONFLICT (email) DO UPDATE SET role = 'admin'"
+    )
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO sessions (id, email, role, expires_at) VALUES ($1, $2, 'admin', CURRENT_TIMESTAMP + INTERVAL '1 day') ON CONFLICT (id) DO UPDATE SET email = $2, role = 'admin', expires_at = CURRENT_TIMESTAMP + INTERVAL '1 day'"
+    )
+    .bind(sess_id)
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+
+    // GET allowlist with admin session
+    let req_get = Request::builder()
+        .method("GET")
+        .uri("/api/auth/allowlist")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .body(Body::empty())
         .unwrap();
 
@@ -216,11 +243,11 @@ async fn test_allowlist_endpoints_and_validation() {
         "anonymous POST must not mutate the allowlist"
     );
 
-    // POST allowlist valid
+    // POST allowlist valid with admin session
     let req_post = Request::builder()
         .method("POST")
         .uri("/api/auth/allowlist")
-        .header("X-Admin-Pin", "97531")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "emails": ["Operator@Example.com", "second@example.com"] }).to_string(),
@@ -240,7 +267,7 @@ async fn test_allowlist_endpoints_and_validation() {
     let req_bad = Request::builder()
         .method("POST")
         .uri("/api/auth/allowlist")
-        .header("X-Admin-Pin", "97531")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "emails": [123, 456] }).to_string()))
         .unwrap();

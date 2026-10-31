@@ -6,6 +6,7 @@ use crate::services::auth_service::AuthService;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -198,37 +199,74 @@ pub async fn admin_verify_handler(
     }
 }
 
-/// `POST /api/admin/pin`
+/// `POST /api/admin/pin` (Retired)
 pub async fn admin_pin_handler(
+    State(_state): State<AdminState>,
+    _headers: HeaderMap,
+    _body: Option<Json<AdminPinPayload>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::GONE,
+        Json(serde_json::json!({
+            "error": "Static Admin PIN rotation is retired. Administrative access is now secured via Google-authenticated OTP."
+        })),
+    )
+}
+
+/// `POST /api/admin/otp/generate`
+///
+/// Requires an authenticated Google administrator session. Generates a short-lived (5-minute),
+/// single-use 6-digit access code for administrator elevation.
+pub async fn admin_otp_generate_handler(
     State(state): State<AdminState>,
     headers: HeaderMap,
-    body: Option<Json<AdminPinPayload>>,
-) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    let (new_pin, current_pin) = match body {
-        Some(Json(b)) => (
-            extract_pin_str(b.new_pin.as_ref()).unwrap_or_default(),
-            extract_pin_str(b.current_pin.as_ref()),
-        ),
-        None => (String::new(), None),
-    };
+) -> Result<
+    (
+        StatusCode,
+        Json<crate::models::auth::AdminOtpGenerateResponse>,
+    ),
+    AppError,
+> {
+    let resp = AuthService::generate_admin_otp(&state.pool, &headers).await?;
+    Ok((StatusCode::OK, Json(resp)))
+}
 
-    AuthService::update_admin_pin(&state.pool, &headers, current_pin.as_deref(), &new_pin).await?;
+/// `POST /api/admin/otp/verify`
+///
+/// Accepts a 6-digit access code. Atomically redeems the OTP, establishes an administrative
+/// session, and sets the HTTP-only `session_token` cookie.
+pub async fn admin_otp_verify_handler(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+    Json(payload): Json<crate::models::auth::AdminOtpVerifyRequest>,
+) -> Result<Response, AppError> {
+    let (resp, cookie_hdr) = AuthService::verify_admin_otp(&state.pool, &headers, &payload).await?;
+    let mut response = (StatusCode::OK, Json(resp)).into_response();
+    if let Some(cookie_val) = cookie_hdr {
+        if let Ok(val) = axum::http::HeaderValue::from_str(&cookie_val) {
+            response
+                .headers_mut()
+                .insert(axum::http::header::SET_COOKIE, val);
+        }
+    }
+    Ok(response)
+}
 
-    let ip = extract_client_ip(&headers);
-    let (actor_type, actor_id) = extract_actor(&state.pool, &headers).await;
-    AuditService::record_event(
-        &state.pool,
-        actor_type,
-        &actor_id,
-        "pin_change",
-        Some("settings"),
-        Some("admin_pin"),
-        None,
-        ip.as_deref(),
-    )
-    .await;
-
-    Ok((StatusCode::OK, Json(serde_json::json!({ "success": true }))))
+/// `POST /api/admin/otp/revoke`
+///
+/// Invalidates outstanding access codes belonging to the authenticated administrator.
+pub async fn admin_otp_revoke_handler(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+) -> Result<
+    (
+        StatusCode,
+        Json<crate::models::auth::AdminOtpRevokeResponse>,
+    ),
+    AppError,
+> {
+    let resp = AuthService::revoke_admin_otp(&state.pool, &headers).await?;
+    Ok((StatusCode::OK, Json(resp)))
 }
 
 /// `POST /api/admin/devices/assign`

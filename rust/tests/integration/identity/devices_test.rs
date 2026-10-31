@@ -191,6 +191,50 @@ async fn make_user_and_session(pool: &PgPool, suffix: &str, email: &str) -> (i64
     (user_id, session_id)
 }
 
+async fn make_admin_and_session(pool: &PgPool, suffix: &str, email: &str) -> (i64, String) {
+    let sub = format!("{}{}", TEST_USER_SUB_PREFIX, suffix);
+    let session_id = format!("{}{}", TEST_SESSION_PREFIX, suffix);
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (google_sub, email, name, role, created_at, last_login_at)
+        VALUES ($1, $2, 'Admin Test', 'admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email, role = 'admin'
+        "#,
+    )
+    .bind(&sub)
+    .bind(email)
+    .execute(pool)
+    .await
+    .expect("upsert test admin");
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE google_sub = $1")
+        .bind(&sub)
+        .fetch_one(pool)
+        .await
+        .expect("fetch test admin id");
+
+    sqlx::query(
+        r#"
+        INSERT INTO sessions (id, user_id, email, role, expires_at)
+        VALUES ($1, $2, $3, 'admin', CURRENT_TIMESTAMP + INTERVAL '30 days')
+        ON CONFLICT (id) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            email = EXCLUDED.email,
+            role = 'admin',
+            expires_at = EXCLUDED.expires_at
+        "#,
+    )
+    .bind(&session_id)
+    .bind(user_id)
+    .bind(email)
+    .execute(pool)
+    .await
+    .expect("upsert test admin session");
+
+    (user_id, session_id)
+}
+
 /// Insert a device row with an optional owner (`None` = unowned/guest).
 async fn insert_device(pool: &PgPool, device_id: &str, owner: Option<i64>) {
     sqlx::query(
@@ -642,14 +686,18 @@ async fn test_get_devices_with_admin_pin_returns_all_devices() {
     .await
     .unwrap();
 
+    let (_, admin_sess) =
+        make_admin_and_session(&pool, "admin_get_dev", "admin.get.dev@example.com").await;
+    let cookie_str = format!("session_token={}", admin_sess);
+
     let req = request_with_headers(
         Method::GET,
         "/api/devices",
         Some(&id1),
         None,
         Some(UA_WINDOWS),
-        Some("1234"),
         None,
+        Some(&cookie_str),
     );
     let (status, body) = call(&app, req).await;
 
@@ -795,14 +843,18 @@ async fn test_rename_other_device_with_admin_pin_succeeds() {
     })
     .to_string();
 
+    let (_, admin_sess) =
+        make_admin_and_session(&pool, "admin_ren_dev", "admin.ren.dev@example.com").await;
+    let cookie_str = format!("session_token={}", admin_sess);
+
     let req = request_with_headers(
         Method::POST,
         "/api/devices/rename",
         Some(&caller_id),
         Some(&body_payload),
         Some(UA_WINDOWS),
-        Some("1234"),
         None,
+        Some(&cookie_str),
     );
     let (status, body) = call(&app, req).await;
 
@@ -997,14 +1049,18 @@ async fn test_delete_other_device_with_admin_pin_succeeds() {
     })
     .to_string();
 
+    let (_, admin_sess) =
+        make_admin_and_session(&pool, "admin_del_dev", "admin.del.dev@example.com").await;
+    let cookie_str = format!("session_token={}", admin_sess);
+
     let req = request_with_headers(
         Method::POST,
         "/api/devices/delete",
         Some(&caller_id),
         Some(&body_payload),
         Some(UA_WINDOWS),
-        Some("1234"),
         None,
+        Some(&cookie_str),
     );
     let (status, body) = call(&app, req).await;
 

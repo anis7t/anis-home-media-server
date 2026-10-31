@@ -23,18 +23,17 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
   final List<String> _enteredDigits = [];
   bool _isLoading = false;
   String? _errorMessage;
-  bool _rememberPin = true;
 
   void _onDigitPressed(String digit) {
     if (_isLoading) return;
-    if (_enteredDigits.length >= 4) return;
+    if (_enteredDigits.length >= 6) return;
 
     setState(() {
       _errorMessage = null;
       _enteredDigits.add(digit);
     });
 
-    if (_enteredDigits.length == 4) {
+    if (_enteredDigits.length == 6) {
       _submitPin();
     }
   }
@@ -56,9 +55,9 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
   }
 
   Future<void> _submitPin() async {
-    if (_enteredDigits.length != 4) {
+    if (_enteredDigits.length != 6) {
       setState(() {
-        _errorMessage = 'Please enter a 4-digit PIN';
+        _errorMessage = 'Please enter a 6-digit access code';
       });
       return;
     }
@@ -75,9 +74,6 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
     if (!mounted) return;
 
     if (success) {
-      if (_rememberPin) {
-        await ref.read(authSecureStorageProvider).saveAdminPin(pin);
-      }
       setState(() {
         _isLoading = false;
       });
@@ -85,7 +81,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
     } else {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Invalid PIN. Please try again.';
+        _errorMessage = 'Invalid or expired access code. Please try again.';
         _enteredDigits.clear();
       });
     }
@@ -118,7 +114,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
       child: Center(
         child: Container(
           width: 480,
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           decoration: BoxDecoration(
             color: const Color(0xFF10141E),
             borderRadius: BorderRadius.circular(24),
@@ -155,7 +151,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Admin PIN Sign-In',
+                          'Administrator Verification',
                           style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 18,
@@ -164,7 +160,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Use your remote control to enter the server PIN',
+                          'Enter your six-digit one-time access code',
                           style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
@@ -188,12 +184,12 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
               // PIN Slot Indicators
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(4, (index) {
+                children: List.generate(6, (index) {
                   final isFilled = index < _enteredDigits.length;
                   return Container(
-                    width: 44,
+                    width: 40,
                     height: 52,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    margin: const EdgeInsets.symmetric(horizontal: 5),
                     decoration: BoxDecoration(
                       color: isFilled
                           ? AppColors.brandRedGlow
@@ -284,7 +280,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
                         label: _isLoading ? '...' : '✓',
                         width: 72,
                         height: 52,
-                        backgroundColor: _enteredDigits.length == 4
+                        backgroundColor: _enteredDigits.length == 6
                             ? AppColors.brandRed
                             : Colors.white.withValues(alpha: 0.06),
                         onPressed: _submitPin,
@@ -295,7 +291,7 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
               ),
               const SizedBox(height: 16),
 
-              // Clear row / Remember PIN toggle
+              // Clear row / Single-use notice
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -305,36 +301,18 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
                     label: const Text('Clear All', style: TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.textSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _rememberPin = !_rememberPin;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _rememberPin
-                                ? Icons.check_box_rounded
-                                : Icons.check_box_outline_blank_rounded,
-                            size: 16,
-                            color: _rememberPin ? AppColors.brandRed : AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Remember PIN on TV',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                  const Flexible(
+                    child: Text(
+                      'Single-use · 5 min',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
                       ),
                     ),
                   ),

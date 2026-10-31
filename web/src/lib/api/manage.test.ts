@@ -60,16 +60,16 @@ describe('manage API client', () => {
     );
   });
 
-  it('fetches storage settings with admin PIN header', async () => {
+  it('fetches storage settings', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ retention_policy: 'keep', archive_dir: 'D:/archive', allowed_policies: ['keep'] })
     );
-    const settings = await fetchStorageSettings('97531');
+    const settings = await fetchStorageSettings();
     expect(settings.retention_policy).toBe('keep');
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/settings',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
+        method: 'GET',
       })
     );
   });
@@ -78,33 +78,32 @@ describe('manage API client', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ storage: { free_str: '100 GB' }, audit: { total_orphaned_dirs: 0 } })
     );
-    const audit = await fetchStorageAudit('97531');
+    const audit = await fetchStorageAudit();
     expect(audit.storage.free_str).toBe('100 GB');
   });
 
-  it('verifies admin pin via POST', async () => {
+  it('verifies admin access code via POST', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, admin: true }));
-    const res = await verifyAdminPin('97531');
+    const res = await verifyAdminPin('975312');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/admin/verify',
+      '/api/admin/otp/verify',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ pin: '97531' }),
+        body: JSON.stringify({ otp: '975312' }),
       })
     );
   });
 
-  it('updates storage policy and passes PIN header', async () => {
+  it('updates storage policy', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, retention_policy: 'archive' }));
-    const res = await updateStoragePolicy('archive', '97531');
+    const res = await updateStoragePolicy('archive');
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/storage/settings',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ retention_policy: 'archive' }),
-        headers: expect.objectContaining({ 'X-Admin-Pin': '97531' }),
       })
     );
   });

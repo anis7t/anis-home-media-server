@@ -98,8 +98,8 @@ void main() {
       await tester.tap(find.text('Admin PIN Pad'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Admin PIN Sign-In'), findsOneWidget);
-      expect(find.text('Use your remote control to enter the server PIN'), findsOneWidget);
+      expect(find.text('Administrator Verification'), findsOneWidget);
+      expect(find.text('Enter your six-digit one-time access code'), findsOneWidget);
     });
 
     testWidgets('renders expired state with retry and PIN options', (tester) async {

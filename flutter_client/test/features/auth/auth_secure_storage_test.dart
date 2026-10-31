@@ -92,31 +92,30 @@ void main() {
       expect(mockStorage.memory.containsKey(StorageKeys.sessionToken), isFalse);
     });
 
-    test('stores, retrieves, and clears admin pin', () async {
+    test('getAdminPin always returns null and saveAdminPin is a no-op (OTPs not persisted)', () async {
       expect(await authStorage.getAdminPin(), isNull);
 
-      const pin = '1234';
+      const pin = '123456';
       await authStorage.saveAdminPin(pin);
 
-      expect(await authStorage.getAdminPin(), equals(pin));
-      expect(mockStorage.memory[StorageKeys.adminPin], equals(pin));
+      expect(await authStorage.getAdminPin(), isNull);
+      expect(mockStorage.memory.containsKey(StorageKeys.adminPin), isFalse);
 
       await authStorage.clearAdminPin();
       expect(await authStorage.getAdminPin(), isNull);
-      expect(mockStorage.memory.containsKey(StorageKeys.adminPin), isFalse);
     });
 
-    test('clearAll wipes both session token and admin pin', () async {
+    test('clearAll wipes session token and clears admin pin key', () async {
       await authStorage.saveSessionToken('sess_test_123');
-      await authStorage.saveAdminPin('9999');
+      mockStorage.memory[StorageKeys.adminPin] = 'legacy_pin';
 
       expect(await authStorage.getSessionToken(), equals('sess_test_123'));
-      expect(await authStorage.getAdminPin(), equals('9999'));
 
       await authStorage.clearAll();
 
       expect(await authStorage.getSessionToken(), isNull);
       expect(await authStorage.getAdminPin(), isNull);
+      expect(mockStorage.memory.containsKey(StorageKeys.adminPin), isFalse);
     });
   });
 }

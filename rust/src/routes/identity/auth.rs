@@ -179,38 +179,19 @@ pub async fn post_allowlist_handler(
     })))
 }
 
-/// `POST /api/auth/login-pin`
+/// `POST /api/auth/login-pin` (Retired)
 pub async fn login_pin_handler(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-    body: Option<Json<crate::models::auth::LoginPinPayload>>,
+    State(_state): State<AuthState>,
+    _headers: HeaderMap,
+    _body: Option<Json<crate::models::auth::LoginPinPayload>>,
 ) -> Result<Response, AppError> {
-    let pin = body
-        .and_then(|Json(b)| b.pin)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-
-    let (session_token, user_id, email) = AuthService::login_with_pin(&state.pool, &pin).await?;
-
-    let cookie_val = AuthService::session_cookie(&session_token, &headers);
-
-    let body = serde_json::json!({
-        "success": true,
-        "user": {
-            "id": user_id,
-            "email": email,
-            "role": "admin",
-            "is_admin": true,
-        }
-    });
-
-    let mut res = (StatusCode::OK, Json(body)).into_response();
-    if let Ok(hdr_val) = header::HeaderValue::from_str(&cookie_val) {
-        res.headers_mut().insert(header::SET_COOKIE, hdr_val);
-    }
-
-    Ok(res)
+    Ok((
+        StatusCode::GONE,
+        Json(serde_json::json!({
+            "error": "Static Admin PIN login is retired. Use Google-authenticated One-Time Admin Access (OTP)."
+        })),
+    )
+        .into_response())
 }
 
 /// `GET /auth/google`

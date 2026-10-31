@@ -113,12 +113,12 @@ void main() {
     });
 
     test('loginWithPin extracts session token and saves to secure storage', () async {
-      const pin = '4321';
+      const pin = '432109';
       const expectedToken = 'sess_pin_987654321';
 
       final apiClient = createMockApiClient((options) async {
-        expect(options.path, equals(ApiEndpoints.loginPin));
-        expect(options.data, equals({'pin': pin}));
+        expect(options.path, equals(ApiEndpoints.adminOtpVerify));
+        expect(options.data, equals({'otp': pin}));
 
         return Response(
           requestOptions: options,
@@ -178,7 +178,7 @@ void main() {
           response: Response(
             requestOptions: options,
             statusCode: 401,
-            data: {'error': 'Invalid PIN'},
+            data: {'error': 'Invalid access code'},
           ),
           type: DioExceptionType.badResponse,
         );
@@ -190,14 +190,15 @@ void main() {
       );
 
       expect(
-        () => repository.loginWithPin('wrong-pin'),
+        () => repository.loginWithPin('111111'),
         throwsA(isA<UnauthorizedException>()),
       );
     });
 
     test('verifyAdminPin returns true when backend confirms', () async {
       final apiClient = createMockApiClient((options) async {
-        expect(options.path, equals('/api/admin/verify-pin'));
+        expect(options.path, equals(ApiEndpoints.adminOtpVerify));
+        expect(options.data, equals({'otp': '123456'}));
         return Response(
           requestOptions: options,
           statusCode: 200,
@@ -210,7 +211,7 @@ void main() {
         secureStorage: authSecureStorage,
       );
 
-      final isAuthorized = await repository.verifyAdminPin('1234');
+      final isAuthorized = await repository.verifyAdminPin('123456');
       expect(isAuthorized, isTrue);
     });
 

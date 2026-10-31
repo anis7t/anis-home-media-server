@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { listMovies } from '../../lib/api/client';
-import { getStoredAdminPin } from '../../lib/api/account';
 import { verifyAdminPin } from '../../lib/api/manage';
 import { useOptionalAuth } from '../../auth/AuthProvider';
 import { useDeviceId } from '../../lib/useDeviceId';
@@ -33,10 +32,11 @@ export function LibraryPage() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'recent' | 'title' | 'rating' | 'year'>('recent');
 
-  // Upload is admin-only. An admin session is enough; otherwise the PIN is
-  // verified once, stored in sessionStorage, and sent as X-Admin-Pin.
+  // Upload is admin-only. An admin session or session unlocked with OTP is enough.
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [adminPin, setAdminPin] = useState<string | null>(() => getStoredAdminPin());
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(
+    () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('ms_admin_unlocked') === 'true' : false)
+  );
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinValue, setPinValue] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -45,18 +45,18 @@ export function LibraryPage() {
   const handleUploadClick = () => {
     setPinError(null);
     setPinValue('');
-    if (role !== 'admin' && !adminPin) {
+    if (role !== 'admin' && !isUnlocked) {
       setPinModalOpen(true);
       return;
     }
     setUploadOpen(true);
   };
 
-  const handleVerifyPin = async () => {
+  const handleVerifyPin = async (candidateCode?: string) => {
     if (pinBusy) return;
-    const candidate = pinValue.trim();
+    const candidate = (candidateCode || pinValue).trim();
     if (!candidate) {
-      setPinError('Enter your Admin PIN.');
+      setPinError('Enter your 6-digit access code.');
       return;
     }
     setPinBusy(true);
@@ -64,20 +64,20 @@ export function LibraryPage() {
     try {
       const data = await verifyAdminPin(candidate);
       if (data.success) {
-        setAdminPin(candidate);
+        setIsUnlocked(true);
         try {
-          sessionStorage.setItem('ms_admin_pin', candidate);
+          sessionStorage.setItem('ms_admin_unlocked', 'true');
         } catch {
-          // Storage can be unavailable; the in-memory PIN still works.
+          // Storage can be unavailable; in-memory state works
         }
         setPinModalOpen(false);
         setPinValue('');
         setUploadOpen(true);
       } else {
-        setPinError(data.error || 'Incorrect Admin PIN.');
+        setPinError(data.error || 'Invalid or expired access code.');
       }
     } catch {
-      setPinError('Failed to verify the Admin PIN.');
+      setPinError('Failed to verify the access code.');
     } finally {
       setPinBusy(false);
     }
@@ -310,8 +310,8 @@ export function LibraryPage() {
         pinValue={pinValue}
         error={pinError}
         onChangePin={setPinValue}
-        onSubmit={() => {
-          void handleVerifyPin();
+        onSubmit={(code) => {
+          void handleVerifyPin(code);
         }}
         onClose={() => {
           setPinModalOpen(false);
@@ -323,7 +323,7 @@ export function LibraryPage() {
         onClose={() => setUploadOpen(false)}
         onUploaded={handleUploaded}
         onNeedPin={handleNeedPin}
-        adminPin={adminPin}
+        adminPin={null}
       />
     </div>
   );

@@ -5,7 +5,7 @@ import AdminPinSignInModal from './AdminPinSignInModal';
 import * as accountApi from '../lib/api/account';
 
 vi.mock('../lib/api/account', () => ({
-  loginWithPin: vi.fn(),
+  verifyAdminOtp: vi.fn(),
 }));
 
 describe('AdminPinSignInModal', () => {
@@ -28,11 +28,13 @@ describe('AdminPinSignInModal', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 2, name: /Admin PIN Sign-In/i })
+      screen.getByRole('heading', { level: 2, name: /Administrator Verification/i })
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/Enter Administrator PIN/i)).toBeInTheDocument();
+    expect(screen.getByText(/Enter 6-Digit Access Code/i)).toBeInTheDocument();
+    const cells = screen.getAllByRole('textbox');
+    expect(cells).toHaveLength(6);
     expect(
-      screen.getByRole('button', { name: /Sign In as Admin/i })
+      screen.getByRole('button', { name: /Verify & Sign In/i })
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
   });
@@ -52,21 +54,14 @@ describe('AdminPinSignInModal', () => {
     expect(screen.queryByText(/GOOGLE_CLIENT_ID=/i)).not.toBeInTheDocument();
   });
 
-  it('submits valid PIN and invokes onSuccess and onClose on success', async () => {
+  it('submits valid 6-digit OTP and invokes onSuccess and onClose on success', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     const onSuccess = vi.fn();
 
-    vi.mocked(accountApi.loginWithPin).mockResolvedValueOnce({
+    vi.mocked(accountApi.verifyAdminOtp).mockResolvedValueOnce({
       success: true,
-      user: {
-        id: 'admin_pin',
-        email: 'admin@local',
-        name: 'Administrator',
-        role: 'admin',
-        is_admin: true,
-        created_at: '',
-      },
+      admin: true,
     });
 
     render(
@@ -78,24 +73,25 @@ describe('AdminPinSignInModal', () => {
       />
     );
 
-    const input = screen.getByLabelText(/Enter Administrator PIN/i);
-    await user.type(input, '2468');
-
-    const submitBtn = screen.getByRole('button', { name: /Sign In as Admin/i });
-    await user.click(submitBtn);
+    const cells = screen.getAllByRole('textbox');
+    for (let i = 0; i < 6; i++) {
+      await user.type(cells[i], '123456'[i]);
+    }
 
     await waitFor(() => {
-      expect(accountApi.loginWithPin).toHaveBeenCalledWith('2468');
+      expect(accountApi.verifyAdminOtp).toHaveBeenCalledWith('123456');
       expect(onSuccess).toHaveBeenCalledTimes(1);
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('displays error message when loginWithPin fails', async () => {
+  it('displays error message when verifyAdminOtp fails', async () => {
     const user = userEvent.setup();
-    vi.mocked(accountApi.loginWithPin).mockRejectedValueOnce(
-      new Error('Invalid Admin PIN. Please check and try again.')
-    );
+    vi.mocked(accountApi.verifyAdminOtp).mockResolvedValueOnce({
+      success: false,
+      admin: false,
+      error: 'Invalid or expired access code.',
+    });
 
     render(
       <AdminPinSignInModal
@@ -105,15 +101,14 @@ describe('AdminPinSignInModal', () => {
       />
     );
 
-    const input = screen.getByLabelText(/Enter Administrator PIN/i);
-    await user.type(input, 'wrong');
-
-    const submitBtn = screen.getByRole('button', { name: /Sign In as Admin/i });
-    await user.click(submitBtn);
+    const cells = screen.getAllByRole('textbox');
+    for (let i = 0; i < 6; i++) {
+      await user.type(cells[i], '999999'[i]);
+    }
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Invalid Admin PIN\. Please check and try again\./i)
+        screen.getByText(/Invalid or expired access code\./i)
       ).toBeInTheDocument();
     });
   });

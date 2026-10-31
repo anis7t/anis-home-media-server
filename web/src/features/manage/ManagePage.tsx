@@ -19,7 +19,6 @@ import {
 import { startTranscode } from '../../lib/api/client';
 import { AdminAccessGate } from './components/AdminAccessGate';
 import { AdminPinModal } from './components/AdminPinModal';
-import { ChangeAdminPinModal } from './components/ChangeAdminPinModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import {
   InventoryToolbar,
@@ -43,8 +42,7 @@ export function ManagePage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Admin PIN verification state & manual lock override
-  const [adminPin, setAdminPin] = useState<string>(() => sessionStorage.getItem('ms_admin_pin') || '');
+  // Admin verification state & manual lock override
   const [isPinUnlocked, setIsPinUnlocked] = useState<boolean>(
     () => sessionStorage.getItem('ms_admin_unlocked') === 'true'
   );
@@ -54,7 +52,6 @@ export function ManagePage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInputValue, setPinInputValue] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
-  const [changePinModalOpen, setChangePinModalOpen] = useState(false);
 
   // In-delete modal PIN input
   const [modalPinInput, setModalPinInput] = useState('');
@@ -91,22 +88,20 @@ export function ManagePage() {
       return;
     }
 
-    const effectivePin = adminPin || sessionStorage.getItem('ms_admin_pin') || '';
-
     // 2. Fetch storage settings in parallel with deadline
-    void fetchStorageSettings(effectivePin)
+    void fetchStorageSettings()
       .then((data) => setSettings(data))
       .catch(() => {});
 
     // 3. Fetch storage audit in background (probes media roots)
     setAuditLoading(true);
-    void fetchStorageAudit(effectivePin)
+    void fetchStorageAudit()
       .then((data) => setAuditData(data))
       .catch(() => {})
       .finally(() => {
         setAuditLoading(false);
       });
-  }, [isAdmin, adminPin]);
+  }, [isAdmin]);
 
   useEffect(() => {
     void loadData();
@@ -118,12 +113,11 @@ export function ManagePage() {
       if (e.key === 'Escape') {
         if (deleteTarget && !deleting) setDeleteTarget(null);
         if (pinModalOpen) setPinModalOpen(false);
-        if (changePinModalOpen) setChangePinModalOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deleteTarget, deleting, pinModalOpen, changePinModalOpen]);
+  }, [deleteTarget, deleting, pinModalOpen]);
 
   // Active HLS lookup map (from audit telemetry)
   const activeHlsMap = useMemo(() => {
@@ -189,28 +183,24 @@ export function ManagePage() {
     try {
       const data = await verifyAdminPin(candidatePin);
       if (data.success) {
-        setAdminPin(candidatePin);
         setIsPinUnlocked(true);
         setIsManuallyLocked(false);
-        sessionStorage.setItem('ms_admin_pin', candidatePin);
         sessionStorage.setItem('ms_admin_unlocked', 'true');
         sessionStorage.removeItem('ms_admin_manual_lock');
         setPinModalOpen(false);
         setPinInputValue('');
         setFeedback('Admin mode unlocked successfully!');
       } else {
-        setPinModalError(data.error || 'Incorrect Admin PIN');
+        setPinModalError(data.error || 'Invalid or expired access code');
       }
     } catch {
-      setPinModalError('Failed to verify Admin PIN');
+      setPinModalError('Failed to verify access code');
     }
   };
 
   const handleLockAdmin = () => {
-    sessionStorage.removeItem('ms_admin_pin');
     sessionStorage.removeItem('ms_admin_unlocked');
     sessionStorage.setItem('ms_admin_manual_lock', 'true');
-    setAdminPin('');
     setIsPinUnlocked(false);
     setIsManuallyLocked(true);
     setSettings(null);
@@ -226,7 +216,7 @@ export function ManagePage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const res = await updateStoragePolicy(newPolicy, adminPin);
+      const res = await updateStoragePolicy(newPolicy);
       if (res.success) {
         setFeedback(`Retention policy updated to ${newPolicy}`);
         await loadData();
@@ -249,7 +239,7 @@ export function ManagePage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const res = await purgeOrphanedCaches(adminPin);
+      const res = await purgeOrphanedCaches();
       if (res.success) {
         setFeedback('Successfully purged orphaned cache directories!');
         await loadData();
@@ -268,7 +258,7 @@ export function ManagePage() {
     setFeedback(null);
     setError(null);
     try {
-      const res = await triggerLibraryScan(adminPin);
+      const res = await triggerLibraryScan();
       if (res.success) {
         setFeedback('Library scan started! Refreshing files and metadata...');
         setTimeout(() => {
@@ -315,7 +305,7 @@ export function ManagePage() {
     setFeedback(null);
     setError(null);
     try {
-      const data = await archiveMovieMedia(movie.filename, adminPin);
+      const data = await archiveMovieMedia(movie.filename);
       if (data.success) {
         setFeedback(`Successfully moved "${movie.title}" to .archive storage.`);
         await loadData();
@@ -335,15 +325,19 @@ export function ManagePage() {
     setDeleteError(null);
     setError(null);
     try {
-      const candidatePin = modalPinInput || adminPin;
-      const data = await deleteMovieMedia(deleteTarget.filename, candidatePin);
-      if (data.success) {
-        if (candidatePin && !isPinUnlocked) {
-          setAdminPin(candidatePin);
-          setIsPinUnlocked(true);
-          sessionStorage.setItem('ms_admin_pin', candidatePin);
-          sessionStorage.setItem('ms_admin_unlocked', 'true');
+      if (modalPinInput && !isPinUnlocked) {
+        const verifyRes = await verifyAdminPin(modalPinInput);
+        if (!verifyRes.success) {
+          setDeleteError(verifyRes.error || 'Invalid or expired access code');
+          setDeleting(false);
+          return;
         }
+        setIsPinUnlocked(true);
+        sessionStorage.setItem('ms_admin_unlocked', 'true');
+      }
+
+      const data = await deleteMovieMedia(deleteTarget.filename);
+      if (data.success) {
         setFeedback(`Permanently deleted and purged "${deleteTarget.title}".`);
         const purgedFilename = deleteTarget.filename;
         setDeleteTarget(null);
@@ -378,7 +372,7 @@ export function ManagePage() {
           pinValue={pinInputValue}
           error={pinModalError}
           onChangePin={setPinInputValue}
-          onSubmit={() => void handleVerifyPin(pinInputValue)}
+          onSubmit={(code) => void handleVerifyPin(code || pinInputValue)}
           onClose={() => setPinModalOpen(false)}
         />
       </>
@@ -410,25 +404,16 @@ export function ManagePage() {
               <div className="flex items-center gap-2">
                 <span
                   className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 shadow-sm"
-                  title={email ? `Signed in as Admin (${email})` : 'Admin unlocked with PIN'}
+                  title={email ? `Signed in as Admin (${email})` : 'Admin unlocked with access code'}
                 >
                   <Icon name="shield" size={13} />
                   <span>Admin Verified</span>
                 </span>
                 <button
                   type="button"
-                  onClick={() => setChangePinModalOpen(true)}
-                  className="card-ring rounded-full border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 px-3.5 py-2 text-xs font-semibold text-brand-300 hover:text-brand-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
-                  title="Change administrator PIN"
-                >
-                  <Icon name="shield" size={13} />
-                  <span>Change PIN</span>
-                </button>
-                <button
-                  type="button"
                   onClick={handleLockAdmin}
                   className="card-ring rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:text-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
-                  title="Lock admin controls and require PIN or re-login"
+                  title="Lock admin controls and require access code or re-login"
                 >
                   <Icon name="lock" size={13} />
                   <span>Lock Admin</span>
@@ -550,7 +535,7 @@ export function ManagePage() {
           onArchiveMovie={(m) => void onArchiveMovie(m)}
           onDeleteClick={(m) => {
             setDeleteTarget(m);
-            setModalPinInput(adminPin);
+            setModalPinInput('');
             setDeleteError(null);
           }}
           onPreTranscodeMovie={(m) => void handlePreTranscodeMovie(m)}
@@ -576,7 +561,7 @@ export function ManagePage() {
         deleteTarget={deleteTarget}
         deleting={deleting}
         isAdmin={isAdmin}
-        adminPin={adminPin}
+        isUnlocked={isPinUnlocked}
         modalPinInput={modalPinInput}
         email={email}
         error={deleteError}
@@ -591,26 +576,14 @@ export function ManagePage() {
         }}
       />
 
-      {/* Standalone Admin PIN Unlock Dialog */}
+      {/* Standalone Admin Access Code Unlock Dialog */}
       <AdminPinModal
         isOpen={pinModalOpen}
         pinValue={pinInputValue}
         error={pinModalError}
         onChangePin={setPinInputValue}
-        onSubmit={() => void handleVerifyPin(pinInputValue)}
+        onSubmit={(code) => void handleVerifyPin(code || pinInputValue)}
         onClose={() => setPinModalOpen(false)}
-      />
-
-      {/* Admin PIN Rotation Dialog */}
-      <ChangeAdminPinModal
-        isOpen={changePinModalOpen}
-        defaultCurrentPin={adminPin}
-        onClose={() => setChangePinModalOpen(false)}
-        onSuccess={(newPin) => {
-          setAdminPin(newPin);
-          setIsPinUnlocked(true);
-          setFeedback('Admin PIN rotated successfully!');
-        }}
       />
     </div>
   );

@@ -99,7 +99,7 @@ export function AdminAccessGate({
             className="w-full sm:w-auto card-ring rounded-full brand-gradient px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 hover:scale-[1.02] active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <Icon name="shield" size={16} />
-            <span>Unlock with Admin PIN</span>
+            <span>Unlock with Access Code</span>
           </button>
 
           <button

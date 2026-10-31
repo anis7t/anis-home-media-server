@@ -18,8 +18,7 @@ import { fetchManageMovies, type MovieItem } from '../../lib/api/manage';
 export function TranscodeDashboardPage() {
   const { role, authenticated, signIn } = useAuth();
 
-  // Admin PIN verification state & manual lock override
-  const [adminPin, setAdminPin] = useState<string>(() => sessionStorage.getItem('ms_admin_pin') || '');
+  // Admin verification state & manual lock override
   const [isPinUnlocked, setIsPinUnlocked] = useState<boolean>(
     () => sessionStorage.getItem('ms_admin_unlocked') === 'true'
   );
@@ -51,10 +50,9 @@ export function TranscodeDashboardPage() {
       setLoading(false);
       return;
     }
-    const effectivePin = adminPin || sessionStorage.getItem('ms_admin_pin') || '';
     setLoading(true);
     try {
-      const resp = await fetchTranscodeDashboard(effectivePin);
+      const resp = await fetchTranscodeDashboard();
       setData(resp);
       setError(null);
     } catch (err) {
@@ -62,7 +60,7 @@ export function TranscodeDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, adminPin]);
+  }, [isAdmin]);
 
   useEffect(() => {
     loadDashboard();
@@ -102,23 +100,22 @@ export function TranscodeDashboardPage() {
     });
   }, [data?.active_jobs]);
 
-  const handleVerifyPin = async (e?: React.FormEvent) => {
+  const handleVerifyPin = async (candidateCode?: string, e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setPinModalError(null);
-    if (!pinInputValue.trim()) {
-      setPinModalError('Please enter your server Admin PIN');
+    const code = (candidateCode || pinInputValue).trim();
+    if (!code) {
+      setPinModalError('Please enter your 6-digit access code');
       return;
     }
 
     try {
       setBusy(true);
       const { verifyAdminPin } = await import('../../lib/api/manage');
-      const res = await verifyAdminPin(pinInputValue.trim());
+      const res = await verifyAdminPin(code);
       if (res.success) {
-        sessionStorage.setItem('ms_admin_pin', pinInputValue.trim());
         sessionStorage.setItem('ms_admin_unlocked', 'true');
         sessionStorage.removeItem('ms_admin_manual_lock');
-        setAdminPin(pinInputValue.trim());
         setIsPinUnlocked(true);
         setIsManuallyLocked(false);
         setPinModalOpen(false);
@@ -126,20 +123,18 @@ export function TranscodeDashboardPage() {
         setFeedback('Administrator privileges unlocked.');
         setTimeout(() => setFeedback(null), 3000);
       } else {
-        setPinModalError(res.error || 'Incorrect Admin PIN.');
+        setPinModalError(res.error || 'Invalid or expired access code.');
       }
     } catch {
-      setPinModalError('Failed to verify PIN with media server.');
+      setPinModalError('Failed to verify access code with media server.');
     } finally {
       setBusy(false);
     }
   };
 
   const handleLockSession = () => {
-    sessionStorage.removeItem('ms_admin_pin');
     sessionStorage.removeItem('ms_admin_unlocked');
     sessionStorage.setItem('ms_admin_manual_lock', 'true');
-    setAdminPin('');
     setIsPinUnlocked(false);
     setIsManuallyLocked(true);
     setFeedback('Administrator session locked.');
@@ -148,10 +143,9 @@ export function TranscodeDashboardPage() {
 
   const handleCancelJob = async () => {
     if (!cancelTarget) return;
-    const effectivePin = adminPin || sessionStorage.getItem('ms_admin_pin') || '';
     try {
       setBusy(true);
-      await cancelTranscodeJob(cancelTarget.filename, effectivePin);
+      await cancelTranscodeJob(cancelTarget.filename);
       setFeedback(`Canceled transcode for "${cancelTarget.title}".`);
       setTimeout(() => setFeedback(null), 3500);
       setCancelTarget(null);
@@ -164,10 +158,9 @@ export function TranscodeDashboardPage() {
   };
 
   const handleQueueTranscode = async (filename: string, preset: string, priority: number) => {
-    const effectivePin = adminPin || sessionStorage.getItem('ms_admin_pin') || '';
     setBusy(true);
     try {
-      await enqueueTranscodeJob(filename, preset, priority, effectivePin);
+      await enqueueTranscodeJob(filename, preset, priority);
       setFeedback('Transcode job successfully queued.');
       setTimeout(() => setFeedback(null), 3500);
       await loadDashboard();
@@ -195,7 +188,7 @@ export function TranscodeDashboardPage() {
             setPinModalError(null);
             setPinInputValue('');
           }}
-          onSubmit={() => { void handleVerifyPin(); }}
+          onSubmit={(code) => { void handleVerifyPin(code); }}
         />
       </>
     );

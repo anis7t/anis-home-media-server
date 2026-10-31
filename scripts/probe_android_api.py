@@ -80,6 +80,7 @@ CALLS = [
     ("GET", f"/hls/{enc}/playlist.m3u8", (200, 404), "hls playlist"),
     ("GET", f"/subtitles/{enc}/missing.srt", (200, 404), "subtitles"),
     ("GET", "/poster/does-not-exist.jpg", (404,), "poster route"),
+    ("POST", "/api/admin/otp/verify", (200, 400, 401), "admin otp verify"),
 ]
 
 fails = []

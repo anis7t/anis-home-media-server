@@ -156,6 +156,45 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(&mut *tx)
     .await?;
 
+    // Admin One-Time Access Codes (OTP) table
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS admin_access_otps (
+            id              BIGSERIAL PRIMARY KEY,
+            admin_user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            otp_hash        TEXT NOT NULL,
+            salt            TEXT NOT NULL,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at      TIMESTAMPTZ NOT NULL,
+            consumed_at     TIMESTAMPTZ,
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            lockout_until   TIMESTAMPTZ
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_admin_access_otps_active
+            ON admin_access_otps (admin_user_id, expires_at)
+            WHERE consumed_at IS NULL
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Legacy Admin PIN retirement:
+    // Permanently purge static admin_pin from settings and delete synthetic admin_pin user/sessions.
+    sqlx::query("DELETE FROM settings WHERE key = 'admin_pin'")
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM users WHERE google_sub = 'admin_pin'")
+        .execute(&mut *tx)
+        .await?;
+
     // QR Device Pairing Sessions (remote login flow)
     // Each row represents a pending sign-in initiated by a TV/browser showing a QR code.
     // Expires after 2 minutes; confirmed=true once the phone completes the handshake.

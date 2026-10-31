@@ -14,7 +14,7 @@ class _FakeAuthRepository extends Fake implements AuthRepository {
 
   @override
   Future<({UserIdentity identity, String sessionToken})> loginWithPin(String pin) async {
-    if (shouldSucceed && pin == '1234') {
+    if (shouldSucceed && pin == '123456') {
       return (
         identity: const UserIdentity(
           id: 1,
@@ -24,7 +24,7 @@ class _FakeAuthRepository extends Fake implements AuthRepository {
         sessionToken: 'test-session-token-pin',
       );
     }
-    throw const UnauthorizedException('Invalid PIN');
+    throw const UnauthorizedException('Invalid access code');
   }
 
   @override
@@ -75,8 +75,8 @@ void main() {
       await tester.pumpWidget(buildTestableWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Admin PIN Sign-In'), findsOneWidget);
-      expect(find.text('Use your remote control to enter the server PIN'), findsOneWidget);
+      expect(find.text('Administrator Verification'), findsOneWidget);
+      expect(find.text('Enter your six-digit one-time access code'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       expect(find.text('5'), findsOneWidget);
       expect(find.text('9'), findsOneWidget);
@@ -103,7 +103,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('entering 4 valid digits triggers login and invokes onSuccess', (tester) async {
+    testWidgets('entering 6 valid digits triggers login and invokes onSuccess', (tester) async {
       bool successCalled = false;
       await tester.pumpWidget(buildTestableWidget(
         onSuccess: () {
@@ -119,6 +119,10 @@ void main() {
       await tester.tap(find.text('3'));
       await tester.pump();
       await tester.tap(find.text('4'));
+      await tester.pump();
+      await tester.tap(find.text('5'));
+      await tester.pump();
+      await tester.tap(find.text('6'));
       await tester.pumpAndSettle();
 
       expect(successCalled, isTrue);
@@ -137,9 +141,13 @@ void main() {
       await tester.tap(find.text('9'));
       await tester.pump();
       await tester.tap(find.text('9'));
+      await tester.pump();
+      await tester.tap(find.text('9'));
+      await tester.pump();
+      await tester.tap(find.text('9'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Invalid PIN'), findsOneWidget);
+      expect(find.textContaining('Invalid or expired access code'), findsOneWidget);
     });
   });
 }

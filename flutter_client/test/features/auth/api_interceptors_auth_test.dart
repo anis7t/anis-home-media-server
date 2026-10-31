@@ -19,15 +19,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('DeviceAuthInterceptor Auth Injection', () {
-    test('Injects Cookie and X-Admin-Pin headers when present in secure storage', () async {
+    test('Injects Cookie and Device-Id headers and omits legacy X-Admin-Pin', () async {
       const fixedDevId = 'dev_1122334455667788';
       const fixedToken = 'sess_xyz123456';
-      const fixedPin = '4321';
 
       final mockStorage = MockSecureStorage({
         StorageKeys.deviceId: fixedDevId,
         StorageKeys.sessionToken: fixedToken,
-        StorageKeys.adminPin: fixedPin,
       });
 
       final deviceService = DeviceIdentityService(secureStorage: mockStorage);
@@ -45,7 +43,7 @@ void main() {
 
       expect(options.headers['X-Device-Id'], equals(fixedDevId));
       expect(options.headers['Cookie'], equals('session_token=$fixedToken'));
-      expect(options.headers['X-Admin-Pin'], equals(fixedPin));
+      expect(options.headers.containsKey('X-Admin-Pin'), isFalse);
     });
 
     test('Preserves existing cookies when appending session_token cookie', () async {

@@ -66,3 +66,39 @@ pub struct AllowlistUpdateRequest {
     pub admin_pin: Option<String>,
     pub pin: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminOtpGenerateResponse {
+    pub otp: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_in: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AdminOtpVerifyRequest {
+    pub otp: Option<String>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub pin: Option<String>,
+    #[serde(default)]
+    pub admin_email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminOtpVerifyResponse {
+    pub success: bool,
+    pub admin: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminOtpRevokeResponse {
+    pub success: bool,
+    pub revoked: u64,
+}

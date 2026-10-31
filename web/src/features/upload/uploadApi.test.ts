@@ -74,7 +74,6 @@ describe('uploadApi', () => {
     const result = await initUpload(
       file,
       { title: '  My Movie  ', overwrite: true },
-      '97531',
     );
 
     expect(result.upload_id).toBe('upload-1');
@@ -85,7 +84,6 @@ describe('uploadApi', () => {
         credentials: 'same-origin',
         headers: expect.objectContaining({
           'Content-Type': 'application/json',
-          'X-Admin-Pin': '97531',
         }),
       }),
     );
@@ -124,13 +122,13 @@ describe('uploadApi', () => {
     );
 
     const file = new File(['abc'], 'Movie.mp4', { type: 'video/mp4' });
-    await expect(initUpload(file, {}, 'wrong-pin')).rejects.toMatchObject({
+    await expect(initUpload(file, {})).rejects.toMatchObject({
       name: 'UploadApiError',
       status: 403,
       message: 'Forbidden: admin authorization required',
     });
     await expect(
-      initUpload(file, {}, 'wrong-pin'),
+      initUpload(file, {}),
     ).rejects.toBeInstanceOf(UploadApiError);
   });
 
@@ -157,7 +155,6 @@ describe('uploadApi', () => {
       'upload-3',
       0,
       new Blob(['abc']),
-      '97531',
     );
 
     expect(result).toMatchObject({ offset: 3, complete: true });
@@ -168,10 +165,6 @@ describe('uploadApi', () => {
     expect(FakeXhr.last?.setRequestHeader).toHaveBeenCalledWith(
       'X-Upload-Offset',
       '0',
-    );
-    expect(FakeXhr.last?.setRequestHeader).toHaveBeenCalledWith(
-      'X-Admin-Pin',
-      '97531',
     );
   });
 

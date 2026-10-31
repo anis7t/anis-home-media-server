@@ -19,6 +19,9 @@ class ApiEndpoints {
   // Authentication & Session
   static const String authMe = '/api/auth/me';
   static const String loginPin = '/api/auth/login-pin';
+  static const String adminOtpGenerate = '/api/admin/otp/generate';
+  static const String adminOtpVerify = '/api/admin/otp/verify';
+  static const String adminOtpRevoke = '/api/admin/otp/revoke';
   static const String logout = '/auth/logout';
 
   // Remote Pairing / QR Login

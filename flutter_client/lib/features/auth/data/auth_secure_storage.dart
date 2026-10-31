@@ -63,23 +63,14 @@ class AuthSecureStorage {
     } catch (_) {}
   }
 
-  /// Retrieves the stored Admin PIN if remembered.
+  /// Retrieves the stored Admin PIN. Deprecated: OTPs are never stored; always returns null.
   Future<String?> getAdminPin() async {
-    try {
-      return await _secureStorage.read(key: StorageKeys.adminPin);
-    } catch (e) {
-      debugPrint('[AuthSecureStorage] Failed to read admin PIN: $e');
-      return null;
-    }
+    return null;
   }
 
-  /// Saves the Admin PIN to secure storage.
+  /// Saves the Admin PIN. Deprecated: One-time access codes (OTP) are single-use and must never be persisted.
   Future<void> saveAdminPin(String pin) async {
-    try {
-      await _secureStorage.write(key: StorageKeys.adminPin, value: pin);
-    } catch (e) {
-      debugPrint('[AuthSecureStorage] Failed to write admin PIN: $e');
-    }
+    // No-op: Single-use OTPs are never persisted in secure storage.
   }
 
   /// Clears the stored Admin PIN.

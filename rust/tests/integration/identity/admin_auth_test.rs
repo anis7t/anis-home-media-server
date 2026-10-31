@@ -92,17 +92,10 @@ async fn test_admin_status_reports_has_pin_false_when_unset() {
 }
 
 #[tokio::test]
-async fn test_admin_status_reports_has_pin_true_when_set() {
+async fn test_admin_status_reports_has_pin_false_and_session_admin() {
     let ctx = TestContext::new().await;
 
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
-    )
-    .execute(&ctx.pool)
-    .await
-    .unwrap();
-
-    // Without credentials
+    // Without credentials: has_pin is false, is_admin is false
     let req = Request::builder()
         .method("GET")
         .uri("/api/admin/status")
@@ -114,14 +107,30 @@ async fn test_admin_status_reports_has_pin_true_when_set() {
 
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(body["has_pin"], true);
+    assert_eq!(body["has_pin"], false);
     assert_eq!(body["is_admin"], false);
 
-    // With X-Admin-Pin header
+    // With admin session: has_pin is false (retired), is_admin is true
+    let sess_id = "sess_admin_status_test";
+    let admin_email = "admin.status@example.com";
+    let _ = sqlx::query(
+        "INSERT INTO users (email, role, google_sub) VALUES ($1, 'admin', 'sub_admin_status') ON CONFLICT (email) DO UPDATE SET role = 'admin'"
+    )
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO sessions (id, email, role, expires_at) VALUES ($1, $2, 'admin', CURRENT_TIMESTAMP + INTERVAL '1 day') ON CONFLICT (id) DO UPDATE SET email = $2, role = 'admin', expires_at = CURRENT_TIMESTAMP + INTERVAL '1 day'"
+    )
+    .bind(sess_id)
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+
     let req_authed = Request::builder()
         .method("GET")
         .uri("/api/admin/status")
-        .header("X-Admin-Pin", "97531")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .body(Body::empty())
         .unwrap();
 
@@ -130,22 +139,16 @@ async fn test_admin_status_reports_has_pin_true_when_set() {
 
     let bytes = resp_authed.into_body().collect().await.unwrap().to_bytes();
     let body_authed: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(body_authed["has_pin"], true);
+    assert_eq!(body_authed["has_pin"], false);
     assert_eq!(body_authed["is_admin"], true);
+    assert_eq!(body_authed["user"], admin_email);
 }
 
 #[tokio::test]
 async fn test_verify_pin_success_variations() {
     let ctx = TestContext::new().await;
 
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
-    )
-    .execute(&ctx.pool)
-    .await
-    .unwrap();
-
-    // 1. Exact string {"pin": "97531"}
+    // 1. Static PIN is retired: candidate static PIN fails 401 Unauthorized
     let req1 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
@@ -153,76 +156,44 @@ async fn test_verify_pin_success_variations() {
         .body(Body::from(json!({ "pin": "97531" }).to_string()))
         .unwrap();
     let resp1 = ctx.app.clone().oneshot(req1).await.unwrap();
-    assert_eq!(resp1.status(), StatusCode::OK);
-    let body1: Value =
-        serde_json::from_slice(&resp1.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body1["success"], true);
-    assert_eq!(body1["admin"], true);
-    assert_eq!(body1["method"], "pin");
+    assert_eq!(resp1.status(), StatusCode::UNAUTHORIZED);
 
-    // 2. Numeric integer in JSON {"pin": 97531}
+    // 2. Admin session succeeds (200 OK)
+    let sess_id = "sess_verify_var_admin";
+    let admin_email = "admin.verify.var@example.com";
+    let _ = sqlx::query(
+        "INSERT INTO users (email, role, google_sub) VALUES ($1, 'admin', 'sub_verify_admin') ON CONFLICT (email) DO UPDATE SET role = 'admin'"
+    )
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO sessions (id, email, role, expires_at) VALUES ($1, $2, 'admin', CURRENT_TIMESTAMP + INTERVAL '1 day') ON CONFLICT (id) DO UPDATE SET email = $2, role = 'admin', expires_at = CURRENT_TIMESTAMP + INTERVAL '1 day'"
+    )
+    .bind(sess_id)
+    .bind(admin_email)
+    .execute(&ctx.pool)
+    .await;
+
     let req2 = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": 97531 }).to_string()))
+        .body(Body::from("{}"))
         .unwrap();
     let resp2 = ctx.app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status(), StatusCode::OK);
     let body2: Value =
         serde_json::from_slice(&resp2.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(body2["success"], true);
-
-    // 3. Alternate key 'admin_pin'
-    let req3 = Request::builder()
-        .method("POST")
-        .uri("/api/admin/verify")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "admin_pin": "97531" }).to_string()))
-        .unwrap();
-    let resp3 = ctx.app.clone().oneshot(req3).await.unwrap();
-    assert_eq!(resp3.status(), StatusCode::OK);
-    let body3: Value =
-        serde_json::from_slice(&resp3.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body3["success"], true);
-
-    // 4. Header X-Admin-Pin
-    let req4 = Request::builder()
-        .method("POST")
-        .uri("/api/admin/verify")
-        .header("X-Admin-Pin", "97531")
-        .body(Body::empty())
-        .unwrap();
-    let resp4 = ctx.app.clone().oneshot(req4).await.unwrap();
-    assert_eq!(resp4.status(), StatusCode::OK);
-    let body4: Value =
-        serde_json::from_slice(&resp4.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body4["success"], true);
-
-    // 5. Header with leading/trailing whitespace
-    let req5 = Request::builder()
-        .method("POST")
-        .uri("/api/admin/verify")
-        .header("X-Admin-Pin", "  97531  ")
-        .body(Body::empty())
-        .unwrap();
-    let resp5 = ctx.app.clone().oneshot(req5).await.unwrap();
-    assert_eq!(resp5.status(), StatusCode::OK);
-    let body5: Value =
-        serde_json::from_slice(&resp5.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body5["success"], true);
+    assert_eq!(body2["admin"], true);
+    assert_eq!(body2["method"], "google_session");
 }
 
 #[tokio::test]
 async fn test_verify_pin_failure_cases() {
     let ctx = TestContext::new().await;
-
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
-    )
-    .execute(&ctx.pool)
-    .await
-    .unwrap();
 
     let bad_payloads = vec![
         json!({ "pin": "0000" }),
@@ -253,12 +224,6 @@ async fn test_verify_pin_failure_cases() {
 async fn test_verify_pin_fails_closed_when_pin_unset() {
     let ctx = TestContext::new().await;
 
-    sqlx::query("DELETE FROM settings WHERE key = 'admin_pin'")
-        .execute(&ctx.pool)
-        .await
-        .unwrap();
-
-    // Even if caller submits candidate PIN "97531", an unset PIN means auth is closed.
     let req = Request::builder()
         .method("POST")
         .uri("/api/admin/verify")
@@ -268,90 +233,19 @@ async fn test_verify_pin_fails_closed_when_pin_unset() {
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-
-    // Restore test admin pin
-    let _ = sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
-    )
-    .execute(&ctx.pool)
-    .await;
 }
 
 #[tokio::test]
 async fn test_admin_pin_rotation_lifecycle() {
     let ctx = TestContext::new().await;
 
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'"
-    )
-    .execute(&ctx.pool)
-    .await
-    .unwrap();
-
-    // A. Update without admin auth or PIN -> 403 Forbidden
-    let req_unauth = Request::builder()
+    // POST /api/admin/pin is permanently retired and returns 410 Gone
+    let req = Request::builder()
         .method("POST")
         .uri("/api/admin/pin")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({ "new_pin": "8888" }).to_string()))
         .unwrap();
-    let resp_unauth = ctx.app.clone().oneshot(req_unauth).await.unwrap();
-    assert_eq!(resp_unauth.status(), StatusCode::FORBIDDEN);
-
-    // B. Update with short PIN (< 4 digits) -> 400 Bad Request
-    let req_short = Request::builder()
-        .method("POST")
-        .uri("/api/admin/pin")
-        .header("X-Admin-Pin", "97531")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "new_pin": "123" }).to_string()))
-        .unwrap();
-    let resp_short = ctx.app.clone().oneshot(req_short).await.unwrap();
-    assert_eq!(resp_short.status(), StatusCode::BAD_REQUEST);
-
-    // C. Update with valid new PIN -> 200 OK
-    let req_valid = Request::builder()
-        .method("POST")
-        .uri("/api/admin/pin")
-        .header("X-Admin-Pin", "97531")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "new_pin": "9999" }).to_string()))
-        .unwrap();
-    let resp_valid = ctx.app.clone().oneshot(req_valid).await.unwrap();
-    assert_eq!(resp_valid.status(), StatusCode::OK);
-    let body_valid: Value =
-        serde_json::from_slice(&resp_valid.into_body().collect().await.unwrap().to_bytes())
-            .unwrap();
-    assert_eq!(body_valid["success"], true);
-
-    // D. Old PIN '97531' is now rejected (401)
-    let req_old = Request::builder()
-        .method("POST")
-        .uri("/api/admin/verify")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": "97531" }).to_string()))
-        .unwrap();
-    let resp_old = ctx.app.clone().oneshot(req_old).await.unwrap();
-    assert_eq!(resp_old.status(), StatusCode::UNAUTHORIZED);
-
-    // E. New PIN '9999' is accepted (200)
-    let req_new = Request::builder()
-        .method("POST")
-        .uri("/api/admin/verify")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "pin": "9999" }).to_string()))
-        .unwrap();
-    let resp_new = ctx.app.clone().oneshot(req_new).await.unwrap();
-    assert_eq!(resp_new.status(), StatusCode::OK);
-
-    // F. Restore original PIN '97531'
-    let req_restore = Request::builder()
-        .method("POST")
-        .uri("/api/admin/pin")
-        .header("X-Admin-Pin", "9999")
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "new_pin": "97531" }).to_string()))
-        .unwrap();
-    let resp_restore = ctx.app.clone().oneshot(req_restore).await.unwrap();
-    assert_eq!(resp_restore.status(), StatusCode::OK);
+    let resp = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::GONE);
 }

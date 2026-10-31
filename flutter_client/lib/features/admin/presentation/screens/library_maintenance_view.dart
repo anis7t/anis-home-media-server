@@ -167,7 +167,7 @@ class LibraryMaintenanceView extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
-            // Admin PIN Rotation Card
+            // Admin Access Control Card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -186,7 +186,7 @@ class LibraryMaintenanceView extends ConsumerWidget {
                       border: Border.all(color: AppColors.borderSubtle),
                     ),
                     child: const Center(
-                      child: Icon(Icons.password_rounded, color: AppColors.brandRed, size: 20),
+                      child: Icon(Icons.security_rounded, color: AppColors.brandRed, size: 20),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -194,15 +194,15 @@ class LibraryMaintenanceView extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Admin Security PIN', style: AppTypography.titleMedium.copyWith(fontSize: 14, fontWeight: FontWeight.w700)),
+                        Text('Admin Access Control', style: AppTypography.titleMedium.copyWith(fontSize: 14, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 2),
-                        Text('Rotate server administrator PIN', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                        Text('One-Time Access Codes (OTP) via Google Account', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
                       ],
                     ),
                   ),
                   FilledButton.tonal(
                     onPressed: () => _showChangePinSheet(context),
-                    child: const Text('Change PIN'),
+                    child: const Text('Security Info'),
                   ),
                 ],
               ),

@@ -30,6 +30,31 @@ Active branch: `feat/rust-react-postgres-migration`
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
 
+## 2026-11-01 — TMDb Metadata Enrichment, Scene Tag Stripping & Resilient Retries
+
+Resolved missing metadata for uploaded movies (specifically *Verity 2026 1080p WEB-DL HEVC x265 5.1 BONE.mkv* uploaded through the web client):
+- **Root Cause & Forensics:**
+  1. Web upload completion handler (`build_success` in `upload.rs`) pre-inserted a fallback row into PostgreSQL `movies` table (`INSERT INTO movies (filename, title, year) VALUES (...) ON CONFLICT DO NOTHING`) so details routes worked immediately.
+  2. `ScannerEngine::scan` queried `SELECT filename FROM movies` and skipped any file present in `indexed_set`. Since the placeholder row was in `movies`, the scanner skipped TMDb lookup and metadata enrichment completely.
+  3. Upload pipeline's `parse_title_year` merely replaced dots and underscores with spaces, preserving scene tags (`1080p`, `WEB-DL`, `HEVC`, `x265`, `5.1`, `BONE`).
+  4. Intermittent TLS handshake connection resets (`WinError 10054`) on `api.themoviedb.org` due to Indian ISP SNI filtering, with no multi-host retry fallback.
+- **Resilient CloudFront TMDb Client (`tmdb_client.rs`):** Updated default base URL to `https://api.tmdb.org/3` with multi-host fallback to `https://api.themoviedb.org/3` on retry attempts. Added 4-attempt exponential backoff with `Retry-After` header extraction on HTTP 429 rate limits.
+- **Upload Pipeline Title Sanitization (`upload_service.rs`):** Delegated `parse_title_year` directly to `FilenameParser::parse_filename`, ensuring scene tags and copy counters are stripped from fallback database records on upload.
+- **Scanner Incomplete Movie Detection & Enrichment (`engine.rs`):**
+  - Updated `ScannerEngine::scan` to query `filename, tmdb_id, title, overview, last_metadata_refresh`.
+  - Partitioned records so rows with `tmdb_id IS NULL` (and not verified as missing within the last 4 hours) are enqueued for ingestion and metadata enrichment.
+  - On conflict, updates PostgreSQL `movies` with official TMDb ID, title, year, synopsis, poster, backdrop, runtime, genres, vote average, and `details_json`.
+  - Posters and backdrops are downloaded and cached immediately via `TmdbArtworkService::get`.
+- **Live Database & Production Service Verification:**
+  - *Verity* enriched in PostgreSQL: `tmdb_id = 1283515`, title `'Verity'`, year `2026`, poster `'/rmaNMA1seHqpjtnYKzyynFAr1g8.jpg'`, backdrop `'/cKetrF2dAnQ0AMV5i4BMOs41I5P.jpg'`, genres `'Mystery, Thriller'`, runtime `117` min, vote average `6.662`.
+  - TMDb poster endpoint `GET /tmdb-poster/1283515` serves 43,740 bytes JPEG (HTTP 200).
+  - TMDb backdrop endpoint `GET /tmdb-backdrop/1283515` serves 40,807 bytes JPEG (HTTP 200).
+  - All 385 Rust tests pass (131 unit + 254 integration).
+  - All 336 React tests pass, 0 typecheck/lint errors.
+  - All 48 Flutter library tests pass, 0 analyze errors.
+  - Android API contract probe: all 23 endpoints pass.
+- **Documentation:** Implementation plan in [`docs/PLAN_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md`](PLAN_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md) and walkthrough in [`docs/WALKTHROUGH_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md`](WALKTHROUGH_TMDB_METADATA_ENRICHMENT_AND_RETRY_RESILIENCE.md).
+
 ## 2026-10-31 — Transcode Single-GPU Hardening & Thermal Pacing (Acer Nitro 5 Multi-GPU Thermal Fix)
 
 Permanently remediated the recurring Kernel-Power Event ID 41 (`BugcheckCode = 0`, `THERMTRIP#` hardware power-loss shutdowns) during heavy video transcoding on the Acer Nitro AN515-43 mobile workstation:

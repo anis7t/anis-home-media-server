@@ -26,7 +26,6 @@ use tower::ServiceExt;
 const DEVICE_PREFIX: &str = "dev_oversight_";
 const USER_SUB_PREFIX: &str = "sub_oversight_";
 const SESSION_PREFIX: &str = "sess_oversight_";
-const ADMIN_PIN: &str = "97531";
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36";
 
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -222,6 +221,10 @@ async fn test_device_owner_is_populated_for_admins_only() {
 
     let (alice_id, alice_session) =
         make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
+    let (_, admin_session) =
+        make_user(&pool, "admin", "oversight.admin@example.test", "admin").await;
+    let admin_cookie = format!("session_token={}", admin_session);
+
     insert_device(&pool, "dev_oversight_alice", Some(alice_id)).await;
     insert_device(&pool, "dev_oversight_guest", None).await;
 
@@ -233,8 +236,8 @@ async fn test_device_owner_is_populated_for_admins_only() {
             "/api/devices",
             Some("dev_oversight_admin_probe"),
             Some(UA),
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;
@@ -307,6 +310,7 @@ async fn test_admin_users_lists_accounts_with_counts() {
     insert_history(&pool, "dev_oversight_alice", "oversight_one.mp4").await;
     insert_history(&pool, "dev_oversight_alice", "oversight_two.mp4").await;
 
+    let bob_cookie = format!("session_token={}", bob_session);
     let (status, body) = call(
         &app,
         request(
@@ -314,8 +318,8 @@ async fn test_admin_users_lists_accounts_with_counts() {
             "/api/admin/users",
             None,
             Some(UA),
-            Some(ADMIN_PIN),
             None,
+            Some(&bob_cookie),
         ),
     )
     .await;
@@ -440,7 +444,9 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
     cleanup(&pool).await;
 
     let (alice_id, _) = make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
-    let (bob_id, _) = make_user(&pool, "bob", "oversight.bob@example.test", "admin").await;
+    let (bob_id, bob_session) =
+        make_user(&pool, "bob", "oversight.bob@example.test", "admin").await;
+    let bob_cookie = format!("session_token={}", bob_session);
     insert_device(&pool, "dev_oversight_assign", Some(alice_id)).await;
 
     // Move it to Bob.
@@ -450,7 +456,7 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
     );
     let (status, resp) = call(
         &app,
-        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+        request_json("/api/admin/devices/assign", &body, None, Some(&bob_cookie)),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -467,8 +473,8 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
         request_json(
             "/api/admin/devices/assign",
             r#"{"device_id":"dev_oversight_assign","user_id":null}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&bob_cookie),
         ),
     )
     .await;
@@ -482,8 +488,8 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
         request_json(
             "/api/admin/devices/assign",
             r#"{"device_id":"dev_oversight_assign"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&bob_cookie),
         ),
     )
     .await;
@@ -496,7 +502,7 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
     );
     let (status, _) = call(
         &app,
-        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+        request_json("/api/admin/devices/assign", &body, None, Some(&bob_cookie)),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -507,7 +513,7 @@ async fn test_assign_sets_moves_and_clears_device_ownership() {
     );
     let (status, _) = call(
         &app,
-        request_json("/api/admin/devices/assign", &body, Some(ADMIN_PIN), None),
+        request_json("/api/admin/devices/assign", &body, None, Some(&bob_cookie)),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -527,6 +533,9 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
     cleanup(&pool).await;
 
     let (alice_id, _) = make_user(&pool, "alice", "oversight.alice@example.test", "viewer").await;
+    let (_, admin_session) =
+        make_user(&pool, "admin", "oversight.admin@example.test", "admin").await;
+    let admin_cookie = format!("session_token={}", admin_session);
     insert_device(&pool, "dev_oversight_hist", Some(alice_id)).await;
     insert_history(&pool, "dev_oversight_hist", "oversight_one.mp4").await;
     insert_history(&pool, "dev_oversight_hist", "oversight_two.mp4").await;
@@ -538,8 +547,8 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
         request_json(
             "/api/admin/devices/history/delete",
             r#"{"device_id":"dev_oversight_hist","filename":"oversight_one.mp4"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;
@@ -553,8 +562,8 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
         request_json(
             "/api/admin/devices/history/delete",
             r#"{"device_id":"dev_oversight_hist","filename":"oversight_missing.mp4"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;
@@ -567,8 +576,8 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
         request_json(
             "/api/admin/devices/history/delete",
             r#"{"device_id":"dev_oversight_hist"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;
@@ -582,8 +591,8 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
         request_json(
             "/api/admin/devices/history/delete",
             r#"{"device_id":"dev_oversight_hist"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;
@@ -596,8 +605,8 @@ async fn test_history_delete_removes_one_entry_and_clears_a_device() {
         request_json(
             "/api/admin/devices/history/delete",
             r#"{"device_id":"dev_oversight_missing"}"#,
-            Some(ADMIN_PIN),
             None,
+            Some(&admin_cookie),
         ),
     )
     .await;

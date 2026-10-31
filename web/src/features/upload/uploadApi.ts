@@ -1,5 +1,3 @@
-import { getStoredAdminPin } from '../../lib/api/account';
-
 /** The formats the UI advertises, matching the backend allow-list. */
 export const SUPPORTED_UPLOAD_EXTENSIONS = [
   'mp4',
@@ -70,9 +68,8 @@ export function isSupportedMediaFile(filename: string): boolean {
   return (SUPPORTED_UPLOAD_EXTENSIONS as readonly string[]).includes(extension);
 }
 
-function adminHeaders(pin?: string | null): Record<string, string> {
-  const effectivePin = pin ?? getStoredAdminPin() ?? '';
-  return effectivePin ? { 'X-Admin-Pin': effectivePin } : {};
+function adminHeaders(_pin?: string | null): Record<string, string> {
+  return {};
 }
 
 function parseJson(text: string): unknown {
@@ -176,7 +173,7 @@ export function sendChunk(
   uploadId: string,
   offset: number,
   chunk: Blob,
-  pin?: string | null,
+  _pin?: string | null,
   onProgress?: (progress: ChunkProgress) => void,
   signal?: AbortSignal,
 ): Promise<ChunkAppend> {
@@ -189,8 +186,6 @@ export function sendChunk(
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.setRequestHeader('X-Upload-Offset', String(offset));
-    const effectivePin = pin ?? getStoredAdminPin();
-    if (effectivePin) xhr.setRequestHeader('X-Admin-Pin', effectivePin);
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) {

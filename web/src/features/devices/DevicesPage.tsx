@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router';
 import { Icon } from '../../components/icons';
-import { getStoredAdminPin } from '../../lib/api/account';
 import { useDeviceId } from '../../lib/useDeviceId';
 import { useOptionalAuth } from '../../auth/AuthProvider';
 
@@ -89,24 +88,21 @@ export function DevicesPage() {
   const [busy, setBusy] = useState(false);
   const [selectedDeviceHistory, setSelectedDeviceHistory] = useState<DeviceItem | null>(null);
 
-  // Fleet Telemetry Admin PIN Unlock State
+  // Fleet Telemetry Admin Access Code Unlock State
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInputValue, setPinInputValue] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
-  const [isFleetUnlocked, setIsFleetUnlocked] = useState(false);
+  const [isFleetUnlocked, setIsFleetUnlocked] = useState(
+    () => (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('ms_admin_unlocked') === 'true' : false)
+  );
   const [adminData, setAdminData] = useState<AdminUsersResponse | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [reassignTarget, setReassignTarget] = useState<DeviceItem | null>(null);
   const [reassignUserId, setReassignUserId] = useState<string>('');
 
-  // Admin identity comes from three places, in this order of authority: the
-  // signed-in account's role, a PIN this browser holds, or a PIN unlocked in
-  // this session. The server is the final arbiter: the Accounts panel and every
-  // mutation control render only after `/api/admin/users` has actually answered.
   const auth = useOptionalAuth();
   const isAdminSession = auth?.role === 'admin';
-  const hasStoredPin = Boolean(getStoredAdminPin());
-  const isAdmin = isAdminSession || hasStoredPin || isFleetUnlocked;
+  const isAdmin = isAdminSession || isFleetUnlocked;
 
   /*
    * The id the player writes watch progress under. `/api/devices` resolves the
@@ -123,20 +119,15 @@ export function DevicesPage() {
   );
 
   const getAdminHeaders = useCallback((): Record<string, string> => {
-    const headers: Record<string, string> = {
+    return {
       'Content-Type': 'application/json',
       ...deviceHeaders,
     };
-    const pin = getStoredAdminPin();
-    if (pin) headers['X-Admin-Pin'] = pin;
-    return headers;
   }, [deviceHeaders]);
 
   const loadDevices = useCallback(async (signal?: AbortSignal) => {
     try {
-      const pin = getStoredAdminPin();
       const headers: Record<string, string> = { ...deviceHeaders };
-      if (pin) headers['X-Admin-Pin'] = pin;
       const res = await fetch('/api/devices', { headers, signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as DevicesResponse;
@@ -173,15 +164,14 @@ export function DevicesPage() {
   const handleVerifyFleetPin = async (candidatePin: string) => {
     setPinModalError(null);
     try {
-      const res = await fetch('/api/admin/verify', {
+      const res = await fetch('/api/admin/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: candidatePin }),
+        body: JSON.stringify({ otp: candidatePin.trim() }),
       });
       const resData = (await res.json()) as { success?: boolean; error?: string };
       if (res.ok && resData.success) {
         if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('ms_admin_pin', candidatePin);
           sessionStorage.setItem('ms_admin_unlocked', 'true');
         }
         setIsFleetUnlocked(true);
@@ -189,10 +179,10 @@ export function DevicesPage() {
         setPinInputValue('');
         await loadDevices();
       } else {
-        setPinModalError(resData.error || 'Incorrect Admin PIN');
+        setPinModalError(resData.error || 'Invalid or expired access code');
       }
     } catch {
-      setPinModalError('Failed to verify Admin PIN');
+      setPinModalError('Failed to verify access code');
     }
   };
 
@@ -355,7 +345,6 @@ export function DevicesPage() {
 
   const handleLockFleet = async () => {
     if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem('ms_admin_pin');
       sessionStorage.removeItem('ms_admin_unlocked');
     }
     setIsFleetUnlocked(false);
@@ -364,7 +353,7 @@ export function DevicesPage() {
 
   const isSingleCurrentDevice = Boolean(data && data.devices.length === 1 && data.devices[0].is_current);
   const isPrivacyScoped =
-    isSingleCurrentDevice && !hasStoredPin && !isFleetUnlocked && !isAdminSession;
+    isSingleCurrentDevice && !isFleetUnlocked && !isAdminSession;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 animate-fade-in pb-12">
@@ -1001,7 +990,7 @@ export function DevicesPage() {
                     </span>
                     <div>
                       <h3 id="fleet-pin-modal-title" className="font-bold text-white text-base">Unlock Fleet Telemetry</h3>
-                      <p className="text-xs text-white/50">Enter your 4-digit PIN</p>
+                      <p className="text-xs text-white/50">Enter your 6-digit access code</p>
                     </div>
                   </div>
                   <button
@@ -1028,13 +1017,15 @@ export function DevicesPage() {
                   className="space-y-4"
                 >
                   <input
-                    type="password"
-                    maxLength={8}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
                     autoFocus
                     value={pinInputValue}
-                    onChange={(e) => setPinInputValue(e.target.value)}
-                    placeholder="Admin PIN…"
-                    className="w-full text-center tracking-widest text-lg rounded-xl border border-white/20 bg-obsidian-900 py-2.5 px-4 text-white focus:border-brand-500 focus:outline-none"
+                    onChange={(e) => setPinInputValue(e.target.value.replace(/\D/g, ''))}
+                    placeholder="6-digit access code…"
+                    className="w-full text-center tracking-widest text-lg font-mono rounded-xl border border-white/20 bg-obsidian-900 py-2.5 px-4 text-white focus:border-brand-500 focus:outline-none"
                   />
 
                   <div className="flex items-center justify-end gap-2.5">
@@ -1047,7 +1038,7 @@ export function DevicesPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={!pinInputValue}
+                      disabled={pinInputValue.length !== 6}
                       className="rounded-full brand-gradient px-5 py-2 text-xs font-bold text-white shadow-md disabled:opacity-40 cursor-pointer"
                     >
                       Unlock Fleet

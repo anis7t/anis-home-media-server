@@ -5,14 +5,16 @@ use serde_json::json;
 use std::time::Duration;
 use tracing::{debug, warn};
 
-const TMDB_API_BASE: &str = "https://api.themoviedb.org/3";
+const TMDB_API_BASE: &str = "https://api.tmdb.org/3";
+const TMDB_API_FALLBACK: &str = "https://api.themoviedb.org/3";
 const MAX_RETRIES: u32 = 4;
-const RETRY_BASE_DELAY_SECS: u64 = 3;
+const RETRY_BASE_DELAY_SECS: u64 = 2;
 
 #[derive(Clone)]
 pub struct TmdbClient {
     client: reqwest::Client,
     base_url: String,
+    fallback_url: Option<String>,
 }
 
 impl TmdbClient {
@@ -38,19 +40,46 @@ impl TmdbClient {
 
         let base_url =
             std::env::var("TMDB_API_BASE_URL").unwrap_or_else(|_| TMDB_API_BASE.to_string());
+        let fallback_url = if base_url == TMDB_API_BASE {
+            Some(TMDB_API_FALLBACK.to_string())
+        } else if base_url == TMDB_API_FALLBACK {
+            Some(TMDB_API_BASE.to_string())
+        } else {
+            None
+        };
 
-        Self { client, base_url }
+        Self {
+            client,
+            base_url,
+            fallback_url,
+        }
     }
 
-    /// Execute a GET request against TMDb with rate-limit backoff and automatic retry.
+    /// Create a new TMDb client with a custom base URL (useful for mocking/testing).
+    pub fn with_base_url(token: String, base_url: String) -> Self {
+        let mut s = Self::new(token);
+        s.base_url = base_url;
+        s.fallback_url = None;
+        s
+    }
+
+    /// Execute a GET request against TMDb with rate-limit backoff, domain fallback, and automatic retry.
     async fn get_with_retry<T: serde::de::DeserializeOwned>(
         &self,
         endpoint: &str,
         params: &[(&str, &str)],
     ) -> Result<T, AppError> {
-        let url = format!("{}{}", self.base_url, endpoint);
+        let mut last_error_msg = String::new();
 
         for attempt in 1..=MAX_RETRIES {
+            // Alternate between primary and fallback host if network issues or resets occur
+            let active_base = if attempt % 2 == 0 {
+                self.fallback_url.as_deref().unwrap_or(&self.base_url)
+            } else {
+                &self.base_url
+            };
+            let url = format!("{}{}", active_base, endpoint);
+
             let res = self.client.get(&url).query(params).send().await;
 
             match res {
@@ -67,8 +96,8 @@ impl TmdbClient {
                             .unwrap_or(5);
 
                         warn!(
-                            "TMDb rate limit encountered (429). Backing off for {}s (attempt {}/{})",
-                            retry_after_secs, attempt, MAX_RETRIES
+                            "TMDb rate limit encountered (429) on {}. Backing off for {}s (attempt {}/{})",
+                            url, retry_after_secs, attempt, MAX_RETRIES
                         );
                         tokio::time::sleep(Duration::from_secs(retry_after_secs)).await;
                         continue;
@@ -76,7 +105,10 @@ impl TmdbClient {
 
                     if status.is_success() {
                         let parsed = response.json::<T>().await.map_err(|e| {
-                            AppError::Internal(format!("Failed to parse TMDb JSON response: {}", e))
+                            AppError::Internal(format!(
+                                "Failed to parse TMDb JSON response from {}: {}",
+                                url, e
+                            ))
                         })?;
                         return Ok(parsed);
                     }
@@ -88,29 +120,31 @@ impl TmdbClient {
                         )));
                     }
 
+                    last_error_msg = format!("HTTP {}", status);
                     warn!(
-                        "TMDb request failed with status {} on attempt {}/{}",
-                        status, attempt, MAX_RETRIES
+                        "TMDb request to {} failed with status {} on attempt {}/{}",
+                        url, status, attempt, MAX_RETRIES
                     );
                 }
                 Err(err) => {
+                    last_error_msg = err.to_string();
                     warn!(
-                        "TMDb request error (attempt {}/{}): {}",
-                        attempt, MAX_RETRIES, err
+                        "TMDb request error for {} (attempt {}/{}): {}",
+                        url, attempt, MAX_RETRIES, err
                     );
                 }
             }
 
             if attempt < MAX_RETRIES {
-                let delay = Duration::from_secs(RETRY_BASE_DELAY_SECS * attempt as u64);
+                let delay = Duration::from_secs(RETRY_BASE_DELAY_SECS * (1 << (attempt - 1)));
                 debug!("Retrying TMDb request in {:?}...", delay);
                 tokio::time::sleep(delay).await;
             }
         }
 
         Err(AppError::Internal(format!(
-            "TMDb request to {} failed after {} retries",
-            endpoint, MAX_RETRIES
+            "TMDb request to {} failed after {} retries. Last error: {}",
+            endpoint, MAX_RETRIES, last_error_msg
         )))
     }
 

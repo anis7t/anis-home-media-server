@@ -85,17 +85,9 @@ export function formatBytes(bytes?: number): string {
   return `${mb.toFixed(1)} MB`;
 }
 
-function adminHeaders(pin?: string): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const effectivePin =
-    pin ||
-    (typeof sessionStorage !== 'undefined'
-      ? sessionStorage.getItem('ms_admin_pin') || ''
-      : '');
-  if (effectivePin) {
-    headers['X-Admin-Pin'] = effectivePin;
-  }
-  return headers;
+function adminHeaders(_pin?: string): Record<string, string> {
+  // Legacy static PIN header is retired; requests rely on authenticated session cookies.
+  return {};
 }
 
 export async function fetchManageMovies(signal?: AbortSignal): Promise<MovieItem[]> {
@@ -121,9 +113,9 @@ export function fetchStorageAudit(adminPin?: string, signal?: AbortSignal): Prom
 
 export async function verifyAdminPin(pin: string, signal?: AbortSignal): Promise<AdminVerifyResponse> {
   try {
-    return await request<AdminVerifyResponse>('/api/admin/verify', {
+    return await request<AdminVerifyResponse>('/api/admin/otp/verify', {
       method: 'POST',
-      body: { pin },
+      body: { otp: pin.trim() },
       signal,
     });
   } catch (err) {

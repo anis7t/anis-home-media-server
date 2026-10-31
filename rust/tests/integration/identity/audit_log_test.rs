@@ -115,9 +115,10 @@ async fn test_audit_logs_unauthorized_for_guests() {
 }
 
 #[tokio::test]
-async fn test_audit_logs_query_with_admin_pin() {
+async fn test_audit_logs_query_with_admin_pin_fails_unauthorized() {
     let ctx = TestContext::new().await;
 
+    // Static PIN query is rejected with 401 Unauthorized
     let req = Request::builder()
         .method("GET")
         .uri("/api/admin/audit-logs")
@@ -126,12 +127,7 @@ async fn test_audit_logs_query_with_admin_pin() {
         .unwrap();
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-    assert!(json.get("logs").is_some());
-    assert!(json.get("total").is_some());
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -156,7 +152,7 @@ async fn test_audit_logs_query_with_admin_session() {
 }
 
 #[tokio::test]
-async fn test_admin_pin_change_creates_audit_record() {
+async fn test_admin_pin_change_endpoint_retired() {
     let ctx = TestContext::new().await;
     let sess_id = "sess_audit_pin_rot_test";
     create_test_admin_session(&ctx.pool, sess_id).await;
@@ -176,23 +172,7 @@ async fn test_admin_pin_change_creates_audit_record() {
         .unwrap();
 
     let resp = ctx.app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Verify audit log record exists
-    let row = sqlx::query(
-        r#"
-        SELECT action, target_type, target_id
-        FROM audit_logs
-        WHERE action = 'pin_change' AND target_id = 'admin_pin'
-        ORDER BY created_at DESC
-        LIMIT 1
-        "#,
-    )
-    .fetch_optional(&ctx.pool)
-    .await
-    .unwrap();
-
-    assert!(row.is_some(), "Expected audit log record for pin_change");
+    assert_eq!(resp.status(), StatusCode::GONE);
 }
 
 #[tokio::test]
@@ -337,12 +317,14 @@ async fn test_allowlist_update_creates_audit_record() {
 #[tokio::test]
 async fn test_audit_logs_filtering_and_pagination() {
     let ctx = TestContext::new().await;
+    let sess_id = "sess_audit_filter_test";
+    create_test_admin_session(&ctx.pool, sess_id).await;
 
     // Query with action filter
     let req = Request::builder()
         .method("GET")
-        .uri("/api/admin/audit-logs?action=pin_change&limit=5&offset=0")
-        .header("X-Admin-Pin", TEST_ADMIN_PIN)
+        .uri("/api/admin/audit-logs?action=allowlist_update&limit=5&offset=0")
+        .header(header::COOKIE, format!("session_token={}", sess_id))
         .body(Body::empty())
         .unwrap();
 

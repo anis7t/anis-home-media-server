@@ -21,15 +21,62 @@ export interface QrSession {
   readonly login_url: string;
 }
 
+export interface AdminOtpGenerateResponse {
+  readonly otp: string;
+  readonly expires_at: string;
+  readonly expires_in: number;
+}
+
+export interface AdminOtpVerifyResponse {
+  readonly success: boolean;
+  readonly admin: boolean;
+  readonly session_token?: string;
+  readonly user?: any;
+  readonly error?: string;
+}
+
+export interface AdminOtpRevokeResponse {
+  readonly success: boolean;
+  readonly revoked: number;
+}
+
+export function generateAdminOtp(): Promise<AdminOtpGenerateResponse> {
+  return accountRequest<AdminOtpGenerateResponse>('/api/admin/otp/generate', {
+    method: 'POST',
+  });
+}
+
+export async function verifyAdminOtp(otp: string): Promise<AdminOtpVerifyResponse> {
+  const res = await fetch('/api/admin/otp/verify', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otp: otp.trim() }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data.success) {
+    return data;
+  }
+  return {
+    success: false,
+    admin: false,
+    error: data.error || 'Invalid or expired access code',
+  };
+}
+
+export function revokeAdminOtp(): Promise<AdminOtpRevokeResponse> {
+  return accountRequest<AdminOtpRevokeResponse>('/api/admin/otp/revoke', {
+    method: 'POST',
+  });
+}
+
 export function fetchMe(): Promise<AccountResponse> {
   return accountRequest<AccountResponse>('/api/auth/me');
 }
 
 export function loginWithPin(pin: string): Promise<{ success: boolean; user?: any }> {
-  return accountRequest<{ success: boolean; user?: any }>('/api/auth/login-pin', {
-    method: 'POST',
-    body: JSON.stringify({ pin }),
-  });
+  return verifyAdminOtp(pin);
 }
 
 /** Create a new QR pair session. Called by the TV/browser when showing the sign-in panel. */
@@ -84,35 +131,19 @@ export function saveAllowlist(emails: string[]): Promise<{ stored: string[] }> {
   });
 }
 
+/**
+ * Legacy static PIN storage has been permanently retired.
+ * This helper returns null to ensure no plaintext PIN is read.
+ */
 export function getStoredAdminPin(): string | null {
-  try {
-    if (typeof sessionStorage !== 'undefined' && typeof sessionStorage?.getItem === 'function') {
-      const pin = sessionStorage.getItem('ms_admin_pin');
-      if (pin) return pin;
-    }
-  } catch {
-    // ignore
-  }
-  try {
-    if (typeof localStorage !== 'undefined' && typeof localStorage?.getItem === 'function') {
-      const pin = localStorage.getItem('admin_pin');
-      if (pin) return pin;
-    }
-  } catch {
-    // ignore
-  }
   return null;
 }
 
 async function accountRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const pin = getStoredAdminPin();
   let headers: Record<string, string> | undefined = undefined;
 
   if (options.body) {
     headers = { 'Content-Type': 'application/json' };
-  }
-  if (pin) {
-    headers = { ...(headers || {}), 'X-Admin-Pin': pin };
   }
   if (options.headers) {
     headers = { ...(headers || {}), ...(options.headers as Record<string, string>) };
@@ -130,7 +161,9 @@ async function accountRequest<T>(path: string, options: RequestInit = {}): Promi
      * longer do anything until someone signs in. Tell the app rather than
      * letting each screen render its own failure.
      */
-    if (response.status === 401) notifyAuthLocked();
+    if (response.status === 401 && !path.includes('/otp/verify')) {
+      notifyAuthLocked();
+    }
     const error = new Error(`Request failed: ${response.status}`) as Error & {
       status?: number;
     };

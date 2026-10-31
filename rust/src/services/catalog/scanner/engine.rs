@@ -7,7 +7,7 @@ use crate::services::probe_service::ProbeService;
 use crate::services::subtitle_service::SubtitleService;
 use crate::services::tmdb_artwork::{ArtworkKind, TmdbArtworkService};
 use sqlx::PgPool;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
@@ -182,14 +182,49 @@ impl ScannerEngine {
         );
 
         // 3. Query existing indexed filenames from PostgreSQL
-        let indexed_rows = sqlx::query_as::<_, (String,)>("SELECT filename FROM movies")
-            .fetch_all(pool)
-            .await
-            .map_err(AppError::Database)?;
+        let indexed_rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                Option<i64>,
+                Option<String>,
+                Option<String>,
+                Option<i64>,
+            ),
+        >(
+            "SELECT filename, tmdb_id::BIGINT as tmdb_id, title, overview, last_metadata_refresh FROM movies",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::Database)?;
 
-        let indexed_set: HashSet<String> = indexed_rows.into_iter().map(|(f,)| f).collect();
+        let mut indexed_set: HashSet<String> = HashSet::new();
+        let mut incomplete_map: HashMap<String, Option<String>> = HashMap::new();
 
-        // 4. Determine unindexed files
+        let now_sec = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        for (f, tid, t, ov, lmr) in indexed_rows {
+            if tid.is_some() {
+                indexed_set.insert(f);
+            } else {
+                // If it was already scanned and confirmed to have no TMDb metadata within the last 4 hours,
+                // treat as indexed to avoid hammering TMDb on every routine scan.
+                let recently_checked = ov.as_deref() == Some("No TMDB metadata found")
+                    && lmr.unwrap_or(0) > 0
+                    && (now_sec - lmr.unwrap_or(0)) < 14400;
+
+                if recently_checked {
+                    indexed_set.insert(f);
+                } else {
+                    incomplete_map.insert(f, t);
+                }
+            }
+        }
+
+        // 4. Determine unindexed files (completely new files, or pre-inserted uploads missing tmdb_id)
         let mut unindexed = Vec::new();
         for file in files {
             let rel = Self::compute_relative_path(&file, roots);
@@ -198,8 +233,18 @@ impl ScannerEngine {
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            if !indexed_set.contains(&rel) && !indexed_set.contains(&file_name) {
-                unindexed.push((file, rel));
+            let is_indexed = indexed_set.contains(&rel) || indexed_set.contains(&file_name);
+            let existing_title = incomplete_map
+                .get(&rel)
+                .or_else(|| incomplete_map.get(&file_name))
+                .cloned()
+                .flatten();
+
+            if !is_indexed
+                || incomplete_map.contains_key(&rel)
+                || incomplete_map.contains_key(&file_name)
+            {
+                unindexed.push((file, rel, existing_title));
             }
         }
 
@@ -230,7 +275,7 @@ impl ScannerEngine {
         }
 
         let total_unindexed = unindexed.len();
-        for (idx, (path, relative)) in unindexed.into_iter().enumerate() {
+        for (idx, (path, relative, existing_title)) in unindexed.into_iter().enumerate() {
             let (title, year) = FilenameParser::parse_filename(&path);
             let now_ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -272,6 +317,25 @@ impl ScannerEngine {
                         }
                         Ok(None) => {
                             info!("No TMDb match found for '{}' ({:?})", title, year);
+                            if let Some(ref alt_title) = existing_title {
+                                if alt_title != &title
+                                    && !FilenameParser::is_anonymous_name(alt_title)
+                                {
+                                    debug!(
+                                        "Retrying TMDb search with alternative title: '{}'",
+                                        alt_title
+                                    );
+                                    if let Ok(Some(alt_match)) =
+                                        client.search_movie(alt_title, year).await
+                                    {
+                                        if let Ok(details) =
+                                            client.get_movie_details(alt_match.id).await
+                                        {
+                                            tmdb_details = Some(details);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Err(err) => {
                             warn!("TMDb search failed for '{}': {}", title, err);
@@ -330,7 +394,7 @@ impl ScannerEngine {
                 )
             } else {
                 (
-                    title.clone(),
+                    existing_title.unwrap_or_else(|| title.clone()),
                     year,
                     None,
                     "No TMDB metadata found".to_string(),

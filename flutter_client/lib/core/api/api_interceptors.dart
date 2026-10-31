@@ -86,11 +86,6 @@ class DeviceAuthInterceptor extends Interceptor {
                   ? '$existingCookie; $sessionCookie'
                   : sessionCookie;
         }
-
-        final adminPin = await secureStorage!.getAdminPin();
-        if (adminPin != null && adminPin.isNotEmpty) {
-          options.headers['X-Admin-Pin'] = adminPin;
-        }
       }
     } catch (e) {
       debugPrint('[DeviceAuthInterceptor] Failed to attach device identity or auth: $e');

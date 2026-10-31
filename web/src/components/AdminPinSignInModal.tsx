@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './icons';
-import { loginWithPin } from '../lib/api/account';
+import { verifyAdminOtp } from '../lib/api/account';
 
 export interface AdminPinSignInModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess?: () => void;
-  oauthConfigured?: boolean;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+  readonly onSuccess?: () => void;
+  readonly oauthConfigured?: boolean;
 }
 
 export default function AdminPinSignInModal({
@@ -16,67 +16,148 @@ export default function AdminPinSignInModal({
   onSuccess,
   oauthConfigured = true,
 }: AdminPinSignInModalProps) {
-  const [pin, setPin] = useState('');
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showConfigGuide, setShowConfigGuide] = useState(!oauthConfigured);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const titleId = useId();
+  const descId = useId();
 
   useEffect(() => {
     if (isOpen) {
-      setPin('');
+      setDigits(['', '', '', '', '', '']);
       setError(null);
       setBusy(false);
       setShowConfigGuide(!oauthConfigured);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
     }
   }, [isOpen, oauthConfigured]);
 
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, busy, onClose]);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      const trimmed = pin.trim();
-      if (!trimmed) {
-        setError('Please enter your Admin PIN.');
+  const handleVerify = useCallback(
+    async (codeToVerify: string) => {
+      const trimmed = codeToVerify.trim();
+      if (trimmed.length !== 6) {
+        setError('Please enter a 6-digit access code.');
         return;
       }
 
       setBusy(true);
       setError(null);
       try {
-        const res = await loginWithPin(trimmed);
+        const res = await verifyAdminOtp(trimmed);
         if (res.success) {
           onSuccess?.();
           onClose();
         } else {
-          setError('Invalid Admin PIN. Please check and try again.');
+          setError(res.error || 'Invalid or expired access code. Please try again.');
         }
-      } catch (err: any) {
-        setError(err.message || 'Authentication failed. Please check your PIN.');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Authentication failed. Please check your access code.';
+        setError(msg);
       } finally {
         setBusy(false);
       }
     },
-    [pin, onSuccess, onClose]
+    [onSuccess, onClose],
   );
 
+  const handleCellChange = (index: number, val: string) => {
+    const cleaned = val.replace(/\D/g, '');
+    const next = [...digits];
+    let shouldAdvance = false;
+    let targetIndex = index;
+
+    if (!cleaned) {
+      next[index] = '';
+    } else if (cleaned.length > 1) {
+      cleaned
+        .slice(0, 6 - index)
+        .split('')
+        .forEach((char, offset) => {
+          next[index + offset] = char;
+        });
+      targetIndex = Math.min(index + cleaned.length, 5);
+      shouldAdvance = true;
+    } else {
+      next[index] = cleaned;
+      if (index < 5) {
+        targetIndex = index + 1;
+        shouldAdvance = true;
+      }
+    }
+
+    setDigits(next);
+    const fullCode = next.join('');
+    if (fullCode.length === 6 && next.every((d) => d !== '')) {
+      void handleVerify(fullCode);
+    }
+
+    if (shouldAdvance) {
+      inputRefs.current[targetIndex]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      const next = [...digits];
+      if (next[index]) {
+        next[index] = '';
+      } else if (index > 0) {
+        inputRefs.current[index - 1]?.focus();
+        next[index - 1] = '';
+      }
+      setDigits(next);
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      e.preventDefault();
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      e.preventDefault();
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').trim();
+    const numbersOnly = pasted.replace(/\D/g, '').slice(0, 6);
+    if (!numbersOnly) return;
+
+    const next = ['', '', '', '', '', ''];
+    numbersOnly.split('').forEach((char, i) => {
+      next[i] = char;
+    });
+    setDigits(next);
+
+    const fullCode = next.join('');
+    if (fullCode.length === 6 && next.every((d) => d !== '')) {
+      void handleVerify(fullCode);
+    }
+
+    const focusTarget = Math.min(numbersOnly.length, 5);
+    inputRefs.current[focusTarget]?.focus();
+  };
+
   if (!isOpen) return null;
+
+  const isComplete = digits.every((d) => d !== '') && digits.join('').length === 6;
 
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/80 backdrop-blur-md animate-overlay-fade"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="pinSignInTitle"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
     >
       <div className="relative w-full max-w-md my-auto glass-card rounded-2xl border border-neutral-800/90 bg-neutral-900/95 p-6 sm:p-7 shadow-2xl text-white space-y-5 animate-scale-in">
         {/* Header */}
@@ -86,20 +167,19 @@ export default function AdminPinSignInModal({
               <Icon name="shield" size={20} />
             </div>
             <div>
-              <h2 id="pinSignInTitle" className="text-lg font-bold text-white">
-                Admin PIN Sign-In
+              <h2 id={titleId} className="text-lg font-bold text-white">
+                Administrator Verification
               </h2>
-              <p className="text-xs text-neutral-400">
-                {oauthConfigured
-                  ? 'Sign in directly as Administrator with your secret PIN.'
-                  : 'Google OAuth is unconfigured. Use local Admin PIN.'}
+              <p id={descId} className="text-xs text-neutral-400">
+                Enter your six-digit one-time access code.
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+            disabled={busy}
+            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
             aria-label="Close dialog"
           >
             <Icon name="x" size={18} />
@@ -116,14 +196,14 @@ export default function AdminPinSignInModal({
               <button
                 type="button"
                 onClick={() => setShowConfigGuide((v) => !v)}
-                className="text-[11px] underline hover:text-white transition-colors"
+                className="text-[11px] underline hover:text-white transition-colors cursor-pointer"
               >
                 {showConfigGuide ? 'Hide guide' : 'Setup guide'}
               </button>
             </div>
             <p className="text-neutral-300">
-              The server lacks Google OAuth API keys. You can sign in locally using your Admin PIN to
-              access management and TV pairing.
+              The server lacks Google OAuth API keys. Generate an access code from an administrator account
+              to access management and TV pairing.
             </p>
 
             {showConfigGuide && (
@@ -138,23 +218,42 @@ export default function AdminPinSignInModal({
           </div>
         )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label htmlFor="adminPinInput" className="block text-xs font-medium text-neutral-300">
-              Enter Administrator PIN
+        {/* Form with 6 discrete numeric input cells */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleVerify(digits.join(''));
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <label htmlFor="cell-0" className="block text-center text-xs font-medium text-neutral-300">
+              Enter 6-Digit Access Code
             </label>
-            <input
-              id="adminPinInput"
-              ref={inputRef}
-              type="password"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="••••"
-              disabled={busy}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-950/70 border border-neutral-800 text-white placeholder-neutral-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 text-sm tracking-widest font-mono"
-            />
+            <div className="flex items-center justify-center gap-2 sm:gap-2.5" onPaste={handlePaste}>
+              {digits.map((digit, idx) => (
+                <input
+                  key={idx}
+                  id={`cell-${idx}`}
+                  ref={(el) => {
+                    inputRefs.current[idx] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={1}
+                  disabled={busy}
+                  value={digit}
+                  onChange={(e) => handleCellChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(idx, e)}
+                  aria-label={`Digit ${idx + 1} of 6`}
+                  className="h-12 w-10 sm:h-13 sm:w-11 rounded-xl border border-neutral-800 bg-neutral-950/80 text-center font-mono text-xl font-extrabold text-white shadow-inner focus:border-red-500 focus:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 transition disabled:opacity-50"
+                />
+              ))}
+            </div>
+            <p className="text-center text-[11px] text-neutral-400">
+              Valid for 5 minutes · Single-use single redemption
+            </p>
           </div>
 
           {error && (
@@ -164,19 +263,32 @@ export default function AdminPinSignInModal({
             </div>
           )}
 
+          {/* Assistance / Link to Account Security */}
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-center">
+            <p className="text-xs text-white/70">
+              Need an access code?{' '}
+              <a
+                href="/account"
+                className="text-red-400 font-semibold hover:text-red-300 underline ml-1"
+              >
+                Generate one in Account Security →
+              </a>
+            </p>
+          </div>
+
           <div className="flex items-center justify-end gap-2.5 pt-2">
             <button
               type="button"
               onClick={onClose}
               disabled={busy}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={busy || !pin.trim()}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-900/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={busy || !isComplete}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-900/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {busy ? (
                 <>
@@ -184,13 +296,13 @@ export default function AdminPinSignInModal({
                   <span>Verifying...</span>
                 </>
               ) : (
-                <span>Sign In as Admin</span>
+                <span>Verify &amp; Sign In</span>
               )}
             </button>
           </div>
         </form>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

@@ -1,5 +1,6 @@
 mod admin_auth_test;
 mod admin_bootstrap_test;
+mod admin_otp_test;
 mod admin_oversight_test;
 mod audit_log_test;
 mod auth_flow_test;

@@ -501,6 +501,22 @@ pub fn create_app_full(
             axum::routing::post(routes::admin::admin_verify_handler),
         )
         .route(
+            "/api/admin/verify-pin",
+            axum::routing::post(routes::admin::admin_otp_verify_handler),
+        )
+        .route(
+            "/api/admin/otp/generate",
+            axum::routing::post(routes::admin::admin_otp_generate_handler),
+        )
+        .route(
+            "/api/admin/otp/verify",
+            axum::routing::post(routes::admin::admin_otp_verify_handler),
+        )
+        .route(
+            "/api/admin/otp/revoke",
+            axum::routing::post(routes::admin::admin_otp_revoke_handler),
+        )
+        .route(
             "/api/admin/pin",
             axum::routing::post(routes::admin::admin_pin_handler),
         )

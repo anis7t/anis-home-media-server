@@ -6,8 +6,8 @@ import { posterUrl } from '../../../lib/api/poster';
 interface DeleteConfirmationModalProps {
   readonly deleteTarget: MovieItem | null;
   readonly deleting: boolean;
-  readonly isAdmin: boolean;
-  readonly adminPin: string;
+  readonly isAdmin?: boolean;
+  readonly isUnlocked?: boolean;
   readonly modalPinInput: string;
   readonly email: string | null | undefined;
   readonly error?: string | null;
@@ -19,8 +19,7 @@ interface DeleteConfirmationModalProps {
 export function DeleteConfirmationModal({
   deleteTarget,
   deleting,
-  isAdmin,
-  adminPin,
+  isUnlocked,
   modalPinInput,
   email,
   error,
@@ -121,24 +120,25 @@ export function DeleteConfirmationModal({
           </ul>
         </div>
 
-        {/* Admin PIN input if not yet unlocked */}
-        {!adminPin ? (
+        {/* Access Code input if not yet unlocked */}
+        {!isUnlocked ? (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 space-y-2">
             <label className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
               <Icon name="shield" size={13} />
-              Admin PIN Required
+              Admin Access Code Required
             </label>
             <input
-              type="password"
-              maxLength={8}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
               value={modalPinInput}
-              onChange={(e) => onChangePinInput(e.target.value)}
-              placeholder="Enter 4-digit PIN…"
-              className="w-full rounded-xl border border-rose-500/40 bg-obsidian-900/90 px-3.5 py-2 text-sm text-white placeholder-white/30 focus:border-rose-400 focus:outline-none"
+              onChange={(e) => onChangePinInput(e.target.value.replace(/\D/g, ''))}
+              placeholder="Enter 6-digit access code…"
+              className="w-full rounded-xl border border-rose-500/40 bg-obsidian-900/90 px-3.5 py-2 text-sm text-white placeholder-white/30 focus:border-rose-400 focus:outline-none tracking-widest font-mono"
             />
             <p className="text-[11px] text-white/50">
-              Authorized as {email || 'Administrator'} or enter your Admin PIN to authorize
-              deletion.
+              Authorized as {email || 'Administrator'} or enter your 6-digit one-time access code to authorize deletion.
             </p>
           </div>
         ) : null}
@@ -155,7 +155,7 @@ export function DeleteConfirmationModal({
           </button>
           <button
             type="button"
-            disabled={deleting || (!isAdmin && !modalPinInput)}
+            disabled={deleting || (!isUnlocked && !modalPinInput)}
             onClick={onConfirmDelete}
             className="rounded-full bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-rose-600/30 cursor-pointer disabled:opacity-40"
           >

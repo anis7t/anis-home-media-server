@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
 import Avatar from '../../components/Avatar';
 import { Icon } from '../../components/icons';
 import { QrSignInPanel } from '../../components/QrSignInPanel';
-import { ChangeAdminPinModal } from '../manage/components/ChangeAdminPinModal';
+import {
+  generateAdminOtp,
+  revokeAdminOtp,
+  type AdminOtpGenerateResponse,
+} from '../../lib/api/account';
 
 export function AccountPage() {
   const {
@@ -19,8 +23,76 @@ export function AccountPage() {
     openPinSignIn,
   } = useAuth();
 
-  const [changePinOpen, setChangePinOpen] = useState(false);
-  const [pinFeedback, setPinFeedback] = useState<string | null>(null);
+  const [otpData, setOtpData] = useState<AdminOtpGenerateResponse | null>(null);
+  const [otpTimeLeft, setOtpTimeLeft] = useState<number>(0);
+  const [otpLoading, setOtpLoading] = useState<boolean>(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpCopied, setOtpCopied] = useState<boolean>(false);
+  const [otpRevoked, setOtpRevoked] = useState<boolean>(false);
+
+  // Active countdown timer for generated OTP
+  useEffect(() => {
+    if (!otpData || otpTimeLeft <= 0) return;
+    const interval = setInterval(() => {
+      setOtpTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otpData, otpTimeLeft]);
+
+  const handleGenerateOtp = useCallback(async () => {
+    setOtpLoading(true);
+    setOtpError(null);
+    setOtpCopied(false);
+    setOtpRevoked(false);
+    try {
+      const res = await generateAdminOtp();
+      setOtpData(res);
+      setOtpTimeLeft(res.expires_in || 300);
+    } catch (err: any) {
+      setOtpError(err.message || 'Failed to generate access code');
+    } finally {
+      setOtpLoading(false);
+    }
+  }, []);
+
+  const handleCopyOtp = useCallback(async () => {
+    if (!otpData?.otp) return;
+    try {
+      await navigator.clipboard.writeText(otpData.otp);
+      setOtpCopied(true);
+      setTimeout(() => setOtpCopied(false), 3000);
+    } catch {
+      // Ignore clipboard write failures
+    }
+  }, [otpData]);
+
+  const handleRevokeOtp = useCallback(async () => {
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      await revokeAdminOtp();
+      setOtpData(null);
+      setOtpTimeLeft(0);
+      setOtpRevoked(true);
+      setTimeout(() => setOtpRevoked(false), 5000);
+    } catch (err: any) {
+      setOtpError(err.message || 'Failed to revoke access code');
+    } finally {
+      setOtpLoading(false);
+    }
+  }, []);
+
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -73,7 +145,7 @@ export function AccountPage() {
                   </p>
                   {!oauthConfigured && (
                     <p className="mt-1 text-xs text-amber-400/80">
-                      Google Sign-In is not configured on this server. Use Admin PIN to sign in.
+                      Google Sign-In is not configured on this server.
                     </p>
                   )}
                 </>
@@ -93,18 +165,7 @@ export function AccountPage() {
         </div>
       </section>
 
-      {/* QR Device Sign-In Panel
-       *
-       * The only way to sign another screen in. It is short-lived, single-use,
-       * and confirmed on the phone that scans it.
-       *
-       * Gated on `!authLoading` as well as `!authenticated`. Before the
-       * auth state resolves, `authenticated` is false for *everyone*, so
-       * without the loading gate the panel mounted for signed-in users too:
-       * it flashed a "Sign in" card at someone who was already signed in,
-       * and it fired `POST /api/auth/qr` - creating a pair session on the
-       * server - for every account-page visit by an authenticated user.
-       */}
+      {/* QR Device Sign-In Panel */}
       {!authLoading && !authenticated && (
         <section aria-label="QR Device Sign-In" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl">
           <div className="mb-6">
@@ -140,46 +201,125 @@ export function AccountPage() {
         </section>
       )}
 
-      {/* Admin Security Section - Admin only */}
+      {/* Admin Security Section - Google Administrator only */}
       {authenticated && role === 'admin' && (
-        <section aria-labelledby="admin-security-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+        <section aria-labelledby="admin-security-heading" className="glass-card rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 id="admin-security-heading" className="text-lg font-bold text-white flex items-center gap-2">
                 <Icon name="shield" size={18} className="text-brand-400" />
                 <span>Admin Security</span>
               </h2>
-              <p className="mt-1 text-xs text-white/50">
-                Manage administrator unlock PIN used for sensitive library actions and non-OAuth devices.
+              <p className="mt-1 text-xs text-white/60">
+                Generate a single-use 6-digit access code (OTP) to authorize administrative access on another device or TV.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setChangePinOpen(true)}
-              className="card-ring rounded-full border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 px-4 py-2 text-xs font-bold text-brand-300 hover:text-brand-200 transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 self-start sm:self-auto"
-            >
-              <Icon name="shield" size={13} />
-              <span>Change Admin PIN</span>
-            </button>
+            {!otpData || otpTimeLeft <= 0 ? (
+              <button
+                type="button"
+                onClick={handleGenerateOtp}
+                disabled={otpLoading}
+                className="card-ring rounded-full brand-gradient px-5 py-2.5 text-xs font-bold text-white shadow-md hover:scale-[1.02] active:scale-[0.98] transition flex items-center gap-2 cursor-pointer disabled:opacity-50 self-start sm:self-auto"
+              >
+                <Icon name="shield" size={14} />
+                <span>{otpLoading ? 'Generating…' : 'Generate Admin Access Code'}</span>
+              </button>
+            ) : null}
           </div>
-          {pinFeedback && (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-              ✓ {pinFeedback}
+
+          {otpError && (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-300">
+              ⚠️ {otpError}
             </div>
           )}
+
+          {otpRevoked && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-300">
+              ✓ All outstanding access codes revoked.
+            </div>
+          )}
+
+          {/* Active OTP Display Card */}
+          {otpData && otpTimeLeft > 0 ? (
+            <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-6 space-y-5 animate-scale-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-semibold text-brand-300">
+                    Active Access Code
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20">
+                  <span>⏱️ Expires in:</span>
+                  <span>{formatCountdown(otpTimeLeft)}</span>
+                </div>
+              </div>
+
+              {/* Six Large Monospace Digits */}
+              <div className="flex items-center justify-center gap-2 sm:gap-3 py-2">
+                {otpData.otp.split('').map((digit, idx) => (
+                  <div
+                    key={idx}
+                    className="flex h-14 w-11 sm:h-16 sm:w-13 items-center justify-center rounded-2xl border border-brand-500/40 bg-obsidian-950 font-mono text-2xl sm:text-3xl font-extrabold text-white shadow-lg tracking-wider"
+                  >
+                    {digit}
+                  </div>
+                ))}
+              </div>
+
+              {/* Warning Notice */}
+              <p className="text-center text-xs text-white/60">
+                🔒 Single-use only. Valid for 5 minutes. Enter this code on another screen or TV to unlock administrator privileges.
+              </p>
+
+              {/* Actions: Copy & Revoke */}
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCopyOtp}
+                  className="card-ring rounded-full border border-white/20 bg-white/10 hover:bg-white/15 px-5 py-2 text-xs font-semibold text-white transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <Icon name="copy" size={13} />
+                  <span>{otpCopied ? '✓ Copied!' : 'Copy Code'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRevokeOtp}
+                  disabled={otpLoading}
+                  className="card-ring rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-5 py-2 text-xs font-semibold text-rose-300 transition flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <Icon name="x" size={13} />
+                  <span>Revoke Code</span>
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Expired State */}
+          {otpData && otpTimeLeft <= 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center space-y-4">
+              <p className="text-sm font-semibold text-amber-300">
+                ⌛ Access code expired
+              </p>
+              <p className="text-xs text-white/50 max-w-sm mx-auto">
+                The one-time access code has expired and can no longer be used. Generate a new code to authorize an administrative session.
+              </p>
+              <button
+                type="button"
+                onClick={handleGenerateOtp}
+                disabled={otpLoading}
+                className="card-ring rounded-full brand-gradient px-5 py-2 text-xs font-bold text-white shadow-md hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+              >
+                Generate New Code
+              </button>
+            </div>
+          ) : null}
         </section>
       )}
-
-      <ChangeAdminPinModal
-        isOpen={changePinOpen}
-        onClose={() => setChangePinOpen(false)}
-        onSuccess={() => {
-          setPinFeedback('Admin PIN rotated successfully!');
-          setTimeout(() => setPinFeedback(null), 5000);
-        }}
-      />
     </div>
   );
 }
 
 export default AccountPage;
+

@@ -115,12 +115,8 @@ async fn test_post_scan_with_valid_header_pin_succeeds() {
     let (pool, app) = setup_test_pool().await;
 
     let test_pin = "scan_test_pin_1234";
-    sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
-        .bind(test_pin)
-        .execute(&pool)
-        .await
-        .unwrap();
 
+    // 1. Legacy header pin is refused (403 Forbidden) since static PIN is retired
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/scan")
@@ -128,20 +124,43 @@ async fn test_post_scan_with_valid_header_pin_succeeds() {
         .body(Body::empty())
         .unwrap();
 
-    let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    // 2. Admin session succeeds (200 OK)
+    let sess_id = "sess_scan_test_header";
+    let email = "admin.scan.test@example.com";
+    let _ = sqlx::query(
+        "INSERT INTO users (email, role, google_sub) VALUES ($1, 'admin', 'sub_scan_admin') ON CONFLICT (email) DO UPDATE SET role = 'admin'"
+    )
+    .bind(email)
+    .execute(&pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO sessions (id, email, role, expires_at) VALUES ($1, $2, 'admin', CURRENT_TIMESTAMP + INTERVAL '1 day') ON CONFLICT (id) DO UPDATE SET email = $2, role = 'admin', expires_at = CURRENT_TIMESTAMP + INTERVAL '1 day'"
+    )
+    .bind(sess_id)
+    .bind(email)
+    .execute(&pool)
+    .await;
+
+    let req_authed = Request::builder()
+        .method(Method::POST)
+        .uri("/api/scan")
+        .header("Cookie", format!("session_token={}", sess_id))
+        .body(Body::empty())
+        .unwrap();
+
+    let res_authed = app.oneshot(req_authed).await.unwrap();
+    assert_eq!(res_authed.status(), StatusCode::OK);
+
+    let bytes = res_authed.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
     assert_eq!(json["busy"], true);
 
     media_server_api::services::scan_service::ScanService::set_busy_for_test(false);
-
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
-        .execute(&pool)
-        .await;
 }
 
 #[tokio::test]
@@ -150,12 +169,8 @@ async fn test_post_scan_with_valid_body_pin_succeeds() {
     let (pool, app) = setup_test_pool().await;
 
     let test_pin = "scan_test_pin_5678";
-    sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
-        .bind(test_pin)
-        .execute(&pool)
-        .await
-        .unwrap();
 
+    // 1. Legacy body pin is refused (403 Forbidden) since static PIN is retired
     let payload = serde_json::json!({ "admin_pin": test_pin });
     let req = Request::builder()
         .method(Method::POST)
@@ -164,17 +179,41 @@ async fn test_post_scan_with_valid_body_pin_succeeds() {
         .body(Body::from(payload.to_string()))
         .unwrap();
 
-    let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
 
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    // 2. Admin session succeeds (200 OK)
+    let sess_id = "sess_scan_test_body";
+    let email = "admin.scan.test2@example.com";
+    let _ = sqlx::query(
+        "INSERT INTO users (email, role, google_sub) VALUES ($1, 'admin', 'sub_scan_admin2') ON CONFLICT (email) DO UPDATE SET role = 'admin'"
+    )
+    .bind(email)
+    .execute(&pool)
+    .await;
+    let _ = sqlx::query(
+        "INSERT INTO sessions (id, email, role, expires_at) VALUES ($1, $2, 'admin', CURRENT_TIMESTAMP + INTERVAL '1 day') ON CONFLICT (id) DO UPDATE SET email = $2, role = 'admin', expires_at = CURRENT_TIMESTAMP + INTERVAL '1 day'"
+    )
+    .bind(sess_id)
+    .bind(email)
+    .execute(&pool)
+    .await;
+
+    let req_authed = Request::builder()
+        .method(Method::POST)
+        .uri("/api/scan")
+        .header("Cookie", format!("session_token={}", sess_id))
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+
+    let res_authed = app.oneshot(req_authed).await.unwrap();
+    assert_eq!(res_authed.status(), StatusCode::OK);
+
+    let bytes = res_authed.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["status"], "scanning");
 
     media_server_api::services::scan_service::ScanService::set_busy_for_test(false);
-
-    let _ = sqlx::query("INSERT INTO settings (key, value) VALUES ('admin_pin', '97531') ON CONFLICT (key) DO UPDATE SET value = '97531'")
-        .execute(&pool)
-        .await;
 }

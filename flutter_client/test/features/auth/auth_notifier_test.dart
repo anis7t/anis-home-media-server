@@ -164,14 +164,14 @@ void main() {
       final container = createContainer();
       final notifier = container.read(authNotifierProvider.notifier);
 
-      final success = await notifier.loginWithPin('1234');
+      final success = await notifier.loginWithPin('123456');
 
       expect(success, isTrue);
       final state = container.read(authNotifierProvider);
       expect(state.status, equals(AuthStatus.authenticated));
       expect(state.isAuthenticated, isTrue);
       expect(state.sessionToken, equals('sess_pin_success'));
-      expect(state.activeAdminPin, equals('1234'));
+      expect(state.activeAdminPin, equals('123456'));
     });
 
     test('loginWithPin handles failure cleanly', () async {
@@ -217,13 +217,13 @@ void main() {
       final container = createContainer();
       final notifier = container.read(authNotifierProvider.notifier);
 
-      final ok = await notifier.verifyAndUnlockAdminPin('9999', remember: true);
+      final ok = await notifier.verifyAndUnlockAdminPin('999999', remember: true);
 
       expect(ok, isTrue);
       final state = container.read(authNotifierProvider);
       expect(state.isAdmin, isTrue);
-      expect(state.activeAdminPin, equals('9999'));
-      expect(await authSecureStorage.getAdminPin(), equals('9999'));
+      expect(state.activeAdminPin, equals('999999'));
+      expect(await authSecureStorage.getAdminPin(), isNull);
     });
 
     test('logout resets state to unauthenticated and clears storage', () async {

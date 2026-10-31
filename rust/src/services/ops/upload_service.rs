@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::models::upload::UploadManifest;
-use crate::scanner::ScannerEngine;
+use crate::scanner::{FilenameParser, ScannerEngine};
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
@@ -362,27 +362,7 @@ pub async fn finalize_session(
 /// Title and year from a filename, matching the scanner/test fallback
 /// convention. The title override, when present, is applied by the caller.
 pub fn parse_title_year(filename: &str) -> (String, Option<i32>) {
-    let stem = Path::new(filename)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| filename.to_string());
-
-    let title = stem
-        .replace(['_', '.'], " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let year = title.split_whitespace().find_map(|word| {
-        let digits: String = word.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits.len() == 4 {
-            digits.parse::<i32>().ok()
-        } else {
-            None
-        }
-    });
-
-    (title, year)
+    FilenameParser::parse_filename(Path::new(filename))
 }
 
 /// Relative catalog key, matching the native scanner's separator convention.
@@ -456,7 +436,7 @@ mod tests {
     #[test]
     fn title_and_year_are_parsed_from_the_filename() {
         let (title, year) = parse_title_year("The.Matrix.1999.1080p.mp4");
-        assert_eq!(title, "The Matrix 1999 1080p");
+        assert_eq!(title, "The Matrix");
         assert_eq!(year, Some(1999));
     }
 }
