@@ -166,7 +166,8 @@ impl TranscodeWorker {
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
         let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
-        let is_4k = effective_target_height.is_some_and(|h| h >= 2160) || effective_quality_label == "2160p";
+        let is_4k = effective_target_height.is_some_and(|h| h >= 2160)
+            || effective_quality_label == "2160p";
         let dual_gpu_enabled = GpuService::is_dual_gpu_enabled();
         if is_4k || !dual_gpu_enabled {
             if workers.len() > 1 {
