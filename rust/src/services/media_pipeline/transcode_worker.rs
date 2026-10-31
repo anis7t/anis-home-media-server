@@ -166,8 +166,9 @@ impl TranscodeWorker {
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
         let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
-        if effective_target_height.is_some_and(|h| h >= 2160) || effective_quality_label == "2160p"
-        {
+        let is_4k = effective_target_height.is_some_and(|h| h >= 2160) || effective_quality_label == "2160p";
+        let dual_gpu_enabled = GpuService::is_dual_gpu_enabled();
+        if is_4k || !dual_gpu_enabled {
             if workers.len() > 1 {
                 if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
                     workers = vec![d];
@@ -177,7 +178,7 @@ impl TranscodeWorker {
             }
             if !workers.is_empty() {
                 info!(
-                    "Job #{}: 4K 2160p transcode running on single dedicated GPU ({}) for thermal and driver stability",
+                    "Job #{}: transcode running on single dedicated GPU ({}) for thermal and driver stability",
                     job.id,
                     workers[0].name
                 );
@@ -393,6 +394,15 @@ impl TranscodeWorker {
                         }
                         break;
                     }
+
+                    // Inter-chunk thermal breather to prevent monotonic heat accumulation and VRM over-temp
+                    let breather_ms: u64 = std::env::var("MEDIA_SERVER_CHUNK_BREATHER_MS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1000);
+                    if breather_ms > 0 {
+                        tokio::time::sleep(Duration::from_millis(breather_ms)).await;
+                    }
                 }
             }));
         }
@@ -602,6 +612,9 @@ impl TranscodeWorker {
 
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::piped());
+
+        #[cfg(windows)]
+        cmd.creation_flags(0x00004000); // BELOW_NORMAL_PRIORITY_CLASS
 
         let child = cmd.spawn().map_err(|e| {
             AppError::Internal(format!(

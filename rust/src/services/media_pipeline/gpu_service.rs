@@ -406,6 +406,12 @@ impl GpuService {
                 backend: GpuBackend::Cpu,
                 is_discrete: false,
             }]
+        } else if !Self::is_dual_gpu_enabled() {
+            if let Some(d) = gpus.iter().find(|g| g.is_discrete).cloned() {
+                vec![d]
+            } else {
+                vec![gpus[0].clone()]
+            }
         } else {
             gpus
         }
@@ -415,7 +421,7 @@ impl GpuService {
     pub fn is_dual_gpu_enabled() -> bool {
         let enabled = std::env::var("MEDIA_SERVER_ENABLE_DUAL_GPU")
             .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
-            .unwrap_or(true);
+            .unwrap_or(false);
         if !enabled {
             return false;
         }

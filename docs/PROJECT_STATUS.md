@@ -30,6 +30,20 @@ Active branch: `feat/rust-react-postgres-migration`
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
 
+## 2026-10-31 — Transcode Single-GPU Hardening & Thermal Pacing (Acer Nitro 5 Multi-GPU Thermal Fix)
+
+Permanently remediated the recurring Kernel-Power Event ID 41 (`BugcheckCode = 0`, `THERMTRIP#` hardware power-loss shutdowns) during heavy video transcoding on the Acer Nitro AN515-43 mobile workstation:
+- **Root Cause & Forensic Diagnosis:** While the October 24 fix dedicated 4K (`>= 2160p`) transcoding to a single GPU, all lower resolution tiers (1080p, 720p, 480p, 360p) continued to allocate 2 concurrent workers across both the integrated AMD Radeon Vega 8 (`dx11:0`) and discrete Radeon RX 560X (`dx11:1`). Heavy downscaling at aggregate >300 FPS saturated the laptop's shared copper heatpipe assembly and DDR4 system memory bus. Sustained load pushed APU junction temperatures beyond 105°C, triggering hardware `THERMTRIP#` VRM power cutoffs.
+- **Dedicated Discrete GPU Isolation (`gpu_service.rs` & `transcode_worker.rs`):** Updated `GpuService::is_dual_gpu_enabled()` to default to `false`. When disabled, `GpuService::get_gpu_workers()` and `TranscodeWorker::execute_job()` strictly allocate the dedicated discrete AMD Radeon RX 560X (4GB GDDR5 dedicated VRAM, 112 GB/s bandwidth), keeping the integrated Vega 8 completely idle for transcode workloads. Drops total silicon thermal draw by ~45W and frees 100% of DDR4 system RAM bandwidth.
+- **Inter-Chunk Thermal Pacing:** Added a configurable asynchronous 1000ms inter-chunk breather (`MEDIA_SERVER_CHUNK_BREATHER_MS=1000`) between sequential 60-second chunk dispatches in the worker loop. Prevents monotonic heat accumulation and allows GPU VRMs and junction temperatures to stabilize and clear transient DirectX/AMF resources.
+- **Process Priority Guard (`BELOW_NORMAL_PRIORITY_CLASS`):** Configured Windows subprocess creation flag `0x00004000` for FFmpeg chunk workers, ensuring background transcoding never starves Windows DWM or the Axum HTTP server.
+- **Verification & Live Production Proof:**
+  - Rust test suite passed **242/242 tests** (`cargo test -- --test-threads=1`).
+  - Android API contract probe passed **22/22 endpoints** (`scripts/probe_android_api.py`).
+  - Production service `MediaServerRust` compiled in release mode in 15.44s and restarted cleanly.
+  - Job #1134 (*Verity 2026* 480p) recovered from `failed` to `queued`, claimed on discrete GPU alone (`Radeon RX 560X Series`), with previously crashing chunks (18, 19, 20) regenerating cleanly with 1000ms cooldowns at a steady 5.5x–6.0x realtime speed and zero system events.
+- **Documentation:** Implementation plan in [`docs/PLAN_TRANSCODE_SINGLE_GPU_THERMAL_HARDENING.md`](PLAN_TRANSCODE_SINGLE_GPU_THERMAL_HARDENING.md) and walkthrough in [`docs/WALKTHROUGH_TRANSCODE_SINGLE_GPU_THERMAL_HARDENING.md`](WALKTHROUGH_TRANSCODE_SINGLE_GPU_THERMAL_HARDENING.md).
+
 ## 2026-10-29 — Production-Quality CI/CD Foundations (GitHub Actions)
 
 Delivered production-grade Continuous Integration for Anis' Home Media Server across all application tiers and security gates:

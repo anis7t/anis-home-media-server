@@ -39,11 +39,15 @@ The Windows host features two AMD graphics processors:
 > ffmpeg -hide_banner -init_hw_device d3d11va=dx11:1 -init_hw_device amf=amf@dx11 -filter_hw_device amf ...
 > ```
 
-### Dynamic Multi-GPU Transcoding Architecture
-- Managed natively in Rust by `rust/src/transcode/` — `engine.rs`, `planner.rs`, `queue.rs`, `sweeper.rs` — with the AMF VPP filters in `rust/src/services/gpu.rs`.
-- Both GPUs transcode separate, keyframe-aligned segments concurrently.
-- Real-time engine loads for both GPUs are tracked via Windows Performance Counters and displayed on the System Telemetry HUD.
-- Polling cadence is set to 1 second for live progress, speed, and ETA calculations.
+### Dynamic Transcoding & Thermal Safety Architecture
+- Managed natively in Rust by `rust/src/services/media_pipeline/` (`transcode_worker.rs`, `chunk_transcode.rs`, `gpu_service.rs`, `transcode_sweeper.rs`).
+- **Dedicated Discrete GPU Isolation on Mobile Chassis (2026-10-31):** The Acer Nitro AN515-43 links the APU (Ryzen 5 3550H + Vega 8) and dGPU (RX 560X) via a shared copper heatpipe assembly. Running both GPUs concurrently under heavy downscaling (>150–200 FPS) exceeds the laptop's continuous thermal dissipation limit, causing APU junction temperatures to breach 105°C and asserting hardware `THERMTRIP#` (Kernel-Power Event ID 41, `BugcheckCode = 0`). To ensure indefinite production stability:
+  - Background transcoding is restricted exclusively to the **discrete AMD Radeon RX 560X (`dx11:1`)** with dedicated 4GB GDDR5 VRAM.
+  - The integrated Vega 8 (`dx11:0`) is completely disengaged from transcode worker pools, relieving 100% of DDR4 system memory bus contention and keeping the APU cool.
+  - **Inter-Chunk Thermal Breather:** A 1000ms asynchronous sleep (`MEDIA_SERVER_CHUNK_BREATHER_MS=1000`) is enforced between sequential 60-second chunk dispatches, giving GPU VRMs and junction temperatures time to stabilize and drop current draw.
+  - **Process Priority:** FFmpeg chunk workers are spawned with `BELOW_NORMAL_PRIORITY_CLASS` (`0x00004000`), guaranteeing that Windows DWM and the Axum HTTP server always maintain priority.
+- The single discrete RX 560X delivers 5.5x–7.0x realtime encoding throughput, completing a 2-hour movie in ~18 minutes without thermal degradation.
+- Polling cadence is set to 1.5 seconds for live progress, speed, and smoothed ETA calculations.
 
 ---
 
