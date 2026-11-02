@@ -695,6 +695,14 @@ impl TranscodeWorker {
             )));
         }
 
+        // Stamp monotonic tfdt timestamps into fMP4 segments so timeline is continuous across chunks
+        let _ = ChunkTranscodeService::stamp_chunk_segments_tfdt(
+            hls_dir,
+            chunk.chunk_id,
+            chunk.start_time,
+            chunk.start_seg,
+        );
+
         Ok(())
     }
 }

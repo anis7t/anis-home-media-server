@@ -29,8 +29,41 @@ pub struct ScannerReport {
 pub struct ScannerEngine;
 
 impl ScannerEngine {
+    /// Whether a filename is an HLS fMP4 initialization asset rather than a
+    /// library title. These can be left behind by older scans in a media root.
+    pub fn is_hls_init_artifact(path: &Path) -> bool {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        if lower == "init.mp4" {
+            return true;
+        }
+
+        // Older HLS test runs left initialization fixtures at the media-root
+        // level (for example `init_1.mp4` and `init_copyts.mp4`). Keep the
+        // boundary at `init_` so legitimate titles such as `Initial D.mp4`
+        // remain eligible for the library.
+        if lower
+            .strip_prefix("init_")
+            .is_some_and(|suffix| suffix.ends_with(".mp4") && suffix.len() > 4)
+        {
+            return true;
+        }
+
+        lower
+            .strip_prefix("init_chunk_")
+            .and_then(|rest| rest.strip_suffix(".mp4"))
+            .is_some_and(|number| {
+                !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    }
+
     /// Check whether a path has a supported video extension.
     pub fn is_video_file(path: &Path) -> bool {
+        if Self::is_hls_init_artifact(path) {
+            return false;
+        }
         if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
             let lower = file_name.to_lowercase();
             if lower.starts_with("chunk_")
@@ -120,6 +153,32 @@ impl ScannerEngine {
 
         let mut pruned = 0;
         for (filename,) in rows {
+            if Self::is_hls_init_artifact(Path::new(&filename)) {
+                info!(
+                    "Pruning HLS initialization artifact from catalog: {}",
+                    filename
+                );
+                let mut tx = pool.begin().await.map_err(AppError::Database)?;
+                sqlx::query("DELETE FROM progress WHERE filename = $1")
+                    .bind(&filename)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                sqlx::query("DELETE FROM device_watch_history WHERE filename = $1")
+                    .bind(&filename)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                let deleted = sqlx::query("DELETE FROM movies WHERE filename = $1")
+                    .bind(&filename)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                tx.commit().await.map_err(AppError::Database)?;
+                pruned += deleted.rows_affected() as usize;
+                continue;
+            }
+
             // Verify if the file still exists in any media root
             if PathResolver::resolve_media_path(&filename, roots).is_err() {
                 info!("Pruning orphaned movie record from database: {}", filename);
@@ -190,9 +249,10 @@ impl ScannerEngine {
                 Option<String>,
                 Option<String>,
                 Option<i64>,
+                Option<i64>,
             ),
         >(
-            "SELECT filename, tmdb_id::BIGINT as tmdb_id, title, overview, last_metadata_refresh FROM movies",
+            "SELECT filename, tmdb_id::BIGINT as tmdb_id, title, overview, last_metadata_refresh, added_at FROM movies",
         )
         .fetch_all(pool)
         .await
@@ -206,7 +266,23 @@ impl ScannerEngine {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        for (f, tid, t, ov, lmr) in indexed_rows {
+        for (f, tid, t, ov, lmr, added_at) in indexed_rows {
+            // Backfill legacy catalog rows from the actual media file time.
+            // `added_at` is immutable after this point and is not the metadata
+            // refresh timestamp (`updated_at`).
+            if added_at.is_none() {
+                if let Ok(path) = PathResolver::resolve_media_path(&f, roots) {
+                    if let Some(timestamp) = Self::file_modified_timestamp(&path) {
+                        let _ = sqlx::query(
+                            "UPDATE movies SET added_at = $2 WHERE filename = $1 AND added_at IS NULL",
+                        )
+                        .bind(&f)
+                        .bind(timestamp)
+                        .execute(pool)
+                        .await;
+                    }
+                }
+            }
             if tid.is_some() {
                 indexed_set.insert(f);
             } else {
@@ -281,6 +357,7 @@ impl ScannerEngine {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as i64;
+            let added_at = Self::file_modified_timestamp(&path).unwrap_or(now_ts);
 
             info!(
                 "[{}/{}] Ingesting: {} (detected title: '{}', year: {:?})",
@@ -425,9 +502,9 @@ impl ScannerEngine {
                 r#"
                 INSERT INTO movies (
                     filename, title, year, tmdb_id, overview, poster_path, backdrop_path,
-                    runtime, genres, vote_average, updated_at, release_date, details_json, last_metadata_refresh
+                    runtime, genres, vote_average, updated_at, release_date, details_json, last_metadata_refresh, added_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 ON CONFLICT (filename) DO UPDATE SET
                     title = EXCLUDED.title,
                     year = EXCLUDED.year,
@@ -441,7 +518,8 @@ impl ScannerEngine {
                     updated_at = EXCLUDED.updated_at,
                     release_date = EXCLUDED.release_date,
                     details_json = EXCLUDED.details_json,
-                    last_metadata_refresh = EXCLUDED.last_metadata_refresh
+                    last_metadata_refresh = EXCLUDED.last_metadata_refresh,
+                    added_at = COALESCE(movies.added_at, EXCLUDED.added_at)
                 "#
             )
             .bind(&relative)
@@ -458,6 +536,7 @@ impl ScannerEngine {
             .bind(&release_date)
             .bind(&details_json)
             .bind(now_ts)
+            .bind(added_at)
             .execute(pool)
             .await;
 
@@ -523,6 +602,16 @@ impl ScannerEngine {
         );
 
         Ok(report)
+    }
+
+    fn file_modified_timestamp(path: &Path) -> Option<i64> {
+        std::fs::metadata(path)
+            .ok()?
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|duration| duration.as_secs() as i64)
     }
 
     /// Polite background sweep to proactively acquire missing English subtitles

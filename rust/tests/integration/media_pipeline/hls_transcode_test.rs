@@ -635,3 +635,90 @@ fn test_hls_service_detects_completed_tiered_transcode() {
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+
+#[test]
+fn test_hls_service_slice_playlist_at_offset() {
+    let sample = r#"#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init_chunk_0.mp4"
+#EXTINF:5.000000,
+segment_000000.m4s
+#EXTINF:3.750000,
+segment_000001.m4s
+#EXTINF:3.750000,
+segment_000002.m4s
+#EXTINF:3.750000,
+segment_000003.m4s
+#EXT-X-ENDLIST
+"#;
+
+    // Slicing at 0s returns full content
+    assert_eq!(HlsService::slice_playlist_at_offset(sample, 0.0), sample);
+
+    // Slicing at 6.0s should start at segment_000001 (cum_dur: 0s..5.0s, 5.0s..8.75s)
+    let sliced = HlsService::slice_playlist_at_offset(sample, 6.0);
+    assert!(sliced.contains("#EXT-X-MEDIA-SEQUENCE:1"));
+    assert!(sliced.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
+    assert!(sliced.contains("#EXT-X-MAP:URI=\"init_chunk_0.mp4\""));
+    assert!(!sliced.contains("segment_000000.m4s"));
+    assert!(sliced.contains("segment_000001.m4s"));
+    assert!(sliced.contains("segment_000002.m4s"));
+    assert!(sliced.contains("#EXT-X-ENDLIST"));
+
+    // Slicing at 10.0s should start at segment_000002 (cum_dur: 8.75s..12.5s)
+    let sliced2 = HlsService::slice_playlist_at_offset(sample, 10.0);
+    assert!(sliced2.contains("#EXT-X-MEDIA-SEQUENCE:2"));
+    assert!(!sliced2.contains("segment_000001.m4s"));
+    assert!(sliced2.contains("segment_000002.m4s"));
+}
+
+#[tokio::test]
+async fn test_hls_playlist_query_start_slices() {
+    let harness = setup_hls_test().await;
+
+    let video_path = harness.media_dir.join("SlicedMovie.mkv");
+    fs::write(&video_path, b"dummy video content").unwrap();
+
+    let hls_candidates = HlsService::get_hls_candidates(&video_path, &[harness.media_dir.clone()]);
+    let hls_hash = hls_candidates.into_iter().next().unwrap();
+    let q1080 = harness.cache_dir.join("hls").join(hls_hash).join("1080p");
+    fs::create_dir_all(&q1080).unwrap();
+
+    let pl = r#"#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init_chunk_0.mp4"
+#EXTINF:5.000000,
+segment_000000.m4s
+#EXTINF:5.000000,
+segment_000001.m4s
+#EXTINF:5.000000,
+segment_000002.m4s
+#EXT-X-ENDLIST
+"#;
+    fs::write(q1080.join("playlist.m3u8"), pl).unwrap();
+
+    // Request with ?start=7.5
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/hls/SlicedMovie.mkv/1080p/playlist.m3u8?start=7.5")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = harness.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    assert!(body_str.contains("#EXT-X-MEDIA-SEQUENCE:1"));
+    assert!(body_str.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
+    assert!(!body_str.contains("segment_000000.m4s"));
+    assert!(body_str.contains("segment_000001.m4s"));
+    assert!(body_str.contains("segment_000002.m4s"));
+}

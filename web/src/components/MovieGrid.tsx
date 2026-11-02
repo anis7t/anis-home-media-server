@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { MovieSummary } from '../lib/api/types';
 import { MovieCard } from './MovieCard';
 
@@ -14,10 +15,11 @@ interface MovieGridProps {
  * dilutes the boost.
  */
 export function MovieGrid({ movies, title }: MovieGridProps) {
+  const headingId = useId();
   return (
-    <section aria-labelledby={title ? 'grid-heading' : undefined}>
+    <section aria-labelledby={title ? headingId : undefined}>
       {title ? (
-        <h2 id="grid-heading" className="mb-4 text-lg font-semibold text-white">
+        <h2 id={headingId} className="mb-4 text-lg font-semibold text-white">
           {title}
         </h2>
       ) : null}

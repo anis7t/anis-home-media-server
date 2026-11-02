@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::models::movie::{
     MovieDetailsResponse, MovieListResponse, MovieSummaryItem, TechnicalSpecs,
 };
+use crate::services::catalog::scanner::ScannerEngine;
 use sqlx::{PgPool, Row};
 
 pub struct MovieService;
@@ -33,10 +34,10 @@ impl MovieService {
                     m.genres,
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
-                    m.updated_at,
+                    m.added_at,
                     COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
                     COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration,
-                    p.updated_at as watch_updated_at
+                    p.updated_at::text as watch_updated_at
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id = $1
                 ORDER BY m.title ASC
@@ -60,10 +61,10 @@ impl MovieService {
                     m.genres,
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
-                    m.updated_at,
+                    m.added_at,
                     COALESCE(h.position, 0.0)::DOUBLE PRECISION as position,
                     COALESCE(h.duration, 0.0)::DOUBLE PRECISION as duration,
-                    h.last_watched as watch_updated_at
+                    h.last_watched::text as watch_updated_at
                 FROM movies m
                 LEFT JOIN device_watch_history h ON m.filename = h.filename AND h.device_id = $1
                 ORDER BY m.title ASC
@@ -87,10 +88,10 @@ impl MovieService {
                     m.genres,
                     m.vote_average::DOUBLE PRECISION as vote_average,
                     m.release_date,
-                    m.updated_at,
+                    m.added_at,
                     COALESCE(p.position, 0.0)::DOUBLE PRECISION as position,
                     COALESCE(p.duration, 0.0)::DOUBLE PRECISION as duration,
-                    p.updated_at as watch_updated_at
+                    p.updated_at::text as watch_updated_at
                 FROM movies m
                 LEFT JOIN progress p ON m.filename = p.filename AND p.user_id IS NULL
                 ORDER BY m.title ASC
@@ -101,9 +102,16 @@ impl MovieService {
         };
 
         let mut movie_list = Vec::new();
+        let mut watch_updated_by_filename = std::collections::HashMap::new();
 
         for r in rows {
             let filename: String = r.get("filename");
+            if ScannerEngine::is_hls_init_artifact(std::path::Path::new(&filename)) {
+                continue;
+            }
+            let added_at: Option<i64> = r.try_get("added_at").ok().flatten();
+            let watch_updated_at: Option<String> = r.try_get("watch_updated_at").ok().flatten();
+            watch_updated_by_filename.insert(filename.clone(), watch_updated_at);
             let title: String = r
                 .try_get::<Option<String>, _>("title")
                 .ok()
@@ -190,7 +198,9 @@ impl MovieService {
                 vote_average: vote_avg,
                 rating: vote_avg,
                 release_date,
-                updated_at: None,
+                // Preserve the existing response field used by both clients
+                // for recency; this is catalog-added time, not TMDb refresh time.
+                updated_at: added_at.map(|timestamp| timestamp.to_string()),
                 poster,
                 position: (position * 10.0).round() / 10.0,
                 duration: (duration * 10.0).round() / 10.0,
@@ -219,7 +229,17 @@ impl MovieService {
         // Apply sort
         match sort_by.unwrap_or("title") {
             "recent" => {
-                movie_list.sort_by(|a, b| b.release_date.cmp(&a.release_date));
+                movie_list.sort_by(|a, b| {
+                    b.updated_at
+                        .as_deref()
+                        .and_then(|value| value.parse::<i64>().ok())
+                        .cmp(
+                            &a.updated_at
+                                .as_deref()
+                                .and_then(|value| value.parse::<i64>().ok()),
+                        )
+                        .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                });
             }
             "rating" => {
                 movie_list.sort_by(|a, b| {
@@ -238,11 +258,17 @@ impl MovieService {
         }
 
         // Watching items: position > 10.0 and duration - position > 10.0
-        let watching = movie_list
+        let mut watching: Vec<_> = movie_list
             .iter()
             .filter(|m| m.position > 10.0 && (m.duration <= 0.0 || m.position < m.duration - 10.0))
             .cloned()
             .collect();
+        watching.sort_by(|a, b| {
+            watch_updated_by_filename
+                .get(&b.filename)
+                .cmp(&watch_updated_by_filename.get(&a.filename))
+                .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+        });
 
         let total = movie_list.len();
 

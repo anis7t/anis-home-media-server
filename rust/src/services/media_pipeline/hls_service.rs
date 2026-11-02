@@ -475,10 +475,154 @@ impl HlsService {
                     new_output.push(format!("#EXT-X-TARGETDURATION:{}", target));
                 }
             }
-            return new_output.join("\n") + "\n";
+            output = new_output;
+        }
+
+        // Ensure #EXT-X-PLAYLIST-TYPE is declared per RFC 8216 and GEMINI.md Rule 3
+        if !output.iter().any(|l| l.starts_with("#EXT-X-PLAYLIST-TYPE")) {
+            let has_endlist = output.iter().any(|l| l.trim() == "#EXT-X-ENDLIST");
+            let ptype = if has_endlist {
+                "#EXT-X-PLAYLIST-TYPE:VOD"
+            } else {
+                "#EXT-X-PLAYLIST-TYPE:EVENT"
+            };
+            let mut with_ptype = Vec::new();
+            let mut inserted = false;
+            for line in output {
+                with_ptype.push(line.clone());
+                if !inserted && (line.starts_with("#EXT-X-START:") || line.starts_with("#EXT-X-TARGETDURATION:")) {
+                    with_ptype.push(ptype.to_string());
+                    inserted = true;
+                }
+            }
+            if !inserted {
+                with_ptype.push(ptype.to_string());
+            }
+            return with_ptype.join("\n") + "\n";
         }
 
         output.join("\n") + "\n"
+    }
+
+    /// Slices an HLS media playlist so it starts directly at the segment spanning `start_sec`.
+    /// This bypasses libavformat/mov.c's broken in-stream seek logic for fragmented MP4 HLS
+    /// by ensuring the demuxer's initial probe initializes sample tables directly at the seek target.
+    pub fn slice_playlist_at_offset(text: &str, start_sec: f64) -> String {
+        if start_sec <= 0.0 {
+            return text.to_string();
+        }
+
+        let lines: Vec<&str> = text.lines().collect();
+        let has_endlist = lines.iter().any(|l| l.trim() == "#EXT-X-ENDLIST");
+        let mut target_duration = 5u64;
+
+        for &line in &lines {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("#EXT-X-TARGETDURATION:") {
+                if let Ok(td) = rest.trim().parse::<u64>() {
+                    target_duration = td;
+                }
+            }
+        }
+
+        struct SegEntry<'a> {
+            extinf_line: &'a str,
+            filename_line: &'a str,
+            duration: f64,
+            init_map: Option<&'a str>,
+            discontinuity: bool,
+        }
+
+        let mut segments: Vec<SegEntry> = Vec::new();
+        let mut current_map: Option<&str> = None;
+        let mut next_is_discont = false;
+        let mut i = 0;
+
+        while i < lines.len() {
+            let trimmed = lines[i].trim();
+            if trimmed.starts_with("#EXT-X-MAP:") {
+                current_map = Some(trimmed);
+            } else if trimmed == "#EXT-X-DISCONTINUITY" {
+                next_is_discont = true;
+            } else if trimmed.starts_with("#EXTINF:") {
+                let extinf = trimmed;
+                let dur = extinf
+                    .strip_prefix("#EXTINF:")
+                    .and_then(|s| s.split(',').next())
+                    .and_then(|s| s.trim().parse::<f64>().ok())
+                    .unwrap_or(0.0);
+
+                if i + 1 < lines.len() {
+                    let next_line = lines[i + 1].trim();
+                    if !next_line.starts_with('#') && !next_line.is_empty() {
+                        segments.push(SegEntry {
+                            extinf_line: extinf,
+                            filename_line: next_line,
+                            duration: dur,
+                            init_map: current_map,
+                            discontinuity: next_is_discont,
+                        });
+                        next_is_discont = false;
+                        i += 1;
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        if segments.is_empty() {
+            return text.to_string();
+        }
+
+        let mut cum_dur = 0.0;
+        let mut slice_idx = 0;
+        for (idx, seg) in segments.iter().enumerate() {
+            if cum_dur + seg.duration > start_sec {
+                slice_idx = idx;
+                break;
+            }
+            cum_dur += seg.duration;
+            slice_idx = idx;
+        }
+
+        let mut out = Vec::new();
+        out.push("#EXTM3U".to_string());
+        out.push("#EXT-X-VERSION:7".to_string());
+        out.push(format!("#EXT-X-TARGETDURATION:{}", target_duration));
+        out.push(format!("#EXT-X-MEDIA-SEQUENCE:{}", slice_idx));
+        out.push("#EXT-X-INDEPENDENT-SEGMENTS".to_string());
+        out.push("#EXT-X-START:TIME-OFFSET=0".to_string());
+        if has_endlist {
+            out.push("#EXT-X-PLAYLIST-TYPE:VOD".to_string());
+        } else {
+            out.push("#EXT-X-PLAYLIST-TYPE:EVENT".to_string());
+        }
+
+        let initial_map = segments[slice_idx]
+            .init_map
+            .unwrap_or("#EXT-X-MAP:URI=\"init_chunk_0.mp4\"");
+        out.push(initial_map.to_string());
+
+        let mut last_map = Some(initial_map);
+        for (idx, seg) in segments[slice_idx..].iter().enumerate() {
+            if idx > 0 && seg.discontinuity {
+                out.push("#EXT-X-DISCONTINUITY".to_string());
+            }
+            if idx > 0 && seg.init_map != last_map {
+                if let Some(m) = seg.init_map {
+                    out.push(m.to_string());
+                    last_map = Some(m);
+                }
+            }
+            out.push(seg.extinf_line.to_string());
+            out.push(seg.filename_line.to_string());
+        }
+
+        if has_endlist {
+            out.push("#EXT-X-ENDLIST".to_string());
+        }
+
+        out.join("\n") + "\n"
     }
 
     /// Deterministic cache file path for transcoded MP4 matching Python transcode_cache_path

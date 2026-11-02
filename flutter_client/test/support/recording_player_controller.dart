@@ -14,6 +14,7 @@ class RecordingPlayerController implements PlayerControllerInterface {
   Map<String, String>? openedHeaders;
   Duration? openedStartPosition;
   String? openedExternalSubtitleUrl;
+  bool openedPlay = true;
   int openCount = 0;
 
   Duration _position = Duration.zero;
@@ -82,12 +83,14 @@ class RecordingPlayerController implements PlayerControllerInterface {
     Map<String, String>? headers,
     Duration? startPosition,
     String? externalSubtitleUrl,
+    bool play = true,
   }) async {
     openCount++;
     openedUrl = url;
     openedHeaders = headers;
     openedStartPosition = startPosition;
     openedExternalSubtitleUrl = externalSubtitleUrl;
+    openedPlay = play;
     _state = PlayerPlaybackState.opening;
     _stateController.add(_state);
   }

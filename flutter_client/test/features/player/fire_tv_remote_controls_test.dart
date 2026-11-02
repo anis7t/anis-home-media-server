@@ -82,7 +82,7 @@ class RemoteTestPlayerController implements PlayerControllerInterface {
   }
 
   @override
-  Future<void> open(String url, {Map<String, String>? headers, Duration? startPosition, String? externalSubtitleUrl}) async {
+  Future<void> open(String url, {Map<String, String>? headers, Duration? startPosition, String? externalSubtitleUrl, bool play = true}) async {
     _state = PlayerPlaybackState.playing;
     _stateController.add(_state);
     _durationController.add(_duration);

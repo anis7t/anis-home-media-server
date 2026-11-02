@@ -16,8 +16,15 @@ pub struct HlsState {
     pub cache_dir: Arc<PathBuf>,
 }
 
+#[derive(serde::Deserialize, Default)]
+pub struct HlsQuery {
+    pub start: Option<f64>,
+    pub offset: Option<f64>,
+}
+
 pub async fn hls_handler(
     State(state): State<HlsState>,
+    axum::extract::Query(query): axum::extract::Query<HlsQuery>,
     headers: HeaderMap,
     method: Method,
     Path(path): Path<String>,
@@ -213,8 +220,14 @@ pub async fn hls_handler(
 
             if content.contains("segment_") {
                 let honest_content = HlsService::honest_target_duration(&content);
+                let start_sec = query.start.or(query.offset).unwrap_or(0.0);
+                let final_content = if start_sec > 0.0 {
+                    HlsService::slice_playlist_at_offset(&honest_content, start_sec)
+                } else {
+                    honest_content
+                };
 
-                let mut res = Response::new(Body::from(honest_content));
+                let mut res = Response::new(Body::from(final_content));
                 *res.status_mut() = StatusCode::OK;
                 let h = res.headers_mut();
                 h.insert(

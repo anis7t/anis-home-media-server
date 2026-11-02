@@ -85,6 +85,7 @@ class _FakePlayerController implements PlayerControllerInterface {
     Map<String, String>? headers,
     Duration? startPosition,
     String? externalSubtitleUrl,
+    bool play = true,
   }) async {
     _state = PlayerPlaybackState.opening;
     _stateController.add(_state);

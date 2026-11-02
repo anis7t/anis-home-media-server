@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -79,7 +80,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBindingObserver {
+class _PlayerScreenState extends ConsumerState<PlayerScreen>
+    with WidgetsBindingObserver {
   late final PlayerControllerInterface _controller;
   late final bool _ownsController;
   VideoController? _videoController;
@@ -100,6 +102,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       widget.customBrightness ?? ScreenBrightnessService();
   late final MediaVolumeService _mediaVolume =
       widget.customMediaVolume ?? MediaVolumeService();
+
   /// Mirror of the system media volume (0-100) - the level the user hears.
   double _systemVolume = 50.0;
   double _brightness = 0.5;
@@ -140,7 +143,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         icon: _hudIcon,
       );
     }
-    final isOpening = _state == PlayerPlaybackState.opening ||
+    final isOpening =
+        _state == PlayerPlaybackState.opening ||
         (_state == PlayerPlaybackState.idle && _errorMessage == null);
     if (isOpening) {
       return const PlaybackOverlayStatus(
@@ -273,31 +277,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     // feeds watch history, and a test's platform channel never answers - awaiting
     // it there would stall the POST entirely.
     String? deviceId;
-    identity.getOrCreateDeviceId().then(
-      (id) => deviceId = id,
-      onError: (_) {},
-    );
+    identity.getOrCreateDeviceId().then((id) => deviceId = id, onError: (_) {});
 
-    // The web player has always persisted progress; the app only read it, so a
-    // resume point never moved when the app was the one playing.
+    // Persist through the same authenticated API client used by the library so
+    // progress writes and reads resolve to the same account and device.
     _progress = PlaybackProgressReporter(
       save: (position, duration) async {
         final filename = _resolveFilename();
         final origin = _apiServerOrigin();
         if (filename == null || filename.isEmpty || origin == null) return;
-        // Fire-and-forget from the player's teardown paths: no Dio timeout
-        // timers may outlive the widget ("A Timer is still pending even after
-        // the widget tree was disposed"), and the shared client's connect
-        // timeout cannot be overridden per request. Tests inject customDio.
-        final owned = widget.customDio == null;
-        final client = widget.customDio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: null,
-                receiveTimeout: null,
-                sendTimeout: null,
-              ),
-            );
+        // Use the shared authenticated client so its interceptor attaches the
+        // session cookie and persistent device ID. Tests can still inject a
+        // custom Dio instance.
+        final client = _apiDio();
+        final effectiveDeviceId = deviceId ?? widget.deviceId;
         try {
           await client.post(
             '$origin${ApiEndpoints.progress}',
@@ -307,14 +300,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
               'duration': duration.inMilliseconds / 1000,
             },
             options: Options(
-              headers: deviceId == null ? null : {'X-Device-Id': deviceId},
+              headers: effectiveDeviceId == null
+                  ? null
+                  : {'X-Device-Id': effectiveDeviceId},
               validateStatus: (status) => status != null && status < 500,
             ),
           );
         } catch (_) {
           // progress is best-effort: a failed save must never disturb playback
-        } finally {
-          if (owned) client.close();
         }
       },
     );
@@ -330,51 +323,63 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   void _listenToStreams() {
-    _subscriptions.add(_controller.stateStream.listen((s) {
-      if (!mounted) return;
-      setState(() {
-        _state = s;
-        if (s == PlayerPlaybackState.error) {
-          _errorMessage = 'Failed to load media or decode stream.';
-        } else if (s == PlayerPlaybackState.playing) {
-          _errorMessage = null;
-          if (!_isScrubbing) {
-            _resetAutoHideTimer();
+    _subscriptions.add(
+      _controller.stateStream.listen((s) {
+        if (!mounted) return;
+        setState(() {
+          _state = s;
+          if (s == PlayerPlaybackState.error) {
+            _errorMessage = 'Failed to load media or decode stream.';
+          } else if (s == PlayerPlaybackState.playing) {
+            _errorMessage = null;
+            if (!_isScrubbing) {
+              _resetAutoHideTimer();
+            }
+            _keyboardFocusNode.requestFocus();
+          } else if (s == PlayerPlaybackState.paused) {
+            _cancelAutoHideTimer();
+            _controlsVisible = true;
+            _progress?.onPause();
+          } else if (s == PlayerPlaybackState.completed) {
+            _progress?.onEnded();
           }
-          _keyboardFocusNode.requestFocus();
-        } else if (s == PlayerPlaybackState.paused) {
-          _cancelAutoHideTimer();
-          _controlsVisible = true;
-          _progress?.onPause();
-        } else if (s == PlayerPlaybackState.completed) {
-          _progress?.onEnded();
+        });
+      }),
+    );
+
+    _subscriptions.add(
+      _controller.positionStream.listen((p) {
+        if (!mounted) return;
+        _progress?.onPosition(p, _duration);
+        // Do not snap back during user scrubbing gestures
+        if (!_isScrubbing) {
+          setState(() => _position = p);
         }
-      });
-    }));
+      }),
+    );
 
-    _subscriptions.add(_controller.positionStream.listen((p) {
-      if (!mounted) return;
-      _progress?.onPosition(p, _duration);
-      // Do not snap back during user scrubbing gestures
-      if (!_isScrubbing) {
-        setState(() => _position = p);
-      }
-    }));
+    _subscriptions.add(
+      _controller.durationStream.listen((d) {
+        if (!mounted) return;
+        if (d > Duration.zero) {
+          setState(() => _duration = d);
+        }
+      }),
+    );
 
-    _subscriptions.add(_controller.durationStream.listen((d) {
-      if (!mounted) return;
-      setState(() => _duration = d);
-    }));
+    _subscriptions.add(
+      _controller.bufferingStream.listen((b) {
+        if (!mounted) return;
+        setState(() => _isBuffering = b);
+      }),
+    );
 
-    _subscriptions.add(_controller.bufferingStream.listen((b) {
-      if (!mounted) return;
-      setState(() => _isBuffering = b);
-    }));
-
-    _subscriptions.add(_controller.tracksStream.listen((t) {
-      if (!mounted) return;
-      setState(() => _trackInfo = t);
-    }));
+    _subscriptions.add(
+      _controller.tracksStream.listen((t) {
+        if (!mounted) return;
+        setState(() => _trackInfo = t);
+      }),
+    );
   }
 
   String? _effectiveMediaUrl;
@@ -383,8 +388,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   /// Origin resolved for API calls / HLS URLs once the saved server is known.
   String? _resolvedApiOrigin;
 
-  String? _resolveFilename() =>
-      PlayerMediaResolver.resolveFilename(_effectiveMediaUrl ?? widget.mediaUrl, widget.mediaFilename);
+  String? _resolveFilename() => PlayerMediaResolver.resolveFilename(
+    _effectiveMediaUrl ?? widget.mediaUrl,
+    widget.mediaFilename,
+  );
 
   Future<String> _resolveEffectiveMediaUrl() async {
     if (widget.customController != null) {
@@ -482,8 +489,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       final defaultSidecar = sidecars.where((s) => s.isDefault).firstOrNull;
       if (defaultSidecar != null &&
           (_trackInfo.currentSubtitleTrack.id == 'auto' ||
-           _trackInfo.currentSubtitleTrack.id == 'no' ||
-           _trackInfo.currentSubtitleTrack.id.isEmpty)) {
+              _trackInfo.currentSubtitleTrack.id == 'no' ||
+              _trackInfo.currentSubtitleTrack.id.isEmpty)) {
         await _controller.setSubtitleTrack(defaultSidecar);
       }
     } catch (_) {}
@@ -546,7 +553,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
   Future<String?> _resolveApiOrigin() async {
     final candidate = _resolveServerOrigin();
-    final isLoopback = candidate == null ||
+    final isLoopback =
+        candidate == null ||
         candidate.contains('127.0.0.1') ||
         candidate.contains('localhost');
     if (!isLoopback) return candidate;
@@ -606,7 +614,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   }
 
   String _applyAuthoritativeMode(String url) {
-    if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto') return url;
+    if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto')
+      return url;
     final filename = _resolveFilename();
     if (filename == null || filename.isEmpty) return url;
     final origin = _apiServerOrigin();
@@ -734,7 +743,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   void _sendCastSeek(Duration target) {
     _progress?.onSeek(target);
     unawaited(
-      ref.read(castControllerProvider.notifier)
+      ref
+          .read(castControllerProvider.notifier)
           .sendControl('seek', value: target.inMilliseconds / 1000),
     );
     if (mounted) setState(() => _position = target);
@@ -751,7 +761,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _showHudToast('Restarted', icon: Icons.replay_rounded);
   }
 
-  String _castName() => ref.read(castControllerProvider).activeDevice?.name ?? 'the device';
+  String _castName() =>
+      ref.read(castControllerProvider).activeDevice?.name ?? 'the device';
 
   void _openCastSheet() {
     _onUserInteraction();
@@ -761,7 +772,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       position: _position > Duration.zero ? _position : null,
       onStarted: (deviceName) {
         unawaited(_controller.pause());
-        _showHudToast('Casting to $deviceName', icon: Icons.cast_connected_rounded);
+        _showHudToast(
+          'Casting to $deviceName',
+          icon: Icons.cast_connected_rounded,
+        );
         _startCastPolling();
       },
     );
@@ -789,7 +803,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         await _controller.setRate(rate);
         if (mounted) {
           setState(() => _rate = rate);
-          final rateStr = rate.toStringAsFixed(rate.truncateToDouble() == rate ? 0 : 2);
+          final rateStr = rate.toStringAsFixed(
+            rate.truncateToDouble() == rate ? 0 : 2,
+          );
           _showHudToast('$rateStr× Speed', icon: Icons.speed_rounded);
         }
       },
@@ -799,12 +815,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
   String get _selectedQualityBadge {
     if (_selectedQuality == 'source') return 'DIRECT';
     if (_selectedQuality == '2160p' || _selectedQuality == '4k') {
-      return (_playbackMode == PlaybackMode.directPlay && _isNative4k) ? '4K DIRECT' : '4K';
+      return (_playbackMode == PlaybackMode.directPlay && _isNative4k)
+          ? '4K DIRECT'
+          : '4K';
     }
     if (_selectedQuality == 'auto') {
       return _playbackMode == PlaybackMode.directPlay ? 'DIRECT' : 'HD';
     }
-    final match = _qualityLadder.where((q) => q.quality == _selectedQuality).firstOrNull;
+    final match = _qualityLadder
+        .where((q) => q.quality == _selectedQuality)
+        .firstOrNull;
     if (match != null) return match.shortBadge;
     return _selectedQuality.toUpperCase();
   }
@@ -832,21 +852,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final serverOrigin = _apiServerOrigin();
     if (filename == null || serverOrigin == null) return;
 
-    final isDirect4kRouting = (option.quality == '2160p' || option.quality == '4k') &&
+    final isDirect4kRouting =
+        (option.quality == '2160p' || option.quality == '4k') &&
         _playbackMode == PlaybackMode.directPlay &&
         _isNative4k;
 
     // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto, and not direct-routed
-    if (!option.isReady && !option.isDirect && option.quality != 'auto' && !isDirect4kRouting) {
+    if (!option.isReady &&
+        !option.isDirect &&
+        option.quality != 'auto' &&
+        !isDirect4kRouting) {
       try {
         final encoded = Uri.encodeComponent(filename);
-        _showHudToast('Starting ${option.label}...', icon: Icons.high_quality_rounded);
+        _showHudToast(
+          'Starting ${option.label}...',
+          icon: Icons.high_quality_rounded,
+        );
         // Fire-and-forget transcode start request
         unawaited(
-          _apiDio().post(
-            '$serverOrigin/api/transcode/start/$encoded',
-            queryParameters: {'quality': option.quality},
-          ).then((_) {}, onError: (_) {}),
+          _apiDio()
+              .post(
+                '$serverOrigin/api/transcode/start/$encoded',
+                queryParameters: {'quality': option.quality},
+              )
+              .then((_) {}, onError: (_) {}),
         );
       } catch (_) {}
     }
@@ -860,14 +889,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     );
 
     _effectiveMediaUrl = newUrl;
-    final toastLabel = isDirect4kRouting ? '4K Direct Play (Lossless)' : option.label;
+    final toastLabel = isDirect4kRouting
+        ? '4K Direct Play (Lossless)'
+        : option.label;
     _showHudToast('Quality: $toastLabel', icon: Icons.high_quality_rounded);
 
     try {
-      await _controller.open(newUrl, startPosition: currentPos);
-      if (wasPlaying) {
-        await _controller.play();
-      }
+      await _controller.open(
+        newUrl,
+        startPosition: currentPos,
+        play: wasPlaying,
+      );
     } catch (e) {
       debugPrint('[PlayerScreen] Failed to switch quality URL: $e');
     }
@@ -882,7 +914,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       onTrackSelected: (track) async {
         await _controller.setAudioTrack(track);
         if (mounted) {
-          final label = track.title.isNotEmpty ? track.title : 'Audio ${track.id}';
+          final label = track.title.isNotEmpty
+              ? track.title
+              : 'Audio ${track.id}';
           _showHudToast(label, icon: Icons.audiotrack_rounded);
         }
       },
@@ -919,7 +953,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     if (_casting) {
       final cast = ref.read(castControllerProvider);
       final playing = cast.playbackState == 'playing';
-      await ref.read(castControllerProvider.notifier).sendControl(playing ? 'pause' : 'play');
+      await ref
+          .read(castControllerProvider.notifier)
+          .sendControl(playing ? 'pause' : 'play');
       _showHudToast(
         playing ? 'Paused on ${_castName()}' : 'Playing on ${_castName()}',
         icon: Icons.cast_connected_rounded,
@@ -949,7 +985,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
     final label = _videoFit == BoxFit.contain
         ? 'Aspect: Fit (Original)'
-        : (_videoFit == BoxFit.cover ? 'Aspect: Crop to Fill' : 'Aspect: Stretch');
+        : (_videoFit == BoxFit.cover
+              ? 'Aspect: Crop to Fill'
+              : 'Aspect: Stretch');
     _showHudToast(label, icon: Icons.aspect_ratio_rounded);
   }
 
@@ -957,7 +995,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     _dpadScrubCommitTimer?.cancel();
     if (!_isDpadScrubbing) {
       _isDpadScrubbing = true;
-      _dpadScrubPosition = _position > Duration.zero ? _position : _transportPosition;
+      _dpadScrubPosition = _position > Duration.zero
+          ? _position
+          : _transportPosition;
     }
 
     final curSec = _dpadScrubPosition!.inSeconds;
@@ -988,7 +1028,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     });
   }
 
-  Future<void> _seekRelative(int seconds, {bool fromDoubleTap = false, bool direct = false}) async {
+  Future<void> _seekRelative(
+    int seconds, {
+    bool fromDoubleTap = false,
+    bool direct = false,
+  }) async {
     _onUserInteraction();
     _hudTimer?.cancel();
     _seekSettleTimer?.cancel();
@@ -1158,7 +1202,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     } else {
       final restore = _lastPreMuteVolume > 0 ? _lastPreMuteVolume : 100.0;
       _onVolumeChanged(restore);
-      _showHudToast('${restore.round()}% Volume', icon: Icons.volume_up_rounded);
+      _showHudToast(
+        '${restore.round()}% Volume',
+        icon: Icons.volume_up_rounded,
+      );
     }
   }
 
@@ -1233,9 +1280,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final durationSec = _transportDuration.inMilliseconds / 1000.0;
     if (durationSec <= 0) return null;
 
-    final interval = (meta != null ? (meta['interval'] as num?)?.toDouble() : null) ??
+    final interval =
+        (meta != null ? (meta['interval'] as num?)?.toDouble() : null) ??
         (durationSec < 1800 ? 5.0 : (durationSec < 7200 ? 10.0 : 15.0));
-    final count = (meta != null ? (meta['count'] as num?)?.toInt() : null) ??
+    final count =
+        (meta != null ? (meta['count'] as num?)?.toInt() : null) ??
         ((durationSec - 0.001) ~/ interval + 1);
 
     if (interval <= 0 || count <= 0) return null;
@@ -1266,14 +1315,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final isTv = ref.read(isTvModeProvider);
     final key = event.logicalKey;
 
-    final isBackKey = key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack;
+    final isBackKey =
+        key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack;
     if (isBackKey && event is KeyDownEvent) {
       _backHandledByKeyEvent = true;
       Timer.run(() => _backHandledByKeyEvent = false);
     }
 
-    final isLeftKey = key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ;
-    final isRightKey = key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL;
+    final isLeftKey =
+        key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyJ;
+    final isRightKey =
+        key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.keyL;
 
     // -------------------------------------------------------------
     // TV D-PAD TIMELINE SEEK & SCRUB STATE MACHINE
@@ -1283,7 +1335,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
 
       // When controls are visible AND focused on Zone 2 (action buttons),
       // Left/Right moves focus between buttons, not timeline seek.
-      final isNavigatingControlsRow = _controlsVisible &&
+      final isNavigatingControlsRow =
+          _controlsVisible &&
           !_isDpadScrubbing &&
           _tvFocusZone == TvPlayerFocusZone.controls;
 
@@ -1362,19 +1415,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
       onSeekRelative: (s, {direct = false}) => _seekRelative(s, direct: direct),
       onUserInteraction: _onUserInteraction,
       onSetTvFocusZone: (zone) => setState(() => _tvFocusZone = zone),
-      onSetTvFocusedControlIndex: (idx) => setState(() => _tvFocusedControlIndex = idx),
+      onSetTvFocusedControlIndex: (idx) =>
+          setState(() => _tvFocusedControlIndex = idx),
       onTriggerTvControlAction: _triggerTvControlAction,
       onOpenSubtitleTrackSheet: _openSubtitleTrackSheet,
       onOpenAudioTrackSheet: _openAudioTrackSheet,
       onToggleMute: _toggleMute,
       onRestart: _restart,
-      onHandleBack: ({required bool forceExit}) => _handleBack(forceExit: forceExit),
+      onHandleBack: ({required bool forceExit}) =>
+          _handleBack(forceExit: forceExit),
       onHideControls: () => setState(() => _controlsVisible = false),
       onVolumeChanged: _onVolumeChanged,
       onShowHudToast: (msg, {icon}) => _showHudToast(msg, icon: icon),
       onToggleFullscreen: _toggleFullscreen,
       dpadHoldCount: _dpadHoldCount,
-      onRequestSeekPreview: _previewMeta != null ? _onDpadSeekPreviewRequest : null,
+      onRequestSeekPreview: _previewMeta != null
+          ? _onDpadSeekPreviewRequest
+          : null,
       isDpadScrubbing: _isDpadScrubbing,
       onCommitDpadScrub: _commitDpadScrub,
       onCancelDpadScrub: _cancelDpadScrub,
@@ -1498,9 +1555,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
         if (overlayStatus.isOpening || overlayStatus.isBuffering)
           IgnorePointer(
             child: PlayerLoadingIndicator(
-              title: overlayStatus.message ??
-                  (overlayStatus.isOpening ? 'Loading Media' : 'Buffering Stream'),
-              message: overlayStatus.subMessage ??
+              title:
+                  overlayStatus.message ??
+                  (overlayStatus.isOpening
+                      ? 'Loading Media'
+                      : 'Buffering Stream'),
+              message:
+                  overlayStatus.subMessage ??
                   (overlayStatus.isOpening
                       ? 'Initializing player & stream...'
                       : 'Filling playback buffer...'),
@@ -1555,12 +1616,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
             hasActiveSubtitles: hasSubtitles,
             isDoubleTapSeeking: _isDoubleTapSeeking,
             isOverlayActive: overlayStatus.isVisible,
-            onOpenCastSheet: isTv || _resolveFilename() == null ? null : _openCastSheet,
+            onOpenCastSheet: isTv || _resolveFilename() == null
+                ? null
+                : _openCastSheet,
             isCasting: castState.isCasting,
             isTv: isTv,
             dpadScrubPosition: _isDpadScrubbing ? _dpadScrubPosition : null,
-            isTimelineFocused: isTv && _tvFocusZone == TvPlayerFocusZone.timeline,
-            tvFocusedControlIndex: (isTv && _tvFocusZone == TvPlayerFocusZone.controls)
+            isTimelineFocused:
+                isTv && _tvFocusZone == TvPlayerFocusZone.timeline,
+            tvFocusedControlIndex:
+                (isTv && _tvFocusZone == TvPlayerFocusZone.controls)
                 ? _tvFocusedControlIndex
                 : -1,
           ),
@@ -1604,11 +1669,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
     final isTv = ref.watch(isTvModeProvider);
     final showFullscreen = isTv || _isFullscreen;
 
-    final isOpening = _state == PlayerPlaybackState.opening ||
+    final isOpening =
+        _state == PlayerPlaybackState.opening ||
         (_state == PlayerPlaybackState.idle && _errorMessage == null);
-    final hasError = _state == PlayerPlaybackState.error || _errorMessage != null;
+    final hasError =
+        _state == PlayerPlaybackState.error || _errorMessage != null;
 
-    final hasSubtitles = _trackInfo.currentSubtitleTrack.id != 'no' &&
+    final hasSubtitles =
+        _trackInfo.currentSubtitleTrack.id != 'no' &&
         _trackInfo.currentSubtitleTrack.id.isNotEmpty;
 
     final playerStack = _buildPlayerStack(
@@ -1655,7 +1723,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                             child: PlayerDetailsPanel(
                               title: widget.title,
                               subtitle: widget.subtitle,
-                              serverOrigin: _apiServerOrigin() ?? 'http://127.0.0.1:8000',
+                              serverOrigin:
+                                  _apiServerOrigin() ?? 'http://127.0.0.1:8000',
                               filename: _resolveFilename() ?? 'Media Stream',
                               playbackMode: _playbackMode,
                               selectedQualityLabel: _selectedQualityBadge,
@@ -1664,7 +1733,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> with WidgetsBinding
                               duration: _duration,
                               onBack: _handleBack,
                               onServerUrlChanged: (newUrl) async {
-                                await SettingsService().setServerBaseUrl(newUrl);
+                                await SettingsService().setServerBaseUrl(
+                                  newUrl,
+                                );
                                 if (mounted) {
                                   _showHudToast(
                                     'Server Saved: $newUrl',

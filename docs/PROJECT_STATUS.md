@@ -1,8 +1,8 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-10-29
+Last reviewed: 2026-11-03
 Repository: `anis7t/media-server`
-Working branch: `feat/rust-react-postgres-migration`
+Working branch: `codex/production-release-1.4.8`
 
 ---
 
@@ -29,6 +29,38 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+
+## 2026-11-03 — Production Release v1.4.8 (Android/TV, Web & Rust)
+
+Production release covering account-scoped playback progress, upload-time Recently Added ordering, HLS initialization-file cleanup, and the current HLS seek/quality continuity work.
+
+- **Android/TV:** Published the signed universal APK as v1.4.8 (versionCode 154, package `in.anisparvez.media_server_client`, minSdk 24, targetSdk 36). APK SHA-256: `63af9814a082e7fb5f9a59de179dd8fc2f3d00bd96ac862adec7d8518d178e2f`.
+- **Rust server and web:** Deployed the Rust release binary and React bundle to the production host. Local and public `/health` checks returned 200.
+- **Continue Watching:** Android progress writes use the authenticated API client and device identity; the server orders the account's in-progress titles by last saved progress. On the connected phone, playing *Verity* updated its saved position and moved it to the first Continue Watching card.
+- **Recently Added:** `added_at` records catalog/upload time, with existing rows backfilled from media-file modification time. The Android and web sections sort by this value; the web section is present on `/`.
+- **HLS initialization artifacts:** The scanner excludes `init.mp4`, `init_chunk_<n>.mp4`, and legacy `init_*.mp4` fixtures. `/api/movies` hides these rows immediately. The production scan pruned nine `init_*` catalog rows and left all nine physical files in `D:\Flicks` untouched.
+- **Production verification:** The public update manifest reports v1.4.8/code 154. The APK downloaded from the public endpoint matched the manifest SHA-256 and was installed on the connected Android phone. After a cold launch, the phone showed Verity first in Continue Watching and the Recently Added rail in upload-time order; the web app showed Recently Added and no `init_*` titles.
+- **Regression checks:** Rust integration HLS filter/cleanup and HLS route suite (19 passed), Continue Watching ordering (1 passed), Flutter progress/auth suite (7 passed), Flutter HLS seek/resume suite (5 passed), and web library suite (12 passed).
+- **Rollback backup:** `backups/prod-release-2026-11-03_004746/` contains the previous production APK, manifest, registry, Rust executable, and web bundle.
+- **Release provenance:** The Android manifest's `gitCommit` is `ba6f980`, the repository HEAD when the APK was published. The artifacts included the working-tree changes recorded in this release entry; this commit records those sources after deployment.
+
+## 2026-11-02 — HLS fMP4 Quality Switching, Seek Stall & Seekbar Timeline Alignment (Android v1.4.7)
+
+Resolved in-flight quality switching stall, fMP4 segment numbering discontinuity, and seekbar timeline/frame preview alignment on Android / Fire TV, published Production Release v1.4.7 (versionCode 153), and verified end-to-end on physical Android device (`192.168.1.6:37603`):
+- **Monotonic fMP4 HLS Pipeline & Continuous Segment Indexing (`rust/`):**
+  - Eliminated chunk-boundary PTS/DTS resets in `chunk_transcode.rs` and `transcode_worker.rs` using monotonic `-output_ts_offset` and absolute `-segment_time_delta`.
+  - Enforced continuous segment sequence numbering (`segment_%06d.m4s`) across chunk boundaries in master and variant playlists (`hls_service.rs` & `hls.rs`).
+  - Added dynamic playlist slicing on seek/quality change: when client requests `playlist.m3u8?offset=<sec>`, the playlist begins strictly from the target segment with `#EXT-X-START:TIME-OFFSET=0`, eliminating libmpv segment-skipping storms and playback stalls.
+- **Client Decoupled Broadcast Streams & Seekbar Alignment (`flutter_client/`):**
+  - In `MediaKitPlayerAdapter`, replaced getter-based ternary streams with persistent broadcast `StreamController<Duration>` wrappers (`_positionController`, `_durationController`) that dynamically transform internal events with `p + _baseTimelineOffset` and cache `_totalKnownDuration`.
+  - In `PlayerScreen`, guarded duration stream listener so `_duration` is never reset to zero or collapsed to the slice duration upon quality changes.
+  - Aligned seekbar timeline position and frame preview thumbnail lookups across all streams.
+- **Production APK v1.4.7 Released:**
+  - Published signed release APK (versionCode 153, SHA-256 `d0e1de4dc6295abab2200ef8a98a5170c097ded0672c99465c8009b135349ecc`).
+  - Installed and verified live on physical Android device via Wireless ADB on *Verity* ($2:00:56$): mid-stream quality switch to 1080p HLS maintained exact movie position (`1:13:16 / 2:00:56`), backward seek to `32:19` and forward seek to `1:45:00` positioned the seekbar thumb precisely without resetting to `0:00`.
+- **Verification:** All 421 tests passed in `flutter test` (100% pass rate), zero issues in `flutter analyze`, and 23/23 endpoints verified in `python scripts/probe_android_api.py`.
+- **Walkthrough:** [`docs/WALKTHROUGH_SEEKBAR_TIMELINE_AND_PREVIEW_ALIGNMENT_FIX.md`](WALKTHROUGH_SEEKBAR_TIMELINE_AND_PREVIEW_ALIGNMENT_FIX.md).
+- **Session Handoff:** [`Handoffs/2026-11-02_23-55_antigravity_seekbar-timeline-and-preview-alignment-fix.md`](../Handoffs/2026-11-02_23-55_antigravity_seekbar-timeline-and-preview-alignment-fix.md).
 
 ## 2026-11-01 — TMDb Metadata Enrichment, Scene Tag Stripping & Resilient Retries
 

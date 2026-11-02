@@ -13,6 +13,18 @@ import { MediaUploadModal } from '../upload/MediaUploadModal';
 import type { UploadSuccess } from '../upload/uploadApi';
 import { HeroSpotlight } from './HeroSpotlight';
 import { Icon } from '../../components/icons';
+import type { MovieSummary } from '../../lib/api/types';
+
+const EMPTY_MOVIES: readonly MovieSummary[] = [];
+
+function addedTimestamp(value: string | number | null | undefined): number {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 export function LibraryPage() {
   const deviceId = useDeviceId();
@@ -25,8 +37,13 @@ export function LibraryPage() {
     [deviceId],
   );
 
-  const movies = data?.movies ?? [];
-  const watching = data?.watching ?? [];
+  const movies = data?.movies ?? EMPTY_MOVIES;
+  const watching = data?.watching ?? EMPTY_MOVIES;
+  const recentlyAdded = useMemo(() => {
+    return [...movies].sort((a, b) =>
+      addedTimestamp(b.updated_at) - addedTimestamp(a.updated_at) || a.title.localeCompare(b.title),
+    );
+  }, [movies]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
@@ -142,6 +159,11 @@ export function LibraryPage() {
       result.sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
     } else if (sortBy === 'year') {
       result.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
+    } else {
+      result.sort((a, b) =>
+        addedTimestamp(b.updated_at) - addedTimestamp(a.updated_at) ||
+        a.title.localeCompare(b.title),
+      );
     }
     return result;
   }, [movies, searchQuery, selectedGenre, sortBy]);
@@ -272,6 +294,10 @@ export function LibraryPage() {
       */}
       {watching.length > 0 && !hasActiveFilters ? (
         <MovieGrid movies={watching} title="Continue watching" />
+      ) : null}
+
+      {recentlyAdded.length > 0 && !hasActiveFilters ? (
+        <MovieGrid movies={recentlyAdded} title="Recently added" />
       ) : null}
 
       <StateMessage

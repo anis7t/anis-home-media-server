@@ -16,6 +16,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use std::path::{Path as StdPath, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 
 /// 256 MiB is the compatibility cap for the single-file route. Anything larger
@@ -270,19 +271,24 @@ async fn build_success(
         .map(uploads::sanitize_title)
         .filter(|s| !s.is_empty())
         .unwrap_or(parsed_title);
+    let added_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
     // The scan will enrich this row. Inserting it first makes the details link
     // work immediately; a transient DB failure must not fail the upload.
     if let Err(err) = sqlx::query(
         r#"
-        INSERT INTO movies (filename, title, year)
-        VALUES ($1, $2, $3)
+        INSERT INTO movies (filename, title, year, added_at)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (filename) DO NOTHING
         "#,
     )
     .bind(&filename)
     .bind(&title)
     .bind(year)
+    .bind(added_at)
     .execute(&*state.pool)
     .await
     {

@@ -62,7 +62,7 @@ class _FakeTvPass2PlayerController implements PlayerControllerInterface {
   Stream<VideoDimensions> get dimensionsStream => _dimensionsController.stream;
 
   @override
-  Future<void> open(String url, {Map<String, String>? headers, Duration? startPosition, String? externalSubtitleUrl}) async {}
+  Future<void> open(String url, {Map<String, String>? headers, Duration? startPosition, String? externalSubtitleUrl, bool play = true}) async {}
   @override
   Future<void> play() async {
     playCalled = true;

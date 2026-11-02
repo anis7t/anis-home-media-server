@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -85,9 +85,8 @@ describe('LibraryPage states', () => {
 
     renderLibrary();
 
-    expect(await screen.findByText('Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Beta')).toBeInTheDocument();
-    expect(screen.getAllByTestId('movie-card')).toHaveLength(2);
+    const moviesSection = await screen.findByRole('region', { name: 'Movies' });
+    expect(within(moviesSection).getAllByTestId('movie-card')).toHaveLength(2);
   });
 
   it('surfaces a failure rather than an empty library', async () => {
@@ -123,6 +122,28 @@ describe('LibraryPage states', () => {
     expect(screen.getByText('All movies')).toBeInTheDocument();
   });
 
+  it('renders a Recently added section in catalog-addition order', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({
+        movies: [
+          { filename: 'older-upload.mkv', title: 'Older Upload', year: 2026, updated_at: '1793500000' },
+          { filename: 'newer-upload.mkv', title: 'Newer Upload', year: 1999, updated_at: '1793600000' },
+        ],
+        watching: [],
+        total: 2,
+      }),
+    );
+
+    renderLibrary();
+
+    const section = await screen.findByRole('region', { name: 'Recently added' });
+    const cards = within(section).getAllByTestId('movie-card');
+    expect(cards.map((card) => card.getAttribute('data-filename'))).toEqual([
+      'newer-upload.mkv',
+      'older-upload.mkv',
+    ]);
+  });
+
   it('filters movies in real-time when searching by title', async () => {
     fetchMock.mockImplementation(async () =>
       jsonResponse({
@@ -138,9 +159,9 @@ describe('LibraryPage states', () => {
 
     renderLibrary();
 
-    expect(await screen.findByText('Inception')).toBeInTheDocument();
-    expect(screen.getByText('Interstellar')).toBeInTheDocument();
-    expect(screen.getByText('Gladiator')).toBeInTheDocument();
+    expect((await screen.findAllByText('Inception')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Interstellar').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Gladiator').length).toBeGreaterThan(0);
 
     const searchInput = screen.getByRole('textbox', { name: /search movies/i });
     const { fireEvent } = await import('@testing-library/react');
@@ -165,8 +186,8 @@ describe('LibraryPage states', () => {
 
     renderLibrary();
 
-    expect(await screen.findByText('SciFi Movie')).toBeInTheDocument();
-    expect(screen.getByText('Drama Movie')).toBeInTheDocument();
+    expect((await screen.findAllByText('SciFi Movie')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Drama Movie').length).toBeGreaterThan(0);
 
     const sciFiPill = screen.getByRole('button', { name: 'Sci-Fi' });
     const { fireEvent } = await import('@testing-library/react');

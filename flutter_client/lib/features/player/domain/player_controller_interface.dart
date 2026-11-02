@@ -53,6 +53,7 @@ abstract class PlayerControllerInterface {
     Map<String, String>? headers,
     Duration? startPosition,
     String? externalSubtitleUrl,
+    bool play = true,
   });
 
   /// Starts or resumes playback.

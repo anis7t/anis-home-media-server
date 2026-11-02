@@ -251,7 +251,129 @@ impl ChunkTranscodeService {
         produced >= expected * MIN_CHUNK_YIELD_RATIO
     }
 
-    /// Reconstruct master `playlist.m3u8` from contiguous segment files on disk with RFC 8216 discontinuities.
+    /// Stamps monotonic timeline offsets into the `tfdt` (Track Fragment Decode Time) box
+    /// of each fragmented MP4 (.m4s) segment produced by a chunk worker.
+    ///
+    /// FFmpeg's `hls` muxer starts `tfdt` from 0 for each independent chunk process.
+    /// By stamping the true `chunk.start_time * timescale` offset into each segment's `tfdt` box,
+    /// all fragments across all chunks form a single, continuous, monotonic timeline sharing `init_chunk_0.mp4`.
+    pub fn stamp_chunk_segments_tfdt(
+        hls_dir: &Path,
+        chunk_id: usize,
+        chunk_start_time: f64,
+        start_seg: usize,
+    ) -> Result<usize, std::io::Error> {
+        if chunk_id == 0 || chunk_start_time <= 0.0 {
+            return Ok(0);
+        }
+
+        let video_timescale = 12288u64;
+        let audio_timescale = 48000u64;
+        let video_offset = (chunk_start_time * video_timescale as f64).round() as u64;
+        let audio_offset = (chunk_start_time * audio_timescale as f64).round() as u64;
+
+        let mut stamped_count = 0;
+
+        for seg_idx in start_seg..(start_seg + SEGMENTS_PER_CHUNK_STRIDE) {
+            let seg_path = hls_dir.join(format!("segment_{:06}.m4s", seg_idx));
+            if !seg_path.is_file() {
+                continue;
+            }
+
+            let mut data = match fs::read(&seg_path) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+
+            let mut pos = 0;
+            let mut modified = false;
+
+            while pos + 8 < data.len() {
+                let traf_pos = match data[pos..].windows(4).position(|w| w == b"traf") {
+                    Some(p) => pos + p,
+                    None => break,
+                };
+
+                let tfhd_pos = match data[traf_pos..].windows(4).position(|w| w == b"tfhd") {
+                    Some(p) => traf_pos + p,
+                    None => {
+                        pos = traf_pos + 4;
+                        continue;
+                    }
+                };
+
+                let tfdt_pos = match data[traf_pos..].windows(4).position(|w| w == b"tfdt") {
+                    Some(p) => traf_pos + p,
+                    None => {
+                        pos = traf_pos + 4;
+                        continue;
+                    }
+                };
+
+                if tfhd_pos + 12 <= data.len() && tfdt_pos + 16 <= data.len() {
+                    let track_id = u32::from_be_bytes([
+                        data[tfhd_pos + 8],
+                        data[tfhd_pos + 9],
+                        data[tfhd_pos + 10],
+                        data[tfhd_pos + 11],
+                    ]);
+
+                    let (offset, timescale) = if track_id == 1 {
+                        (video_offset, video_timescale)
+                    } else {
+                        (audio_offset, audio_timescale)
+                    };
+
+                    let version = data[tfdt_pos + 4];
+                    let min_expected = (chunk_start_time * timescale as f64 * 0.9) as u64;
+
+                    if version == 1 && tfdt_pos + 20 <= data.len() {
+                        let cur_base = u64::from_be_bytes([
+                            data[tfdt_pos + 8],
+                            data[tfdt_pos + 9],
+                            data[tfdt_pos + 10],
+                            data[tfdt_pos + 11],
+                            data[tfdt_pos + 12],
+                            data[tfdt_pos + 13],
+                            data[tfdt_pos + 14],
+                            data[tfdt_pos + 15],
+                        ]);
+
+                        if cur_base < min_expected {
+                            let new_base = cur_base + offset;
+                            data[tfdt_pos + 8..tfdt_pos + 16].copy_from_slice(&new_base.to_be_bytes());
+                            modified = true;
+                        }
+                    } else if version == 0 && tfdt_pos + 16 <= data.len() {
+                        let cur_base = u32::from_be_bytes([
+                            data[tfdt_pos + 8],
+                            data[tfdt_pos + 9],
+                            data[tfdt_pos + 10],
+                            data[tfdt_pos + 11],
+                        ]) as u64;
+
+                        if cur_base < min_expected {
+                            let new_base = (cur_base + offset) as u32;
+                            data[tfdt_pos + 8..tfdt_pos + 12].copy_from_slice(&new_base.to_be_bytes());
+                            modified = true;
+                        }
+                    }
+                }
+
+                pos = traf_pos + 4;
+            }
+
+            if modified {
+                let _ = fs::write(&seg_path, &data);
+                stamped_count += 1;
+            }
+        }
+
+        Ok(stamped_count)
+    }
+
+    /// Reconstruct master `playlist.m3u8` from contiguous segment files on disk.
+    /// For fragmented MP4 (fMP4), uses monotonic timestamps with a single unified initialization map.
     pub fn update_master_playlist(
         hls_dir: &Path,
         playlist_path: &Path,
@@ -295,10 +417,10 @@ impl ChunkTranscodeService {
             format!("#EXT-X-TARGETDURATION:{}", SEGMENT_TARGET_DURATION as u64),
             "#EXT-X-MEDIA-SEQUENCE:0".to_string(),
             "#EXT-X-INDEPENDENT-SEGMENTS".to_string(),
-            "#EXT-X-START:TIME-OFFSET=0".to_string(),
         ];
 
         if !is_complete {
+            lines.push("#EXT-X-START:TIME-OFFSET=0".to_string());
             lines.push("#EXT-X-PLAYLIST-TYPE:EVENT".to_string());
         }
 
@@ -328,24 +450,26 @@ impl ChunkTranscodeService {
             if let Some(idx) = seg_idx {
                 let chunk_id = idx / SEGMENTS_PER_CHUNK_STRIDE;
                 if current_chunk_id != Some(chunk_id) {
-                    if current_chunk_id.is_some() {
+                    if current_chunk_id.is_some() && !is_fmp4 {
                         lines.push("#EXT-X-DISCONTINUITY".to_string());
                     }
-                    if is_fmp4 {
-                        let init_uri = format!("init_chunk_{}.mp4", chunk_id);
-                        let resolved_init = if hls_dir.join(&init_uri).is_file() {
-                            init_uri
-                        } else if hls_dir.join("init.mp4").is_file() {
+                    if is_fmp4 && current_chunk_id.is_none() {
+                        let init_uri = if hls_dir.join("init.mp4").is_file() {
                             "init.mp4".to_string()
                         } else {
-                            init_uri
+                            "init_chunk_0.mp4".to_string()
                         };
-                        lines.push(format!("#EXT-X-MAP:URI=\"{}\"", resolved_init));
+                        lines.push(format!("#EXT-X-MAP:URI=\"{}\"", init_uri));
                     }
                     current_chunk_id = Some(chunk_id);
                 }
             } else if is_fmp4 && current_chunk_id.is_none() {
-                lines.push("#EXT-X-MAP:URI=\"init_chunk_0.mp4\"".to_string());
+                let init_uri = if hls_dir.join("init.mp4").is_file() {
+                    "init.mp4".to_string()
+                } else {
+                    "init_chunk_0.mp4".to_string()
+                };
+                lines.push(format!("#EXT-X-MAP:URI=\"{}\"", init_uri));
                 current_chunk_id = Some(0);
             }
 

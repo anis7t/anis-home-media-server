@@ -20,6 +20,8 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
         ),
       );
 
+  final _positionController = StreamController<Duration>.broadcast();
+  final _durationController = StreamController<Duration>.broadcast();
   final _stateController = StreamController<PlayerPlaybackState>.broadcast();
   final _dimensionsController = StreamController<VideoDimensions>.broadcast();
   final _tracksController = StreamController<PlayerTrackInfo>.broadcast();
@@ -35,6 +37,12 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   bool _hasCompletedFirstFrameEver = false;
   Timer? _firstFrameTimeout;
   StreamSubscription<Duration>? _frameWatchdogSub;
+
+  Duration _baseTimelineOffset = Duration.zero;
+  Duration? _totalKnownDuration;
+  String? _currentUrl;
+  Map<String, String>? _currentHeaders;
+  String? _currentExternalSubtitleUrl;
 
   MediaKitPlayerAdapter({Player? player, VideoController? videoController})
       : player = player ?? Player() {
@@ -111,6 +119,21 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
 
     _subscriptions.add(player.stream.width.listen((_) => _updateDimensions()));
     _subscriptions.add(player.stream.height.listen((_) => _updateDimensions()));
+
+    _subscriptions.add(player.stream.position.listen((p) {
+      _positionController.add(p + _baseTimelineOffset);
+    }));
+
+    _subscriptions.add(player.stream.duration.listen((d) {
+      if (d > Duration.zero) {
+        if (_totalKnownDuration == null || _baseTimelineOffset == Duration.zero) {
+          _totalKnownDuration = d + _baseTimelineOffset;
+        }
+        _durationController.add(_totalKnownDuration ?? (d + _baseTimelineOffset));
+      } else {
+        _durationController.add(d);
+      }
+    }));
 
     _subscriptions.add(player.stream.tracks.listen((_) => _updateTracks()));
     _subscriptions.add(player.stream.track.listen((_) => _updateTracks()));
@@ -191,10 +214,10 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   }
 
   @override
-  Stream<Duration> get positionStream => player.stream.position;
+  Stream<Duration> get positionStream => _positionController.stream;
 
   @override
-  Stream<Duration> get durationStream => player.stream.duration;
+  Stream<Duration> get durationStream => _durationController.stream;
 
   @override
   Stream<PlayerPlaybackState> get stateStream => _stateController.stream;
@@ -209,10 +232,13 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   Stream<VideoDimensions> get dimensionsStream => _dimensionsController.stream;
 
   @override
-  Duration get position => player.state.position;
+  Duration get position => player.state.position + _baseTimelineOffset;
 
   @override
-  Duration get duration => player.state.duration;
+  Duration get duration => _totalKnownDuration ??
+      (player.state.duration > Duration.zero
+          ? player.state.duration + _baseTimelineOffset
+          : player.state.duration);
 
   @override
   PlayerPlaybackState get state => _state;
@@ -238,25 +264,88 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
     Map<String, String>? headers,
     Duration? startPosition,
     String? externalSubtitleUrl,
+    bool play = true,
   }) async {
     _updateState(PlayerPlaybackState.opening);
-    final isHls = url.contains('/hls/') || url.contains('.m3u8');
+
+    // Teardown previous playback pipeline to flush hardware decoders on format/codec change
+    _firstFrameTimeout?.cancel();
+    _frameWatchdogSub?.cancel();
+    _firstFrameRendered = false;
+
+    try {
+      if (player.state.playing || player.state.position > Duration.zero || player.state.playlist.medias.isNotEmpty) {
+        await player.stop();
+      }
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Clean stop before open error: $e');
+    }
+
+
+    _currentUrl = url;
+    _currentHeaders = headers;
+    _currentExternalSubtitleUrl = externalSubtitleUrl;
+
+    final isHls = url.contains('.m3u8');
+    final hasStartPosition = startPosition != null && startPosition > Duration.zero;
+
+    String effectiveUrl = url;
+    if (isHls && hasStartPosition) {
+      _baseTimelineOffset = startPosition;
+      final uri = Uri.parse(url);
+      final queryParams = Map<String, String>.from(uri.queryParameters);
+      queryParams['start'] = (startPosition.inMilliseconds / 1000.0).toStringAsFixed(3);
+      effectiveUrl = uri.replace(queryParameters: queryParams).toString();
+      _positionController.add(startPosition);
+      if (_totalKnownDuration != null) {
+        _durationController.add(_totalKnownDuration!);
+      }
+    } else {
+      _baseTimelineOffset = Duration.zero;
+      if (!hasStartPosition) {
+        _totalKnownDuration = null;
+      }
+    }
+
+    // Set mpv native start property prior to open so libmpv natively anchors the timeline
+    // For sliced HLS streams, the playlist starts directly at the target segment, so libmpv start must be none
+    try {
+      final nativePlatform = player.platform;
+      if (nativePlatform != null) {
+        if (!isHls && hasStartPosition) {
+          final sec = (startPosition.inMilliseconds / 1000.0).toStringAsFixed(3);
+          await (nativePlatform as dynamic).setProperty('start', sec);
+        } else {
+          await (nativePlatform as dynamic).setProperty('start', 'none');
+        }
+      }
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Failed to set native start property: $e');
+    }
+
     final media = Media(
-      url,
+      effectiveUrl,
       httpHeaders: headers,
-      start: (!isHls && startPosition != null && startPosition > Duration.zero)
-          ? startPosition
-          : null,
+      start: (!isHls && hasStartPosition) ? startPosition : null,
     );
 
-    await player.open(media, play: false);
+    // Pass the intended play state directly to prevent libmpv pause/play deadlocks
+    await player.open(media, play: play);
 
-    if (isHls && startPosition != null && startPosition > Duration.zero) {
-      try {
-        await player.seek(startPosition);
-      } catch (e) {
-        debugPrint('[MediaKitPlayerAdapter] Initial HLS seek failed: $e');
-      }
+    // Once duration is resolved and stream is parsed, verify position is aligned for non-HLS streams
+    if (!isHls && hasStartPosition) {
+      unawaited(
+        player.stream.duration.firstWhere((d) => d > Duration.zero).then((_) async {
+          // If after load the position is far from startPosition (e.g. at 0), issue corrective seek
+          if ((player.state.position - startPosition).abs() > const Duration(seconds: 3)) {
+            try {
+              await player.seek(startPosition);
+            } catch (e) {
+              debugPrint('[MediaKitPlayerAdapter] Corrective post-load seek error: $e');
+            }
+          }
+        }).catchError((_) {}),
+      );
     }
 
     if (externalSubtitleUrl != null && externalSubtitleUrl.isNotEmpty) {
@@ -269,15 +358,11 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
       }
     }
 
-    _firstFrameRendered = false;
-    _firstFrameTimeout?.cancel();
-    _frameWatchdogSub?.cancel();
-
     if (!_hwdecFailed && defaultTargetPlatform == TargetPlatform.android) {
-      // If hardware decoder drops frames or fails to paint within 4s, fallback to CPU
-      _firstFrameTimeout = Timer(const Duration(seconds: 4), () {
-        if (!_firstFrameRendered) {
-          debugPrint('[MediaKitPlayerAdapter] First frame not rendered after 4s; falling back to software decoding');
+      // If hardware decoder drops frames or fails to paint within 8s (and not actively buffering), fallback to CPU
+      _firstFrameTimeout = Timer(const Duration(seconds: 8), () {
+        if (!_firstFrameRendered && !player.state.buffering) {
+          debugPrint('[MediaKitPlayerAdapter] First frame not rendered after 8s; falling back to software decoding');
           fallbackToSoftwareDecoder();
         }
       });
@@ -294,10 +379,12 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
         } catch (_) {}
       }
 
-      // 2. Watch position progression to confirm active rendering across quality changes
-      final baselinePos = startPosition ?? Duration.zero;
+      // 2. Watch position progression to confirm active rendering across quality changes.
+      // Must not disarm immediately on stale pos > Duration.zero from the previous stream.
+      // For sliced HLS streams, player.stream.position counts from 0s relative to the slice.
+      final baselinePos = (!isHls && hasStartPosition) ? startPosition : Duration.zero;
       _frameWatchdogSub = player.stream.position.listen((pos) {
-        if ((pos - baselinePos).abs() > const Duration(milliseconds: 200) || pos > Duration.zero) {
+        if ((pos - baselinePos).abs() > const Duration(milliseconds: 200) && pos > Duration.zero) {
           _firstFrameRendered = true;
           _firstFrameTimeout?.cancel();
           _frameWatchdogSub?.cancel();
@@ -305,9 +392,10 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
       });
     }
 
-    await player.play();
+    if (play && !player.state.playing) {
+      await player.play();
+    }
   }
-
   @override
   Future<void> play() => player.play();
 
@@ -315,7 +403,23 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   Future<void> pause() => player.pause();
 
   @override
-  Future<void> seek(Duration position) => player.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_currentUrl != null && _currentUrl!.contains('.m3u8')) {
+      _positionController.add(position);
+      if (_totalKnownDuration != null) {
+        _durationController.add(_totalKnownDuration!);
+      }
+      await open(
+        _currentUrl!,
+        headers: _currentHeaders,
+        startPosition: position,
+        externalSubtitleUrl: _currentExternalSubtitleUrl,
+        play: player.state.playing,
+      );
+    } else {
+      await player.seek(position);
+    }
+  }
 
   @override
   Future<void> setRate(double rate) => player.setRate(rate);
@@ -376,6 +480,8 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
     for (final s in _subscriptions) {
       await s.cancel();
     }
+    await _positionController.close();
+    await _durationController.close();
     await _stateController.close();
     await _dimensionsController.close();
     await _tracksController.close();

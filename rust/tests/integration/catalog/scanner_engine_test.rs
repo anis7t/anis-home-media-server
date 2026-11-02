@@ -1,5 +1,6 @@
 use media_server_api::db;
 use media_server_api::scanner::ScannerEngine;
+use media_server_api::services::movie_service::MovieService;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,115 @@ fn test_is_video_file() {
     assert!(!ScannerEngine::is_video_file(Path::new("info.nfo")));
     assert!(!ScannerEngine::is_video_file(Path::new("poster.jpg")));
     assert!(!ScannerEngine::is_video_file(Path::new("readme.txt")));
+    assert!(!ScannerEngine::is_video_file(Path::new("init.mp4")));
+    assert!(!ScannerEngine::is_video_file(Path::new("Movie/Init.MP4")));
+    assert!(!ScannerEngine::is_video_file(Path::new("init_chunk_0.mp4")));
+    assert!(!ScannerEngine::is_video_file(Path::new("init_1.mp4")));
+    assert!(!ScannerEngine::is_video_file(Path::new("init_copyts.mp4")));
+    assert!(ScannerEngine::is_video_file(Path::new("Initial D.mp4")));
+    assert!(ScannerEngine::is_video_file(Path::new("movie-init.mp4")));
+}
+
+#[tokio::test]
+async fn test_hls_init_artifacts_are_hidden_and_pruned_from_catalog() {
+    let config = media_server_api::test_support::test_config().await;
+    let pool = db::create_pool(&config.database_url)
+        .await
+        .expect("Database connection");
+    let temp_root =
+        std::env::temp_dir().join(format!("ms_hls_init_cleanup_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&temp_root);
+    let fixture_dir = format!("hls_init_fixture_{}", std::process::id());
+    let relative_dir = PathBuf::from(&fixture_dir);
+    let init_filename = relative_dir
+        .join("init.mp4")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let chunk_filename = relative_dir
+        .join("init_chunk_0.mp4")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let legacy_fixture_filename = relative_dir
+        .join("init_copyts.mp4")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let init_path = temp_root.join(&init_filename);
+    let chunk_path = temp_root.join(&chunk_filename);
+    let legacy_fixture_path = temp_root.join(&legacy_fixture_filename);
+    fs::create_dir_all(init_path.parent().unwrap()).unwrap();
+    fs::write(&init_path, b"init data").unwrap();
+    fs::write(&chunk_path, b"chunk init data").unwrap();
+    fs::write(&legacy_fixture_path, b"legacy init fixture").unwrap();
+
+    for filename in [&init_filename, &chunk_filename, &legacy_fixture_filename] {
+        sqlx::query("INSERT INTO movies (filename, title) VALUES ($1, 'HLS init artifact')")
+            .bind(filename)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("INSERT INTO progress (filename, position, duration) VALUES ($1, 12, 100)")
+        .bind(&init_filename)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let catalog = MovieService::list_movies(&pool, None, None, None, None)
+        .await
+        .expect("Catalog query succeeds");
+    assert!(!catalog
+        .movies
+        .iter()
+        .any(|movie| movie.filename == init_filename));
+    assert!(!catalog
+        .movies
+        .iter()
+        .any(|movie| movie.filename == chunk_filename));
+    assert!(!catalog
+        .movies
+        .iter()
+        .any(|movie| movie.filename == legacy_fixture_filename));
+
+    let mut roots = config.media_roots.clone();
+    roots.push(temp_root.clone());
+    let pruned = ScannerEngine::reconcile_orphans(&pool, &roots)
+        .await
+        .expect("Reconciliation succeeds");
+    assert!(pruned >= 3, "all generated init records should be pruned");
+
+    for filename in [&init_filename, &chunk_filename, &legacy_fixture_filename] {
+        let row: Option<String> =
+            sqlx::query_scalar("SELECT filename FROM movies WHERE filename = $1")
+                .bind(filename)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(
+            row.is_none(),
+            "generated init catalog row should be removed"
+        );
+    }
+    let progress_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM progress WHERE filename = $1")
+            .bind(&init_filename)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(progress_count, 0);
+    assert!(
+        init_path.exists(),
+        "cleanup must leave the physical file alone"
+    );
+    assert!(
+        chunk_path.exists(),
+        "cleanup must leave the physical file alone"
+    );
+    assert!(
+        legacy_fixture_path.exists(),
+        "cleanup must leave the physical file alone"
+    );
+
+    let _ = fs::remove_dir_all(&temp_root);
 }
 
 #[test]

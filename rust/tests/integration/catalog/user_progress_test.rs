@@ -289,6 +289,87 @@ async fn test_cross_device_progress_sync() {
 }
 
 #[tokio::test]
+async fn test_continue_watching_is_user_scoped_and_sorted_by_last_watched() {
+    let ctx = TestContext::new().await;
+    let user_id = create_test_user_and_session(
+        &ctx.pool,
+        "sub_continue_recent",
+        "continue_recent@test.com",
+        "sess_continue_recent",
+    )
+    .await;
+    let older = "continue_recent_older.mp4";
+    let newest = "continue_recent_verity.mp4";
+
+    sqlx::query(
+        "INSERT INTO movies (filename, title, added_at) VALUES ($1, 'A Movie', 100), ($2, 'Verity', 200)",
+    )
+    .bind(older)
+    .bind(newest)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed continue-watching movies");
+
+    for filename in [older, newest] {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/progress")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::COOKIE, "session_token=sess_continue_recent")
+            .body(Body::from(
+                json!({
+                    "filename": filename,
+                    "position": 120.0,
+                    "duration": 600.0
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = ctx.app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE progress
+        SET updated_at = CASE filename
+            WHEN $1 THEN CURRENT_TIMESTAMP - INTERVAL '1 day'
+            ELSE CURRENT_TIMESTAMP
+        END
+        WHERE user_id = $2 AND filename IN ($1, $3)
+        "#,
+    )
+    .bind(older)
+    .bind(user_id)
+    .bind(newest)
+    .execute(&ctx.pool)
+    .await
+    .expect("set deterministic watch order");
+
+    let req = Request::builder()
+        .uri("/api/movies")
+        .header(header::COOKIE, "session_token=sess_continue_recent")
+        .body(Body::empty())
+        .unwrap();
+    let response = ctx.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let catalog: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(catalog["watching"][0]["filename"], newest);
+    assert_eq!(catalog["watching"][0]["updated_at"], "200");
+
+    let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(&ctx.pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM movies WHERE filename IN ($1, $2)")
+        .bind(older)
+        .bind(newest)
+        .execute(&ctx.pool)
+        .await;
+}
+
+#[tokio::test]
 async fn test_guest_progress_isolation() {
     let ctx = TestContext::new().await;
 

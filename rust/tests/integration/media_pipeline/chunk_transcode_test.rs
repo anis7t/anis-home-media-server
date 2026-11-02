@@ -118,6 +118,7 @@ fn test_update_master_playlist_discontinuities_and_healing() {
     assert_eq!(final_sec, encoded_sec);
     let final_content = fs::read_to_string(&playlist_path).unwrap();
     assert!(!final_content.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
+    assert!(!final_content.contains("#EXT-X-START:TIME-OFFSET=0"));
     assert!(final_content.contains("#EXT-X-ENDLIST"));
 
     // Verify .seg_layout marker was stamped
@@ -241,11 +242,11 @@ fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
     // Must be version 7 for fMP4
     assert!(content.contains("#EXT-X-VERSION:7"));
     assert!(content.contains("#EXT-X-MAP:URI=\"init_chunk_0.mp4\""));
-    assert!(content.contains("#EXT-X-MAP:URI=\"init_chunk_1.mp4\""));
-    assert!(content.contains("#EXT-X-DISCONTINUITY"));
+    assert!(!content.contains("init_chunk_1.mp4"));
+    assert!(!content.contains("#EXT-X-DISCONTINUITY"));
     assert!(content.contains("#EXT-X-ENDLIST"));
 
-    // Verify ordering: init_chunk_0.mp4 before segment 0, and discontinuity + init_chunk_1.mp4 before segment 32
+    // Verify ordering: init_chunk_0.mp4 before segment 0
     let map0_pos = content
         .find("init_chunk_0.mp4")
         .expect("must have init_chunk_0");
@@ -253,18 +254,6 @@ fn test_update_master_playlist_fmp4_discontinuities_and_maps() {
         .find("segment_000000.m4s")
         .expect("must have segment 0");
     assert!(map0_pos < seg0_pos);
-
-    let disc_pos = content
-        .find("#EXT-X-DISCONTINUITY")
-        .expect("must have discontinuity");
-    let map1_pos = content
-        .find("init_chunk_1.mp4")
-        .expect("must have init_chunk_1");
-    let seg32_pos = content
-        .find("segment_000032.m4s")
-        .expect("must have segment 32");
-    assert!(disc_pos < map1_pos);
-    assert!(map1_pos < seg32_pos);
 
     let _ = fs::remove_dir_all(&hls_dir);
 }
@@ -343,6 +332,37 @@ fn test_fmp4_real_ffmpeg_chunk_generation_and_probe() {
         expected_segs: 1,
     };
     assert!(ChunkTranscodeService::chunk_output_ok(&hls_dir, &chunk));
+
+    let _ = fs::remove_dir_all(&hls_dir);
+}
+
+#[test]
+fn test_completed_fmp4_playlist_omits_ext_x_start() {
+    let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let hls_dir =
+        std::env::temp_dir().join(format!("rust_chunk_test_fmp4_{}_{}", std::process::id(), count));
+    let _ = fs::remove_dir_all(&hls_dir);
+    fs::create_dir_all(&hls_dir).unwrap();
+    let playlist_path = hls_dir.join("playlist.m3u8");
+
+    // Create dummy fmp4 segments
+    fs::write(hls_dir.join("segment_000000.m4s"), b"data0").unwrap();
+    fs::write(hls_dir.join("segment_000001.m4s"), b"data1").unwrap();
+    fs::write(hls_dir.join("init_chunk_0.mp4"), b"init0").unwrap();
+
+    // 1. In progress transcode: MUST include #EXT-X-START:TIME-OFFSET=0 and #EXT-X-PLAYLIST-TYPE:EVENT
+    ChunkTranscodeService::update_master_playlist(&hls_dir, &playlist_path, 60.0, false).unwrap();
+    let in_progress = fs::read_to_string(&playlist_path).unwrap();
+    assert!(in_progress.contains("#EXT-X-START:TIME-OFFSET=0"));
+    assert!(in_progress.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
+    assert!(!in_progress.contains("#EXT-X-ENDLIST"));
+
+    // 2. Completed transcode: MUST omit #EXT-X-START:TIME-OFFSET=0 and #EXT-X-PLAYLIST-TYPE:EVENT, MUST have #EXT-X-ENDLIST
+    ChunkTranscodeService::update_master_playlist(&hls_dir, &playlist_path, 60.0, true).unwrap();
+    let completed = fs::read_to_string(&playlist_path).unwrap();
+    assert!(!completed.contains("#EXT-X-START:TIME-OFFSET=0"));
+    assert!(!completed.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
+    assert!(completed.contains("#EXT-X-ENDLIST"));
 
     let _ = fs::remove_dir_all(&hls_dir);
 }
