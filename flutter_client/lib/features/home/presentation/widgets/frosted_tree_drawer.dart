@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,8 +11,7 @@ import '../../../../core/widgets/tv_focusable.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../controllers/home_feed_controller.dart';
 
-/// Ultra-translucent frosted obsidian slide-out drawer presenting a modern hierarchical tree
-/// for instant catalog exploration across Movies, Genres, Decades, and System Settings.
+/// Ultra-translucent obsidian side menu for Home discovery, categories, and system tools.
 class FrostedTreeDrawer extends ConsumerStatefulWidget {
   final ValueChanged<String>? onGenreSelected;
   final ValueChanged<String>? onDecadeSelected;
@@ -74,16 +74,20 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                       vertical: 12,
                     ),
                     children: [
-                      // Section 1: Primary Root Nodes
+                      // Section 1: Primary destinations
                       _buildTreeNode(
                         context: context,
-                        icon: Icons.movie_outlined,
-                        label: 'All Movies',
+                        icon: Icons.home_rounded,
+                        label: 'Home Feed',
                         badge: '${feedState.totalMovieCount}',
                         onTap: () {
                           Navigator.of(context).pop();
-                          ref.read(libraryControllerProvider.notifier).resetFilters();
-                          context.go(AppRoutes.library);
+                          final controller = ref.read(
+                            libraryControllerProvider.notifier,
+                          );
+                          controller.resetFilters();
+                          controller.clearSearch();
+                          context.go(AppRoutes.home);
                         },
                       ),
                       const SizedBox(height: 4),
@@ -95,10 +99,13 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                         badgeColor: AppColors.brandRed,
                         onTap: () {
                           Navigator.of(context).pop();
-                          ref
-                              .read(libraryControllerProvider.notifier)
-                              .setSortOption(SortOption.recentlyAdded);
-                          context.go(AppRoutes.library);
+                          final controller = ref.read(
+                            libraryControllerProvider.notifier,
+                          );
+                          controller.resetFilters();
+                          controller.clearSearch();
+                          controller.setSortOption(SortOption.recentlyAdded);
+                          context.go(AppRoutes.home);
                         },
                       ),
 
@@ -128,10 +135,13 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                                 if (widget.onGenreSelected != null) {
                                   widget.onGenreSelected!(section.genre);
                                 } else {
-                                  ref
-                                      .read(libraryControllerProvider.notifier)
-                                      .setSelectedGenre(section.genre);
-                                  context.go(AppRoutes.library);
+                                  final controller = ref.read(
+                                    libraryControllerProvider.notifier,
+                                  );
+                                  controller.resetFilters();
+                                  controller.clearSearch();
+                                  controller.setSelectedGenre(section.genre);
+                                  context.go(AppRoutes.home);
                                 }
                               },
                             ),
@@ -162,14 +172,18 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                                 if (widget.onDecadeSelected != null) {
                                   widget.onDecadeSelected!(decade.label);
                                 } else {
-                                  // Set search query for era or navigate to library
                                   final query = decade.minYear != null
-                                      ? decade.minYear!.toString().substring(0, 3)
+                                      ? decade.minYear!.toString().substring(
+                                          0,
+                                          3,
+                                        )
                                       : '';
-                                  ref
-                                      .read(libraryControllerProvider.notifier)
-                                      .setSearchQuery(query);
-                                  context.go(AppRoutes.library);
+                                  final controller = ref.read(
+                                    libraryControllerProvider.notifier,
+                                  );
+                                  controller.resetFilters();
+                                  controller.setSearchQuery(query);
+                                  context.go(AppRoutes.home);
                                 }
                               },
                             ),
@@ -327,7 +341,9 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
             children: [
               Icon(
                 icon,
-                color: isFocused ? AppColors.brandRedLight : AppColors.textSecondary,
+                color: isFocused
+                    ? AppColors.brandRedLight
+                    : AppColors.textSecondary,
                 size: 19,
               ),
               const SizedBox(width: 12),
@@ -345,15 +361,19 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
               ),
               if (badge != null) ...[
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2.5,
+                  ),
                   decoration: BoxDecoration(
-                    color: (badgeColor ?? AppColors.surfaceElevated)
-                        .withValues(alpha: 0.28),
+                    color: (badgeColor ?? AppColors.surfaceElevated).withValues(
+                      alpha: 0.28,
+                    ),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: (badgeColor ?? AppColors.borderMedium)
-                          .withValues(alpha: 0.5),
+                      color: (badgeColor ?? AppColors.borderMedium).withValues(
+                        alpha: 0.5,
+                      ),
                       width: 0.8,
                     ),
                   ),
@@ -395,10 +415,14 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
             onPressed: onToggle,
             builder: (context, isFocused, _) {
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
                 decoration: BoxDecoration(
-                  color: isFocused ? AppColors.surfaceHighlight : Colors.transparent,
+                  color: isFocused
+                      ? AppColors.surfaceHighlight
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -417,8 +441,9 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                         style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 13.5,
-                          fontWeight:
-                              isFocused ? FontWeight.w700 : FontWeight.w600,
+                          fontWeight: isFocused
+                              ? FontWeight.w700
+                              : FontWeight.w600,
                         ),
                       ),
                     ),
@@ -463,9 +488,7 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                   left: BorderSide(color: AppColors.borderMedium, width: 1.2),
                 ),
               ),
-              child: Column(
-                children: children,
-              ),
+              child: Column(children: children),
             ),
           ],
         ],
@@ -518,8 +541,7 @@ class _FrostedTreeDrawerState extends ConsumerState<FrostedTreeDrawer> {
                           ? AppColors.textPrimary
                           : AppColors.textSecondary,
                       fontSize: 12.5,
-                      fontWeight:
-                          isFocused ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: isFocused ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ),

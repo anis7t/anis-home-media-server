@@ -538,6 +538,49 @@ a claim that it is the complete backlog.
 
 ---
 
+### Issue 16: Android Phone Home Search & Navigation Consolidation (2026-11-03) — IMPLEMENTED, PHONE VERIFIED
+
+- **Reported:** The Home screen still has no direct search input, and the separate Library search is
+  too short and boxed in. The owner also considers Library redundant beside the endless Home feed
+  and wants phone navigation, Settings, and related destinations in a top-corner side menu.
+- **Expected:** Home exposes a full-width, borderless, comfortable-height search field that filters the
+  full catalog in place. The phone has no bottom navigation bar or duplicate Library destination;
+  Home, discovery categories, Settings, and management destinations are reachable from a clear side
+  menu. TV navigation and D-pad behavior remain unchanged.
+- **Approved scope:** Phone-first Home/search/navigation redesign, compatibility preservation for
+  `/library`, and local verification. Production APK publication is not part of this implementation.
+- **Implementation:** Added a 64dp borderless Home search field and full-catalog results mode; clearing
+  search returns to the endless feed. Removed the phone bottom bar and Library CTAs, routed Home
+  category actions into in-place result mode, and made the existing side menu available from Settings.
+  Kept the TV rail and the legacy Library route. Tightened narrow-screen rail and Settings labels after
+  the 390px widget run exposed overflows.
+- **Verification:** `flutter analyze` passed; the full Flutter suite passed (**422 passed, 13
+  skipped**). Built and installed a local preview APK (v1.4.9, versionCode 155) on the connected
+  Android phone. On-device visual check confirmed the full-width borderless Home search, drawer
+  navigation, live filtering (`Aliens` returned one title), and clearing back to the endless feed.
+  Physical TV verification remains pending. No production APK has been published for this redesign.
+
+---
+
+### Issue 17: Android Phone Home Poster Layout & Cropping (2026-11-03) — IMPLEMENTED, PHONE VERIFIED
+
+- **Reported:** Phone movie posters should show fully, with three thumbnails evenly fitted in each
+  row. The layout must adapt to different phone widths and avoid a partial poster peeking into view
+  when Home first opens.
+- **Expected:** Phone Home discovery, Continue Watching, and search results use a responsive,
+  three-column layout. Full poster artwork is contained without cropping. TV rails and the standalone
+  Library layout remain unchanged.
+- **Implementation:** Replaced phone Home discovery and Continue Watching carousels with
+  vertically-scrolling three-column grids; enabled uncropped artwork for those cards and Home search
+  results. The phone layout uses grid constraints rather than fixed card widths; TV keeps its
+  horizontal rails and shared card defaults.
+- **Verification:** Widget tests passed at 320, 360, and 430dp, and the focused Home/card suite passed
+  (**17 passed**). `flutter analyze` reported no issues. Built and installed a local v1.4.9/code 155
+  preview APK on the I2217 phone; the opening screen showed three complete posters per row in
+  Continue Watching and Recently Added. No production APK has been published for this change.
+
+---
+
 ### Category 3: Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
 - **3.1 Admin PIN Rotation:**
   - Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` with input validation, error handling, and session sync.

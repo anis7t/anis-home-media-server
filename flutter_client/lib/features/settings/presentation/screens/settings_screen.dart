@@ -1,26 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/routes.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/device/data/device_capability_service.dart';
+import '../../../home/presentation/widgets/frosted_tree_drawer.dart';
+import '../../../library/presentation/controllers/library_controller.dart';
 import '../widgets/settings_content.dart';
 
 import '../../../admin/presentation/widgets/admin_hub_tile.dart';
 import '../../../auth/presentation/widgets/account_profile_card.dart';
 import '../../../auth/presentation/widgets/tv_account_profile_card.dart';
 
-/// Full-screen Settings tab embedded in the persistent bottom navigation shell.
-/// Reuses [SettingsContent] to share exact update channel, server, and version logic.
-class SettingsScreen extends ConsumerWidget {
+/// Full-screen Settings destination with phone side navigation and TV layout.
+/// Reuses [SettingsContent] to share update channel, server, and version logic.
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  void _onGenreSelected(String genre) {
+    final controller = ref.read(libraryControllerProvider.notifier);
+    controller.resetFilters();
+    controller.clearSearch();
+    controller.setSelectedGenre(genre);
+    context.go(AppRoutes.home);
+  }
+
+  void _onDecadeSelected(String decade) {
+    final digits = decade.replaceAll(RegExp(r'[^0-9]'), '');
+    final query = digits.length >= 3 ? digits.substring(0, 3) : digits;
+    final controller = ref.read(libraryControllerProvider.notifier);
+    controller.resetFilters();
+    controller.setSearchQuery(query);
+    context.go(AppRoutes.home);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isTv = ref.watch(isTvModeProvider);
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
+      drawer: isTv
+          ? null
+          : FrostedTreeDrawer(
+              onGenreSelected: _onGenreSelected,
+              onDecadeSelected: _onDecadeSelected,
+            ),
       body: SafeArea(
         child: Column(
           children: [
@@ -32,11 +67,7 @@ class SettingsScreen extends ConsumerWidget {
                 child: TvAccountProfileCard(),
               ),
             const AdminHubTile(),
-            const Expanded(
-              child: SettingsContent(
-                isModal: false,
-              ),
-            ),
+            const Expanded(child: SettingsContent(isModal: false)),
           ],
         ),
       ),
@@ -72,6 +103,20 @@ class SettingsScreen extends ConsumerWidget {
       ),
       child: Row(
         children: [
+          IconButton(
+            tooltip: 'Open navigation menu',
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.surfaceElevated,
+              foregroundColor: AppColors.brandRedLight,
+              minimumSize: const Size(44, 44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.menu_rounded, size: 24),
+          ),
+          const SizedBox(width: 4),
           Container(
             width: 36,
             height: 36,

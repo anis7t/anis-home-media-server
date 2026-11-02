@@ -11,6 +11,7 @@ import '../../../../core/widgets/tv_focusable.dart';
 import '../../../library/domain/models/movie_item.dart';
 import '../../../library/presentation/controllers/library_controller.dart';
 import '../../../library/presentation/widgets/continue_watching_rail.dart';
+import '../../../library/presentation/widgets/movie_grid.dart';
 import '../controllers/home_feed_controller.dart';
 import '../widgets/frosted_tree_drawer.dart';
 import '../widgets/genre_rail_widget.dart';
@@ -28,10 +29,16 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
+  late final TextEditingController _searchController;
+  late final FocusNode _searchFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController(
+      text: ref.read(libraryControllerProvider).searchQuery,
+    );
+    _searchFocusNode = FocusNode(debugLabel: 'home_catalog_search');
     _scrollController.addListener(_onScroll);
   }
 
@@ -39,6 +46,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -54,7 +63,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     context.push(AppRoutes.movieDetails, extra: movie);
   }
 
-  void _navigateToLibrary(BuildContext context) {
+  void _navigateToHome(BuildContext context) {
+    try {
+      StatefulNavigationShell.of(context).goBranch(0);
+    } catch (_) {
+      context.go(AppRoutes.home);
+    }
+  }
+
+  void _navigateToTvLibrary(BuildContext context) {
     try {
       StatefulNavigationShell.of(context).goBranch(1);
     } catch (_) {
@@ -63,15 +80,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _onGenreSelectedFromTree(String genre) {
-    ref.read(libraryControllerProvider.notifier).setSelectedGenre(genre);
-    _navigateToLibrary(context);
+    final controller = ref.read(libraryControllerProvider.notifier);
+    controller.resetFilters();
+    controller.clearSearch();
+    controller.setSelectedGenre(genre);
+    _navigateToHome(context);
   }
 
   void _onDecadeSelectedFromTree(String decade) {
     final query = decade.replaceAll(RegExp(r'[^0-9]'), '');
     final prefix = query.length >= 3 ? query.substring(0, 3) : query;
-    ref.read(libraryControllerProvider.notifier).setSearchQuery(prefix);
-    _navigateToLibrary(context);
+    final controller = ref.read(libraryControllerProvider.notifier);
+    controller.resetFilters();
+    controller.setSearchQuery(prefix);
+    _navigateToHome(context);
+  }
+
+  void _onSearchChanged(String query) {
+    ref.read(libraryControllerProvider.notifier).setSearchQuery(query);
+  }
+
+  void _focusSearch() {
+    _searchFocusNode.requestFocus();
+  }
+
+  void _clearHomeBrowse() {
+    _searchController.clear();
+    final controller = ref.read(libraryControllerProvider.notifier);
+    controller.clearSearch();
+    controller.resetFilters();
   }
 
   Future<void> _handleScan(BuildContext context, WidgetRef ref) async {
@@ -83,8 +120,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
 
-    final success =
-        await ref.read(libraryControllerProvider.notifier).triggerScan();
+    final success = await ref
+        .read(libraryControllerProvider.notifier)
+        .triggerScan();
 
     if (context.mounted) {
       scaffoldMessenger.hideCurrentSnackBar();
@@ -95,8 +133,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ? 'Library scan started successfully'
                 : 'Could not start scan (check connection or admin access)',
           ),
-          backgroundColor:
-              success ? AppColors.statusSuccess : AppColors.statusError,
+          backgroundColor: success
+              ? AppColors.statusSuccess
+              : AppColors.statusError,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -110,6 +149,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final baseUrl = ref.watch(serverBaseUrlProvider);
     final isTv = ref.watch(isTvModeProvider);
 
+    ref.listen<String>(
+      libraryControllerProvider.select((state) => state.searchQuery),
+      (previous, query) {
+        if (_searchController.text == query) return;
+        _searchController.value = TextEditingValue(
+          text: query,
+          selection: TextSelection.collapsed(offset: query.length),
+        );
+      },
+    );
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.background,
@@ -122,6 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: Column(
           children: [
             _buildFrostedHeader(context, libraryState, isTv),
+            if (!isTv) _buildHomeSearch(libraryState),
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.brandRed,
@@ -129,7 +180,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onRefresh: () => ref
                     .read(libraryControllerProvider.notifier)
                     .loadLibrary(isRefresh: true),
-                child: _buildBody(context, libraryState, feedState, baseUrl, isTv),
+                child: _buildBody(
+                  context,
+                  libraryState,
+                  feedState,
+                  baseUrl,
+                  isTv,
+                ),
               ),
             ),
           ],
@@ -156,7 +213,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               borderRadius: BorderRadius.circular(8),
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(8),
@@ -194,9 +254,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const Spacer(),
             TvFocusable(
               borderRadius: BorderRadius.circular(8),
-              onPressed: state.isScanning ? null : () => _handleScan(context, ref),
+              onPressed: state.isScanning
+                  ? null
+                  : () => _handleScan(context, ref),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(8),
@@ -237,6 +302,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
+    final isCompactPhone = MediaQuery.sizeOf(context).width < 390;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: const BoxDecoration(
@@ -245,44 +312,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       child: Row(
         children: [
-          // Frosted Tree Drawer Button
-          TvFocusable(
-            borderRadius: BorderRadius.circular(10),
+          IconButton(
+            tooltip: 'Open navigation menu',
             onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            builder: (context, isFocused, _) {
-              return Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: isFocused
-                      ? AppColors.surfaceHighlight
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isFocused ? AppColors.brandRed : AppColors.borderMedium,
-                    width: isFocused ? 1.8 : 1.0,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.brandRedGlow,
-                      blurRadius: 16,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.account_tree_rounded,
-                    color: isFocused
-                        ? AppColors.brandRedLight
-                        : AppColors.brandRedLight,
-                    size: 20,
-                  ),
-                ),
-              );
-            },
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.surfaceElevated,
+              foregroundColor: AppColors.brandRedLight,
+              minimumSize: const Size(44, 44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.menu_rounded, size: 24),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -298,25 +341,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         fontSize: 15,
                       ),
                     ),
-                    Text(
-                      'Home Media Server',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                    Flexible(
+                      child: Text(
+                        'Home Media Server',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'PLAY • ORGANIZE • ENJOY',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: AppColors.textMuted,
-                    letterSpacing: 1.2,
-                    fontSize: 9.5,
+                if (!isCompactPhone) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'PLAY • ORGANIZE • ENJOY',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.textMuted,
+                      letterSpacing: 1.2,
+                      fontSize: 9.5,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -336,10 +385,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     color: AppColors.textSecondary,
                     size: 22,
                   ),
-            onPressed:
-                state.isScanning ? null : () => _handleScan(context, ref),
+            onPressed: state.isScanning
+                ? null
+                : () => _handleScan(context, ref),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHomeSearch(LibraryState state) {
+    final canClear =
+        _searchController.text.isNotEmpty || state.hasActiveFilters;
+
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 64,
+        child: TextField(
+          key: const ValueKey('home_catalog_search'),
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          textInputAction: TextInputAction.search,
+          style: AppTypography.bodyLarge.copyWith(fontSize: 16),
+          onChanged: _onSearchChanged,
+          onSubmitted: (_) => _searchFocusNode.unfocus(),
+          decoration: InputDecoration(
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: AppColors.brandRedLight,
+              size: 24,
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 52),
+            hintText: 'Search your collection',
+            hintStyle: AppTypography.bodyMedium.copyWith(
+              color: AppColors.textMuted,
+              fontSize: 15,
+            ),
+            suffixIcon: canClear
+                ? IconButton(
+                    tooltip: 'Clear search and filters',
+                    onPressed: _clearHomeBrowse,
+                    icon: const Icon(Icons.close_rounded),
+                    color: AppColors.textSecondary,
+                  )
+                : null,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            disabledBorder: InputBorder.none,
+            errorBorder: InputBorder.none,
+            focusedErrorBorder: InputBorder.none,
+            filled: false,
+            isDense: false,
+            contentPadding: const EdgeInsets.symmetric(vertical: 20),
+          ),
+        ),
       ),
     );
   }
@@ -353,9 +455,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ) {
     if (state.status == LibraryStatus.loading && state.movies.isEmpty) {
       return const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.brandRed,
-        ),
+        child: CircularProgressIndicator(color: AppColors.brandRed),
       );
     }
 
@@ -497,6 +597,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
+    if (!isTv &&
+        (state.searchQuery.trim().isNotEmpty || state.hasActiveFilters)) {
+      return _buildHomeCatalogResults(state, baseUrl);
+    }
+
     return ListView(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
@@ -508,102 +613,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ContinueWatchingRail(
             movies: feedState.continueWatching,
             baseUrl: baseUrl,
+            phoneLayout: !isTv,
             onMovieTap: (m) => _onMovieSelected(context, m),
           ),
         ],
 
         const SizedBox(height: 14),
 
-        // Quick Browse Banner / Tree Action Shortcut
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TvFocusable(
-            borderRadius: BorderRadius.circular(14),
-            onPressed: () => _navigateToLibrary(context),
-            builder: (context, isFocused, _) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isFocused
-                      ? AppColors.surfaceHighlight
-                      : AppColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
-                    width: isFocused ? 2.5 : 1.0,
+        // The TV keeps its established catalog shortcut; phone discovery stays on Home.
+        if (isTv) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TvFocusable(
+              borderRadius: BorderRadius.circular(14),
+              onPressed: () => _navigateToTvLibrary(context),
+              builder: (context, isFocused, _) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
-                  boxShadow: isFocused
-                      ? [
-                          BoxShadow(
-                            color: AppColors.brandRedGlow.withValues(alpha: 0.65),
-                            blurRadius: 18,
-                            spreadRadius: 2,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: isFocused
-                            ? AppColors.brandRed.withValues(alpha: 0.22)
-                            : AppColors.surface,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
+                  decoration: BoxDecoration(
+                    color: isFocused
+                        ? AppColors.surfaceHighlight
+                        : AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isFocused
+                          ? AppColors.brandRed
+                          : AppColors.borderSubtle,
+                      width: isFocused ? 2.5 : 1.0,
+                    ),
+                    boxShadow: isFocused
+                        ? [
+                            BoxShadow(
+                              color: AppColors.brandRedGlow.withValues(
+                                alpha: 0.65,
+                              ),
+                              blurRadius: 18,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
                           color: isFocused
-                              ? AppColors.brandRed
-                              : AppColors.borderMedium,
+                              ? AppColors.brandRed.withValues(alpha: 0.22)
+                              : AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isFocused
+                                ? AppColors.brandRed
+                                : AppColors.borderMedium,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.video_library_rounded,
+                          color: AppColors.brandRedLight,
+                          size: 20,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.video_library_rounded,
-                        color: AppColors.brandRedLight,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Browse Full Library',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14.5,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Browse Full Library',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14.5,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${state.movies.length} movies available • Tap left menu for tree view',
-                            style: AppTypography.labelSmall.copyWith(
-                              color: isFocused
-                                  ? AppColors.textSecondary
-                                  : AppColors.textMuted,
+                            const SizedBox(height: 2),
+                            Text(
+                              '${state.movies.length} movies available • Tap left menu for tree view',
+                              style: AppTypography.labelSmall.copyWith(
+                                color: isFocused
+                                    ? AppColors.textSecondary
+                                    : AppColors.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: isFocused
-                          ? AppColors.brandRedLight
-                          : AppColors.textMuted,
-                      size: 16,
-                    ),
-                  ],
-                ),
-              );
-            },
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: isFocused
+                            ? AppColors.brandRedLight
+                            : AppColors.textMuted,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-        ),
 
-        const SizedBox(height: 18),
+          const SizedBox(height: 18),
+        ],
 
         // Section 1: Recently Added Discovery Rail
         if (feedState.recentlyAdded.isNotEmpty) ...[
@@ -612,8 +727,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             dotColor: AppColors.brandRed,
             movies: feedState.recentlyAdded,
             baseUrl: baseUrl,
-            exploreLabel: 'View All (${state.movies.length})',
-            onExploreTap: () => _navigateToLibrary(context),
+            phoneLayout: !isTv,
+            exploreLabel: isTv
+                ? 'View All (${state.movies.length})'
+                : 'See all',
+            onExploreTap: () {
+              if (isTv) {
+                _navigateToTvLibrary(context);
+                return;
+              }
+              final controller = ref.read(libraryControllerProvider.notifier);
+              controller.resetFilters();
+              controller.clearSearch();
+              controller.setSortOption(SortOption.recentlyAdded);
+              _navigateToHome(context);
+            },
             onMovieTap: (m) => _onMovieSelected(context, m),
           ),
           const SizedBox(height: 22),
@@ -626,12 +754,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             dotColor: AppColors.statusInfo,
             movies: section.movies,
             baseUrl: baseUrl,
+            phoneLayout: !isTv,
             exploreLabel: 'Explore',
             onExploreTap: () {
-              ref
-                  .read(libraryControllerProvider.notifier)
-                  .setSelectedGenre(section.genre);
-              _navigateToLibrary(context);
+              if (isTv) {
+                ref
+                    .read(libraryControllerProvider.notifier)
+                    .setSelectedGenre(section.genre);
+                _navigateToTvLibrary(context);
+              } else {
+                _onGenreSelectedFromTree(section.genre);
+              }
             },
             onMovieTap: (m) => _onMovieSelected(context, m),
           ),
@@ -682,7 +815,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Explore the complete catalog with custom filters and search.',
+                    isTv
+                        ? 'Explore the complete catalog with custom filters and search.'
+                        : 'Search the full collection by title, year, or genre.',
                     style: AppTypography.labelSmall.copyWith(
                       color: AppColors.textMuted,
                     ),
@@ -697,9 +832,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onPressed: () => _navigateToLibrary(context),
-                    icon: const Icon(Icons.explore_outlined, size: 16),
-                    label: const Text('Open Library Catalog'),
+                    onPressed: isTv
+                        ? () => _navigateToTvLibrary(context)
+                        : _focusSearch,
+                    icon: Icon(
+                      isTv ? Icons.explore_outlined : Icons.search_rounded,
+                      size: 16,
+                    ),
+                    label: Text(
+                      isTv
+                          ? 'Open Library Catalog'
+                          : 'Search the full collection',
+                    ),
                   ),
                 ],
               ),
@@ -708,6 +852,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
 
         if (isTv) const SizedBox(height: 64),
+      ],
+    );
+  }
+
+  Widget _buildHomeCatalogResults(LibraryState state, String baseUrl) {
+    final query = state.searchQuery.trim();
+    final movies = state.filteredMovies;
+    final title = query.isNotEmpty
+        ? 'Search results'
+        : state.selectedGenre ??
+              (state.sortOption == SortOption.recentlyAdded
+                  ? 'Recently Added'
+                  : 'Your collection');
+    final summary = query.isNotEmpty
+        ? 'Results for "$query"'
+        : 'Filtered titles';
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTypography.titleMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$summary • ${movies.length} ${movies.length == 1 ? 'title' : 'titles'}',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (state.searchQuery.isNotEmpty || state.hasActiveFilters)
+                TextButton.icon(
+                  onPressed: _clearHomeBrowse,
+                  icon: const Icon(Icons.close_rounded, size: 17),
+                  label: const Text('Clear'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: movies.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(24, 64, 24, 32),
+                  children: [
+                    const Icon(
+                      Icons.search_off_rounded,
+                      size: 46,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      query.isEmpty
+                          ? 'No titles match these filters'
+                          : 'No titles match "$query"',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.titleMedium.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Try another title, year, or genre.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _clearHomeBrowse,
+                        icon: const Icon(Icons.home_rounded),
+                        label: const Text('Return to Home Feed'),
+                      ),
+                    ),
+                  ],
+                )
+              : MovieGrid(
+                  movies: movies,
+                  baseUrl: baseUrl,
+                  onMovieTap: (movie) => _onMovieSelected(context, movie),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                  phoneColumnCount: 3,
+                  containArtwork: true,
+                ),
+        ),
       ],
     );
   }

@@ -15,6 +15,7 @@ class GenreRailWidget extends StatelessWidget {
   final VoidCallback? onExploreTap;
   final String exploreLabel;
   final Color dotColor;
+  final bool phoneLayout;
 
   const GenreRailWidget({
     super.key,
@@ -25,6 +26,7 @@ class GenreRailWidget extends StatelessWidget {
     this.onExploreTap,
     this.exploreLabel = 'Explore',
     this.dotColor = AppColors.brandRed,
+    this.phoneLayout = false,
   });
 
   @override
@@ -55,9 +57,13 @@ class GenreRailWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: AppTypography.titleLarge.copyWith(fontSize: 18),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.titleLarge.copyWith(fontSize: 18),
+                ),
               ),
               const SizedBox(width: 8),
               Container(
@@ -93,7 +99,9 @@ class GenreRailWidget extends StatelessWidget {
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: isFocused ? AppColors.brandRed : Colors.transparent,
+                          color: isFocused
+                              ? AppColors.brandRed
+                              : Colors.transparent,
                           width: isFocused ? 1.8 : 1.0,
                         ),
                       ),
@@ -127,27 +135,49 @@ class GenreRailWidget extends StatelessWidget {
 
         const SizedBox(height: 4),
 
-        // Horizontal Rail
-        SizedBox(
-          height: 228,
-          child: ListView.separated(
+        if (phoneLayout)
+          GridView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.52,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 12,
+            ),
             itemCount: movies.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final movie = movies[index];
               return MovieCard(
                 movie: movie,
                 baseUrl: baseUrl,
-                width: 128,
-                height: 220,
+                containArtwork: true,
                 onTap: () => onMovieTap(movie),
               );
             },
+          )
+        else
+          SizedBox(
+            height: 228,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: movies.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final movie = movies[index];
+                return MovieCard(
+                  movie: movie,
+                  baseUrl: baseUrl,
+                  width: 128,
+                  height: 220,
+                  onTap: () => onMovieTap(movie),
+                );
+              },
+            ),
           ),
-        ),
       ],
     );
   }

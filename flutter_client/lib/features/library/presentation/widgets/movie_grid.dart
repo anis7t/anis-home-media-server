@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../domain/models/movie_item.dart';
 import 'movie_card.dart';
 
@@ -10,6 +11,8 @@ class MovieGrid extends StatelessWidget {
   final ScrollPhysics? physics;
   final bool shrinkWrap;
   final EdgeInsetsGeometry padding;
+  final int? phoneColumnCount;
+  final bool containArtwork;
 
   const MovieGrid({
     super.key,
@@ -19,6 +22,8 @@ class MovieGrid extends StatelessWidget {
     this.physics,
     this.shrinkWrap = false,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    this.phoneColumnCount,
+    this.containArtwork = false,
   });
 
   @override
@@ -28,7 +33,9 @@ class MovieGrid extends StatelessWidget {
         final width = constraints.maxWidth;
         int crossAxisCount = 2;
 
-        if (width >= 1280) {
+        if (phoneColumnCount != null) {
+          crossAxisCount = phoneColumnCount!;
+        } else if (width >= 1280) {
           crossAxisCount = 6;
         } else if (width >= 960) {
           crossAxisCount = 5;
@@ -37,7 +44,7 @@ class MovieGrid extends StatelessWidget {
         } else if (width >= 460) {
           crossAxisCount = 3;
         } else {
-          crossAxisCount = 2;
+          crossAxisCount = phoneColumnCount ?? 2;
         }
 
         return GridView.builder(
@@ -57,6 +64,7 @@ class MovieGrid extends StatelessWidget {
               movie: movie,
               baseUrl: baseUrl,
               showProgress: true,
+              containArtwork: containArtwork,
               onTap: () => onMovieTap(movie),
             );
           },

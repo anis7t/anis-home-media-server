@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../domain/models/movie_item.dart';
@@ -9,12 +10,14 @@ class ContinueWatchingRail extends StatelessWidget {
   final List<MovieItem> movies;
   final String baseUrl;
   final ValueChanged<MovieItem> onMovieTap;
+  final bool phoneLayout;
 
   const ContinueWatchingRail({
     super.key,
     required this.movies,
     required this.baseUrl,
     required this.onMovieTap,
+    this.phoneLayout = false,
   });
 
   @override
@@ -44,9 +47,13 @@ class ContinueWatchingRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'Continue Watching',
-                style: AppTypography.titleLarge,
+              const Flexible(
+                child: Text(
+                  'Continue Watching',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.titleLarge,
+                ),
               ),
               const Spacer(),
               Text(
@@ -59,55 +66,74 @@ class ContinueWatchingRail extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(
-          height: 232,
-          child: ListView.separated(
+        if (phoneLayout)
+          GridView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.52,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 12,
+            ),
             itemCount: movies.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final movie = movies[index];
-              return SizedBox(
-                width: 136,
-                child: Stack(
-                  children: [
-                    MovieCard(
-                      movie: movie,
-                      baseUrl: baseUrl,
-                      showProgress: true,
-                      onTap: () => onMovieTap(movie),
-                    ),
-                    // Centered Play Action Overlay for one-tap resume
-                    Positioned.fill(
-                      bottom: 48, // keep off metadata footer
-                      child: IgnorePointer(
-                        child: Center(
-                          child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow_rounded,
-                              size: 24,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
+              return _buildCard(movie, containArtwork: true);
             },
+          )
+        else
+          SizedBox(
+            height: 232,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: movies.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
+              itemBuilder: (context, index) => SizedBox(
+                width: 136,
+                child: _buildCard(movies[index], containArtwork: false),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCard(MovieItem movie, {required bool containArtwork}) {
+    return Stack(
+      children: [
+        MovieCard(
+          movie: movie,
+          baseUrl: baseUrl,
+          showProgress: true,
+          containArtwork: containArtwork,
+          onTap: () => onMovieTap(movie),
+        ),
+        Positioned.fill(
+          bottom: 48,
+          child: IgnorePointer(
+            child: Center(
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    width: 1.2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  size: 24,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
         ),
       ],

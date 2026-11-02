@@ -43,13 +43,14 @@ void main() {
       );
     }
 
-    testWidgets('renders header, All Movies node, and expandable branches',
-        (tester) async {
+    testWidgets('renders Home Feed navigation and expandable branches', (
+      tester,
+    ) async {
       await tester.pumpWidget(createTestableWidget());
       await tester.pumpAndSettle();
 
       expect(find.text('Media Catalog Tree'), findsOneWidget);
-      expect(find.text('All Movies'), findsOneWidget);
+      expect(find.text('Home Feed'), findsOneWidget);
       expect(find.text('Recently Added'), findsOneWidget);
       expect(find.text('Genres'), findsOneWidget);
       expect(find.text('Release Eras'), findsOneWidget);
@@ -57,12 +58,13 @@ void main() {
       expect(find.text('Sci-Fi'), findsOneWidget);
     });
 
-    testWidgets('selecting a genre leaf invokes onGenreSelected',
-        (tester) async {
+    testWidgets('selecting a genre leaf invokes onGenreSelected', (
+      tester,
+    ) async {
       String? selectedGenre;
-      await tester.pumpWidget(createTestableWidget(
-        onGenreSelected: (genre) => selectedGenre = genre,
-      ));
+      await tester.pumpWidget(
+        createTestableWidget(onGenreSelected: (genre) => selectedGenre = genre),
+      );
       await tester.pumpAndSettle();
 
       final actionLeaf = find.text('Action');
@@ -74,27 +76,31 @@ void main() {
       expect(selectedGenre, 'Action');
     });
 
-    testWidgets('expanding release eras renders decade leaves and invokes callback',
-        (tester) async {
-      String? selectedDecade;
-      await tester.pumpWidget(createTestableWidget(
-        onDecadeSelected: (decade) => selectedDecade = decade,
-      ));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'expanding release eras renders decade leaves and invokes callback',
+      (tester) async {
+        String? selectedDecade;
+        await tester.pumpWidget(
+          createTestableWidget(
+            onDecadeSelected: (decade) => selectedDecade = decade,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      // Tap to expand Release Eras
-      final releaseErasNode = find.text('Release Eras');
-      await tester.tap(releaseErasNode);
-      await tester.pumpAndSettle();
+        // Tap to expand Release Eras
+        final releaseErasNode = find.text('Release Eras');
+        await tester.tap(releaseErasNode);
+        await tester.pumpAndSettle();
 
-      expect(find.text('2020s'), findsOneWidget);
-      expect(find.text('2010s'), findsOneWidget);
+        expect(find.text('2020s'), findsOneWidget);
+        expect(find.text('2010s'), findsOneWidget);
 
-      await tester.tap(find.text('2020s'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('2020s'));
+        await tester.pumpAndSettle();
 
-      expect(selectedDecade, '2020s');
-    });
+        expect(selectedDecade, '2020s');
+      },
+    );
   });
 }
 

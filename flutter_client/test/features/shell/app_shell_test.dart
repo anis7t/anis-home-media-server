@@ -16,7 +16,8 @@ import 'package:media_server_client/core/storage/settings_service.dart'
 // settings_content.dart watches, which otherwise shows the production default until it
 // resolves and makes the displayed origin depend on microtask timing.
 import 'package:media_server_client/core/storage/settings_service.dart'
-    as settings show serverBaseUrlProvider;
+    as settings
+    show serverBaseUrlProvider;
 import 'package:media_server_client/features/library/domain/models/library_response.dart';
 import 'package:media_server_client/features/library/domain/models/movie_details.dart';
 import 'package:media_server_client/features/library/domain/models/movie_extended_details.dart';
@@ -71,17 +72,15 @@ class FakeShellLibraryRepository extends LibraryRepository {
   final List<MovieItem> movies;
   final List<MovieItem> watching;
 
-  FakeShellLibraryRepository({
-    this.movies = const [],
-    this.watching = const [],
-  }) : super(
-         ApiClient(
-           baseUrl: testOrigin,
-           authInterceptor: DeviceAuthInterceptor(
-             DeviceIdentityService(secureStorage: MockSecureStorage()),
-           ),
-         ),
-       );
+  FakeShellLibraryRepository({this.movies = const [], this.watching = const []})
+    : super(
+        ApiClient(
+          baseUrl: testOrigin,
+          authInterceptor: DeviceAuthInterceptor(
+            DeviceIdentityService(secureStorage: MockSecureStorage()),
+          ),
+        ),
+      );
 
   @override
   Future<LibraryResponse> getMovies() async {
@@ -210,91 +209,62 @@ void main() {
         serverBaseUrlProvider.overrideWithValue(testOrigin),
         settings.serverBaseUrlProvider.overrideWith((ref) => testOrigin),
       ],
-      child: MediaServerApp(
-        initialRoute: initialLocation,
-      ),
+      child: MediaServerApp(initialRoute: initialLocation),
     );
   }
 
-  group('Persistent Bottom Navigation Shell Tests', () {
-    testWidgets('renders all 3 bottom navigation destinations on Home', (
+  group('Phone Side Navigation Shell Tests', () {
+    testWidgets('shows Home search without a bottom navigation bar', (
       tester,
     ) async {
-      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
       await tester.pumpWidget(createSubject(initialLocation: AppRoutes.home));
       await tester.pumpAndSettle();
 
-      // Verify bottom navigation destinations
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Library'), findsOneWidget);
-      expect(find.text('Settings'), findsOneWidget);
-
-      // Verify Home content is visible
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byKey(const ValueKey('home_catalog_search')), findsOneWidget);
+      expect(find.text('Library'), findsNothing);
       expect(find.text('Continue Watching'), findsOneWidget);
       expect(find.text('Recently Added'), findsOneWidget);
-      expect(find.text('Browse Full Library'), findsOneWidget);
+      expect(find.text('Browse Full Library'), findsNothing);
     });
 
-    testWidgets('switches between Home, Library, and Settings tabs', (
+    testWidgets('opens Settings and returns Home through the side menu', (
       tester,
     ) async {
-      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
       await tester.pumpWidget(createSubject(initialLocation: AppRoutes.home));
       await tester.pumpAndSettle();
 
-      // Currently on Home
       expect(find.text('Recently Added'), findsOneWidget);
 
-      // Switch to Library tab
-      await tester.tap(find.text('Library'));
+      await tester.tap(find.byTooltip('Open navigation menu').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Settings & Updates'), findsOneWidget);
+
+      await tester.tap(find.text('Settings & Updates'));
       await tester.pumpAndSettle();
 
-      // Verify Library view is displayed with search bar
-      expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Search movies, years, genres...'), findsOneWidget);
-
-      // Switch to Settings tab
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
-
-      // Verify Settings view is displayed with channels and update options
       expect(find.text('Settings & Updates'), findsOneWidget);
       expect(find.text('SERVER & CONNECTION'), findsOneWidget);
       expect(find.text('UPDATE CHANNEL'), findsOneWidget);
-      expect(find.text('Check for Updates'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
 
-      // Switch back to Home tab
-      await tester.tap(find.text('Home'));
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      expect(find.text('Home Feed'), findsOneWidget);
+      await tester.tap(find.text('Home Feed'));
       await tester.pumpAndSettle();
 
-      // Home content is back
       expect(find.text('Recently Added'), findsOneWidget);
+      expect(find.byKey(const ValueKey('home_catalog_search')), findsOneWidget);
     });
-
-    testWidgets(
-      'navigates from Home to Library via Browse Full Library banner',
-      (tester) async {
-        tester.view.physicalSize = const Size(800, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-
-        await tester.pumpWidget(createSubject(initialLocation: AppRoutes.home));
-        await tester.pumpAndSettle();
-
-        // Tap Browse Full Library banner
-        await tester.tap(find.text('Browse Full Library'));
-        await tester.pumpAndSettle();
-
-        // Now on Library tab
-        expect(find.text('Search movies, years, genres...'), findsOneWidget);
-      },
-    );
 
     testWidgets(
       'taps movie on Home to navigate to MovieDetailsScreen and returns to Home on pop',
@@ -323,7 +293,10 @@ void main() {
 
         // Returned to Home in shell
         expect(find.text('Recently Added'), findsOneWidget);
-        expect(find.text('Home'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('home_catalog_search')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -339,9 +312,7 @@ void main() {
         // real production filename in lib/app/routes.dart; that fallback exists for
         // `adb shell am start ... --es route "/player"` and must not be exercised here.
         final playerLocation = '${AppRoutes.player}?mediaUrl=$_playerMediaUrl';
-        await tester.pumpWidget(
-          createSubject(initialLocation: playerLocation),
-        );
+        await tester.pumpWidget(createSubject(initialLocation: playerLocation));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
@@ -353,35 +324,34 @@ void main() {
       },
     );
 
-    testWidgets(
-      'Settings tab provides channel selector and update checking',
-      (tester) async {
-        tester.view.physicalSize = const Size(800, 1400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
+    testWidgets('Settings tab provides channel selector and update checking', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-        await tester.pumpWidget(
-          createSubject(initialLocation: AppRoutes.settings),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        createSubject(initialLocation: AppRoutes.settings),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.text('SERVER & CONNECTION'), findsOneWidget);
-        expect(find.text(testOrigin), findsOneWidget);
-        expect(find.text('UPDATE CHANNEL'), findsOneWidget);
-        expect(find.textContaining('Production (Stable)'), findsOneWidget);
-        expect(find.text('Developer'), findsWidgets);
+      expect(find.text('SERVER & CONNECTION'), findsOneWidget);
+      expect(find.text(testOrigin), findsOneWidget);
+      expect(find.text('UPDATE CHANNEL'), findsOneWidget);
+      expect(find.textContaining('Production (Stable)'), findsOneWidget);
+      expect(find.text('Developer'), findsWidgets);
 
-        // Tap Developer channel to open switch confirmation dialog
-        await tester.tap(find.text('Developer').first);
-        await tester.pumpAndSettle();
+      // Tap Developer channel to open switch confirmation dialog
+      await tester.tap(find.text('Developer').first);
+      await tester.pumpAndSettle();
 
-        expect(find.text('Enable Developer Channel?'), findsOneWidget);
-        expect(find.text('Switch to Developer'), findsOneWidget);
+      expect(find.text('Enable Developer Channel?'), findsOneWidget);
+      expect(find.text('Switch to Developer'), findsOneWidget);
 
-        // Cancel dialog
-        await tester.tap(find.text('Cancel'));
-        await tester.pumpAndSettle();
-      },
-    );
+      // Cancel dialog
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    });
   });
 }

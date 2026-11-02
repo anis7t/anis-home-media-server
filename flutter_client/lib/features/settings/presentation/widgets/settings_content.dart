@@ -743,13 +743,17 @@ class SettingsContent extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          title,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: isSelected || isFocused
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary,
-                            fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: isSelected || isFocused
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         if (isSelected) ...[

@@ -44,23 +44,32 @@ Production release covering account-scoped playback progress, upload-time Recent
 - **Rollback backup:** `backups/prod-release-2026-11-03_004746/` contains the previous production APK, manifest, registry, Rust executable, and web bundle.
 - **Release provenance:** The Android manifest's `gitCommit` is `ba6f980`, the repository HEAD when the APK was published. The artifacts included the working-tree changes recorded in this release entry; this commit records those sources after deployment.
 
-## Current Open User Report — 2026-11-03
+## Current Open User Reports — 2026-11-03
 
-The first prioritized batch of owner-reported issues is captured as **Issue 15** in
-[`docs/Current issues.md`](Current%20issues.md): web media deletion asks a signed-in admin to
-"generate admin" again; parity between all web Manage controls and Android; discoverable top-header
-search across web and Android phone/TV; phone search vertical sizing (TV/web comparison unverified);
-invisible D-pad focus in TV Settings; and confusing "Back to connection/library" player wording.
-The code implementation pass is complete in the working tree: the web delete modal now respects the
-signed-in admin state; Android's Admin Management Hub adds a Media Inventory section for web Manage
-parity; web and Android library search is reachable from the header; the Android phone search field is
-taller; TV Settings focus styling is stronger; and the player return label follows its launch route.
-The Rust authorization checks and API response shapes were preserved. Pre-deploy checks passed:
-React typecheck, lint, 337 Vitest tests, and production build; Flutter analyze plus 405 tests (13
-live-server tests skipped by design); Rust format, clippy, 131 unit tests, and 259 integration tests
-using the isolated `media_server_test` database and a temporary probeable MP4 fixture. The local
-Gitleaks binary is unavailable, so its scan did not run. Production deployment and connected-phone
-verification are in progress; physical TV verification remains pending because no TV is connected.
+**Issues 15–17** are tracked in
+[`docs/Current issues.md`](Current%20issues.md).
+
+- **Issue 15 release:** Commit `7892192` shipped as Android/TV v1.4.9 (versionCode 155). Local and
+  public health and update endpoints returned 200, and the connected phone updated successfully.
+  The phone search action works from the Library screen, but the Home feed still lacked direct search;
+  this follow-up is now Issue 16. Physical TV focus/search verification remains pending. The local
+  Gitleaks binary was unavailable during the release checks.
+- **Issue 16 implementation:** Android phone Home now has a borderless 64dp full-width search field
+  with in-place full-catalog results; the phone bottom bar and duplicate Library links are removed.
+  Home, discovery categories, Settings, and the Admin Hub remain reachable from the top-left side
+  drawer, which is also available from Settings. The legacy `/library` route and Android TV rail are
+  preserved. No production APK has been published for Issue 16.
+- **Verification:** `flutter analyze` passed; the full Flutter suite passed (**422 passed, 13
+  skipped**). Built and installed a local v1.4.9/versionCode 155 preview APK on the connected phone.
+  On-device checks confirmed the borderless full-width Home search, drawer opening, live filtering
+  (`Aliens` returned one title), and clearing back to the endless feed. Physical TV verification is
+  pending. Issue 16 has not been published to production.
+- **Issue 17 implementation:** Phone Home poster rows now use responsive three-column grids with full
+  artwork visible; Home search results use three columns as well. TV rails and standalone Library
+  layout are unchanged. Widget checks cover 320/360/430dp widths. `flutter analyze` and the focused
+  Home/card suite passed (**17 tests**). The local v1.4.9/code 155 APK was installed and visually
+  checked on the connected I2217 phone; no production release was made for Issue 17.
+
 The owner expects to report more issues later.
 
 ## 2026-11-02 — HLS fMP4 Quality Switching, Seek Stall & Seekbar Timeline Alignment (Android v1.4.7)

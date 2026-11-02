@@ -100,10 +100,7 @@ void main() {
     final router = GoRouter(
       initialLocation: '/home',
       routes: [
-        GoRoute(
-          path: '/home',
-          builder: (context, state) => const HomeScreen(),
-        ),
+        GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
         GoRoute(
           path: AppRoutes.movieDetails,
           builder: (context, state) {
@@ -119,16 +116,19 @@ void main() {
         libraryRepositoryProvider.overrideWithValue(repo),
         serverBaseUrlProvider.overrideWithValue('http://127.0.0.1:8000'),
       ],
-      child: MaterialApp.router(
-        routerConfig: router,
-      ),
+      child: MaterialApp.router(routerConfig: router),
     );
   }
 
   group('HomeScreen Widget Tests', () {
-    testWidgets('renders Continue Watching rail and Recently Added section', (
+    testWidgets('renders Home discovery and the full-width search field', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       final fakeRepo = FakeHomeLibraryRepository(
         onGetMovies: () async => const LibraryResponse(
           movies: [movieA, movieB],
@@ -150,8 +150,9 @@ void main() {
       // Continue Watching
       expect(find.text('Continue Watching'), findsOneWidget);
 
-      // Browse Full Library banner
-      expect(find.text('Browse Full Library'), findsOneWidget);
+      // Phone search is visible on Home instead of a separate Library destination.
+      expect(find.byKey(const ValueKey('home_catalog_search')), findsOneWidget);
+      expect(find.text('Browse Full Library'), findsNothing);
 
       // Recently Added
       expect(find.text('Recently Added'), findsOneWidget);
@@ -159,23 +160,58 @@ void main() {
       expect(find.text('Spider-Man Brand New Day'), findsOneWidget);
     });
 
+    testWidgets(
+      'searches the full catalog on Home and clearing restores the feed',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        final fakeRepo = FakeHomeLibraryRepository(
+          onGetMovies: () async => const LibraryResponse(
+            movies: [movieA, movieB],
+            watching: [],
+            total: 2,
+          ),
+        );
+
+        await tester.pumpWidget(createSubject(fakeRepo));
+        await tester.pumpAndSettle();
+
+        final searchFinder = find.byKey(const ValueKey('home_catalog_search'));
+        final field = tester.widget<TextField>(searchFinder);
+        expect(tester.getSize(searchFinder).height, greaterThanOrEqualTo(60));
+        expect(tester.getSize(searchFinder).width, greaterThanOrEqualTo(350));
+        expect(field.decoration?.border, InputBorder.none);
+        expect(field.decoration?.enabledBorder, InputBorder.none);
+        expect(field.decoration?.focusedBorder, InputBorder.none);
+
+        await tester.enterText(searchFinder, 'Spider');
+        await tester.pumpAndSettle();
+
+        expect(find.text('Search results'), findsOneWidget);
+        expect(find.text('Spider-Man Brand New Day'), findsOneWidget);
+        expect(find.text('Batman Knightfall'), findsNothing);
+
+        await tester.tap(find.byTooltip('Clear search and filters'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently Added'), findsOneWidget);
+        expect(find.text('Batman Knightfall'), findsWidgets);
+      },
+    );
+
     testWidgets('taps movie card to navigate to MovieDetailsScreen', (
       tester,
     ) async {
       MovieItem? tappedMovie;
       final fakeRepo = FakeHomeLibraryRepository(
-        onGetMovies: () async => const LibraryResponse(
-          movies: [movieA],
-          watching: [],
-          total: 1,
-        ),
+        onGetMovies: () async =>
+            const LibraryResponse(movies: [movieA], watching: [], total: 1),
       );
 
       await tester.pumpWidget(
-        createSubject(
-          fakeRepo,
-          onMovieSelected: (m) => tappedMovie = m,
-        ),
+        createSubject(fakeRepo, onMovieSelected: (m) => tappedMovie = m),
       );
       await tester.pumpAndSettle();
 
@@ -190,11 +226,8 @@ void main() {
       tester,
     ) async {
       final fakeRepo = FakeHomeLibraryRepository(
-        onGetMovies: () async => const LibraryResponse(
-          movies: [],
-          watching: [],
-          total: 0,
-        ),
+        onGetMovies: () async =>
+            const LibraryResponse(movies: [], watching: [], total: 0),
       );
 
       await tester.pumpWidget(createSubject(fakeRepo));
@@ -241,11 +274,8 @@ void main() {
     testWidgets('triggers library scan from header button', (tester) async {
       var scanTriggered = false;
       final fakeRepo = FakeHomeLibraryRepository(
-        onGetMovies: () async => const LibraryResponse(
-          movies: [movieA],
-          watching: [],
-          total: 1,
-        ),
+        onGetMovies: () async =>
+            const LibraryResponse(movies: [movieA], watching: [], total: 1),
         onTriggerScan: () async {
           scanTriggered = true;
           return true;
@@ -261,36 +291,32 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(scanTriggered, isTrue);
-      expect(
-        find.text('Library scan started successfully'),
-        findsOneWidget,
-      );
+      expect(find.text('Library scan started successfully'), findsOneWidget);
     });
 
-    testWidgets('opens FrostedTreeDrawer when tree button in header is tapped',
-        (tester) async {
-      final fakeRepo = FakeHomeLibraryRepository(
-        onGetMovies: () async => const LibraryResponse(
-          movies: [movieA],
-          watching: [],
-          total: 1,
-        ),
-      );
+    testWidgets(
+      'opens FrostedTreeDrawer when tree button in header is tapped',
+      (tester) async {
+        final fakeRepo = FakeHomeLibraryRepository(
+          onGetMovies: () async =>
+              const LibraryResponse(movies: [movieA], watching: [], total: 1),
+        );
 
-      await tester.pumpWidget(createSubject(fakeRepo));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(createSubject(fakeRepo));
+        await tester.pumpAndSettle();
 
-      // Find the account_tree_rounded icon button in header
-      final treeBtn = find.byIcon(Icons.account_tree_rounded);
-      expect(treeBtn, findsOneWidget);
+        // Find the phone menu button in the header
+        final treeBtn = find.byTooltip('Open navigation menu');
+        expect(treeBtn, findsOneWidget);
 
-      await tester.tap(treeBtn);
-      await tester.pumpAndSettle();
+        await tester.tap(treeBtn);
+        await tester.pumpAndSettle();
 
-      // Drawer should now be visible
-      expect(find.text('Media Catalog Tree'), findsOneWidget);
-      expect(find.text('All Movies'), findsOneWidget);
-      expect(find.text('Genres'), findsOneWidget);
-    });
+        // Drawer should now be visible
+        expect(find.text('Media Catalog Tree'), findsOneWidget);
+        expect(find.text('Home Feed'), findsOneWidget);
+        expect(find.text('Genres'), findsOneWidget);
+      },
+    );
   });
 }
