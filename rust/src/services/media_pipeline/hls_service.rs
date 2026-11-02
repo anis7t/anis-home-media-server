@@ -490,7 +490,10 @@ impl HlsService {
             let mut inserted = false;
             for line in output {
                 with_ptype.push(line.clone());
-                if !inserted && (line.starts_with("#EXT-X-START:") || line.starts_with("#EXT-X-TARGETDURATION:")) {
+                if !inserted
+                    && (line.starts_with("#EXT-X-START:")
+                        || line.starts_with("#EXT-X-TARGETDURATION:"))
+                {
                     with_ptype.push(ptype.to_string());
                     inserted = true;
                 }

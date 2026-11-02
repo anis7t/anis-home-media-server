@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminPinSignInModal from './AdminPinSignInModal';
@@ -55,7 +55,6 @@ describe('AdminPinSignInModal', () => {
   });
 
   it('submits valid 6-digit OTP and invokes onSuccess and onClose on success', async () => {
-    const user = userEvent.setup();
     const onClose = vi.fn();
     const onSuccess = vi.fn();
 
@@ -74,9 +73,9 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    for (let i = 0; i < 6; i++) {
-      await user.type(cells[i], '123456'[i]);
-    }
+    fireEvent.paste(cells[0], {
+      clipboardData: { getData: () => '123456' },
+    });
 
     await waitFor(() => {
       expect(accountApi.verifyAdminOtp).toHaveBeenCalledWith('123456');
@@ -86,7 +85,6 @@ describe('AdminPinSignInModal', () => {
   });
 
   it('displays error message when verifyAdminOtp fails', async () => {
-    const user = userEvent.setup();
     vi.mocked(accountApi.verifyAdminOtp).mockResolvedValueOnce({
       success: false,
       admin: false,
@@ -102,9 +100,9 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    for (let i = 0; i < 6; i++) {
-      await user.type(cells[i], '999999'[i]);
-    }
+    fireEvent.paste(cells[0], {
+      clipboardData: { getData: () => '999999' },
+    });
 
     await waitFor(() => {
       expect(

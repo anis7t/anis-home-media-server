@@ -614,8 +614,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   String _applyAuthoritativeMode(String url) {
-    if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto')
+    if (_playbackMode != PlaybackMode.hls && _selectedQuality == 'auto') {
       return url;
+    }
     final filename = _resolveFilename();
     if (filename == null || filename.isEmpty) return url;
     final origin = _apiServerOrigin();

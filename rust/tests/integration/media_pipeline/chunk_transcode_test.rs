@@ -339,8 +339,11 @@ fn test_fmp4_real_ffmpeg_chunk_generation_and_probe() {
 #[test]
 fn test_completed_fmp4_playlist_omits_ext_x_start() {
     let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let hls_dir =
-        std::env::temp_dir().join(format!("rust_chunk_test_fmp4_{}_{}", std::process::id(), count));
+    let hls_dir = std::env::temp_dir().join(format!(
+        "rust_chunk_test_fmp4_{}_{}",
+        std::process::id(),
+        count
+    ));
     let _ = fs::remove_dir_all(&hls_dir);
     fs::create_dir_all(&hls_dir).unwrap();
     let playlist_path = hls_dir.join("playlist.m3u8");
