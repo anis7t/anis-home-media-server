@@ -636,7 +636,6 @@ fn test_hls_service_detects_completed_tiered_transcode() {
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
-
 #[test]
 fn test_hls_service_slice_playlist_at_offset() {
     let sample = r#"#EXTM3U

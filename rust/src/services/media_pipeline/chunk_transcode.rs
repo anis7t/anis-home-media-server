@@ -341,7 +341,8 @@ impl ChunkTranscodeService {
 
                         if cur_base < min_expected {
                             let new_base = cur_base + offset;
-                            data[tfdt_pos + 8..tfdt_pos + 16].copy_from_slice(&new_base.to_be_bytes());
+                            data[tfdt_pos + 8..tfdt_pos + 16]
+                                .copy_from_slice(&new_base.to_be_bytes());
                             modified = true;
                         }
                     } else if version == 0 && tfdt_pos + 16 <= data.len() {
@@ -354,7 +355,8 @@ impl ChunkTranscodeService {
 
                         if cur_base < min_expected {
                             let new_base = (cur_base + offset) as u32;
-                            data[tfdt_pos + 8..tfdt_pos + 12].copy_from_slice(&new_base.to_be_bytes());
+                            data[tfdt_pos + 8..tfdt_pos + 12]
+                                .copy_from_slice(&new_base.to_be_bytes());
                             modified = true;
                         }
                     }
