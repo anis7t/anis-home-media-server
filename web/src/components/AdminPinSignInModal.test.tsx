@@ -55,7 +55,6 @@ describe('AdminPinSignInModal', () => {
   });
 
   it('submits valid 6-digit OTP and invokes onSuccess and onClose on success', async () => {
-    const user = userEvent.setup();
     const onClose = vi.fn();
     const onSuccess = vi.fn();
 
@@ -86,7 +85,6 @@ describe('AdminPinSignInModal', () => {
   });
 
   it('displays error message when verifyAdminOtp fails', async () => {
-    const user = userEvent.setup();
     vi.mocked(accountApi.verifyAdminOtp).mockResolvedValueOnce({
       success: false,
       admin: false,
