@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminPinSignInModal from './AdminPinSignInModal';
@@ -74,7 +74,9 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    await user.type(cells[0], '123456');
+    fireEvent.paste(cells[0], {
+      clipboardData: { getData: () => '123456' },
+    });
 
     await waitFor(() => {
       expect(accountApi.verifyAdminOtp).toHaveBeenCalledWith('123456');
@@ -100,7 +102,9 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    await user.type(cells[0], '999999');
+    fireEvent.paste(cells[0], {
+      clipboardData: { getData: () => '999999' },
+    });
 
     await waitFor(() => {
       expect(
