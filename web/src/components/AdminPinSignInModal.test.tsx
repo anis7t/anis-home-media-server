@@ -74,9 +74,7 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    for (let i = 0; i < 6; i++) {
-      await user.type(cells[i], '123456'[i]);
-    }
+    await user.type(cells[0], '123456');
 
     await waitFor(() => {
       expect(accountApi.verifyAdminOtp).toHaveBeenCalledWith('123456');
@@ -102,9 +100,7 @@ describe('AdminPinSignInModal', () => {
     );
 
     const cells = screen.getAllByRole('textbox');
-    for (let i = 0; i < 6; i++) {
-      await user.type(cells[i], '999999'[i]);
-    }
+    await user.type(cells[0], '999999');
 
     await waitFor(() => {
       expect(
