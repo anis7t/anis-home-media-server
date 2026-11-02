@@ -56,6 +56,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? externalSubtitleUrl;
   final String? deviceId;
   final String? mediaFilename;
+  final String backLabel;
   final PlayerControllerInterface? customController;
   final Dio? customDio;
   final ScreenBrightnessService? customBrightness;
@@ -70,6 +71,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.externalSubtitleUrl,
     this.deviceId,
     this.mediaFilename,
+    this.backLabel = 'Back',
     this.customController,
     this.customDio,
     this.customBrightness,
@@ -1732,6 +1734,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                               movieMeta: _movieMeta,
                               position: _position,
                               duration: _duration,
+                              backLabel: widget.backLabel,
                               onBack: _handleBack,
                               onServerUrlChanged: (newUrl) async {
                                 await SettingsService().setServerBaseUrl(

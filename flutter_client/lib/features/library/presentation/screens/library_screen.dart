@@ -28,13 +28,30 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'library_search');
   Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+  }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onSearchFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _focusSearch() {
+    _searchFocusNode.requestFocus();
   }
 
   void _onSearchChanged(String val) {
@@ -77,6 +94,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ? Duration(seconds: movie.position.toInt())
               : null,
           'mediaFilename': movie.filename,
+          'backLabel': 'Back to Library',
         },
       );
     } finally {
@@ -175,10 +193,53 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
             const Spacer(),
             TvFocusable(
+              borderRadius: BorderRadius.circular(10),
+              scaleOnFocus: false,
+              onPressed: _focusSearch,
+              builder: (context, isFocused, _) => Container(
+                width: 46,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: isFocused
+                      ? AppColors.surfaceHighlight
+                      : AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isFocused
+                        ? AppColors.brandRedLight
+                        : AppColors.borderSubtle,
+                    width: isFocused ? 3 : 1,
+                  ),
+                  boxShadow: isFocused
+                      ? [
+                          BoxShadow(
+                            color: AppColors.brandRedGlow.withValues(
+                              alpha: 0.85,
+                            ),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Icon(
+                  Icons.search_rounded,
+                  color: isFocused
+                      ? AppColors.brandRedLight
+                      : AppColors.textSecondary,
+                  size: 21,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TvFocusable(
               borderRadius: BorderRadius.circular(8),
               onPressed: state.isScanning ? null : _handleScan,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(8),
@@ -219,6 +280,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       );
     }
 
+    final isCompactPhone = MediaQuery.sizeOf(context).width < 390;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: const BoxDecoration(
@@ -257,7 +320,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Row(
+                Row(
                   children: [
                     Text(
                       "Anis' ",
@@ -267,27 +330,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         fontSize: 15,
                       ),
                     ),
-                    Text(
-                      'Home Media Server',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                    Flexible(
+                      child: Text(
+                        'Home Media Server',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'PLAY • ORGANIZE • ENJOY',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: AppColors.textMuted,
-                    letterSpacing: 1.2,
-                    fontSize: 9.5,
+                if (!isCompactPhone) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'PLAY • ORGANIZE • ENJOY',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.textMuted,
+                      letterSpacing: 1.2,
+                      fontSize: 9.5,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
+          ),
+
+          // Header search action focuses the full library query below.
+          IconButton(
+            tooltip: 'Search Library',
+            icon: const Icon(
+              Icons.search_rounded,
+              color: AppColors.textSecondary,
+              size: 22,
+            ),
+            onPressed: _focusSearch,
           ),
 
           // Scan Action Button
@@ -326,6 +406,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Widget _buildSearchAndFilterRow(LibraryState state) {
+    final searchFocused = _searchFocusNode.hasFocus;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
       child: Column(
@@ -336,11 +417,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             children: [
               Expanded(
                 child: Container(
-                  height: 44,
+                  height: 56,
                   decoration: BoxDecoration(
                     color: AppColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.borderSubtle),
+                    border: Border.all(
+                      color: searchFocused
+                          ? AppColors.brandRedLight
+                          : AppColors.borderSubtle,
+                      width: searchFocused ? 2.5 : 1,
+                    ),
+                    boxShadow: searchFocused
+                        ? [
+                            BoxShadow(
+                              color: AppColors.brandRedGlow.withValues(
+                                alpha: 0.85,
+                              ),
+                              blurRadius: 20,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : null,
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
@@ -354,6 +451,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       Expanded(
                         child: TextField(
                           controller: _searchController,
+                          focusNode: _searchFocusNode,
                           style: AppTypography.bodyLarge.copyWith(fontSize: 14),
                           decoration: const InputDecoration(
                             hintText: 'Search movies, years, genres...',

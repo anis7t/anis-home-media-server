@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../app/theme/app_colors.dart';
 import '../providers/auth_providers.dart';
 import 'tv_admin_pin_pad.dart';
@@ -14,9 +15,8 @@ class TvAccountProfileCard extends ConsumerWidget {
     showDialog(
       context: context,
       barrierColor: Colors.black87,
-      builder: (context) => TvQrPairingScreen(
-        onDismiss: () => Navigator.of(context).pop(),
-      ),
+      builder: (context) =>
+          TvQrPairingScreen(onDismiss: () => Navigator.of(context).pop()),
     );
   }
 
@@ -151,7 +151,8 @@ class TvAccountProfileCard extends ConsumerWidget {
     dynamic identity,
     bool isAdmin,
   ) {
-    final name = identity?.name as String? ?? identity?.email as String? ?? 'User';
+    final name =
+        identity?.name as String? ?? identity?.email as String? ?? 'User';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
 
     return Row(
@@ -162,10 +163,14 @@ class TvAccountProfileCard extends ConsumerWidget {
           width: 52,
           height: 52,
           decoration: BoxDecoration(
-            color: isAdmin ? AppColors.brandRedGlow : Colors.white.withValues(alpha: 0.08),
+            color: isAdmin
+                ? AppColors.brandRedGlow
+                : Colors.white.withValues(alpha: 0.08),
             shape: BoxShape.circle,
             border: Border.all(
-              color: isAdmin ? AppColors.brandRed : Colors.white.withValues(alpha: 0.2),
+              color: isAdmin
+                  ? AppColors.brandRed
+                  : Colors.white.withValues(alpha: 0.2),
               width: 2,
             ),
           ),
@@ -233,10 +238,7 @@ class _TvBadge extends StatelessWidget {
   final String label;
   final bool isHighlighted;
 
-  const _TvBadge({
-    required this.label,
-    required this.isHighlighted,
-  });
+  const _TvBadge({required this.label, required this.isHighlighted});
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +258,9 @@ class _TvBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          color: isHighlighted ? AppColors.brandRedLight : AppColors.textSecondary,
+          color: isHighlighted
+              ? AppColors.brandRedLight
+              : AppColors.textSecondary,
           fontSize: 10,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.8,
@@ -315,13 +319,14 @@ class _TvCardButtonState extends State<_TvCardButton> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: _isFocused ? Colors.white : AppColors.borderSubtle,
-            width: _isFocused ? 2.0 : 1.0,
+            width: _isFocused ? 4.0 : 1.0,
           ),
           boxShadow: _isFocused
               ? [
                   BoxShadow(
-                    color: AppColors.brandRed.withValues(alpha: 0.6),
-                    blurRadius: 16,
+                    color: AppColors.brandRed.withValues(alpha: 0.95),
+                    blurRadius: 22,
+                    spreadRadius: 2,
                     offset: const Offset(0, 4),
                   ),
                 ]

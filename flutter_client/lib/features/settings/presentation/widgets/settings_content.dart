@@ -82,8 +82,9 @@ class SettingsContent extends ConsumerWidget {
       );
     } else {
       // Switching to Production
-      final currentCode =
-          ref.read(updateControllerProvider).installedVersionCode;
+      final currentCode = ref
+          .read(updateControllerProvider)
+          .installedVersionCode;
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -154,6 +155,9 @@ class SettingsContent extends ConsumerWidget {
         const SizedBox(height: 8),
         TvFocusable(
           borderRadius: BorderRadius.circular(12),
+          borderWidth: 4,
+          focusedBorderColor: AppColors.brandRedLight,
+          focusedBackgroundColor: AppColors.surfaceHighlight,
           onPressed: () {
             if (isModal && Navigator.canPop(context)) {
               Navigator.pop(context);
@@ -169,15 +173,17 @@ class SettingsContent extends ConsumerWidget {
                     : AppColors.surfaceElevated,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
-                  width: isFocused ? 2.5 : 1.0,
+                  color: isFocused
+                      ? AppColors.brandRedLight
+                      : AppColors.borderSubtle,
+                  width: isFocused ? 4 : 1.0,
                 ),
                 boxShadow: isFocused
                     ? [
                         BoxShadow(
-                          color: AppColors.brandRedGlow.withValues(alpha: 0.65),
-                          blurRadius: 18,
-                          spreadRadius: 2,
+                          color: AppColors.brandRedGlow.withValues(alpha: 0.95),
+                          blurRadius: 24,
+                          spreadRadius: 3,
                         ),
                       ]
                     : null,
@@ -251,6 +257,9 @@ class SettingsContent extends ConsumerWidget {
         deviceIdAsync.when(
           data: (id) => TvFocusable(
             borderRadius: BorderRadius.circular(10),
+            borderWidth: 4,
+            focusedBorderColor: AppColors.brandRedLight,
+            focusedBackgroundColor: AppColors.surfaceHighlight,
             onPressed: () {
               Clipboard.setData(ClipboardData(text: id));
               ScaffoldMessenger.of(context).showSnackBar(
@@ -262,22 +271,29 @@ class SettingsContent extends ConsumerWidget {
             },
             builder: (context, isFocused, _) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: isFocused
                       ? AppColors.surfaceHighlight
                       : AppColors.surfaceElevated,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
-                    width: isFocused ? 2.5 : 1.0,
+                    color: isFocused
+                        ? AppColors.brandRedLight
+                        : AppColors.borderSubtle,
+                    width: isFocused ? 4 : 1.0,
                   ),
                   boxShadow: isFocused
                       ? [
                           BoxShadow(
-                            color: AppColors.brandRedGlow.withValues(alpha: 0.6),
-                            blurRadius: 14,
-                            spreadRadius: 1,
+                            color: AppColors.brandRedGlow.withValues(
+                              alpha: 0.95,
+                            ),
+                            blurRadius: 22,
+                            spreadRadius: 3,
                           ),
                         ]
                       : null,
@@ -395,8 +411,7 @@ class SettingsContent extends ConsumerWidget {
         const SizedBox(height: 8),
         _buildChannelCard(
           title: 'Developer',
-          description:
-              'Bleeding-edge development builds with active features.',
+          description: 'Bleeding-edge development builds with active features.',
           isSelected: updateState.activeChannel == AppChannel.developer,
           isDeveloper: true,
           onTap: () {
@@ -426,13 +441,13 @@ class SettingsContent extends ConsumerWidget {
                     updateState.status == UpdateStatus.updateAvailable
                         ? Icons.system_update_rounded
                         : updateState.status == UpdateStatus.checking
-                            ? Icons.sync_rounded
-                            : Icons.check_circle_outline_rounded,
+                        ? Icons.sync_rounded
+                        : Icons.check_circle_outline_rounded,
                     color: updateState.status == UpdateStatus.updateAvailable
                         ? AppColors.brandRed
                         : updateState.status == UpdateStatus.error
-                            ? AppColors.statusError
-                            : AppColors.statusSuccess,
+                        ? AppColors.statusError
+                        : AppColors.statusSuccess,
                     size: 18,
                   ),
                   const SizedBox(width: 8),
@@ -441,21 +456,21 @@ class SettingsContent extends ConsumerWidget {
                       updateState.status == UpdateStatus.checking
                           ? 'Checking for updates...'
                           : updateState.status == UpdateStatus.updateAvailable
-                              ? 'Update available: ${updateState.availableManifest?.version}'
-                              : updateState.status == UpdateStatus.error
-                                  ? (updateState.errorMessage ??
-                                      'Update check failed')
-                                  : 'Your application is up to date',
+                          ? 'Update available: ${updateState.availableManifest?.version}'
+                          : updateState.status == UpdateStatus.error
+                          ? (updateState.errorMessage ?? 'Update check failed')
+                          : 'Your application is up to date',
                       style: AppTypography.bodyMedium.copyWith(
-                        color: updateState.status == UpdateStatus.updateAvailable
+                        color:
+                            updateState.status == UpdateStatus.updateAvailable
                             ? AppColors.brandRedLight
                             : updateState.status == UpdateStatus.error
-                                ? AppColors.statusError
-                                : AppColors.textPrimary,
+                            ? AppColors.statusError
+                            : AppColors.textPrimary,
                         fontWeight:
                             updateState.status == UpdateStatus.updateAvailable
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                   ),
@@ -474,6 +489,9 @@ class SettingsContent extends ConsumerWidget {
               if (updateState.status == UpdateStatus.updateAvailable)
                 TvFocusable(
                   borderRadius: BorderRadius.circular(8),
+                  borderWidth: 4,
+                  focusedBorderColor: AppColors.brandRedLight,
+                  focusedBackgroundColor: AppColors.surfaceHighlight,
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -489,7 +507,11 @@ class SettingsContent extends ConsumerWidget {
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.arrow_circle_down_rounded, size: 20, color: AppColors.textOnBrand),
+                        Icon(
+                          Icons.arrow_circle_down_rounded,
+                          size: 20,
+                          color: AppColors.textOnBrand,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'View Available Update',
@@ -506,11 +528,14 @@ class SettingsContent extends ConsumerWidget {
               else
                 TvFocusable(
                   borderRadius: BorderRadius.circular(8),
+                  borderWidth: 4,
+                  focusedBorderColor: AppColors.brandRedLight,
+                  focusedBackgroundColor: AppColors.surfaceHighlight,
                   onPressed: updateState.status == UpdateStatus.checking
                       ? null
                       : () => ref
-                          .read(updateControllerProvider.notifier)
-                          .checkForUpdates(isManual: true),
+                            .read(updateControllerProvider.notifier)
+                            .checkForUpdates(isManual: true),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
@@ -531,7 +556,11 @@ class SettingsContent extends ConsumerWidget {
                             ),
                           )
                         else
-                          const Icon(Icons.sync_rounded, size: 16, color: AppColors.textPrimary),
+                          const Icon(
+                            Icons.sync_rounded,
+                            size: 16,
+                            color: AppColors.textPrimary,
+                          ),
                         const SizedBox(width: 8),
                         Text(
                           updateState.status == UpdateStatus.checking
@@ -557,14 +586,17 @@ class SettingsContent extends ConsumerWidget {
         const SizedBox(height: 8),
         TvFocusable(
           borderRadius: BorderRadius.circular(12),
+          borderWidth: 4,
+          focusedBorderColor: AppColors.brandRedLight,
+          focusedBackgroundColor: AppColors.surfaceHighlight,
           onPressed: () async {
             final currentVal = ref.read(isTvModeProvider);
             final newVal = !currentVal;
             await DeviceCapabilityService.setDebugTvOverride(newVal);
             final current = ref.read(deviceCapabilitiesProvider);
-            ref.read(deviceCapabilitiesOverrideProvider.notifier).setOverride(
-                  current.copyWith(isTv: newVal),
-                );
+            ref
+                .read(deviceCapabilitiesOverrideProvider.notifier)
+                .setOverride(current.copyWith(isTv: newVal));
           },
           builder: (context, isFocused, child) {
             final isTvMode = ref.watch(isTvModeProvider);
@@ -572,26 +604,32 @@ class SettingsContent extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: isFocused
-                    ? AppColors.brandRed.withValues(alpha: 0.15)
+                    ? AppColors.brandRed.withValues(alpha: 0.28)
                     : AppColors.surfaceElevated,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
-                  width: isFocused ? 2.5 : 1.0,
+                  color: isFocused
+                      ? AppColors.brandRedLight
+                      : AppColors.borderSubtle,
+                  width: isFocused ? 4 : 1.0,
                 ),
                 boxShadow: isFocused
                     ? [
                         const BoxShadow(
                           color: AppColors.brandRedGlow,
-                          blurRadius: 18,
-                          spreadRadius: 2,
+                          blurRadius: 24,
+                          spreadRadius: 3,
                         ),
                       ]
                     : null,
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.tv_rounded, color: AppColors.brandRed, size: 22),
+                  const Icon(
+                    Icons.tv_rounded,
+                    color: AppColors.brandRed,
+                    size: 22,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -621,9 +659,9 @@ class SettingsContent extends ConsumerWidget {
                       onChanged: (val) async {
                         await DeviceCapabilityService.setDebugTvOverride(val);
                         final current = ref.read(deviceCapabilitiesProvider);
-                        ref.read(deviceCapabilitiesOverrideProvider.notifier).setOverride(
-                              current.copyWith(isTv: val),
-                            );
+                        ref
+                            .read(deviceCapabilitiesOverrideProvider.notifier)
+                            .setOverride(current.copyWith(isTv: val));
                       },
                     ),
                   ),
@@ -660,28 +698,31 @@ class SettingsContent extends ConsumerWidget {
       onPressed: onTap,
       scaleOnFocus: true,
       glowOnFocus: true,
+      borderWidth: 4,
+      focusedBorderColor: AppColors.brandRedLight,
+      focusedBackgroundColor: AppColors.surfaceHighlight,
       builder: (context, isFocused, child) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: isFocused
-                ? AppColors.brandRed.withValues(alpha: 0.15)
+                ? AppColors.brandRed.withValues(alpha: 0.28)
                 : (isSelected ? AppColors.surfaceElevated : AppColors.surface),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isFocused
-                  ? AppColors.brandRed
+                  ? AppColors.brandRedLight
                   : (isSelected
-                      ? AppColors.brandRed.withValues(alpha: 0.4)
-                      : AppColors.borderSubtle),
-              width: isFocused ? 2.5 : 1.2,
+                        ? AppColors.brandRed.withValues(alpha: 0.4)
+                        : AppColors.borderSubtle),
+              width: isFocused ? 4 : 1.2,
             ),
             boxShadow: isFocused
                 ? [
                     const BoxShadow(
                       color: AppColors.brandRedGlow,
-                      blurRadius: 18,
-                      spreadRadius: 2,
+                      blurRadius: 24,
+                      spreadRadius: 3,
                     ),
                   ]
                 : null,
@@ -722,7 +763,9 @@ class SettingsContent extends ConsumerWidget {
                               color: AppColors.brandRed.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: AppColors.brandRed.withValues(alpha: 0.35),
+                                color: AppColors.brandRed.withValues(
+                                  alpha: 0.35,
+                                ),
                                 width: 0.8,
                               ),
                             ),

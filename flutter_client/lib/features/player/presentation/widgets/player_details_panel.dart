@@ -29,7 +29,9 @@ class PlayerBrandHeader extends StatelessWidget {
                 colors: [Color(0xFF2E080E), Color(0xFF141822)],
               ),
               borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: AppColors.brandRed.withValues(alpha: 0.5)),
+              border: Border.all(
+                color: AppColors.brandRed.withValues(alpha: 0.5),
+              ),
             ),
             child: const Center(
               child: Icon(
@@ -93,6 +95,7 @@ class PlayerDetailsPanel extends StatelessWidget {
   final Map<String, dynamic>? movieMeta;
   final Duration position;
   final Duration duration;
+  final String backLabel;
   final VoidCallback onBack;
   final Future<void> Function(String newUrl) onServerUrlChanged;
 
@@ -107,6 +110,7 @@ class PlayerDetailsPanel extends StatelessWidget {
     this.movieMeta,
     required this.position,
     required this.duration,
+    this.backLabel = 'Back',
     required this.onBack,
     required this.onServerUrlChanged,
   });
@@ -148,7 +152,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.dns_rounded, color: AppColors.brandRedLight, size: 20),
+                      Icon(
+                        Icons.dns_rounded,
+                        color: AppColors.brandRedLight,
+                        size: 20,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'Server Connection',
@@ -161,7 +169,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                     ],
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textMuted,
+                      size: 20,
+                    ),
                     onPressed: () => Navigator.of(ctx).pop(),
                   ),
                 ],
@@ -173,7 +185,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                 decoration: InputDecoration(
                   labelText: 'Active Server URL',
                   labelStyle: const TextStyle(color: AppColors.textSecondary),
-                  prefixIcon: const Icon(Icons.link, color: AppColors.textMuted, size: 18),
+                  prefixIcon: const Icon(
+                    Icons.link,
+                    color: AppColors.textMuted,
+                    size: 18,
+                  ),
                   filled: true,
                   fillColor: AppColors.surfaceElevated,
                   border: OutlineInputBorder(
@@ -192,9 +208,21 @@ class PlayerDetailsPanel extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  _buildPresetChip('LAN (192.168.1.16)', 'http://192.168.1.16:8000', textCtrl),
-                  _buildPresetChip('WAN (Cloudflare)', 'https://media.anisparvez.in', textCtrl),
-                  _buildPresetChip('Localhost', 'http://127.0.0.1:8000', textCtrl),
+                  _buildPresetChip(
+                    'LAN (192.168.1.16)',
+                    'http://192.168.1.16:8000',
+                    textCtrl,
+                  ),
+                  _buildPresetChip(
+                    'WAN (Cloudflare)',
+                    'https://media.anisparvez.in',
+                    textCtrl,
+                  ),
+                  _buildPresetChip(
+                    'Localhost',
+                    'http://127.0.0.1:8000',
+                    textCtrl,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -210,7 +238,9 @@ class PlayerDetailsPanel extends StatelessWidget {
                   backgroundColor: AppColors.brandRed,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 icon: const Icon(Icons.save_rounded, size: 18),
                 label: const Text('Save Active Server'),
@@ -222,11 +252,18 @@ class PlayerDetailsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildPresetChip(String label, String url, TextEditingController ctrl) {
+  Widget _buildPresetChip(
+    String label,
+    String url,
+    TextEditingController ctrl,
+  ) {
     return ActionChip(
       backgroundColor: AppColors.surfaceElevated,
       side: const BorderSide(color: AppColors.borderSubtle),
-      label: Text(label, style: const TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+      label: Text(
+        label,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 12),
+      ),
       onPressed: () {
         ctrl.text = url;
       },
@@ -286,9 +323,7 @@ class PlayerDetailsPanel extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.2,
                 ),
-                children: [
-                  TextSpan(text: displayTitle),
-                ],
+                children: [TextSpan(text: displayTitle)],
               ),
             ),
             const SizedBox(height: 6),
@@ -304,11 +339,16 @@ class PlayerDetailsPanel extends StatelessWidget {
                   onTap: () => _showServerUrlBottomSheet(context),
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.brandRed.withValues(alpha: 0.4)),
+                      border: Border.all(
+                        color: AppColors.brandRed.withValues(alpha: 0.4),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -332,7 +372,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.edit_outlined, size: 12, color: AppColors.textMuted),
+                        const Icon(
+                          Icons.edit_outlined,
+                          size: 12,
+                          color: AppColors.textMuted,
+                        ),
                       ],
                     ),
                   ),
@@ -340,7 +384,10 @@ class PlayerDetailsPanel extends StatelessWidget {
 
                 // Quality Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
@@ -360,7 +407,10 @@ class PlayerDetailsPanel extends StatelessWidget {
                 // Year Badge
                 if (year != null && year.toString().isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(6),
@@ -379,7 +429,10 @@ class PlayerDetailsPanel extends StatelessWidget {
                 // Rating Badge
                 if (rating != null && rating > 0)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0x33FFB800),
                       borderRadius: BorderRadius.circular(6),
@@ -388,7 +441,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star_rounded, color: Color(0xFFFFB800), size: 12),
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Color(0xFFFFB800),
+                          size: 12,
+                        ),
                         const SizedBox(width: 3),
                         Text(
                           rating.toStringAsFixed(1),
@@ -405,7 +462,10 @@ class PlayerDetailsPanel extends StatelessWidget {
                 // Genres Badge
                 if (genres != null && genres.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(6),
@@ -450,7 +510,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.info_outline_rounded, color: AppColors.brandRedLight, size: 16),
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: AppColors.brandRedLight,
+                        size: 16,
+                      ),
                       SizedBox(width: 6),
                       Text(
                         'Synopsis',
@@ -492,7 +556,11 @@ class PlayerDetailsPanel extends StatelessWidget {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.analytics_outlined, color: AppColors.brandRedLight, size: 16),
+                      Icon(
+                        Icons.analytics_outlined,
+                        color: AppColors.brandRedLight,
+                        size: 16,
+                      ),
                       SizedBox(width: 6),
                       Text(
                         'Stream Specifications',
@@ -509,7 +577,8 @@ class PlayerDetailsPanel extends StatelessWidget {
                   const SizedBox(height: 6),
                   _buildSpecRow('Playback Type', playbackMode.specLabel),
                   const SizedBox(height: 6),
-                  if (selectedQualityLabel != null && selectedQualityLabel!.isNotEmpty) ...[
+                  if (selectedQualityLabel != null &&
+                      selectedQualityLabel!.isNotEmpty) ...[
                     _buildSpecRow('Quality Tier', selectedQualityLabel!),
                     const SizedBox(height: 6),
                   ],
@@ -532,10 +601,19 @@ class PlayerDetailsPanel extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppColors.borderMedium),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                icon: const Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white),
-                label: const Text('Back to Connection / Library', style: TextStyle(color: Colors.white)),
+                icon: const Icon(
+                  Icons.arrow_back_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
+                label: Text(
+                  backLabel,
+                  style: const TextStyle(color: Colors.white),
+                ),
               ),
             ),
             const SizedBox(height: 20),

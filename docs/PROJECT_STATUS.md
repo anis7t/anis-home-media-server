@@ -44,6 +44,25 @@ Production release covering account-scoped playback progress, upload-time Recent
 - **Rollback backup:** `backups/prod-release-2026-11-03_004746/` contains the previous production APK, manifest, registry, Rust executable, and web bundle.
 - **Release provenance:** The Android manifest's `gitCommit` is `ba6f980`, the repository HEAD when the APK was published. The artifacts included the working-tree changes recorded in this release entry; this commit records those sources after deployment.
 
+## Current Open User Report — 2026-11-03
+
+The first prioritized batch of owner-reported issues is captured as **Issue 15** in
+[`docs/Current issues.md`](Current%20issues.md): web media deletion asks a signed-in admin to
+"generate admin" again; parity between all web Manage controls and Android; discoverable top-header
+search across web and Android phone/TV; phone search vertical sizing (TV/web comparison unverified);
+invisible D-pad focus in TV Settings; and confusing "Back to connection/library" player wording.
+The code implementation pass is complete in the working tree: the web delete modal now respects the
+signed-in admin state; Android's Admin Management Hub adds a Media Inventory section for web Manage
+parity; web and Android library search is reachable from the header; the Android phone search field is
+taller; TV Settings focus styling is stronger; and the player return label follows its launch route.
+The Rust authorization checks and API response shapes were preserved. Pre-deploy checks passed:
+React typecheck, lint, 337 Vitest tests, and production build; Flutter analyze plus 405 tests (13
+live-server tests skipped by design); Rust format, clippy, 131 unit tests, and 259 integration tests
+using the isolated `media_server_test` database and a temporary probeable MP4 fixture. The local
+Gitleaks binary is unavailable, so its scan did not run. Production deployment and connected-phone
+verification are in progress; physical TV verification remains pending because no TV is connected.
+The owner expects to report more issues later.
+
 ## 2026-11-02 — HLS fMP4 Quality Switching, Seek Stall & Seekbar Timeline Alignment (Android v1.4.7)
 
 Resolved in-flight quality switching stall, fMP4 segment numbering discontinuity, and seekbar timeline/frame preview alignment on Android / Fire TV, published Production Release v1.4.7 (versionCode 153), and verified end-to-end on physical Android device (`192.168.1.6:37603`):

@@ -116,6 +116,7 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
           'subtitle': '${movie.year ?? ''} • ${movie.formattedRuntime}',
           'startPosition': targetPosition,
           'mediaFilename': movie.filename,
+          'backLabel': 'Back to Details',
         },
       );
     } finally {
@@ -456,13 +457,16 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                                   decoration: BoxDecoration(
                                     color: AppColors.surfaceElevated,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: AppColors.borderSubtle),
+                                    border: Border.all(
+                                      color: AppColors.borderSubtle,
+                                    ),
                                   ),
                                   child: posterUrl != null
                                       ? Image.network(
                                           posterUrl,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => _buildFallbackPoster(movie),
+                                          errorBuilder: (_, _, _) =>
+                                              _buildFallbackPoster(movie),
                                         )
                                       : _buildFallbackPoster(movie),
                                 ),
@@ -475,7 +479,9 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                                   if (specs?.resolution != null)
                                     _buildPillBadge(specs!.resolution),
                                   if (specs?.videoCodec != null)
-                                    _buildPillBadge(specs!.videoCodec.toUpperCase()),
+                                    _buildPillBadge(
+                                      specs!.videoCodec.toUpperCase(),
+                                    ),
                                   if (specs?.audioChannels != null)
                                     _buildPillBadge(specs!.audioChannels),
                                   if (movie.year != null)
@@ -483,7 +489,10 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                                   if (movie.duration > 0)
                                     _buildPillBadge(movie.formattedRuntime),
                                   if (movie.rating != null && movie.rating! > 0)
-                                    _buildPillBadge('★ ${movie.rating!.toStringAsFixed(1)}', isAccent: true),
+                                    _buildPillBadge(
+                                      '★ ${movie.rating!.toStringAsFixed(1)}',
+                                      isAccent: true,
+                                    ),
                                 ],
                               ),
                             ],
@@ -504,7 +513,8 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                                   height: 1.15,
                                 ),
                               ),
-                              if (extended?.tagline != null && extended!.tagline.isNotEmpty) ...[
+                              if (extended?.tagline != null &&
+                                  extended!.tagline.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
                                   '“${extended.tagline}”',
@@ -532,14 +542,17 @@ class _MovieDetailsScreenState extends ConsumerState<MovieDetailsScreen> {
                                 Text(
                                   movie.overview,
                                   style: AppTypography.bodyMedium.copyWith(
-                                    color: AppColors.textPrimary.withValues(alpha: 0.9),
+                                    color: AppColors.textPrimary.withValues(
+                                      alpha: 0.9,
+                                    ),
                                     fontSize: 15,
                                     height: 1.5,
                                   ),
                                 ),
                                 const SizedBox(height: 20),
                               ],
-                              if (extended != null && extended.cast.isNotEmpty) ...[
+                              if (extended != null &&
+                                  extended.cast.isNotEmpty) ...[
                                 _buildCastRail(extended.cast),
                                 const SizedBox(height: 20),
                               ],

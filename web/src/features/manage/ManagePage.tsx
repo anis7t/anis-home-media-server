@@ -53,9 +53,6 @@ export function ManagePage() {
   const [pinInputValue, setPinInputValue] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
 
-  // In-delete modal PIN input
-  const [modalPinInput, setModalPinInput] = useState('');
-
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('all');
@@ -321,27 +318,19 @@ export function ManagePage() {
 
   const onConfirmDelete = async () => {
     if (!deleteTarget) return;
+    if (!isAdmin) {
+      setDeleteError('Administrator access is required to delete media.');
+      return;
+    }
     setDeleting(true);
     setDeleteError(null);
     setError(null);
     try {
-      if (modalPinInput && !isPinUnlocked) {
-        const verifyRes = await verifyAdminPin(modalPinInput);
-        if (!verifyRes.success) {
-          setDeleteError(verifyRes.error || 'Invalid or expired access code');
-          setDeleting(false);
-          return;
-        }
-        setIsPinUnlocked(true);
-        sessionStorage.setItem('ms_admin_unlocked', 'true');
-      }
-
       const data = await deleteMovieMedia(deleteTarget.filename);
       if (data.success) {
         setFeedback(`Permanently deleted and purged "${deleteTarget.title}".`);
         const purgedFilename = deleteTarget.filename;
         setDeleteTarget(null);
-        setModalPinInput('');
         setDeleteError(null);
         setMovies((prev) => prev.filter((m) => m.filename !== purgedFilename));
         await loadData();
@@ -535,7 +524,6 @@ export function ManagePage() {
           onArchiveMovie={(m) => void onArchiveMovie(m)}
           onDeleteClick={(m) => {
             setDeleteTarget(m);
-            setModalPinInput('');
             setDeleteError(null);
           }}
           onPreTranscodeMovie={(m) => void handlePreTranscodeMovie(m)}
@@ -561,14 +549,7 @@ export function ManagePage() {
         deleteTarget={deleteTarget}
         deleting={deleting}
         isAdmin={isAdmin}
-        isUnlocked={isPinUnlocked}
-        modalPinInput={modalPinInput}
-        email={email}
         error={deleteError}
-        onChangePinInput={(pin) => {
-          setModalPinInput(pin);
-          if (deleteError) setDeleteError(null);
-        }}
         onConfirmDelete={() => void onConfirmDelete()}
         onClose={() => {
           setDeleteTarget(null);

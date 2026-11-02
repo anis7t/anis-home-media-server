@@ -64,7 +64,8 @@ class ServerStorageInfo {
   });
 
   factory ServerStorageInfo.fromJson(Map<String, dynamic> json) {
-    final drivesList = (json['drives'] as List<dynamic>?)
+    final drivesList =
+        (json['drives'] as List<dynamic>?)
             ?.map((e) => StorageDriveInfo.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
@@ -90,6 +91,7 @@ class CacheAuditData {
   final int totalActiveDirs;
   final bool degraded;
   final List<String> degradedReasons;
+  final List<ActiveHlsCache> activeHls;
 
   const CacheAuditData({
     required this.totalOrphanedBytes,
@@ -98,6 +100,7 @@ class CacheAuditData {
     required this.totalActiveDirs,
     required this.degraded,
     required this.degradedReasons,
+    this.activeHls = const [],
   });
 
   factory CacheAuditData.fromJson(Map<String, dynamic> json) {
@@ -107,12 +110,45 @@ class CacheAuditData {
       totalActiveBytes: (json['total_active_bytes'] as num?)?.toInt() ?? 0,
       totalActiveDirs: (json['total_active_dirs'] as num?)?.toInt() ?? 0,
       degraded: (json['degraded'] as bool?) ?? false,
-      degradedReasons: (json['degraded_reasons'] as List<dynamic>?)
+      degradedReasons:
+          (json['degraded_reasons'] as List<dynamic>?)
               ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      activeHls:
+          (json['active_hls'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map(
+                (entry) =>
+                    ActiveHlsCache.fromJson(Map<String, dynamic>.from(entry)),
+              )
               .toList() ??
           [],
     );
   }
+}
+
+/// A live HLS cache and its source filename from the storage audit response.
+@immutable
+class ActiveHlsCache {
+  final String sourceFile;
+  final String name;
+  final String path;
+  final int sizeBytes;
+
+  const ActiveHlsCache({
+    required this.sourceFile,
+    required this.name,
+    required this.path,
+    required this.sizeBytes,
+  });
+
+  factory ActiveHlsCache.fromJson(Map<String, dynamic> json) => ActiveHlsCache(
+    sourceFile: (json['source_file'] as String?) ?? '',
+    name: (json['name'] as String?) ?? '',
+    path: (json['path'] as String?) ?? '',
+    sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// Full response from `GET /api/storage/audit`.
@@ -121,10 +157,7 @@ class StorageAuditReport {
   final ServerStorageInfo storage;
   final CacheAuditData audit;
 
-  const StorageAuditReport({
-    required this.storage,
-    required this.audit,
-  });
+  const StorageAuditReport({required this.storage, required this.audit});
 
   factory StorageAuditReport.fromJson(Map<String, dynamic> json) {
     return StorageAuditReport(
@@ -154,7 +187,8 @@ class StorageRetentionSettings {
   factory StorageRetentionSettings.fromJson(Map<String, dynamic> json) {
     return StorageRetentionSettings(
       retentionPolicy: (json['retention_policy'] as String?) ?? 'keep',
-      allowedPolicies: (json['allowed_policies'] as List<dynamic>?)
+      allowedPolicies:
+          (json['allowed_policies'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           ['keep', 'archive', 'purge_cache'],

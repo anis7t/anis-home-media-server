@@ -6,9 +6,11 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_typography.dart';
 import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../providers/admin_providers.dart';
 import 'connected_devices_view.dart';
 import 'library_maintenance_view.dart';
+import 'media_inventory_view.dart';
 import 'storage_management_view.dart';
 import 'transcode_dashboard_view.dart';
 
@@ -17,6 +19,7 @@ class AdminHubScreen extends ConsumerWidget {
 
   static const _tabs = [
     (title: 'Storage & Retention', icon: Icons.storage_rounded),
+    (title: 'Media Inventory', icon: Icons.video_library_rounded),
     (title: 'Transcodes & Dual-GPU', icon: Icons.speed_rounded),
     (title: 'Connected Devices', icon: Icons.devices_rounded),
     (title: 'Library & Security', icon: Icons.build_rounded),
@@ -38,6 +41,7 @@ class AdminHubScreen extends ConsumerWidget {
   }
 
   Widget _buildPhoneLayout(BuildContext context, WidgetRef ref, int activeTab) {
+    final isAdmin = ref.watch(isAdminProvider);
     return Column(
       children: [
         // Frosted AppBar
@@ -50,7 +54,10 @@ class AdminHubScreen extends ConsumerWidget {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+                icon: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: AppColors.textPrimary,
+                ),
                 onPressed: () => context.pop(),
               ),
               Container(
@@ -59,17 +66,41 @@ class AdminHubScreen extends ConsumerWidget {
                 decoration: BoxDecoration(
                   color: AppColors.brandRed.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.brandRed.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppColors.brandRed.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: const Center(
-                  child: Icon(Icons.admin_panel_settings_rounded, color: AppColors.brandRed, size: 18),
+                  child: Icon(
+                    Icons.admin_panel_settings_rounded,
+                    color: AppColors.brandRed,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                'Admin Management Hub',
-                style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700),
+              Expanded(
+                child: Text(
+                  'Admin Management Hub',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
+              if (isAdmin)
+                IconButton(
+                  tooltip: 'Lock Admin Controls',
+                  icon: const Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppColors.textSecondary,
+                  ),
+                  onPressed: () {
+                    ref.read(adminHubLockedProvider.notifier).lock();
+                    context.pop();
+                  },
+                ),
             ],
           ),
         ),
@@ -87,30 +118,41 @@ class AdminHubScreen extends ConsumerWidget {
                 final isSelected = activeTab == index;
 
                 return Padding(
-                  padding: EdgeInsets.only(right: index == _tabs.length - 1 ? 0 : 8),
+                  padding: EdgeInsets.only(
+                    right: index == _tabs.length - 1 ? 0 : 8,
+                  ),
                   child: ChoiceChip(
                     showCheckmark: false,
                     avatar: Icon(
                       tab.icon,
                       size: 16,
-                      color: isSelected ? AppColors.background : AppColors.textSecondary,
+                      color: isSelected
+                          ? AppColors.background
+                          : AppColors.textSecondary,
                     ),
                     label: Text(tab.title),
                     selected: isSelected,
                     selectedColor: AppColors.brandRed,
                     backgroundColor: AppColors.surfaceElevated,
                     labelStyle: TextStyle(
-                      color: isSelected ? AppColors.textOnBrand : AppColors.textPrimary,
+                      color: isSelected
+                          ? AppColors.textOnBrand
+                          : AppColors.textPrimary,
                       fontSize: 12,
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                       side: BorderSide(
-                        color: isSelected ? AppColors.brandRed : AppColors.borderSubtle,
+                        color: isSelected
+                            ? AppColors.brandRed
+                            : AppColors.borderSubtle,
                       ),
                     ),
-                    onSelected: (_) => ref.read(adminHubTabProvider.notifier).selectTab(index),
+                    onSelected: (_) =>
+                        ref.read(adminHubTabProvider.notifier).selectTab(index),
                   ),
                 );
               }),
@@ -125,6 +167,7 @@ class AdminHubScreen extends ConsumerWidget {
   }
 
   Widget _buildTvLayout(BuildContext context, WidgetRef ref, int activeTab) {
+    final isAdmin = ref.watch(isAdminProvider);
     return Row(
       children: [
         // Left Navigation Rail for TV
@@ -147,16 +190,34 @@ class AdminHubScreen extends ConsumerWidget {
                       builder: (context, isFocused, _) => Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: isFocused ? AppColors.brandRed : AppColors.surfaceElevated,
+                          color: isFocused
+                              ? AppColors.brandRedLight
+                              : AppColors.surfaceElevated,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isFocused ? AppColors.brandRed : AppColors.borderSubtle,
+                            color: isFocused
+                                ? AppColors.brandRedLight
+                                : AppColors.borderSubtle,
+                            width: isFocused ? 4 : 1,
                           ),
+                          boxShadow: isFocused
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.brandRedGlow.withValues(
+                                      alpha: 0.95,
+                                    ),
+                                    blurRadius: 22,
+                                    spreadRadius: 3,
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Icon(
                           Icons.arrow_back_rounded,
                           size: 18,
-                          color: isFocused ? AppColors.background : AppColors.textPrimary,
+                          color: isFocused
+                              ? AppColors.background
+                              : AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -165,11 +226,69 @@ class AdminHubScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Admin Hub', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                          const Text('Server Management', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                          Text(
+                            'Admin Hub',
+                            style: AppTypography.titleMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Text(
+                            'Server Management',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                    if (isAdmin) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'Lock Admin Controls',
+                        child: TvFocusable(
+                          borderRadius: BorderRadius.circular(8),
+                          scaleOnFocus: false,
+                          onPressed: () {
+                            ref.read(adminHubLockedProvider.notifier).lock();
+                            context.pop();
+                          },
+                          builder: (context, isFocused, _) => Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: isFocused
+                                  ? AppColors.brandRedLight
+                                  : AppColors.surfaceElevated,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isFocused
+                                    ? AppColors.brandRedLight
+                                    : AppColors.borderSubtle,
+                                width: isFocused ? 4 : 1,
+                              ),
+                              boxShadow: isFocused
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.brandRedGlow
+                                            .withValues(alpha: 0.95),
+                                        blurRadius: 22,
+                                        spreadRadius: 3,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Icon(
+                              Icons.lock_outline_rounded,
+                              size: 18,
+                              color: isFocused
+                                  ? AppColors.background
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -186,23 +305,42 @@ class AdminHubScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: TvFocusable(
                         borderRadius: BorderRadius.circular(10),
-                        onPressed: () => ref.read(adminHubTabProvider.notifier).selectTab(index),
+                        onPressed: () => ref
+                            .read(adminHubTabProvider.notifier)
+                            .selectTab(index),
                         builder: (context, isFocused, _) {
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
                             decoration: BoxDecoration(
                               color: isFocused
                                   ? AppColors.surfaceHighlight
-                                  : (isSelected ? AppColors.surfaceElevated : Colors.transparent),
+                                  : (isSelected
+                                        ? AppColors.surfaceElevated
+                                        : Colors.transparent),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
                                 color: isFocused
-                                    ? AppColors.brandRed
+                                    ? AppColors.brandRedLight
                                     : (isSelected
-                                        ? AppColors.brandRed.withValues(alpha: 0.4)
-                                        : Colors.transparent),
-                                width: isFocused ? 2.0 : 1.0,
+                                          ? AppColors.brandRed.withValues(
+                                              alpha: 0.4,
+                                            )
+                                          : Colors.transparent),
+                                width: isFocused ? 4.0 : 1.0,
                               ),
+                              boxShadow: isFocused
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.brandRedGlow
+                                            .withValues(alpha: 0.95),
+                                        blurRadius: 22,
+                                        spreadRadius: 3,
+                                      ),
+                                    ]
+                                  : null,
                             ),
                             child: Row(
                               children: [
@@ -221,7 +359,9 @@ class AdminHubScreen extends ConsumerWidget {
                                       color: isSelected || isFocused
                                           ? AppColors.textPrimary
                                           : AppColors.textSecondary,
-                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
                                       fontSize: 13,
                                     ),
                                   ),
@@ -250,10 +390,12 @@ class AdminHubScreen extends ConsumerWidget {
       case 0:
         return const StorageManagementView();
       case 1:
-        return const TranscodeDashboardView();
+        return const MediaInventoryView();
       case 2:
-        return const ConnectedDevicesView();
+        return const TranscodeDashboardView();
       case 3:
+        return const ConnectedDevicesView();
+      case 4:
         return const LibraryMaintenanceView();
       default:
         return const StorageManagementView();

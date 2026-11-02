@@ -18,6 +18,8 @@ class MovieItem {
   final double duration;
   final double percent;
   final String? updatedAt;
+  final bool hlsCached;
+  final bool needsTranscode;
 
   const MovieItem({
     required this.filename,
@@ -35,6 +37,8 @@ class MovieItem {
     this.duration = 0.0,
     this.percent = 0.0,
     this.updatedAt,
+    this.hlsCached = false,
+    this.needsTranscode = false,
   });
 
   /// Resolves the absolute HTTP URL for poster artwork.
@@ -128,6 +132,8 @@ class MovieItem {
       duration: parseDouble(json['duration']) ?? 0.0,
       percent: parseDouble(json['percent']) ?? 0.0,
       updatedAt: json['updated_at']?.toString(),
+      hlsCached: json['hls_cached'] == true,
+      needsTranscode: json['needs_transcode'] == true,
     );
   }
 
@@ -148,6 +154,8 @@ class MovieItem {
       'duration': duration,
       'percent': percent,
       'updated_at': updatedAt,
+      'hls_cached': hlsCached,
+      'needs_transcode': needsTranscode,
     };
   }
 

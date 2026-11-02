@@ -32,7 +32,8 @@ class AppRoutes {
       initialLocation: initialLocation,
       redirect: (BuildContext context, GoRouterState state) {
         final uri = state.uri;
-        final isAuthCallback = uri.scheme == 'ahms' ||
+        final isAuthCallback =
+            uri.scheme == 'ahms' ||
             (uri.host == 'auth' && uri.path.contains('callback')) ||
             uri.path.contains('/auth/callback') ||
             uri.path == '/callback';
@@ -47,7 +48,9 @@ class AppRoutes {
         return null;
       },
       onException: (BuildContext context, GoRouterState state, GoRouter router) {
-        debugPrint('[AppRoutes] Unhandled navigation exception for ${state.uri}: ${state.error}');
+        debugPrint(
+          '[AppRoutes] Unhandled navigation exception for ${state.uri}: ${state.error}',
+        );
         final uri = state.uri;
         if (uri.scheme == 'ahms' || uri.path.contains('callback')) {
           final token = uri.queryParameters['session_token'];
@@ -91,13 +94,14 @@ class AppRoutes {
 
         // Persistent Mobile Navigation Shell (Home, Library, Settings)
         StatefulShellRoute.indexedStack(
-          builder: (
-            BuildContext context,
-            GoRouterState state,
-            StatefulNavigationShell navigationShell,
-          ) {
-            return AppShell(navigationShell: navigationShell);
-          },
+          builder:
+              (
+                BuildContext context,
+                GoRouterState state,
+                StatefulNavigationShell navigationShell,
+              ) {
+                return AppShell(navigationShell: navigationShell);
+              },
           branches: [
             // Branch 0: Home Dashboard
             StatefulShellBranch(
@@ -141,13 +145,11 @@ class AppRoutes {
         GoRoute(
           path: movieDetails,
           builder: (BuildContext context, GoRouterState state) {
-            final movie =
-                state.extra is MovieItem ? state.extra as MovieItem : null;
+            final movie = state.extra is MovieItem
+                ? state.extra as MovieItem
+                : null;
             final filename = state.uri.queryParameters['filename'];
-            return MovieDetailsScreen(
-              initialMovie: movie,
-              filename: filename,
-            );
+            return MovieDetailsScreen(initialMovie: movie, filename: filename);
           },
         ),
 
@@ -158,7 +160,6 @@ class AppRoutes {
             return const AdminHubScreen();
           },
         ),
-
 
         // Production Video Player (Strictly top-level fullscreen outside shell)
         GoRoute(
@@ -181,15 +182,22 @@ class AppRoutes {
               mediaUrl: (providedUrl != null && providedUrl.isNotEmpty)
                   ? providedUrl
                   : defaultUrl,
-              title: extra?['title'] as String? ??
+              title:
+                  extra?['title'] as String? ??
                   query['title'] ??
                   'Batman Knightfall Part 1 (2026)',
-              subtitle: extra?['subtitle'] as String? ??
+              subtitle:
+                  extra?['subtitle'] as String? ??
                   query['subtitle'] ??
                   'Direct MP4 • 1080p • AAC 5.1',
               startPosition: extra?['startPosition'] as Duration?,
               mediaFilename: extra?['mediaFilename'] as String?,
-              externalSubtitleUrl: extra?['externalSubtitleUrl'] as String? ??
+              backLabel:
+                  extra?['backLabel'] as String? ??
+                  query['backLabel'] ??
+                  'Back',
+              externalSubtitleUrl:
+                  extra?['externalSubtitleUrl'] as String? ??
                   query['externalSubtitleUrl'],
             );
           },
@@ -209,4 +217,3 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
   );
 });
-

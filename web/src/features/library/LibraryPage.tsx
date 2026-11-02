@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { createPortal } from 'react-dom';
 import { listMovies } from '../../lib/api/client';
 import { verifyAdminPin } from '../../lib/api/manage';
@@ -45,7 +46,14 @@ export function LibraryPage() {
     );
   }, [movies]);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
+  const setSearchQuery = useCallback((value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set('q', value);
+    else next.delete('q');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'recent' | 'title' | 'rating' | 'year'>('recent');
 

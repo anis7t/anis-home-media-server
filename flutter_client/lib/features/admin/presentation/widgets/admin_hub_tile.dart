@@ -10,6 +10,7 @@ import '../../../../core/widgets/tv_focusable.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/widgets/admin_pin_sheet.dart';
 import '../../../auth/presentation/widgets/tv_admin_pin_pad.dart';
+import '../providers/admin_providers.dart';
 
 /// Entry tile embedded in Settings for accessing the Admin Management Hub.
 /// Role-gated: opens directly for Admins; prompts for Admin PIN for viewers/guests.
@@ -18,32 +19,47 @@ class AdminHubTile extends ConsumerWidget {
 
   static const Color goldAccent = Color(0xFFE5A93B);
 
-  Future<void> _handleTap(BuildContext context, WidgetRef ref, bool isTv) async {
+  Future<void> _handleTap(
+    BuildContext context,
+    WidgetRef ref,
+    bool isTv,
+  ) async {
     final isAdmin = ref.read(isAdminProvider);
-    if (isAdmin) {
+    final isLocked = ref.read(adminHubLockedProvider);
+    if (isAdmin && !isLocked) {
       context.push(AppRoutes.adminHub);
-    } else {
-      // Prompt for PIN to unlock
-      if (isTv) {
-        showDialog<void>(
-          context: context,
-          builder: (ctx) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
-            child: TvAdminPinPad(
-              onSuccess: () {
-                Navigator.of(ctx).pop();
-                context.push(AppRoutes.adminHub);
-              },
-              onCancel: () => Navigator.of(ctx).pop(),
-            ),
+      return;
+    }
+
+    final unlockOnly = isAdmin && isLocked;
+    if (isTv) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 48,
+            vertical: 24,
           ),
-        );
-      } else {
-        final success = await AdminPinSheet.show(context);
-        if (success && context.mounted) {
-          context.push(AppRoutes.adminHub);
-        }
+          child: TvAdminPinPad(
+            isUnlockOnly: unlockOnly,
+            onSuccess: () {
+              ref.read(adminHubLockedProvider.notifier).unlock();
+              Navigator.of(ctx).pop();
+              context.push(AppRoutes.adminHub);
+            },
+            onCancel: () => Navigator.of(ctx).pop(),
+          ),
+        ),
+      );
+    } else {
+      final success = await AdminPinSheet.show(
+        context,
+        isUnlockOnly: unlockOnly,
+      );
+      if (success && context.mounted) {
+        ref.read(adminHubLockedProvider.notifier).unlock();
+        context.push(AppRoutes.adminHub);
       }
     }
   }
@@ -54,10 +70,7 @@ class AdminHubTile extends ConsumerWidget {
     final isAdmin = ref.watch(isAdminProvider);
 
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: isTv ? 24 : 16,
-        vertical: 8,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: isTv ? 24 : 16, vertical: 8),
       child: TvFocusable(
         borderRadius: BorderRadius.circular(16),
         onPressed: () => _handleTap(context, ref, isTv),
@@ -74,16 +87,16 @@ class AdminHubTile extends ConsumerWidget {
                 color: isFocused
                     ? goldAccent
                     : (isAdmin
-                        ? goldAccent.withValues(alpha: 0.35)
-                        : AppColors.borderSubtle),
-                width: isFocused ? 2.5 : 1.0,
+                          ? goldAccent.withValues(alpha: 0.35)
+                          : AppColors.borderSubtle),
+                width: isFocused ? 4 : 1.0,
               ),
               boxShadow: isFocused
                   ? [
                       BoxShadow(
-                        color: goldAccent.withValues(alpha: 0.35),
-                        blurRadius: 18,
-                        spreadRadius: 1,
+                        color: goldAccent.withValues(alpha: 0.75),
+                        blurRadius: 24,
+                        spreadRadius: 3,
                       ),
                     ]
                   : null,
@@ -109,9 +122,7 @@ class AdminHubTile extends ConsumerWidget {
                       isAdmin
                           ? Icons.admin_panel_settings_rounded
                           : Icons.lock_outline_rounded,
-                      color: isAdmin
-                          ? goldAccent
-                          : AppColors.textMuted,
+                      color: isAdmin ? goldAccent : AppColors.textMuted,
                       size: 24,
                     ),
                   ),
@@ -183,9 +194,7 @@ class AdminHubTile extends ConsumerWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: isFocused
-                      ? goldAccent
-                      : AppColors.textMuted,
+                  color: isFocused ? goldAccent : AppColors.textMuted,
                   size: 24,
                 ),
               ],

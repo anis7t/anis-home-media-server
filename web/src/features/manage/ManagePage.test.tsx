@@ -224,7 +224,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     expect(sessionStorage.getItem('ms_admin_manual_lock')).toBe('true');
   });
 
-  it('prompts for access code when deleting a movie while locked', async () => {
+  it('lets a signed-in admin delete without a second access code', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/auth/me') {
@@ -262,15 +262,13 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i });
     await user.click(deleteButtons[0]);
 
-    // Delete modal opens and prompts for access code
+    // The account admin session already authorizes the delete flow.
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText(/permanently delete & purge/i)).toBeInTheDocument();
-    const modalPin = screen.getByPlaceholderText(/enter 6-digit access code…/i);
-    expect(modalPin).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/enter 6-digit access code…/i)).not.toBeInTheDocument();
 
-    // Enter code and confirm deletion
-    await user.type(modalPin, '975312');
     const confirmDeleteBtn = screen.getByRole('button', { name: /yes, delete & purge everything/i });
+    expect(confirmDeleteBtn).toBeEnabled();
     await user.click(confirmDeleteBtn);
 
     await waitFor(() => {
@@ -281,6 +279,10 @@ describe('ManagePage Comprehensive Edge Cases', () => {
         })
       );
     });
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/admin/otp/verify',
+      expect.anything(),
+    );
   });
 
   it('updates storage policy when admin unlocked', async () => {

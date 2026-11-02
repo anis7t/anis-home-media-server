@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, useLocation } from 'react-router';
-import type { ReactNode } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router';
+import type { FormEvent, ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import Avatar from '../components/Avatar';
@@ -18,6 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { authenticated, email, name, locked, signIn, signOut, oauthConfigured, openPinSignIn } =
     useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   /*
    * The sign-in screen appears only when the server has actually REFUSED this
@@ -30,9 +31,46 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const [headerSearchValue, setHeaderSearchValue] = useState(
+    () => new URLSearchParams(location.search).get('q') ?? '',
+  );
 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setHeaderSearchValue(new URLSearchParams(location.search).get('q') ?? '');
+  }, [location.search]);
+
+  useEffect(() => {
+    if (headerSearchOpen) searchInputRef.current?.focus();
+  }, [headerSearchOpen]);
+
+  const updateHeaderSearch = (value: string) => {
+    setHeaderSearchValue(value);
+    if (location.pathname !== '/') return;
+
+    const params = new URLSearchParams(location.search);
+    if (value.trim()) params.set('q', value);
+    else params.delete('q');
+    const search = params.toString();
+    navigate({ pathname: '/', search: search ? `?${search}` : '' }, { replace: true });
+  };
+
+  const submitHeaderSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const params = new URLSearchParams();
+    const query = headerSearchValue.trim();
+    if (query) params.set('q', query);
+    const search = params.toString();
+    navigate(
+      { pathname: '/', search: search ? `?${search}` : '' },
+      { replace: location.pathname === '/' },
+    );
+    setHeaderSearchOpen(false);
+  };
 
   /* Close dropdown when clicked outside */
   useEffect(() => {
@@ -133,7 +171,55 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="font-semibold tracking-wider text-[11px]">ONLINE</span>
           </div>
 
+          {!location.pathname.startsWith('/watch/') ? (
+            <form
+              role="search"
+              className="hidden max-w-sm flex-1 items-center xl:flex"
+              onSubmit={submitHeaderSearch}
+            >
+              <label htmlFor="global-library-search" className="sr-only">
+                Search library
+              </label>
+              <div className="relative w-full">
+                <Icon
+                  name="search"
+                  size={16}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/45"
+                />
+                <input
+                  id="global-library-search"
+                  type="search"
+                  value={headerSearchValue}
+                  onChange={(event) => updateHeaderSearch(event.currentTarget.value)}
+                  placeholder="Search your library"
+                  className="w-full rounded-full border border-white/10 bg-obsidian-850/80 py-2.5 pl-10 pr-10 text-sm text-white placeholder-white/40 shadow-inner transition focus:border-brand-500/60 focus:bg-obsidian-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+                {headerSearchValue ? (
+                  <button
+                    type="button"
+                    onClick={() => updateHeaderSearch('')}
+                    aria-label="Clear library search"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-white/45 transition hover:text-white"
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : null}
+
           <nav className="ml-auto flex items-center gap-1.5 sm:gap-2.5" aria-label="Primary">
+            {!location.pathname.startsWith('/watch/') ? (
+              <button
+                type="button"
+                onClick={() => setHeaderSearchOpen((open) => !open)}
+                aria-label={headerSearchOpen ? 'Close library search' : 'Search library'}
+                aria-expanded={headerSearchOpen}
+                className="card-ring flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/75 transition hover:border-brand-400/40 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 xl:hidden"
+              >
+                <Icon name={headerSearchOpen ? 'x' : 'search'} size={17} />
+              </button>
+            ) : null}
             <NavLink
               to="/"
               end
@@ -372,6 +458,43 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </nav>
         </div>
+        {headerSearchOpen && !location.pathname.startsWith('/watch/') ? (
+          <form
+            role="search"
+            className="mx-auto max-w-[1600px] px-3 pb-3 sm:px-6 xl:hidden"
+            onSubmit={submitHeaderSearch}
+          >
+            <label htmlFor="mobile-library-search" className="sr-only">
+              Search library
+            </label>
+            <div className="relative">
+              <Icon
+                name="search"
+                size={17}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/45"
+              />
+              <input
+                ref={searchInputRef}
+                id="mobile-library-search"
+                type="search"
+                value={headerSearchValue}
+                onChange={(event) => updateHeaderSearch(event.currentTarget.value)}
+                placeholder="Search your library"
+                className="w-full rounded-2xl border border-white/12 bg-obsidian-850 py-3 pl-11 pr-11 text-sm text-white placeholder-white/40 shadow-inner transition focus:border-brand-500/60 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              />
+              {headerSearchValue ? (
+                <button
+                  type="button"
+                  onClick={() => updateHeaderSearch('')}
+                  aria-label="Clear library search"
+                  className="absolute inset-y-0 right-0 flex items-center pr-4 text-white/45 transition hover:text-white"
+                >
+                  <Icon name="x" size={15} />
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
       </header>
 
       {/* Main Container */}

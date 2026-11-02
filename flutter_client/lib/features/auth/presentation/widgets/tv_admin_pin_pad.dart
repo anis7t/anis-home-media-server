@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../app/theme/app_colors.dart';
 import '../providers/auth_providers.dart';
 
@@ -8,11 +9,13 @@ import '../providers/auth_providers.dart';
 class TvAdminPinPad extends ConsumerStatefulWidget {
   final VoidCallback? onSuccess;
   final VoidCallback? onCancel;
+  final bool isUnlockOnly;
 
   const TvAdminPinPad({
     super.key,
     this.onSuccess,
     this.onCancel,
+    this.isUnlockOnly = false,
   });
 
   @override
@@ -68,8 +71,10 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
     });
 
     final pin = _enteredDigits.join();
-    final success =
-        await ref.read(authNotifierProvider.notifier).loginWithPin(pin);
+    final authNotifier = ref.read(authNotifierProvider.notifier);
+    final success = widget.isUnlockOnly
+        ? await authNotifier.verifyAndUnlockAdminPin(pin)
+        : await authNotifier.loginWithPin(pin);
 
     if (!mounted) return;
 
@@ -221,17 +226,25 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
               // Error feedback
               if (_errorMessage != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.statusError.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.statusError.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.statusError.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline_rounded,
-                          color: AppColors.statusError, size: 16),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AppColors.statusError,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
@@ -296,12 +309,20 @@ class _TvAdminPinPadState extends ConsumerState<TvAdminPinPad> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   TextButton.icon(
-                    onPressed: _enteredDigits.isNotEmpty ? _onClearAllPressed : null,
+                    onPressed: _enteredDigits.isNotEmpty
+                        ? _onClearAllPressed
+                        : null,
                     icon: const Icon(Icons.restart_alt_rounded, size: 16),
-                    label: const Text('Clear All', style: TextStyle(fontSize: 12)),
+                    label: const Text(
+                      'Clear All',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.textSecondary,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),

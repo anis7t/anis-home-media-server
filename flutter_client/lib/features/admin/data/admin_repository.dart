@@ -26,10 +26,10 @@ class AdminRepository {
   Future<StorageAuditReport> getStorageAudit({bool force = false}) async {
     try {
       final res = await _dio.get<Map<String, dynamic>>(
-        force ? '${ApiEndpoints.storageAudit}?force=true' : ApiEndpoints.storageAudit,
-        options: Options(
-          receiveTimeout: const Duration(seconds: 60),
-        ),
+        force
+            ? '${ApiEndpoints.storageAudit}?force=true'
+            : ApiEndpoints.storageAudit,
+        options: Options(receiveTimeout: const Duration(seconds: 60)),
       );
       if (res.statusCode == 200 && res.data != null) {
         return StorageAuditReport.fromJson(res.data!);
@@ -62,10 +62,7 @@ class AdminRepository {
   }
 
   /// Update storage retention policy in PostgreSQL (`keep`, `archive`, `purge_cache`).
-  Future<bool> updateStorageSettings(
-    String policy, {
-    String? adminPin,
-  }) async {
+  Future<bool> updateStorageSettings(String policy, {String? adminPin}) async {
     try {
       final payload = <String, dynamic>{
         'retention_policy': policy,
@@ -94,9 +91,7 @@ class AdminRepository {
       final res = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.storagePurgeOrphans,
         data: payload,
-        options: Options(
-          receiveTimeout: const Duration(seconds: 60),
-        ),
+        options: Options(receiveTimeout: const Duration(seconds: 60)),
       );
       if (res.statusCode == 200 && res.data != null) {
         final resultJson = res.data!['result'] as Map<String, dynamic>? ?? {};
@@ -108,6 +103,43 @@ class AdminRepository {
       );
     } on DioException catch (e) {
       throw _mapDioError(e, 'Failed to purge orphaned caches');
+    }
+  }
+
+  /// Archive a media source while preserving its active stream cache.
+  Future<bool> archiveMovieMedia(String filename) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        ApiEndpoints.storageArchive(filename),
+      );
+      return res.statusCode == 200 && res.data?['success'] == true;
+    } on DioException catch (e) {
+      throw _mapDioError(e, 'Failed to archive media');
+    }
+  }
+
+  /// Permanently delete a media source and its associated server-side data.
+  Future<bool> deleteMovieMedia(String filename) async {
+    try {
+      final res = await _dio.delete<Map<String, dynamic>>(
+        ApiEndpoints.mediaDelete(filename),
+      );
+      return res.statusCode == 200 && res.data?['success'] == true;
+    } on DioException catch (e) {
+      throw _mapDioError(e, 'Failed to delete media');
+    }
+  }
+
+  /// Queue a media item for its baseline pre-transcode.
+  Future<bool> preTranscodeMovie(String filename) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        ApiEndpoints.transcodeStartForMedia(filename),
+      );
+      return (res.statusCode == 200 || res.statusCode == 202) &&
+          (res.data?['success'] == true || res.data?['status'] != null);
+    } on DioException catch (e) {
+      throw _mapDioError(e, 'Failed to queue pre-transcode');
     }
   }
 
@@ -164,9 +196,7 @@ class AdminRepository {
   /// Fetch all registered client devices with online presence states.
   Future<DeviceListResponse> getDevices() async {
     try {
-      final res = await _dio.get<Map<String, dynamic>>(
-        ApiEndpoints.devices,
-      );
+      final res = await _dio.get<Map<String, dynamic>>(ApiEndpoints.devices);
       if (res.statusCode == 200 && res.data != null) {
         return DeviceListResponse.fromJson(res.data!);
       }
@@ -212,9 +242,7 @@ class AdminRepository {
   /// Query current TMDb media library scanning status.
   Future<LibraryScanStatus> getScanStatus() async {
     try {
-      final res = await _dio.get<Map<String, dynamic>>(
-        ApiEndpoints.scan,
-      );
+      final res = await _dio.get<Map<String, dynamic>>(ApiEndpoints.scan);
       if (res.statusCode == 200 && res.data != null) {
         return LibraryScanStatus.fromJson(res.data!);
       }
@@ -236,9 +264,7 @@ class AdminRepository {
       final res = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.scan,
         data: payload,
-        options: Options(
-          receiveTimeout: const Duration(seconds: 60),
-        ),
+        options: Options(receiveTimeout: const Duration(seconds: 60)),
       );
       return res.statusCode == 200 || res.statusCode == 202;
     } on DioException catch (e) {
@@ -251,10 +277,7 @@ class AdminRepository {
     try {
       final res = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.adminPin,
-        data: {
-          'current_pin': currentPin,
-          'new_pin': newPin,
-        },
+        data: {'current_pin': currentPin, 'new_pin': newPin},
       );
       return res.statusCode == 200;
     } on DioException catch (e) {
@@ -306,8 +329,8 @@ class AdminRepository {
     }
     final message =
         e.response?.data is Map && (e.response!.data as Map)['error'] != null
-            ? (e.response!.data as Map)['error'].toString()
-            : e.message ?? defaultMessage;
+        ? (e.response!.data as Map)['error'].toString()
+        : e.message ?? defaultMessage;
     return AppException(message, statusCode: status);
   }
 }

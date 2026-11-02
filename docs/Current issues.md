@@ -1,9 +1,9 @@
-# Resolution Log — Current Issues (October 2026)
+# Resolution Log — Current Issues (October–November 2026)
 
-Issues 1–10 have been systematically addressed, tested, and resolved across 6 phases. Issues 1–7 were
-reported by the user; issues 8, 9 and 10 were found by verification passes over the QR device
-sign-in feature and the migration cutover; Issue 11 (libmpv host test dependency), Issue 12 (Flask/Waitress
-decommissioning loose ends), and Issue 13 (AMD GPU TDR Resilience) are resolved. **All core issues are resolved:**
+Issues 1–14 record the previously reported and discovered issues; those items have been addressed and
+closed. On 2026-11-03, the owner reported a new set of client access and usability problems, tracked
+below as **Issue 15**. Its implementation and automated checks are complete; production and device
+verification are recorded below as they finish.
 
 - **Issue 13 (AMD GPU TDR Resilience) — RESOLVED 2026-10-24.** Relaxed Windows GraphicsDrivers TDR timeouts (`TdrDelay=8`, `TdrDdiDelay=20`), calibrated Main10 concurrency to 2 workers (1 per physical GPU: discrete RX 560X + integrated Vega 8), introduced 180s bounded transcode chunk execution timeout with AMF/D3D11 driver diagnostics, built automated audit tool (`scripts/audit_gpu_tdr.ps1`), and verified zero-dump 4K transcode stability. Details: [`docs/WALKTHROUGH_GPU_TDR_RESILIENCE.md`](WALKTHROUGH_GPU_TDR_RESILIENCE.md).
 
@@ -441,6 +441,100 @@ sign-in was restored. **State: 14.1, 14.2, 14.3, 14.4, 14.5 and 14.6 are closed.
   endpoints hardened to admin-only; empty-list = open sign-in). The issues above were reported
   against that restored state and were **unrelated to the allowlist**; their root causes are
   recorded above.
+
+---
+
+### Issue 15: Owner-Reported Admin, Search & Android UX Gaps (2026-11-03) — IMPLEMENTED, VERIFICATION PENDING
+
+The owner asked that these be handled first. They are recorded as separate subissues so each can be
+reviewed independently. **Evidence:** owner report, source review, and implementation changes; no
+runtime or cross-device reproduction has been verified.
+
+1. **Web media deletion asks an already signed-in admin to "generate admin" again.**
+   - **Reported:** The owner is signed in to the web app with an admin account but must perform a
+     separate "generate admin" step to delete media.
+   - **Expected:** A signed-in administrator can delete media without generating a second access code;
+     the server continues to enforce administrator authorization.
+   - **Implementation:** The delete confirmation now uses the page's `isAdmin` state and no longer
+     asks for a second one-time code. The submit handler still rejects callers without admin access;
+     the Rust route continues to validate the signed-in admin session and record its existing audit
+     event. No server authorization or response contract was changed.
+   - **Verification pending:** The signed-in flow has not been exercised in a browser.
+
+2. **Android app lacks comparable administrator options.**
+   - **Reported:** The Android mobile app does not offer admin options similar to those available in
+     the web app.
+   - **Source review:** Android already has a role-gated **Admin Management Hub** in Settings, with
+     storage, transcode, device, and library-maintenance areas. No per-title permanent media delete
+     action was found in the hub code reviewed.
+   - **Owner clarification (2026-11-03):** The target is parity with **all controls on the web Manage
+     page**, not just per-title media deletion.
+   - **Expected:** Map each web Manage control to an equivalent Android admin experience, reusing
+     existing Admin Hub controls where behavior is truly equivalent. Keep every admin mutation
+     protected for non-admin users and avoid duplicating controls that already provide parity.
+   - **Implementation:** Added a Media Inventory tab to the Android Admin Hub with title/filename/year
+     search, web-matching filters and sorts, playback/details, pre-transcode, archive, and confirmed
+     permanent delete. Existing storage/retention, transcode, device, scan, and security sections remain
+   available. Per-title transcode status comes from the existing status API; Archive is offered only
+   for completed MKV caches. Cache audit data is matched conservatively to exact source names to avoid
+   attributing another nested title's cache. Android Settings also has a PIN-protected Lock Admin
+   action. The inventory calls existing protected routes; no API contract changed.
+   - **Automated verification:** Flutter analyze and the full Flutter suite passed.
+   - **Device verification pending:** The connected phone will be updated and checked; no TV is
+     connected for physical D-pad verification.
+
+3. **Search should be easy to find from the top navigation across clients.**
+   - **Requested:** Add an aesthetic, intuitive search affordance in the web app's top header and a
+     similarly discoverable experience in the Android app on both phone and TV.
+   - **Expected:** Search is visible and understandable from the primary navigation on each target.
+   - **Implementation:** Added a responsive web header search (inline at wide widths and expandable
+     below the header on smaller screens), synchronized with the library's `q` search parameter.
+     Android phone and TV headers now expose a search action that focuses the library search field.
+   - **Automated verification:** Web typecheck, lint, tests, and production build passed; Flutter
+     analyze and tests passed.
+   - **Visual verification pending:** Browser breakpoints and connected-phone interaction will be
+     checked after deployment. No TV is available for physical search/focus testing.
+
+4. **The existing phone search area is too short vertically.**
+   - **Reported:** The search section in the phone app appears vertically shrunk.
+   - **Expected:** The search control has enough height to read and use comfortably on a phone.
+   - **Implementation:** Increased the Android library search field to 56 logical pixels and retained
+     the shared phone/TV layout.
+   - **Automated verification:** Flutter analyze and tests passed.
+   - **Visual verification pending:** Phone sizing will be checked after the phone update; TV and web
+     sizing have not been compared on physical screens.
+
+5. **TV Settings does not show the D-pad focus location.**
+   - **Reported:** While navigating Settings with the TV remote, the current focus is not visible, so
+     the owner has to navigate blindly.
+   - **Expected:** Every focusable Settings control has a clear visible focused state that tracks
+     D-pad movement, including after opening and closing nested controls or dialogs.
+   - **Implementation:** Strengthened the focused border, surface contrast, and glow across Settings'
+     account buttons, settings controls, Admin Hub entry tile, and Admin Hub TV tabs.
+   - **Automated verification:** Flutter analyze and tests passed.
+   - **Device verification pending:** D-pad traversal and focus visibility require a TV; none is
+     connected for this release.
+
+6. **The player return label says "Back to connection/library."**
+   - **Reported:** The bottom of the Android player uses the wording "Back to connection/library";
+     the owner asks why a connection screen is mentioned.
+   - **Expected:** The label identifies the route the player returns to, without obsolete connection
+     wording.
+   - **Implementation:** Removed the connection wording. Playback now shows "Back to Library",
+     "Back to Details", or "Back to Admin Hub" according to its launch route; direct playback uses a
+     neutral "Back" label. The button continues to pop to the caller.
+   - **Automated verification:** Flutter analyze and tests passed.
+   - **Device verification pending:** The updated player label will be checked on the connected phone.
+
+**Pre-deploy checks:** React typecheck, lint, 337 Vitest tests, and production build passed. Flutter
+analysis passed and the Flutter suite passed (405 tests; 13 live-server tests skipped by design).
+Rust formatting and clippy passed; Rust unit and integration suites passed (131 + 259 tests) against
+the isolated `media_server_test` database and a temporary probeable MP4 fixture. The local Gitleaks
+binary is unavailable, so the secret scan did not run. Production deployment and connected-phone
+verification are pending; physical TV verification remains unavailable without a connected TV.
+
+The owner noted there are additional issues to report later; this is the first prioritized batch, not
+a claim that it is the complete backlog.
 
 ---
 

@@ -36,12 +36,18 @@ class ApiEndpoints {
   static const String storageAudit = '/api/storage/audit';
   static const String storagePurgeOrphans = '/api/storage/purge-orphans';
   static const String storageSettings = '/api/storage/settings';
+  static String storageArchive(String filename) =>
+      '/api/storage/archive/${Uri.encodeComponent(filename)}';
+  static String mediaDelete(String filename) =>
+      '/api/media/${Uri.encodeComponent(filename)}';
   static const String transcodeDashboard = '/api/transcode/dashboard';
-  static String transcodeCancel(String filename) => '/api/transcode/jobs/$filename/cancel';
+  static String transcodeStartForMedia(String filename) =>
+      '$transcodeStart/${Uri.encodeComponent(filename)}';
+  static String transcodeCancel(String filename) =>
+      '/api/transcode/jobs/$filename/cancel';
   static const String transcodeSweep = '/api/transcode/sweep';
   static const String deviceRename = '/api/devices/rename';
   static const String deviceDelete = '/api/devices/delete';
   static const String adminPin = '/api/admin/pin';
   static const String adminAuditLogs = '/api/admin/audit-logs';
 }
-
