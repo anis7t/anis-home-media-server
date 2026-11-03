@@ -23,6 +23,33 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
+fn terminate_ffmpeg_process(pid: u32) {
+    #[cfg(windows)]
+    let (program, args) = (
+        "taskkill",
+        vec![
+            "/PID".to_string(),
+            pid.to_string(),
+            "/F".to_string(),
+            "/T".to_string(),
+        ],
+    );
+
+    #[cfg(unix)]
+    let (program, args) = ("kill", vec!["-KILL".to_string(), pid.to_string()]);
+
+    #[cfg(not(any(windows, unix)))]
+    let (program, args) = ("", Vec::<String>::new());
+
+    if !program.is_empty() {
+        let _ = std::process::Command::new(program)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
 pub struct TranscodeWorker;
 
 impl TranscodeWorker {
@@ -460,9 +487,7 @@ impl TranscodeWorker {
                         cancel_requested_clone.store(true, Ordering::Relaxed);
                         // Abort active FFmpeg child processes immediately
                         for pid in active_pids_clone.lock().await.iter() {
-                            let _ = std::process::Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/F", "/T"])
-                                .output();
+                            terminate_ffmpeg_process(*pid);
                         }
                         return Ok(());
                     }
@@ -489,11 +514,9 @@ impl TranscodeWorker {
         let _ = progress_updater_handle.await;
 
         if let Err(e) = run_result {
-            // Clean up any active child ffmpeg processes on Windows to prevent orphaned locks
+            // Clean up any active child FFmpeg processes to prevent orphans.
             for pid in active_pids.lock().await.iter() {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F", "/T"])
-                    .output();
+                terminate_ffmpeg_process(*pid);
             }
             return Err(e);
         }
@@ -556,6 +579,7 @@ impl TranscodeWorker {
 
         let mut cmd = tokio::process::Command::new("ffmpeg");
         cmd.current_dir(hls_dir);
+        cmd.kill_on_drop(true);
         cmd.arg("-hide_banner").arg("-y");
 
         // HW Init
@@ -646,9 +670,7 @@ impl TranscodeWorker {
                 // Timeout elapsed - kill child process to release GPU contexts
                 if let Some(pid) = child_pid {
                     active_pids.lock().await.remove(&pid);
-                    let _ = std::process::Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/F", "/T"])
-                        .output();
+                    terminate_ffmpeg_process(pid);
                 }
                 return Err(AppError::Internal(format!(
                     "Chunk {} on {} timed out after {}s (possible GPU hang/TDR)",

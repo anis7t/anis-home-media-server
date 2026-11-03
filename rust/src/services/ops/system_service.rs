@@ -2,8 +2,20 @@ use crate::models::system::{
     CpuInfo, DiskIoInfo, DriveInfo, GpuInfo, MemoryInfo, NetworkInfo, StorageInfo,
     SystemTelemetryResponse,
 };
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use sysinfo::{Disks, System};
+
+fn is_best_mount_for_target(target: &Path, mount: &Path, disks: &Disks) -> bool {
+    target.starts_with(mount)
+        && !disks.iter().any(|candidate| {
+            let candidate_mount = candidate.mount_point();
+            candidate_mount != mount
+                && candidate_mount.components().count() > mount.components().count()
+                && target.starts_with(candidate_mount)
+        })
+}
 
 #[derive(Clone)]
 pub struct SystemService {
@@ -45,11 +57,43 @@ impl SystemService {
         let mut pool_used: u64 = 0;
         let mut pool_total: u64 = 0;
         let mut pool_free: u64 = 0;
+        let container_storage_paths: Vec<std::path::PathBuf> = if cfg!(windows) {
+            Vec::new()
+        } else {
+            std::env::var("MEDIA_SERVER_STORAGE_PATHS")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(std::path::PathBuf::from)
+                .collect()
+        };
+        let mut counted_container_devices = HashSet::new();
 
         for disk in &disks {
             let mount = disk.mount_point().to_string_lossy().to_string();
             // Explicit whitelist: strictly include only Drive D: (media storage) and Drive E: (SSD runtime & cache).
-            if mount.starts_with("D:") || mount.starts_with("E:") {
+            let is_windows_storage = cfg!(windows)
+                && (mount.starts_with("D:") || mount.starts_with("E:"));
+            let mount_path = disk.mount_point();
+            let is_container_storage = !cfg!(windows)
+                && container_storage_paths
+                    .iter()
+                    .any(|path| is_best_mount_for_target(path, mount_path, &disks));
+
+            if is_windows_storage || is_container_storage {
+                if is_container_storage {
+                    let device = disk.name().to_string_lossy().to_string();
+                    let device_key = if device.is_empty() {
+                        mount.clone()
+                    } else {
+                        device
+                    };
+                    if !counted_container_devices.insert(device_key) {
+                        continue;
+                    }
+                }
+
                 let total = disk.total_space();
                 let free = disk.available_space();
                 let used = total.saturating_sub(free);
@@ -59,11 +103,16 @@ impl SystemService {
                     0.0
                 };
 
-                let drive_letter = mount.chars().next().unwrap_or('?').to_string();
-                let label = if drive_letter == "E" {
-                    "Fast SSD (Apps & Cache)".to_string()
+                let (drive, label) = if cfg!(windows) {
+                    let drive_letter = mount.chars().next().unwrap_or('?').to_string();
+                    let label = if drive_letter == "E" {
+                        "Fast SSD (Apps & Cache)".to_string()
+                    } else {
+                        "Mass Storage (Flicks)".to_string()
+                    };
+                    (format!("{}:", drive_letter), label)
                 } else {
-                    "Mass Storage (Flicks)".to_string()
+                    (mount.clone(), format!("Container Storage ({})", mount))
                 };
 
                 let u_str = format!("{:.1} GB", used as f64 / (1024.0 * 1024.0 * 1024.0));
@@ -71,7 +120,7 @@ impl SystemService {
                 let t_str = format!("{:.1} GB", total as f64 / (1024.0 * 1024.0 * 1024.0));
 
                 drives_info.push(DriveInfo {
-                    drive: format!("{}:", drive_letter),
+                    drive,
                     label,
                     percent: (pct * 10.0).round() / 10.0,
                     used,

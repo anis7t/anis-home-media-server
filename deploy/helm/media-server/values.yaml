@@ -1,0 +1,70 @@
+replicaCount: 1
+
+image:
+  repository: media-server-api
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+app:
+  # Create this Secret before installing the chart. It must contain
+  # MEDIA_SERVER_DATABASE_URL and MEDIA_SERVER_SECRET. Optional auth and
+  # metadata credentials can be added to the same Secret.
+  existingSecret: media-server-app-secrets
+  terminationGracePeriodSeconds: 240
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "4"
+      memory: 4Gi
+
+postgres:
+  image:
+    repository: postgres
+    tag: 18.4-bookworm
+    pullPolicy: IfNotPresent
+  database: media_server
+  auth:
+    username: media_server
+    existingSecret: media-server-postgres-secrets
+    passwordKey: POSTGRES_PASSWORD
+  persistence:
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+persistence:
+  media:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+  cache:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+
+# Additional non-secret environment variables for the API container.
+extraEnv: {}

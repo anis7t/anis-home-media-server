@@ -104,27 +104,47 @@ impl AppConfig {
                 let _ = dotenvy::from_path(&p);
             }
         }
-        let default_env = PathBuf::from("E:\\MediaServer\\.env");
-        if default_env.exists() {
-            let _ = dotenvy::from_path(&default_env);
-        }
 
-        // Defensive manual fallback in case dotenvy encounters escape syntax on Windows
-        if let Ok(content) = std::fs::read_to_string("E:\\MediaServer\\.env") {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with('#') || !trimmed.contains('=') {
-                    continue;
-                }
-                if let Some((k, v)) = trimmed.split_once('=') {
-                    let k = k.trim();
-                    let v = v.trim().trim_matches(|c| c == '\'' || c == '"');
-                    if !k.is_empty() && env::var(k).is_err() {
-                        env::set_var(k, v);
+        // Keep the historical production-host fallback on Windows. Linux
+        // containers receive configuration through their environment and
+        // must not probe host-specific E:\ paths.
+        #[cfg(windows)]
+        {
+            let default_env = PathBuf::from(r"E:\MediaServer\.env");
+            if default_env.exists() {
+                let _ = dotenvy::from_path(&default_env);
+            }
+
+            // Defensive manual fallback in case dotenvy encounters escape
+            // syntax in the Windows host's environment file.
+            if let Ok(content) = std::fs::read_to_string(&default_env) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with('#') || !trimmed.contains('=') {
+                        continue;
+                    }
+                    if let Some((k, v)) = trimmed.split_once('=') {
+                        let k = k.trim();
+                        let v = v.trim().trim_matches(|c| c == '\'' || c == '"');
+                        if !k.is_empty() && env::var(k).is_err() {
+                            env::set_var(k, v);
+                        }
                     }
                 }
             }
         }
+
+        let base_dir = env::var("MEDIA_SERVER_BASE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                env::current_dir().unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        PathBuf::from(r"E:\MediaServer")
+                    } else {
+                        PathBuf::from("/app")
+                    }
+                })
+            });
 
         let database_url = env::var("MEDIA_SERVER_DATABASE_URL").unwrap_or_else(|_| {
             "postgresql://postgres:postgres@127.0.0.1:5432/media_server".to_string()
@@ -152,7 +172,13 @@ impl AppConfig {
 
         let media_root = env::var("MEDIA_SERVER_MEDIA_ROOT")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("D:\\Flicks"));
+            .unwrap_or_else(|_| {
+                if cfg!(windows) {
+                    PathBuf::from(r"D:\Flicks")
+                } else {
+                    base_dir.join("media")
+                }
+            });
 
         let mut media_roots = Vec::new();
         if let Ok(roots_env) = env::var("MEDIA_SERVER_MEDIA_ROOTS") {
@@ -180,7 +206,13 @@ impl AppConfig {
 
         let cache_dir = env::var("MEDIA_SERVER_CACHE_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("E:\\MediaServer\\cache"));
+            .unwrap_or_else(|_| {
+                if cfg!(windows) {
+                    PathBuf::from(r"E:\MediaServer\cache")
+                } else {
+                    base_dir.join("cache")
+                }
+            });
 
         let static_dir = env::var("MEDIA_SERVER_STATIC_DIR")
             .map(PathBuf::from)
@@ -188,20 +220,16 @@ impl AppConfig {
                 let rel_dist = PathBuf::from("web/dist");
                 if rel_dist.exists() {
                     rel_dist
+                } else if cfg!(windows) {
+                    PathBuf::from(r"E:\MediaServer\web\dist")
                 } else {
-                    PathBuf::from("E:\\MediaServer\\web\\dist")
+                    base_dir.join("web").join("dist")
                 }
             });
 
         let flask_origin = env::var("FLASK_ORIGIN")
             .or_else(|_| env::var("MEDIA_SERVER_FLASK_ORIGIN"))
             .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
-
-        let base_dir = env::var("MEDIA_SERVER_BASE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
-            });
 
         let tmdb_api_token = env::var("TMDB_API_TOKEN")
             .ok()

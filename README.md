@@ -40,6 +40,7 @@ the verified publishing and deployment procedure.
 - [Installation & Hosting](#installation)
   - [Windows 11 Production (NSSM Services)](#windows-hosting)
   - [Linux / Debian / Kali Hosting](#linux--kali--debian-family)
+  - [Container Pilot (Docker Compose + Helm)](#container-pilot)
 - [Configuration (.env)](#configuration)
 - [Remote Access via Static IP & Caddy](#remote-access)
 - [Active Roadmap & Next Steps](#active-roadmap--next-steps)
@@ -268,6 +269,18 @@ cd rust && cargo build --release && cd ..
 # Run native binary
 ./rust/target/release/media-server-api
 ```
+
+---
+
+## Container Pilot
+
+An isolated Docker Compose setup and Helm Kubernetes pilot are available for
+Linux containers. The pilot uses CPU transcoding and separate database/media
+storage; it does not replace the Windows production services.
+
+Start at [docs/CONTAINER_DEPLOYMENT.md](docs/CONTAINER_DEPLOYMENT.md). The Helm
+chart and cluster setup instructions are in
+[deploy/helm/media-server/README.md](deploy/helm/media-server/README.md).
 
 ---
 

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "media-server.fullname" . }}-config
+  labels:
+    {{- include "media-server.labels" . | nindent 4 }}
+data:
+  RUST_HOST: "0.0.0.0"
+  RUST_PORT: "8000"
+  MEDIA_SERVER_BASE_DIR: "/app"
+  MEDIA_SERVER_STATIC_DIR: "/app/web/dist"
+  MEDIA_SERVER_MEDIA_ROOT: "/media"
+  MEDIA_SERVER_MEDIA_ROOTS: "/media,/media/.archive"
+  MEDIA_SERVER_ARCHIVE_DIR: "/media/.archive"
+  MEDIA_SERVER_UPLOAD_TMP: "/media/.uploads"
+  MEDIA_SERVER_UPLOAD_TARGET_DIR: "/media"
+  MEDIA_SERVER_CACHE_DIR: "/cache"
+  MEDIA_SERVER_STORAGE_PATHS: "/media,/cache"
+  MEDIA_SERVER_TRANSCODE_PRESET: "superfast"
+  {{- range $name, $value := .Values.extraEnv }}
+  {{ $name }}: {{ $value | quote }}
+  {{- end }}

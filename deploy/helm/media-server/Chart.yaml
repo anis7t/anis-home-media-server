@@ -1,0 +1,6 @@
+apiVersion: v2
+name: media-server
+description: Anis' Home Media Server API, React SPA, and PostgreSQL pilot deployment
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MEDIA_DOCKER_DB_NAME:-media_server}
+      POSTGRES_USER: ${MEDIA_DOCKER_DB_USER:-media_server}
+      POSTGRES_PASSWORD: ${MEDIA_DOCKER_DB_PASSWORD:-local-dev-only}
+    volumes:
+      # PostgreSQL 18 stores PGDATA below /var/lib/postgresql/18/docker.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 4m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RUST_HOST: 0.0.0.0
+      RUST_PORT: "8000"
+      MEDIA_SERVER_BASE_DIR: /app
+      MEDIA_SERVER_STATIC_DIR: /app/web/dist
+      MEDIA_SERVER_DATABASE_URL: postgresql://${MEDIA_DOCKER_DB_USER:-media_server}:${MEDIA_DOCKER_DB_PASSWORD:-local-dev-only}@postgres:5432/${MEDIA_DOCKER_DB_NAME:-media_server}
+      MEDIA_SERVER_SECRET: ${MEDIA_DOCKER_APP_SECRET:-local-compose-only-change-before-exposure}
+      MEDIA_SERVER_PUBLIC_BASE_URL: ${MEDIA_DOCKER_PUBLIC_BASE_URL:-http://localhost:8000}
+      MEDIA_SERVER_MEDIA_ROOT: /media
+      MEDIA_SERVER_MEDIA_ROOTS: /media,/media/.archive
+      MEDIA_SERVER_ARCHIVE_DIR: /media/.archive
+      MEDIA_SERVER_UPLOAD_TMP: /media/.uploads
+      MEDIA_SERVER_UPLOAD_TARGET_DIR: /media
+      MEDIA_SERVER_CACHE_DIR: /cache
+      MEDIA_SERVER_STORAGE_PATHS: /media,/cache
+      MEDIA_SERVER_ADMIN_EMAILS: ${MEDIA_DOCKER_ADMIN_EMAILS:-}
+      GOOGLE_CLIENT_ID: ${MEDIA_DOCKER_GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${MEDIA_DOCKER_GOOGLE_CLIENT_SECRET:-}
+      TMDB_API_TOKEN: ${MEDIA_DOCKER_TMDB_API_TOKEN:-}
+    ports:
+      - "127.0.0.1:${MEDIA_DOCKER_HTTP_PORT:-8000}:8000"
+    volumes:
+      # This local-only directory is used by default. Set MEDIA_DOCKER_MEDIA_PATH
+      # explicitly if you want to mount another library into the container.
+      - type: bind
+        source: ${MEDIA_DOCKER_MEDIA_PATH:-./.docker/local-data/media}
+        target: /media
+      - transcode_cache:/cache
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  postgres_data:
+  transcode_cache:

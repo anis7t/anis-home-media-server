@@ -1,8 +1,8 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-03
+Last reviewed: 2026-11-04
 Repository: `anis7t/media-server`
-Working branch: `codex/production-release-1.4.8`
+Working branch: `codex/container-phase-0`
 
 ---
 
@@ -29,6 +29,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+
+## 2026-11-04 — Linux Container and Helm Pilot (Not Production)
+
+Added an isolated Linux-container path while keeping the native Windows production deployment unchanged:
+
+- **Docker image:** Multi-stage Node 22 SPA build, Rust 1.88 release build, and Debian runtime with FFmpeg CPU encoders.
+- **Compose:** API and PostgreSQL 18.4 services, private loopback API port, a fresh database volume, separate cache volume, and a separate local media bind mount by default.
+- **Helm:** Single-replica API Deployment, PostgreSQL StatefulSet, persistent media/cache/database claims, health probes, and external Kubernetes Secret references. No Ingress, production media mount, or production database migration is configured.
+- **Container portability:** Linux path defaults, SIGTERM handling, Linux FFmpeg child-process cleanup, and optional storage telemetry for explicitly configured container mounts.
+- **Operations notes:** [`docs/CONTAINER_DEPLOYMENT.md`](CONTAINER_DEPLOYMENT.md) and [`deploy/helm/media-server/README.md`](../deploy/helm/media-server/README.md).
+
+The local pilot has been built and exercised on Docker Desktop Compose and the built-in Kind cluster. Compose and Helm were healthy, the chart was deployed, and database persistence survived container recreation and an API pod restart. The detailed evidence and Phase 0 exit-criteria tracker are in [`docs/CONTAINER_DEPLOYMENT.md`](CONTAINER_DEPLOYMENT.md). Phase 0 remains open: a clean-checkout/cache-independent build and automated container regression suite have not yet passed; positive authentication and authenticated upload paths also need coverage. The pilot uses CPU transcoding; the production Windows D3D11/AMF path is not ported. DLNA discovery, casting, public TLS/Ingress, Android APK update assets, production storage, and backup procedures need separate work before any production cluster rollout.
 
 ## 2026-11-03 — Production Release v1.4.8 (Android/TV, Web & Rust)
 

@@ -381,7 +381,13 @@ pub fn create_app_full(
     let base_dir = std::env::var("MEDIA_SERVER_BASE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("E:\\MediaServer"))
+            std::env::current_dir().unwrap_or_else(|_| {
+                if cfg!(windows) {
+                    PathBuf::from(r"E:\MediaServer")
+                } else {
+                    PathBuf::from("/app")
+                }
+            })
         });
     let base_dir_arc = Arc::new(base_dir);
 
@@ -412,7 +418,13 @@ pub fn create_app_full(
     let media_root = roots_arc
         .first()
         .cloned()
-        .unwrap_or_else(|| PathBuf::from("D:\\Flicks"));
+        .unwrap_or_else(|| {
+            if cfg!(windows) {
+                PathBuf::from(r"D:\Flicks")
+            } else {
+                PathBuf::from("/media")
+            }
+        });
     let upload_tmp = std::env::var("MEDIA_SERVER_UPLOAD_TMP")
         .map(PathBuf::from)
         .unwrap_or_else(|_| media_root.join(".uploads"));
@@ -627,13 +639,19 @@ pub fn create_app_full(
         let rel_dist = PathBuf::from("web/dist");
         if rel_dist.exists() {
             rel_dist
-        } else {
+        } else if cfg!(windows) {
             let abs_dist = PathBuf::from("E:\\MediaServer\\web\\dist");
             if abs_dist.exists() {
                 abs_dist
             } else {
                 rel_dist
             }
+        } else {
+            std::env::var("MEDIA_SERVER_BASE_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default())
+                .join("web")
+                .join("dist")
         }
     });
 
