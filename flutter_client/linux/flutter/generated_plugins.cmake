@@ -6,8 +6,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links_linux
   audioplayers_linux
   flutter_secure_storage_linux
-  media_kit_video
   url_launcher_linux
+  media_kit_video
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

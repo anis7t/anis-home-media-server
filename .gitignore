@@ -21,6 +21,7 @@ media.db-wal
 *.db-wal
 
 # Cached/generated files
+.docker/
 cache/
 backups/
 *.zip

@@ -3,11 +3,18 @@
 param(
     [string]$Domain = "media.anisparvez.in",
     [string]$ZoneName = "anisparvez.in",
-    [string]$NewIp = "223.235.84.179",
+    [string]$NewIp = "",
     [string]$Token = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $NewIp) {
+    Write-Host "Detecting current public egress IP..." -ForegroundColor Cyan
+    $ipify = Invoke-RestMethod -Uri "https://api.ipify.org?format=json"
+    $NewIp = $ipify.ip.Trim()
+    Write-Host "Detected public IP: $NewIp" -ForegroundColor Green
+}
 
 if (-not $Token) {
     if (Test-Path "E:\MediaServer\Caddyfile") {
