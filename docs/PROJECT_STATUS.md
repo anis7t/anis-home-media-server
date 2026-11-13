@@ -30,6 +30,18 @@ Active branch: `feat/rust-react-postgres-migration`
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
 
+## 2026-11-14 — Airtel Bihar Relocation, Static IP Ingress & WAN Upload Benchmark
+
+Following the physical relocation from Guwahati to Bihar on the Airtel Xstream Fiber connection:
+- **Router Reconfiguration (Zyxel AOT-5222ZY):** Factory-reset gateway recovered. Reconfigured and activated static DHCP reservation binding laptop Ethernet MAC `08:97:98:74:35:E5` to `192.168.1.16` via `/cgi-bin/staticDHCP.cgi`. Restored NAT Port Forwarding rules for HTTP (`80`), HTTPS (`443`), and MediaServer (`8000`).
+- **Host Configuration (Windows 11):** Configured `Ethernet` interface with static IPv4 `192.168.1.16/24`, Gateway `192.168.1.1`, and DNS `192.168.1.1` / `1.1.1.1`.
+- **Dynamic Cloudflare DNS Update:** Automatically discovered new Bihar static public IP (`223.235.84.179`) and updated Cloudflare DNS A-record for `media.anisparvez.in` with `proxied: false` (DNS-only, bypassing Cloudflare proxy limits and tunnels).
+- **Decrypted Configuration Backup:** Fresh XML backup downloaded and decrypted to `D:\Airtel xstream fiber\live_now.xml` and synced to `backup_with_portforward.xml`.
+- **ISP Speedtest & Upload Benchmark:**
+  - Ookla Speedtest: **201.05 Mbps** download, **153.17 Mbps** upload, **0.0% packet loss**, **0.10ms idle jitter**.
+  - Direct Caddy Ingress Benchmark: Production 8 MiB chunk uploads measured at **157.59 Mbps** over HTTPS (`https://media.anisparvez.in`), achieving 100% saturation of the ISP upload pipe without proxy bottlenecks.
+- **Reference Docs:** [`docs/PLAN_ROUTER_STATIC_IP_BIHAR_MIGRATION.md`](PLAN_ROUTER_STATIC_IP_BIHAR_MIGRATION.md), [`docs/WALKTHROUGH_ROUTER_STATIC_IP_BIHAR_MIGRATION.md`](WALKTHROUGH_ROUTER_STATIC_IP_BIHAR_MIGRATION.md), and [`scripts/update_cloudflare_dns.ps1`](../scripts/update_cloudflare_dns.ps1).
+
 ## 2026-11-03 — Production Release v1.4.8 (Android/TV, Web & Rust)
 
 Production release covering account-scoped playback progress, upload-time Recently Added ordering, HLS initialization-file cleanup, and the current HLS seek/quality continuity work.
