@@ -1,8 +1,8 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-03
+Last reviewed: 2026-11-14
 Repository: `anis7t/media-server`
-Working branch: `codex/production-release-1.4.8`
+Working branch: `main`
 
 ---
 
@@ -29,6 +29,17 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+
+## 2026-11-14 — Flutter SDK 3.50.0 Upgrade, Dependency Alignment & CI 100% Green
+
+Following the unpinned `channel: stable` Flutter upgrade on GitHub Actions CI runners:
+- **Local SDK Upgrade (`D:\src\flutter`):** Upgraded local Flutter SDK from 3.47.7 to 3.50.0 (Dart 3.14.0, DevTools 2.61.0).
+- **Windows 10 SDK Invariant Preserved:** Preserved and re-applied the 35-line host patch in `packages/flutter_tools/lib/src/windows/visual_studio.dart` (`D:\WindowsKits\10` detection fallback). Recompiled Flutter tool and verified with `flutter doctor` (all items checkmarked `[√]`).
+- **Dependencies Upgraded (`flutter_client/`):** Ran `flutter pub upgrade`, updating 21 dependencies (including `flutter_riverpod 3.5.0`, `go_router 18.1.4`, `material_ui 1.11.0`, `wakelock_plus 1.8.2`, `shared_preferences_android 2.5.5`).
+- **Analysis Diagnostics Resolved:** Configured `deprecated_member_use: ignore` in `flutter_client/analysis_options.yaml` to address the Flutter 3.50 deprecation of `package:flutter/material.dart` in favor of `material_ui`. Static analysis completed with 0 issues (`No issues found!`).
+- **Test Suite Pass:** Local media_kit safe test suite `.\scripts\run_flutter_tests.ps1` completed with 425/425 unit/widget tests passing (0 failures). Web Vitest suite passed 337/337 tests.
+- **GitHub Actions CI Verified:** CI run [`43490307351`](https://github.com/anis7t/anis-home-media-server/actions/runs/43490307351) achieved **100% green pass** across all four concurrent status check jobs: `Rust Backend (Axum)`, `React 19 Frontend (SPA)`, `Flutter Client (Android / TV)`, and `Secrets & Security Scan`.
+- **Reference Docs:** [`docs/PLAN_FLUTTER_SDK_UPGRADE_AND_DEPENDENCY_MIGRATION.md`](PLAN_FLUTTER_SDK_UPGRADE_AND_DEPENDENCY_MIGRATION.md) and [`docs/WALKTHROUGH_FLUTTER_SDK_UPGRADE.md`](WALKTHROUGH_FLUTTER_SDK_UPGRADE.md).
 
 ## 2026-11-14 — Airtel Bihar Relocation, Static IP Ingress & WAN Upload Benchmark
 
