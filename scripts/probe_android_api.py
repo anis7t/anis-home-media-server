@@ -77,7 +77,10 @@ CALLS = [
     ("GET", "/api/app/download?channel=production", (200, 404), "apk download"),
     ("GET", f"/tmdb-poster/{sample.get('tmdb_id') or 0}", (200, 404), "tmdb poster"),
     ("GET", f"/media/{enc}", (200, 206, 302, 404), "media delivery"),
-    ("GET", f"/hls/{enc}/playlist.m3u8", (200, 404), "hls playlist"),
+    # 503 is the intentional retry response when the route and source exist
+    # but no transcode playlist is ready yet. Completed HLS delivery is
+    # exercised separately by the container regression suite.
+    ("GET", f"/hls/{enc}/playlist.m3u8", (200, 404, 503), "hls playlist"),
     ("GET", f"/subtitles/{enc}/missing.srt", (200, 404), "subtitles"),
     ("GET", "/poster/does-not-exist.jpg", (404,), "poster route"),
     ("POST", "/api/admin/otp/verify", (200, 400, 401), "admin otp verify"),

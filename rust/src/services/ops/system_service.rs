@@ -73,8 +73,8 @@ impl SystemService {
         for disk in &disks {
             let mount = disk.mount_point().to_string_lossy().to_string();
             // Explicit whitelist: strictly include only Drive D: (media storage) and Drive E: (SSD runtime & cache).
-            let is_windows_storage = cfg!(windows)
-                && (mount.starts_with("D:") || mount.starts_with("E:"));
+            let is_windows_storage =
+                cfg!(windows) && (mount.starts_with("D:") || mount.starts_with("E:"));
             let mount_path = disk.mount_point();
             let is_container_storage = !cfg!(windows)
                 && container_storage_paths

@@ -1,30 +1,20 @@
-.git/
-.github/
-.vscode/
-.serena/
-.opencode/
-.kilo/
-.freebuff/
+# Treat the repository as opt-in build context. This prevents local databases,
+# media, credentials, generated artifacts, and unrelated project files from
+# being sent to the Docker builder.
+**
 
-.env
-.env.*
-**/.env
-**/.env.*
-secrets/
-.secrets/
-Caddyfile
+!Dockerfile
+!.dockerignore
+!rust
+!rust/**
+!web
+!web/**
 
-**/target/
-**/node_modules/
+# Rust and React build outputs are always generated inside the build stages.
+rust/target/
+rust/**/target/
+web/node_modules/
 web/dist/
-flutter_client/
-venv/
-**/__pycache__/
-
-backups/
-cache/
-logs/
-tests/
-test screenshots screenrecordings files etc/
-updates/
-.docker/local-data/
+web/e2e/
+web/test-results/
+web/playwright-report/

@@ -43,3 +43,35 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD curl --fail --silent http://127.0.0.1:8000/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/media-server-api"]
+
+# A separate test-only image exercises the real OAuth start/callback code
+# against a deterministic local provider. The normal `runtime` target above
+# does not enable this Cargo feature and always uses Google's HTTPS endpoints.
+FROM api-build AS phase0-oauth-build
+RUN cargo build --locked --release \
+    --manifest-path rust/Cargo.toml \
+    --features phase0-oauth-test \
+    --bin media-server-api \
+    --bin media-server-oauth-mock
+
+FROM runtime AS phase0-oauth-api
+LABEL org.anisparvez.media-server.image-purpose="phase0-oauth-test-only"
+COPY --from=phase0-oauth-build --chown=media-server:media-server \
+    /src/rust/target/release/media-server-api /usr/local/bin/media-server-api
+
+FROM debian:bookworm-slim AS phase0-oauth-mock
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --home-dir /var/lib/media-server media-server
+COPY --from=phase0-oauth-build --chown=media-server:media-server \
+    /src/rust/target/release/media-server-oauth-mock /usr/local/bin/media-server-oauth-mock
+USER 10001:10001
+EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=2s --start-period=5s --retries=12 \
+    CMD curl --fail --silent http://127.0.0.1:8080/health || exit 1
+ENTRYPOINT ["/usr/local/bin/media-server-oauth-mock"]
+
+# Keep the default image target equivalent to the ordinary runtime stage even
+# though explicitly requested Phase 0 test targets follow it in this file.
+FROM runtime AS final

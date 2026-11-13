@@ -415,16 +415,13 @@ pub fn create_app_full(
     // carry their own `DefaultBodyLimit`; every other route keeps Axum's 2 MB
     // default so an upload feature does not turn the JSON surface into an
     // unbounded body sink.
-    let media_root = roots_arc
-        .first()
-        .cloned()
-        .unwrap_or_else(|| {
-            if cfg!(windows) {
-                PathBuf::from(r"D:\Flicks")
-            } else {
-                PathBuf::from("/media")
-            }
-        });
+    let media_root = roots_arc.first().cloned().unwrap_or_else(|| {
+        if cfg!(windows) {
+            PathBuf::from(r"D:\Flicks")
+        } else {
+            PathBuf::from("/media")
+        }
+    });
     let upload_tmp = std::env::var("MEDIA_SERVER_UPLOAD_TMP")
         .map(PathBuf::from)
         .unwrap_or_else(|_| media_root.join(".uploads"));

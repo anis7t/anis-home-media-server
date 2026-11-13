@@ -14,6 +14,25 @@ use tracing::{error, info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
 
+// These endpoints are intentionally selected at compile time. The normal
+// application binary always talks to Google's HTTPS OAuth endpoints. A
+// separate, explicitly feature-gated Phase 0 test image points at a private
+// mock service in its disposable Compose project or Kubernetes namespace.
+#[cfg(feature = "phase0-oauth-test")]
+const GOOGLE_AUTH_ENDPOINT: &str = "http://phase0-oauth-mock:8080/o/oauth2/v2/auth";
+#[cfg(not(feature = "phase0-oauth-test"))]
+const GOOGLE_AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
+#[cfg(feature = "phase0-oauth-test")]
+const GOOGLE_TOKEN_ENDPOINT: &str = "http://phase0-oauth-mock:8080/token";
+#[cfg(not(feature = "phase0-oauth-test"))]
+const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
+
+#[cfg(feature = "phase0-oauth-test")]
+const GOOGLE_TOKENINFO_ENDPOINT: &str = "http://phase0-oauth-mock:8080/tokeninfo";
+#[cfg(not(feature = "phase0-oauth-test"))]
+const GOOGLE_TOKENINFO_ENDPOINT: &str = "https://oauth2.googleapis.com/tokeninfo";
+
 #[derive(Debug, Clone)]
 pub struct ResolvedIdentity {
     pub user_id: i64,
@@ -952,7 +971,8 @@ impl AuthService {
         .map_err(|e| AppError::Internal(format!("Failed to record OAuth attempt: {}", e)))?;
 
         let auth_url = format!(
-            "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&response_type=code&scope=openid+email+profile&redirect_uri={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
+            "{}?client_id={}&response_type=code&scope=openid+email+profile&redirect_uri={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
+            GOOGLE_AUTH_ENDPOINT,
             urlencoding::encode(&client_id),
             urlencoding::encode(redirect_uri),
             urlencoding::encode(&state),
@@ -1015,7 +1035,7 @@ impl AuthService {
 
         let http = Client::new();
         let token_res = http
-            .post("https://oauth2.googleapis.com/token")
+            .post(GOOGLE_TOKEN_ENDPOINT)
             .form(&[
                 ("code", code),
                 ("client_id", &client_id),
@@ -1062,8 +1082,8 @@ impl AuthService {
         // Verify ID token via Google tokeninfo
         let info_res = http
             .get(format!(
-                "https://oauth2.googleapis.com/tokeninfo?id_token={}",
-                id_token
+                "{}?id_token={}",
+                GOOGLE_TOKENINFO_ENDPOINT, id_token
             ))
             .send()
             .await
@@ -1728,6 +1748,35 @@ impl AuthService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_provider_endpoints_are_selected_only_by_compile_time_feature() {
+        #[cfg(feature = "phase0-oauth-test")]
+        {
+            assert_eq!(
+                GOOGLE_AUTH_ENDPOINT,
+                "http://phase0-oauth-mock:8080/o/oauth2/v2/auth"
+            );
+            assert_eq!(GOOGLE_TOKEN_ENDPOINT, "http://phase0-oauth-mock:8080/token");
+            assert_eq!(
+                GOOGLE_TOKENINFO_ENDPOINT,
+                "http://phase0-oauth-mock:8080/tokeninfo"
+            );
+        }
+
+        #[cfg(not(feature = "phase0-oauth-test"))]
+        {
+            assert_eq!(
+                GOOGLE_AUTH_ENDPOINT,
+                "https://accounts.google.com/o/oauth2/v2/auth"
+            );
+            assert_eq!(GOOGLE_TOKEN_ENDPOINT, "https://oauth2.googleapis.com/token");
+            assert_eq!(
+                GOOGLE_TOKENINFO_ENDPOINT,
+                "https://oauth2.googleapis.com/tokeninfo"
+            );
+        }
+    }
 
     /// Policy: an empty allowlist is *open* sign-in, not a closed door. The
     /// earlier implementation returned `!auth_enabled`, so clearing the list

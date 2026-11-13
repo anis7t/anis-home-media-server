@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["Anis Parvez <anis@anisparvez.in>"]
 description = "High-performance Rust API foundation for Anis' Home Media Server"
 
+[features]
+default = []
+# Compile-time-only endpoint substitution for the disposable Phase 0 OAuth
+# integration fixture. The normal application image never enables this.
+phase0-oauth-test = []
+
 [dependencies]
 axum = { version = "0.8", features = ["json", "multipart"] }
 tokio = { version = "1", features = ["full"] }
@@ -69,3 +75,8 @@ http-body-util = "0.1"
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"
+
+[[bin]]
+name = "media-server-oauth-mock"
+path = "src/phase0_oauth_mock.rs"
+required-features = ["phase0-oauth-test"]
