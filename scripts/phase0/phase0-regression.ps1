@@ -5,17 +5,29 @@ param(
     [switch]$ReuseBuildCache,
     [ValidatePattern('^[0-9]{14}-[0-9]{4}$')]
     [string]$CleanupRunId,
-    [switch]$KubernetesOnly
+    [switch]$KubernetesOnly,
+    [string]$TempDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Add-Type -AssemblyName System.Net.Http, System.Web.Extensions -ErrorAction SilentlyContinue
+
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $script:Docker = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
 $script:Kubectl = 'C:\Program Files\Docker\Docker\resources\bin\kubectl.exe'
 $script:RunId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddHHmmss') + '-' + (Get-Random -Minimum 1000 -Maximum 9999)
-$script:TempRoot = Join-Path $env:TEMP "media-server-phase0-$($script:RunId)"
+$script:TempParent = if ($TempDirectory) {
+    [System.IO.Path]::GetFullPath($TempDirectory)
+} elseif ($env:PHASE0_TEMP_DIR) {
+    [System.IO.Path]::GetFullPath($env:PHASE0_TEMP_DIR)
+} elseif (Test-Path 'E:\tmp') {
+    'E:\tmp'
+} else {
+    [System.IO.Path]::GetFullPath($env:TEMP)
+}
+$script:TempRoot = Join-Path $script:TempParent "media-server-phase0-$($script:RunId)"
 $script:Snapshot = Join-Path $script:TempRoot 'source'
 $script:Logs = Join-Path $script:TempRoot 'logs'
 $script:Results = [System.Collections.Generic.List[object]]::new()
@@ -63,7 +75,14 @@ function Invoke-Logged {
         [Parameter(Mandatory)][string]$Operation,
         [Parameter(Mandatory)][string]$LogPath
     )
-    & $Executable @Arguments *> $LogPath
+    $prev = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Executable @Arguments *> $LogPath
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
         if ($Operation -in @('Cache-independent default image build', 'Cached default image build')) {
@@ -89,7 +108,14 @@ function Get-NativeText {
         [Parameter(Mandatory)][string[]]$Arguments,
         [Parameter(Mandatory)][string]$Operation
     )
-    $output = @(& $Executable @Arguments 2>&1)
+    $prev = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $Executable @Arguments 2>&1)
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
         throw "$Operation failed with exit code $exitCode."
@@ -137,7 +163,12 @@ function Start-KubernetesApiPortForward {
 function Stop-KubernetesApiPortForward {
     param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
     if (-not $Process.HasExited) {
-        $Process.Kill($true)
+        try {
+            $Process.Kill($true)
+        }
+        catch {
+            $Process.Kill()
+        }
         $Process.WaitForExit(5000) | Out-Null
     }
     if (-not $Process.HasExited) { throw 'The replaced Kubernetes API port-forward is still active after termination.' }
@@ -146,8 +177,9 @@ function Stop-KubernetesApiPortForward {
 
 function New-TestSecret {
     $bytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    $secret = [Convert]::ToHexString($bytes).ToLowerInvariant()
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
+    $secret = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
     $script:Redactions.Add($secret)
     return $secret
 }
@@ -161,29 +193,6 @@ function Write-PrivateText {
     [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Wait-HttpStatus {
-    param(
-        [Parameter(Mandatory)][string]$Uri,
-        [Parameter(Mandatory)][int]$ExpectedStatus,
-        [Parameter()][int]$TimeoutSeconds = 180,
-        [Parameter()][hashtable]$Headers = @{}
-    )
-    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
-    while ([DateTimeOffset]::UtcNow -lt $deadline) {
-        try {
-            $response = Invoke-WebRequest -Uri $Uri -Headers $Headers -Method Get -MaximumRedirection 0 -SkipHttpErrorCheck -TimeoutSec 5
-            if ([int]$response.StatusCode -eq $ExpectedStatus) {
-                return $response
-            }
-        }
-        catch {
-            Start-Sleep -Milliseconds 250
-        }
-        Start-Sleep -Milliseconds 250
-    }
-    throw "HTTP endpoint did not return the expected status $ExpectedStatus within $TimeoutSeconds seconds: $Uri"
-}
-
 function Invoke-Http {
     param(
         [Parameter(Mandatory)][string]$Uri,
@@ -195,6 +204,7 @@ function Invoke-Http {
     )
     $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
+    $handler.UseCookies = $false
     $client = [System.Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
     $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), $Uri)
@@ -235,6 +245,29 @@ function Invoke-Http {
     }
 }
 
+function Wait-HttpStatus {
+    param(
+        [Parameter(Mandatory)][string]$Uri,
+        [Parameter(Mandatory)][int]$ExpectedStatus,
+        [Parameter()][int]$TimeoutSeconds = 180,
+        [Parameter()][hashtable]$Headers = @{}
+    )
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
+        try {
+            $response = Invoke-Http -Uri $Uri -Method 'GET' -Headers $Headers -TimeoutSeconds 5
+            if ([int]$response.StatusCode -eq $ExpectedStatus) {
+                return $response
+            }
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "HTTP endpoint did not return the expected status $ExpectedStatus within $TimeoutSeconds seconds: $Uri"
+}
+
 function Get-ComposePrefix {
     param(
         [Parameter(Mandatory)][string]$Project,
@@ -253,10 +286,23 @@ function Get-ComposePrefix {
     return ,$prefix
 }
 
+function ConvertFrom-Phase0Json {
+    param([Parameter(Mandatory)][string]$Json)
+    try {
+        return $Json | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+    }
+    catch {
+        Add-Type -AssemblyName System.Web.Extensions -ErrorAction SilentlyContinue
+        $serializer = [System.Web.Script.Serialization.JavaScriptSerializer]::new()
+        $serializer.MaxJsonLength = [int]::MaxValue
+        return $serializer.DeserializeObject($Json)
+    }
+}
+
 function Get-ComposeConfig {
     param([Parameter(Mandatory)][string[]]$Prefix, [Parameter(Mandatory)][string]$Label)
     $json = Get-NativeText -Executable $script:Docker -Arguments ($Prefix + @('config', '--format', 'json')) -Operation "$Label Compose config"
-    return $json | ConvertFrom-Json -AsHashtable
+    return ConvertFrom-Phase0Json $json
 }
 
 function Wait-ComposeHealthy {
@@ -297,6 +343,19 @@ function Wait-ContainerStopped {
     throw "API container did not stop within $TimeoutSeconds seconds."
 }
 
+function Get-Phase0RelativePath {
+    param(
+        [Parameter(Mandatory)][string]$BasePath,
+        [Parameter(Mandatory)][string]$FullPath
+    )
+    $normalizedBase = [System.IO.Path]::GetFullPath($BasePath).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $normalizedFull = [System.IO.Path]::GetFullPath($FullPath)
+    if ($normalizedFull.StartsWith($normalizedBase, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $normalizedFull.Substring($normalizedBase.Length).Replace('\', '/')
+    }
+    return [System.IO.Path]::GetFileName($normalizedFull)
+}
+
 function New-SourceSnapshot {
     $tracked = @(& git -C $script:RepoRoot ls-files)
     if ($LASTEXITCODE -ne 0) {
@@ -328,7 +387,7 @@ function New-SourceSnapshot {
     $revision = Get-NativeText -Executable 'git' -Arguments @('-C', $script:RepoRoot, 'rev-parse', 'HEAD') -Operation 'Read source revision'
     $manifestLines = [System.Collections.Generic.List[string]]::new()
     Get-ChildItem -LiteralPath $script:Snapshot -File -Recurse | Sort-Object FullName | ForEach-Object {
-        $relative = [System.IO.Path]::GetRelativePath($script:Snapshot, $_.FullName).Replace('\', '/')
+        $relative = Get-Phase0RelativePath -BasePath $script:Snapshot -FullPath $_.FullName
         $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         $manifestLines.Add("$hash`t$relative")
     }
@@ -338,7 +397,7 @@ function New-SourceSnapshot {
 
     $contextFiles = @(
         (Get-ChildItem -LiteralPath $script:Snapshot -File -Recurse | Where-Object {
-            $rel = [System.IO.Path]::GetRelativePath($script:Snapshot, $_.FullName).Replace('\', '/')
+            $rel = Get-Phase0RelativePath -BasePath $script:Snapshot -FullPath $_.FullName
             $rel -eq 'Dockerfile' -or $rel -eq '.dockerignore' -or
             ($rel.StartsWith('rust/') -and $rel -notmatch '(^|/)(target|node_modules)(/|$)') -or
             ($rel.StartsWith('web/') -and $rel -notmatch '(^|/)(node_modules|dist|e2e|test-results|playwright-report)(/|$)')
@@ -617,7 +676,7 @@ function Test-ComposeConfiguration {
 function ConvertFrom-HttpJson {
     param([Parameter(Mandatory)]$Response)
     try {
-        return $Response.Content | ConvertFrom-Json -AsHashtable
+        return ConvertFrom-Phase0Json $Response.Content
     }
     catch {
         throw 'An API response was not valid JSON.'
@@ -1108,7 +1167,7 @@ function Test-ComposeEndToEnd {
         Invoke-Logged -Executable $script:Docker -Arguments ($prefix + @('up', '-d', '--no-deps', 'api')) -Operation "Restart Compose API after shutdown repetition $i" -LogPath (Join-Path $script:Logs "compose-restart-$i.log")
         $apiId = Wait-ForApiContainer -Prefix $prefix -Origin $origin
         $jobStatusSql = "SELECT status FROM transcode_jobs WHERE filename = '$shutdownName' AND mode = 'hls:360p'"
-        $interruptedStatus = Get-NativeText -Executable $script:Docker -Arguments @('exec', $pgId, 'sh', '-c', 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"', 'phase0-psql', $jobStatusSql) -Operation "Read interrupted job state after Compose API restart $i"
+        $interruptedStatus = Get-NativeText -Executable $script:Docker -Arguments @('exec', $pgId, 'psql', '-U', 'media_server', '-d', 'media_server', '-tAc', $jobStatusSql) -Operation "Read interrupted job state after Compose API restart $i"
         Assert-Phase0 -Condition ($interruptedStatus.Trim() -eq 'failed') -Message "Interrupted Compose transcode job $shutdownName did not reconcile to failed after API restart."
         $orphanFfmpeg = Get-NativeText -Executable $script:Docker -Arguments @('exec', $apiId, 'sh', '-c', "ps -eo args | grep '[f]fmpeg' | grep -F '$shutdownName' || true") -Operation "Check Compose FFmpeg cleanup after shutdown repetition $i"
         Assert-Phase0 -Condition (-not $orphanFfmpeg) -Message "FFmpeg child for $shutdownName remained active after Compose API restart."
@@ -1313,8 +1372,9 @@ function Remove-Phase0KubernetesImages {
 
     $importer = Ensure-Phase0KubernetesImageImporter -Namespace $script:CreatedNamespace
     $archiveName = "phase0-kubernetes-images-$($script:RunId).tar"
-    $removeScript = 'set -eu; for image in "$@"; do chroot /host /usr/local/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images remove "$image" >/dev/null 2>&1 || true; done; rm -f "/host/tmp/' + $archiveName + '" "/tmp/' + $archiveName + '"; chroot /host /usr/local/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images list --quiet'
-    $removeArguments = @('exec', '--namespace', $script:CreatedNamespace, $importer.PodName, '--', 'sh', '-c', $removeScript, 'phase0-remove-images') + @($script:ImportedKubernetesImages)
+    $imageRemovals = ($script:ImportedKubernetesImages | ForEach-Object { "chroot /host /usr/local/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images remove '$_' >/dev/null 2>&1 || true;" }) -join ' '
+    $removeScript = "set -eu; $imageRemovals rm -f `"/host/tmp/$archiveName`" `"/tmp/$archiveName`"; chroot /host /usr/local/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images list --quiet"
+    $removeArguments = @('exec', '--namespace', $script:CreatedNamespace, $importer.PodName, '--', 'sh', '-c', $removeScript)
     $remainingImages = Invoke-KubectlText -Arguments $removeArguments -Operation 'Remove run-scoped images from Docker Desktop Kubernetes containerd'
     foreach ($image in $script:ImportedKubernetesImages) {
         $tag = $image.Split(':')[-1]
@@ -1540,7 +1600,7 @@ spec:
     $persistenceMarker = "phase0-$($script:RunId)"
     $persistFile = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $apiPod.metadata.name, '--', 'sh', '-c', "printf '%s' '$persistenceMarker' > /media/.phase0-persistence-marker; printf '%s' '$persistenceMarker' > /cache/.phase0-persistence-marker") -Operation 'Write disposable PVC persistence markers'
     $sql = "CREATE TABLE IF NOT EXISTS phase0_persistence_markers (marker text PRIMARY KEY); INSERT INTO phase0_persistence_markers(marker) VALUES ('$persistenceMarker') ON CONFLICT (marker) DO NOTHING;"
-    $insertMarker = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $pgPod.metadata.name, '--', 'sh', '-c', 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "$1"', 'phase0-psql', $sql) -Operation 'Insert disposable Kubernetes PostgreSQL persistence marker'
+    $insertMarker = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $pgPod.metadata.name, '--', 'psql', '-U', 'media_server', '-d', 'media_server', '-v', 'ON_ERROR_STOP=1', '-c', $sql) -Operation 'Insert disposable Kubernetes PostgreSQL persistence marker'
 
     $shutdownName = 'Phase0K8sShutdown.mkv'
     $generateCommand = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'testsrc2=size=640x360:rate=24:duration=180' -f lavfi -i 'sine=frequency=997:sample_rate=48000:duration=180' -shortest -c:v libx264 -preset ultrafast -tune zerolatency -crf 30 -pix_fmt yuv420p -c:a aac '/media/$shutdownName'"
@@ -1567,7 +1627,7 @@ spec:
     Stop-KubernetesApiPortForward -Process $previousPortForward
     $origin = Start-KubernetesApiPortForward -Namespace $namespace -Release $release -LogSuffix 'after-api-replacement'
     $interruptedJobSql = "SELECT status FROM transcode_jobs WHERE filename = '$shutdownName' AND mode = 'hls:360p'"
-    $interruptedJobStatus = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $workloads.Postgres.metadata.name, '--', 'sh', '-c', 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"', 'phase0-psql', $interruptedJobSql) -Operation 'Read interrupted Kubernetes transcode job state after API pod restart'
+    $interruptedJobStatus = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $workloads.Postgres.metadata.name, '--', 'psql', '-U', 'media_server', '-d', 'media_server', '-tAc', $interruptedJobSql) -Operation 'Read interrupted Kubernetes transcode job state after API pod restart'
     Assert-Phase0 -Condition ($interruptedJobStatus.Trim() -eq 'failed') -Message 'Interrupted Kubernetes transcode job did not reconcile to failed after API pod restart.'
     $orphanFfmpeg = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $apiPod.metadata.name, '--', 'sh', '-c', "ps -eo args | grep '[f]fmpeg' | grep -F '$shutdownName' || true") -Operation 'Check Kubernetes FFmpeg child cleanup after API pod restart'
     Assert-Phase0 -Condition (-not $orphanFfmpeg) -Message 'Kubernetes API replacement pod found a lingering FFmpeg child for the interrupted transcode.'
@@ -1581,7 +1641,7 @@ spec:
     $workloads = Wait-KubernetesWorkloads -Namespace $namespace -Release $release
     $pgPod = $workloads.Postgres
     $markerQuery = "SELECT count(*) FROM phase0_persistence_markers WHERE marker = '$persistenceMarker'"
-    $markerCount = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $pgPod.metadata.name, '--', 'sh', '-c', 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"', 'phase0-psql', $markerQuery) -Operation 'Verify PostgreSQL PVC marker after pod recreation'
+    $markerCount = Invoke-KubectlText -Arguments @('exec', '--namespace', $namespace, $pgPod.metadata.name, '--', 'psql', '-U', 'media_server', '-d', 'media_server', '-tAc', $markerQuery) -Operation 'Verify PostgreSQL PVC marker after pod recreation'
     Assert-Phase0 -Condition ($markerCount.Trim() -eq '1') -Message 'The Kubernetes PostgreSQL PVC did not preserve its marker across pod replacement.'
     $apiAfterPgRestart = Wait-HttpStatus -Uri "$origin/api/movies" -ExpectedStatus 200 -TimeoutSeconds 120
 
@@ -1744,8 +1804,8 @@ function Test-CiRegressionGates {
     Write-PrivateText -Path $testEnvPath -Text (($testVariables -join "`n") + "`n")
     $sourceMount = "type=bind,source=$($script:Snapshot),target=/workspace"
     $fixtureMount = "type=bind,source=$fixtureRoot,target=/fixtures"
-    $linuxCommand = 'set -e; export CARGO_TARGET_DIR=/tmp/phase0-cargo-target; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libssl-dev ffmpeg; rustup component add clippy; rustc --version; cargo clippy --version; cargo test --manifest-path /workspace/rust/Cargo.toml --locked --no-fail-fast -- --test-threads=1; cargo clippy --manifest-path /workspace/rust/Cargo.toml --all-targets -- -D warnings'
-    Invoke-Logged -Executable $script:Docker -Arguments @('run', '--rm', '--network', $networkName, '--mount', $sourceMount, '--mount', $fixtureMount, '--env-file', $testEnvPath, '--workdir', '/workspace/rust', 'rust:1.99-bookworm', 'bash', '-c', $linuxCommand) -Operation 'Run full Rust unit and integration suite against disposable PostgreSQL' -LogPath (Join-Path $script:Logs 'cargo-ci-linux.log')
+    $linuxCommand = 'set -e; export CARGO_NET_RETRY=10; export CARGO_TARGET_DIR=/tmp/phase0-cargo-target; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libssl-dev ffmpeg; rustup component add clippy; rustc --version; cargo clippy --version; cargo test --manifest-path /workspace/rust/Cargo.toml --locked --no-fail-fast -- --test-threads=1; cargo clippy --manifest-path /workspace/rust/Cargo.toml --all-targets -- -D warnings'
+    Invoke-Logged -Executable $script:Docker -Arguments @('run', '--rm', '--network', $networkName, '--dns', '8.8.8.8', '--dns', '1.1.1.1', '--mount', $sourceMount, '--mount', $fixtureMount, '--mount', 'type=volume,source=phase0-cargo-registry,target=/usr/local/cargo/registry', '--env-file', $testEnvPath, '--workdir', '/workspace/rust', 'rust:1.99-bookworm', 'bash', '-c', $linuxCommand) -Operation 'Run full Rust unit and integration suite against disposable PostgreSQL' -LogPath (Join-Path $script:Logs 'cargo-ci-linux.log')
     $rustTestLines = @(Get-Content -LiteralPath (Join-Path $script:Logs 'cargo-ci-linux.log') | Where-Object { $_ -match 'test result:|Finished `dev` profile' })
     $rustToolchainLines = @(Get-Content -LiteralPath (Join-Path $script:Logs 'cargo-ci-linux.log') | Where-Object { $_ -match '^(rustc|clippy) ' })
     Write-Phase0Result -Name 'Rust unit/integration tests, disposable PostgreSQL, and Clippy' -State 'PASS' -Evidence ([pscustomobject]@{ toolchain = $rustToolchainLines; testResultLines = $rustTestLines; clippy = 'pass'; fixtureDatabase = 'media_server_test on un-published unique Docker network' })
@@ -1764,11 +1824,17 @@ function Test-CiRegressionGates {
     Write-Phase0Result -Name 'React typecheck, lint, Vitest suite, and production build' -State 'PASS' -Evidence ([pscustomobject]@{ vitest = $vitestSummary; typecheck = 'pass'; lint = 'pass'; build = 'pass' })
 
     $flutterDirectory = Join-Path $script:Snapshot 'flutter_client'
+    $flutterRunner = Join-Path $script:Snapshot 'scripts/run_flutter_tests.ps1'
     Push-Location $flutterDirectory
     try {
         Invoke-Logged -Executable 'flutter' -Arguments @('pub', 'get') -Operation 'Resolve isolated Flutter dependencies' -LogPath (Join-Path $script:Logs 'flutter-pub-get.log')
         Invoke-Logged -Executable 'flutter' -Arguments @('analyze') -Operation 'Run Flutter static analysis' -LogPath (Join-Path $script:Logs 'flutter-analyze.log')
-        Invoke-Logged -Executable 'flutter' -Arguments @('test') -Operation 'Run Flutter unit and widget suite' -LogPath (Join-Path $script:Logs 'flutter-test.log')
+        if (Test-Path -LiteralPath $flutterRunner) {
+            Invoke-Logged -Executable 'powershell.exe' -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $flutterRunner, '-SkipAnalyze') -Operation 'Run Flutter unit and widget suite' -LogPath (Join-Path $script:Logs 'flutter-test.log')
+        }
+        else {
+            Invoke-Logged -Executable 'flutter' -Arguments @('test') -Operation 'Run Flutter unit and widget suite' -LogPath (Join-Path $script:Logs 'flutter-test.log')
+        }
     }
     finally { Pop-Location }
     $flutterTestSummary = @(Get-Content -LiteralPath (Join-Path $script:Logs 'flutter-test.log') -Tail 20 | Where-Object { $_ -match 'All tests passed|Some tests failed' } | Select-Object -Last 1)
@@ -1782,9 +1848,15 @@ function Test-CiRegressionGates {
 }
 
 function Invoke-Cleanup {
-    foreach ($process in @($script:PortForwards.ToArray())) {
+    $prevCleanup = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        foreach ($process in @($script:PortForwards.ToArray())) {
         try {
-            if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit(5000) | Out-Null }
+            if (-not $process.HasExited) {
+                try { $process.Kill($true) } catch { $process.Kill() }
+                $process.WaitForExit(5000) | Out-Null
+            }
             if (-not $process.HasExited) { throw 'Port-forward process is still active after termination.' }
             $script:PortForwards.Remove($process) | Out-Null
         }
@@ -1887,31 +1959,35 @@ function Invoke-Cleanup {
         }
     }
 
-    if ($script:TempRootCreated -and $script:TempRoot -and (Test-Path -LiteralPath $script:TempRoot)) {
-        $expectedParent = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
-        $fullTempRoot = [System.IO.Path]::GetFullPath($script:TempRoot)
-        if ($fullTempRoot.StartsWith($expectedParent, [System.StringComparison]::OrdinalIgnoreCase) -and $fullTempRoot -match "media-server-phase0-$([regex]::Escape($script:RunId))$") {
-            try {
-                Remove-Item -LiteralPath $fullTempRoot -Recurse -Force
-                if (Test-Path -LiteralPath $fullTempRoot) { throw 'Verified Phase 0 temp directory remains.' }
-                $script:TempRootCreated = $false
-            }
-            catch {
-                $script:CleanupWarnings.Add('Could not remove the verified unique Phase 0 temp directory.')
-                Write-Host '[CLEANUP-WARN] Could not remove the verified unique Phase 0 temp directory.'
+        if ($script:TempRootCreated -and $script:TempRoot -and (Test-Path -LiteralPath $script:TempRoot)) {
+            $expectedParent = [System.IO.Path]::GetFullPath($script:TempParent).TrimEnd('\') + '\'
+            $fullTempRoot = [System.IO.Path]::GetFullPath($script:TempRoot)
+            if ($fullTempRoot.StartsWith($expectedParent, [System.StringComparison]::OrdinalIgnoreCase) -and $fullTempRoot -match "media-server-phase0-$([regex]::Escape($script:RunId))$") {
+                try {
+                    Remove-Item -LiteralPath $fullTempRoot -Recurse -Force
+                    if (Test-Path -LiteralPath $fullTempRoot) { throw 'Verified Phase 0 temp directory remains.' }
+                    $script:TempRootCreated = $false
+                }
+                catch {
+                    $script:CleanupWarnings.Add('Could not remove the verified unique Phase 0 temp directory.')
+                    Write-Host '[CLEANUP-WARN] Could not remove the verified unique Phase 0 temp directory.'
+                }
             }
         }
+    }
+    finally {
+        $ErrorActionPreference = $prevCleanup
     }
     $env:PATH = $script:OriginalPath
 }
 
 if ($CleanupRunId) {
     $script:RunId = $CleanupRunId
-    $script:TempRoot = Join-Path $env:TEMP "media-server-phase0-$($script:RunId)"
+    $script:TempRoot = Join-Path $script:TempParent "media-server-phase0-$($script:RunId)"
     $script:TempRootCreated = $true
     Assert-Phase0 -Condition (Test-Path -LiteralPath $script:TempRoot -PathType Container) -Message 'The requested Phase 0 cleanup directory does not exist.'
     $cleanupRoot = [System.IO.Path]::GetFullPath($script:TempRoot)
-    $cleanupParent = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    $cleanupParent = [System.IO.Path]::GetFullPath($script:TempParent).TrimEnd('\') + '\'
     Assert-Phase0 -Condition ($cleanupRoot.StartsWith($cleanupParent, [System.StringComparison]::OrdinalIgnoreCase) -and $cleanupRoot -match "media-server-phase0-$([regex]::Escape($script:RunId))$") -Message 'Refusing cleanup because the requested directory is outside the unique Phase 0 temp root.'
     Invoke-Cleanup
     exit 0
