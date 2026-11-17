@@ -1,6 +1,6 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-14
+Last reviewed: 2026-11-17
 Repository: `anis7t/media-server`
 Working branch: `main`
 
@@ -29,6 +29,19 @@ Active branch: `feat/rust-react-postgres-migration`
 | 11 | Brand Opening Sequence Unification | ✅ COMPLETE (Slices 11.1–11.8 Delivered; On-Device Physical Check Batched) — [`docs/PHASE_11_OPENING_SEQUENCE_PLAN.md`](PHASE_11_OPENING_SEQUENCE_PLAN.md) |
 | 13 | Endless Home Discovery Feed, Genre Rails & Hierarchical Navigation | ✅ COMPLETE (Slices 13.1–13.6 Delivered & Verified on Device) — [`docs/PHASE_13_WALKTHROUGH.md`](PHASE_13_WALKTHROUGH.md) |
 | 14 | Production-Quality CI/CD Foundations | ✅ COMPLETE — [`docs/CI_CD_FOUNDATIONS_PLAN.md`](CI_CD_FOUNDATIONS_PLAN.md) & [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
+
+## 2026-11-17 — Static IP (IPoE Migration) & Apex Domain Redirect Binding
+
+Following Airtel's backend resolution transitioning the connection to static IPoE with reboot persistence:
+- **Airtel Static IP Allocation (IPoE):** Connection migrated from dynamic PPPoE to permanent static IPoE with IPv4 address `182.64.234.10`. Verified reboot persistence.
+- **Cloudflare DNS Updated:**
+  - `media.anisparvez.in` synchronized to `182.64.234.10` (`proxied: false`).
+  - `anisparvez.in` (apex) synchronized to `182.64.234.10` (`proxied: false`), replacing legacy GoDaddy parking records.
+  - `www.anisparvez.in` configured as CNAME to `anisparvez.in` (`proxied: false`).
+- **Caddy Reverse Proxy & TLS Automation:** Added `anisparvez.in, www.anisparvez.in` block in `Caddyfile` with permanent HTTP 301 redirection to `https://media.anisparvez.in{uri}`. Automated DNS-01 ACME challenge issued valid Let's Encrypt certificates for both domains.
+- **Router NAT Loopback:** Enabled NAT loopback on the Zyxel AOT-5222ZY gateway, ensuring LAN clients can resolve and access `media.anisparvez.in` and `anisparvez.in` directly via the public IP.
+- **Operational Tooling Added:** Authored `scripts/restart_caddy_service.bat` for elevated Caddyfile sync and service restarts.
+- **Reference Docs:** [`docs/PLAN_STATIC_IP_AND_APEX_REDIRECT_BINDING.md`](PLAN_STATIC_IP_AND_APEX_REDIRECT_BINDING.md) and [`docs/WALKTHROUGH_STATIC_IP_AND_APEX_REDIRECT_BINDING.md`](WALKTHROUGH_STATIC_IP_AND_APEX_REDIRECT_BINDING.md).
 
 ## 2026-11-14 — Flutter SDK 3.50.0 Upgrade, Dependency Alignment & CI 100% Green
 
