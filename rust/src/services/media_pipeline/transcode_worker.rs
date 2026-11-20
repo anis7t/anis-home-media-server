@@ -669,6 +669,9 @@ impl TranscodeWorker {
     }
 
     /// Spawns FFmpeg subprocess to render one chunk.
+    // This orchestration boundary keeps the media, adapter, quality, and PID
+    // tracking inputs explicit for each isolated FFmpeg chunk.
+    #[allow(clippy::too_many_arguments)]
     async fn execute_single_chunk(
         video_path: &Path,
         hls_dir: &Path,

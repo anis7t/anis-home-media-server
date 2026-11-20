@@ -6,6 +6,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(windows)]
 const HEADER_MIN: usize = 64;
 const MAX_SHARED_BYTES: usize = 16 * 1024 * 1024;
 const MAX_AGE_SECS: i64 = 15;
