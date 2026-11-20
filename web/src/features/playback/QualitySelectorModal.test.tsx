@@ -24,16 +24,6 @@ const MOCK_LADDER: QualityOption[] = [
     is_ready: true,
     hls_url: '/hls/test.mkv/720p/playlist.m3u8',
   },
-  {
-    label: '480p',
-    quality: '480p',
-    height: 480,
-    width: 854,
-    bitrate: 1200000,
-    is_direct: false,
-    is_ready: false,
-    hls_url: '/hls/test.mkv/480p/playlist.m3u8',
-  },
 ];
 
 describe('QualitySelectorModal', () => {
@@ -67,13 +57,13 @@ describe('QualitySelectorModal', () => {
     expect(screen.getByText('Auto (Adaptive)')).toBeInTheDocument();
     expect(screen.getByText('Direct Play (Source)')).toBeInTheDocument();
     expect(screen.getByText('720p')).toBeInTheDocument();
-    expect(screen.getByText('480p')).toBeInTheDocument();
+    expect(screen.queryByText('480p')).not.toBeInTheDocument();
+    expect(screen.queryByText('360p')).not.toBeInTheDocument();
 
     // Check Phase 9 badges
     expect(screen.getByText('Recommended')).toBeInTheDocument();
     expect(screen.getByText('Direct Stream')).toBeInTheDocument();
     expect(screen.getByText('Stream Ready')).toBeInTheDocument();
-    expect(screen.getByText('Requires Pre-Transcode')).toBeInTheDocument();
   });
 
   it('disables Direct Play with clear warning badge when unsupported on browser', () => {
@@ -98,27 +88,6 @@ describe('QualitySelectorModal', () => {
     ).toBeInTheDocument();
 
     fireEvent.click(directBtn);
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it('disables unready transcode quality options with Requires Pre-Transcode badge', () => {
-    const onSelect = vi.fn();
-    render(
-      <QualitySelectorModal
-        isOpen={true}
-        onClose={vi.fn()}
-        qualityLadder={MOCK_LADDER}
-        selectedQuality="auto"
-        onSelectQuality={onSelect}
-      />,
-    );
-
-    const unreadyBtn = screen.getByTestId('quality-opt-480p');
-    expect(unreadyBtn).toBeDisabled();
-    expect(screen.getByText('Requires Pre-Transcode')).toBeInTheDocument();
-    expect(screen.getByText('Quality not pre-transcoded on server')).toBeInTheDocument();
-
-    fireEvent.click(unreadyBtn);
     expect(onSelect).not.toHaveBeenCalled();
   });
 

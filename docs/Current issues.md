@@ -581,6 +581,65 @@ a claim that it is the complete backlog.
 
 ---
 
+### Issue 18: Quality Presets, Transcode Lifecycle, Playback Parity & Cache Retention (2026-11-21) — OPEN
+
+- **Implemented follow-up (2026-11-21):** Removed 480p/360p from the advertised and
+  scheduled ladder; added RX/Vega adapter-affine job lanes with HWiNFO thermal admission,
+  defaulting to single-RX operation when readings are unavailable or over the configured
+  temperature ceiling. The subsequent local cleanup removed all 38 cached 480p/360p
+  rendition directories and their 19 master-playlist references, preserving the original
+  masters as backups. It also removed the 44 completed `hls:480p`/`hls:360p` rows from
+  PostgreSQL job history. See [`DUAL_GPU_STABILITY.md`](DUAL_GPU_STABILITY.md). The
+  remaining Issue 18 findings below are still open.
+
+- **Reported:** *(found during local quality-pipeline reconnaissance)* — preset labels, encoder output,
+  client readiness behavior, and post-transcode storage policy do not consistently describe or
+  enforce the same lifecycle.
+- **Observed local baseline:** 30 indexed titles; 19 use HLS/transcoding and 11 are direct-play/no-
+  transcode. No jobs were active during inspection; history contained 70 completed and one failed
+  `hls:2160p` job (recorded reason: `Server restarted during transcode`). HLS cache occupied about
+  122.5 GiB across 19 top-level media directories; `E:` had 20.62 GiB free, 5.62 GiB above the
+  transcode sweeper's 15 GiB floor. Current storage setting is `purge_cache`.
+- **Findings to resolve:**
+  1. **Preset bitrate labels do not cap encoded bitrate.** The ladder advertises 2160p 14 Mbps,
+     1440p 8 Mbps, 1080p 4.5 Mbps, 720p 2.2 Mbps, 480p 1.2 Mbps, and 360p 0.8 Mbps. The AMF path
+     uses CQP (`qp_i=22`, `qp_p=24` by default) without a video bitrate/maxrate target. Define the
+     intended preset contract and align UI labels, HLS metadata, and encoder settings.
+  2. **Configured GPU mode and user-facing status disagree.** Local `.env` sets
+     `MEDIA_SERVER_ENABLE_DUAL_GPU=0`, while several UI/dashboard labels claim dual-GPU transcoding.
+     Confirm the service's effective environment and adapter use; report selected adapters and
+     concurrency accurately.
+  3. **`purge_cache` is not wired to watched-title completion.** The setting is persisted and the UI
+     describes “Purge After Watch,” but the Rust maintenance worker purges verified orphan caches
+     only. Define “watched” and either implement the policy or make the UI describe its actual
+     behavior.
+  4. **Flutter manual quality switching can open an incomplete tier.** The quality sheet permits an
+     unavailable tier, queues it, and immediately switches to its HLS URL. The route may return 503
+     before segments exist or a partial playlist while encoding continues. Align this path with the
+     agreed readiness contract and preserve position/play state.
+  5. **The background sweeper can skip missing cache for a completed job.** If a rendition's files
+     are deleted while its PostgreSQL job remains `completed`, the sweeper skips rebuilding it.
+     Cache presence and completeness should participate in requeue decisions.
+  6. **Manual tier requests can advertise a resolution above the encoded source.** The worker clamps
+     height but retains the requested tier label; fixed master-playlist metadata can claim 1080p for
+     a smaller encoded stream. Reject, normalize, or accurately advertise these requests.
+  7. **Storage estimates do not consistently follow the preset table.** Estimate bands mismatch
+     1440p and 360p and are only rough projections for CQP output. Align them with the encoder
+     contract or identify them as estimates.
+  8. **The HLS cache contains mixed generations and substantial storage usage.** The inspected cache
+     contained both `.m4s` and legacy `.ts` segments, about 122.5 GiB total, 75 complete media
+     playlists, and no incomplete playlists. Define safe reconciliation without removing active or
+     still-valid renditions.
+- **Expected:** One preset contract is shared by the encoder, selectors, HLS master, job telemetry,
+  and storage estimates. Web and Flutter follow the same readiness and quality-switch contract.
+  Retention semantics are implemented and missing tiers can be rebuilt safely.
+- **Scope note:** The findings above record the reconnaissance baseline. No encoder
+  configuration, playback behavior, media files, job rows, or cache contents were changed
+  during that discovery. The later approved quality-floor cleanup is recorded in the
+  implemented follow-up above.
+
+---
+
 ### Category 3: Owner Security & Credential Actions — ✅ RESOLVED (2026-10-24)
 - **3.1 Admin PIN Rotation:**
   - Added native Web UI `<ChangeAdminPinModal>` portaled to `document.body` with input validation, error handling, and session sync.

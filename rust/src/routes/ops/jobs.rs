@@ -458,7 +458,6 @@ pub async fn transcode_dashboard_handler(
         let projected_speed = match j.mode.as_str() {
             "4k" | "2160p" | "fmp4_2160p" => 1.5,
             "720p" | "fmp4_720p" => 6.0,
-            "480p" | "fmp4_480p" | "360p" | "fmp4_360p" => 8.0,
             _ => 4.0, // default 1080p combined dual-GPU speed
         };
         let projected_remaining = if j.status == "running" {

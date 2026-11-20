@@ -1,8 +1,38 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-17
+Last reviewed: 2026-11-21
 Repository: `anis7t/media-server`
-Working branch: `main`
+Working branch: `codex/dual-gpu-stability`
+
+---
+
+## 2026-11-21 — Dual-GPU Stability and 720p Quality Floor
+
+- Added adapter-affine transcode lanes: one RX 560X rendition job and one Vega 8
+  rendition job may run concurrently; Vega is limited to 720p and RX handles higher
+  tiers. 4K remains single-RX. Stale or over-limit HWiNFO shared-memory readings
+  block dual dispatch and pause chunk starts until safe readings return.
+- HWiNFO labels are configured with `MEDIA_SERVER_GPU_TEMP_RX_MATCH` and
+  `MEDIA_SERVER_GPU_TEMP_VEGA_MATCH`; the default admission ceiling is 85°C and can
+  be changed with `MEDIA_SERVER_GPU_MAX_TEMP_C`. The default critical stop is 92°C
+  (`MEDIA_SERVER_GPU_CRITICAL_TEMP_C`). Dual mode remains opt-in through
+  `MEDIA_SERVER_ENABLE_DUAL_GPU=1`.
+- Removed 480p and 360p from the standard ladder, automatic sweep, and management
+  queue. Start requests for unsupported quality labels are rejected. On
+  2026-11-21, the local HLS cache cleanup removed the 38 remaining 360p/480p
+  rendition directories, pruned their references from all 19 cached master
+  playlists (with original backups), and removed 44 completed low-tier job rows
+  from PostgreSQL. 720p-and-higher cache data and movie catalog rows were kept.
+- Validation: `cargo fmt --all -- --check` and `cargo check --tests` pass. The
+  release build completed in `cache/release-build/dual-gpu-validation/`. A
+  hardware-gated Rust probe passed against live HWiNFO Shared Memory, including
+  the dual-admission and per-adapter temperature checks. One-second sequential
+  720p AMF scratch encodes passed on both adapters and FFprobe verified both
+  outputs. The corrected build is running locally and returns HTTP 200 with dual
+  mode still disabled. Relevant React and Flutter tests passed; the concurrent
+  dual-GPU scratch run remains gated on explicit readiness. See
+  [`DUAL_GPU_STABILITY.md`](DUAL_GPU_STABILITY.md) for the detailed validation
+  record and remaining checks.
 
 ---
 

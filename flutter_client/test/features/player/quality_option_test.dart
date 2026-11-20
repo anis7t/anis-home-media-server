@@ -58,10 +58,10 @@ void main() {
 
     test('QualityOption bitrate formatting handles kbps and large mbps', () {
       const kbpsOpt = QualityOption(
-        label: '360p',
-        quality: '360p',
-        height: 360,
-        width: 640,
+        label: '720p',
+        quality: '720p',
+        height: 720,
+        width: 1280,
         bitrate: 450000,
         isDirect: false,
         isReady: false,

@@ -63,12 +63,10 @@ impl TranscodeSweeperService {
 
     /// Assign wave priorities:
     /// - Priority 10: HD Baseline (1080p, 720p)
-    /// - Priority 5: Mobile / Bandwidth (480p, 360p)
     /// - Priority 1: 4K Ultra HD (2160p, 1440p)
     pub fn priority_for_quality(label: &str) -> i32 {
         match label {
             "1080p" | "720p" => 10,
-            "480p" | "360p" => 5,
             "2160p" | "1440p" => 1,
             _ => 5,
         }

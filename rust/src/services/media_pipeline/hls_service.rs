@@ -286,8 +286,6 @@ impl HlsService {
         ("1440p", 2560, 1440, 8000000, "avc1.640032,mp4a.40.2"),
         ("1080p", 1920, 1080, 4500000, "avc1.640028,mp4a.40.2"),
         ("720p", 1280, 720, 2200000, "avc1.64001f,mp4a.40.2"),
-        ("480p", 854, 480, 1200000, "avc1.64001f,mp4a.40.2"),
-        ("360p", 640, 360, 800000, "avc1.64001e,mp4a.40.2"),
     ];
 
     /// Dynamically assemble an RFC 8216 multi-variant master playlist advertising all active quality tiers.
@@ -378,8 +376,6 @@ impl HlsService {
                     "2k" | "1440p" | "1440" => "1440p",
                     "1080p" | "1080" | "fhd" => "1080p",
                     "720p" | "720" | "hd" => "720p",
-                    "480p" | "480" | "sd" => "480p",
-                    "360p" | "360" => "360p",
                     _ => q_lower.as_str(),
                 };
                 let q_dir = base_dir.join(norm);

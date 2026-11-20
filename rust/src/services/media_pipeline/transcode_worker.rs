@@ -35,29 +35,107 @@ impl TranscodeWorker {
         shutdown: Arc<AtomicBool>,
     ) {
         tokio::spawn(async move {
-            info!("Transcode worker [{}] started", worker_id);
-            // Brief boot delay to ensure database connection pool is warm
             tokio::time::sleep(Duration::from_secs(3)).await;
+            if GpuService::is_dual_gpu_enabled() {
+                info!("Dual-GPU job lanes enabled: one rendition job per physical adapter");
+                let rx = Self::run_adapter_lane(
+                    pool.clone(),
+                    roots.clone(),
+                    cache_dir.clone(),
+                    format!("{worker_id}-rx"),
+                    "rx",
+                    shutdown.clone(),
+                );
+                let vega = Self::run_adapter_lane(
+                    pool,
+                    roots,
+                    cache_dir,
+                    format!("{worker_id}-vega"),
+                    "vega",
+                    shutdown,
+                );
+                tokio::join!(rx, vega);
+            } else {
+                info!(
+                    "Transcode worker [{}] started in single-RX fail-safe mode",
+                    worker_id
+                );
+                Self::run_adapter_lane(pool, roots, cache_dir, worker_id, "rx", shutdown).await;
+            }
+        });
+    }
 
-            while !shutdown.load(Ordering::SeqCst) {
-                match Self::process_next_job(&pool, &roots, &cache_dir, &worker_id, &shutdown).await
-                {
-                    Ok(true) => {
-                        // Work was done; check for next job immediately
-                    }
-                    Ok(false) => {
-                        // Queue was empty; idle sleep
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                    }
-                    Err(e) => {
-                        warn!("Transcode worker [{}] encountered error: {}", worker_id, e);
-                        tokio::time::sleep(Duration::from_secs(3)).await;
-                    }
+    async fn run_adapter_lane(
+        pool: PgPool,
+        roots: Arc<Vec<PathBuf>>,
+        cache_dir: Arc<PathBuf>,
+        worker_id: String,
+        lane: &'static str,
+        shutdown: Arc<AtomicBool>,
+    ) {
+        while !shutdown.load(Ordering::SeqCst) {
+            let telemetry_safe = GpuService::is_dual_gpu_enabled();
+            if lane == "vega" && !telemetry_safe {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            match Self::process_next_job_for_adapter(
+                &pool,
+                &roots,
+                &cache_dir,
+                &worker_id,
+                lane,
+                lane == "rx" && !telemetry_safe,
+                &shutdown,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => tokio::time::sleep(Duration::from_secs(2)).await,
+                Err(e) => {
+                    warn!("Transcode worker [{}] encountered error: {}", worker_id, e);
+                    tokio::time::sleep(Duration::from_secs(3)).await;
                 }
             }
+        }
+        info!("Transcode worker [{}] shutting down", worker_id);
+    }
 
-            info!("Transcode worker [{}] shutting down", worker_id);
-        });
+    async fn process_next_job_for_adapter(
+        pool: &PgPool,
+        roots: &[PathBuf],
+        cache_dir: &Path,
+        worker_id: &str,
+        lane: &str,
+        allow_720p_on_rx: bool,
+        shutdown: &AtomicBool,
+    ) -> Result<bool, AppError> {
+        let job =
+            match JobService::claim_next_for_adapter(pool, worker_id, 300, lane, allow_720p_on_rx)
+                .await?
+            {
+                Some(job) => job,
+                None => return Ok(false),
+            };
+        info!(
+            "Worker [{}] claimed job #{} ({})",
+            worker_id, job.id, job.mode
+        );
+        if let Err(e) = Self::execute_job(
+            pool,
+            roots,
+            cache_dir,
+            worker_id,
+            &job,
+            shutdown,
+            Some(lane),
+        )
+        .await
+        {
+            error!("Worker [{}] failed job #{}: {}", worker_id, job.id, e);
+            let _ = JobService::fail(pool, job.id, worker_id, &e.to_string()).await;
+        }
+        Ok(true)
     }
 
     /// Claim and process one job from the queue. Returns `true` if a job was found and processed.
@@ -78,7 +156,9 @@ impl TranscodeWorker {
             worker_id, job.id, job.filename, job.priority
         );
 
-        if let Err(e) = Self::execute_job(pool, roots, cache_dir, worker_id, &job, shutdown).await {
+        if let Err(e) =
+            Self::execute_job(pool, roots, cache_dir, worker_id, &job, shutdown, None).await
+        {
             error!(
                 "Worker [{}] failed job #{} ({}): {}",
                 worker_id, job.id, job.filename, e
@@ -97,6 +177,7 @@ impl TranscodeWorker {
         worker_id: &str,
         job: &TranscodeJob,
         shutdown: &AtomicBool,
+        adapter_lane: Option<&str>,
     ) -> Result<(), AppError> {
         let video_path = PathResolver::resolve_media_path(&job.filename, roots)
             .map_err(|e| AppError::NotFound(format!("Media file not found: {}", e)))?;
@@ -114,6 +195,20 @@ impl TranscodeWorker {
         // Determine quality tier and target height from job mode
         let (_job_type, target_height, quality_label) =
             ChunkTranscodeService::parse_job_mode(&job.mode);
+        if adapter_lane == Some("vega") && !GpuService::is_dual_gpu_enabled() {
+            return Err(AppError::Internal(
+                "Vega job dispatch denied because dual-GPU thermal admission is unsafe".into(),
+            ));
+        }
+        if job.mode.starts_with("hls:")
+            && ChunkTranscodeService::normalize_quality_label(job.mode.trim_start_matches("hls:"))
+                .is_none()
+        {
+            return Err(AppError::BadRequest(format!(
+                "Unsupported transcode quality in queued job mode: {}",
+                job.mode
+            )));
+        }
         let source_height = probe
             .first_stream("video")
             .and_then(|s| s.height)
@@ -131,10 +226,8 @@ impl TranscodeWorker {
                 (1080, "1080p")
             } else if source_height >= 600 {
                 (720, "720p")
-            } else if source_height >= 400 {
-                (480, "480p")
             } else {
-                (360, "360p")
+                (source_height.max(1), "720p")
             };
             (Some(target_h), label.to_string())
         } else {
@@ -162,13 +255,33 @@ impl TranscodeWorker {
         let playlist_path = hls_dir.join("playlist.m3u8");
 
         // 2. Select AMF strategy and expand workers
-        let (use_vpp_amf, worker_count) =
+        let (use_vpp_amf, _) =
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
-        let mut workers = GpuService::expand_workers(&base_gpus, worker_count);
         let is_4k = effective_target_height.is_some_and(|h| h >= 2160)
             || effective_quality_label == "2160p";
         let dual_gpu_enabled = GpuService::is_dual_gpu_enabled();
+        let effective_lane = adapter_lane.unwrap_or(
+            if dual_gpu_enabled && effective_quality_label == "720p" && !is_4k {
+                "vega"
+            } else {
+                "rx"
+            },
+        );
+        let mut workers: Vec<GPUWorkerConfig> = {
+            let selected = if effective_lane == "vega" {
+                base_gpus.iter().find(|w| !w.is_discrete)
+            } else {
+                base_gpus.iter().find(|w| w.is_discrete)
+            };
+            selected.cloned().into_iter().collect()
+        };
+        if workers.is_empty() {
+            return Err(AppError::Internal(format!(
+                "No eligible physical GPU is available for adapter lane {:?}",
+                adapter_lane
+            )));
+        }
         if is_4k || !dual_gpu_enabled {
             if workers.len() > 1 {
                 if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
@@ -373,6 +486,19 @@ impl TranscodeWorker {
                     }
 
                     let chunk = &pending_chunks_ref[idx];
+                    if dual_gpu_enabled {
+                        while !crate::services::gpu_thermal::adapter_temperature_safe(
+                            worker_cfg.is_discrete,
+                        ) {
+                            if cancel.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
+                        if cancel.load(Ordering::Relaxed) {
+                            break;
+                        }
+                    }
                     let chunk_res = Self::execute_single_chunk(
                         &v_path,
                         &h_dir,
@@ -380,6 +506,7 @@ impl TranscodeWorker {
                         &worker_cfg,
                         use_vpp_amf,
                         effective_target_height,
+                        dual_gpu_enabled,
                         pids.clone(),
                     )
                     .await;
@@ -542,6 +669,9 @@ impl TranscodeWorker {
     }
 
     /// Spawns FFmpeg subprocess to render one chunk.
+    // This orchestration boundary keeps the media, adapter, quality, and PID
+    // tracking inputs explicit for each isolated FFmpeg chunk.
+    #[allow(clippy::too_many_arguments)]
     async fn execute_single_chunk(
         video_path: &Path,
         hls_dir: &Path,
@@ -549,6 +679,7 @@ impl TranscodeWorker {
         worker: &GPUWorkerConfig,
         use_vpp_amf: bool,
         target_height: Option<u32>,
+        thermal_guarded: bool,
         active_pids: Arc<Mutex<HashSet<u32>>>,
     ) -> Result<(), AppError> {
         let chunk_pl_name = format!("chunk_{}.m3u8", chunk.chunk_id);
@@ -631,7 +762,34 @@ impl TranscodeWorker {
 
         // Bounded per-chunk timeout (180s) to guard against GPU driver deadlocks
         let timeout_duration = Duration::from_secs(180);
-        let output = match tokio::time::timeout(timeout_duration, child.wait_with_output()).await {
+        let output_result = if thermal_guarded {
+            let mut wait = Box::pin(child.wait_with_output());
+            tokio::select! {
+                result = tokio::time::timeout(timeout_duration, &mut wait) => result,
+                _ = async {
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        if crate::services::gpu_thermal::critical_temperature_or_sensor_loss(worker.is_discrete) {
+                            break;
+                        }
+                    }
+                } => {
+                    if let Some(pid) = child_pid {
+                        active_pids.lock().await.remove(&pid);
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/F", "/T"])
+                            .output();
+                    }
+                    return Err(AppError::Internal(format!(
+                        "Critical GPU temperature or sensor loss on {}; stopped chunk {}",
+                        worker.name, chunk.chunk_id
+                    )));
+                }
+            }
+        } else {
+            tokio::time::timeout(timeout_duration, child.wait_with_output()).await
+        };
+        let output = match output_result {
             Ok(Ok(out)) => out,
             Ok(Err(e)) => {
                 if let Some(pid) = child_pid {

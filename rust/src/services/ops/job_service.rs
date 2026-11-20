@@ -169,6 +169,52 @@ impl JobService {
         Ok(job)
     }
 
+    /// Claim a job for a physical adapter lane. In dual mode the Vega lane is
+    /// limited to the 720p rendition; the discrete lane handles all other work.
+    pub async fn claim_next_for_adapter(
+        pool: &PgPool,
+        owner: &str,
+        lease_seconds: i64,
+        adapter_lane: &str,
+        allow_720p_on_rx: bool,
+    ) -> Result<Option<TranscodeJob>, AppError> {
+        let mut tx: Transaction<'_, Postgres> = pool.begin().await?;
+        let id: Option<i64> = sqlx::query(
+            r#"
+            UPDATE transcode_jobs
+               SET status = 'running', lease_owner = $1,
+                   lease_expires_at = CURRENT_TIMESTAMP + ($2 || ' seconds')::interval,
+                   attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = (
+                 SELECT id FROM transcode_jobs
+                  WHERE (status = 'queued' OR (status = 'running' AND
+                         (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP)))
+                    AND CASE
+                        WHEN $3 = 'vega' THEN mode IN ('hls:720p', 'hls:720', 'hls:hd')
+                        WHEN $3 = 'rx' AND $4 THEN TRUE
+                        WHEN $3 = 'rx' THEN mode NOT IN ('hls:720p', 'hls:720', 'hls:hd')
+                        ELSE FALSE
+                    END
+                  ORDER BY priority DESC, created_at ASC
+                  FOR UPDATE SKIP LOCKED LIMIT 1
+             ) RETURNING id
+            "#,
+        )
+        .bind(owner)
+        .bind(lease_seconds.to_string())
+        .bind(adapter_lane)
+        .bind(allow_720p_on_rx)
+        .fetch_optional(&mut *tx)
+        .await?
+        .map(|r| r.get::<i64, _>("id"));
+        let job = match id {
+            Some(id) => Self::get_by_id_tx(&mut tx, id).await?,
+            None => None,
+        };
+        tx.commit().await?;
+        Ok(job)
+    }
+
     /// Recover orphaned running jobs after a server crash/restart.
     ///
     /// Finds any job with status 'running' whose lease has expired or is null,

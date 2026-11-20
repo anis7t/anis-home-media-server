@@ -30,12 +30,6 @@ const PRESET_OPTIONS = [
     desc: 'Target ~14.2 Mbps • Cinema Grade for 4K Displays',
     badge: '4K',
   },
-  {
-    id: 'hls:480p',
-    name: '480p Compact',
-    desc: 'Target ~1.4 Mbps • Low-Bandwidth Data Saver',
-    badge: '480p',
-  },
 ];
 
 export function QueueTranscodeModal({

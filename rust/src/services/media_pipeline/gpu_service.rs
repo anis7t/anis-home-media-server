@@ -433,6 +433,7 @@ impl GpuService {
             return false;
         }
         Self::detect_available_gpus(false).len() >= 2
+            && crate::services::gpu_thermal::dual_gpu_thermal_safe()
     }
 
     /// True when per-source pipeline/worker selection is switched on.
@@ -678,6 +679,14 @@ mod tests {
             "1440p must declare avc1 codec: {}",
             q_1440.4
         );
+    }
+
+    #[test]
+    fn standard_quality_ladder_has_720p_floor() {
+        assert!(HlsService::STANDARD_QUALITIES
+            .iter()
+            .all(|(_, _, height, _, _)| *height >= 720));
+        assert_eq!(HlsService::STANDARD_QUALITIES.len(), 4);
     }
 
     #[test]
