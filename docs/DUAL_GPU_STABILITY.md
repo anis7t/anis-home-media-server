@@ -43,8 +43,15 @@ discrete group name reported by this machine.
 ## Quality floor
 
 The advertised and scheduled HLS qualities are 720p, 1080p, 1440p, and 2160p.
-Requests for 480p or 360p are rejected. Existing cache directories for those
-qualities are left untouched and are no longer advertised.
+Requests for 480p or 360p are rejected. On 2026-11-21, the local HLS cache was
+cleaned of all 38 `360p` and `480p` rendition directories (74,908 files,
+43,703,437,986 bytes). The 19 cached master playlists were rewritten to remove
+those variants; each original master is retained beside it as
+`master.m3u8.before-quality-cleanup.bak`. PostgreSQL's 44 completed
+`hls:360p`/`hls:480p` job-history rows were also removed so they no longer appear
+as completed low-resolution renditions. No 720p-or-higher cache directories or
+movie catalog rows were removed. One cached master had no 720p-or-higher variant
+after cleanup; its original is preserved in the backup.
 
 ## Validation
 

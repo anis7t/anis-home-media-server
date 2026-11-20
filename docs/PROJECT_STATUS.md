@@ -18,8 +18,11 @@ Working branch: `codex/dual-gpu-stability`
   (`MEDIA_SERVER_GPU_CRITICAL_TEMP_C`). Dual mode remains opt-in through
   `MEDIA_SERVER_ENABLE_DUAL_GPU=1`.
 - Removed 480p and 360p from the standard ladder, automatic sweep, and management
-  queue. Start requests for unsupported quality labels are rejected. Existing
-  lower-tier cache files are not deleted.
+  queue. Start requests for unsupported quality labels are rejected. On
+  2026-11-21, the local HLS cache cleanup removed the 38 remaining 360p/480p
+  rendition directories, pruned their references from all 19 cached master
+  playlists (with original backups), and removed 44 completed low-tier job rows
+  from PostgreSQL. 720p-and-higher cache data and movie catalog rows were kept.
 - Validation: `cargo fmt --all -- --check` and `cargo check --tests` pass. The
   release build completed in `cache/release-build/dual-gpu-validation/`. A
   hardware-gated Rust probe passed against live HWiNFO Shared Memory, including

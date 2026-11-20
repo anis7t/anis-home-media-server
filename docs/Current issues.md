@@ -586,8 +586,11 @@ a claim that it is the complete backlog.
 - **Implemented follow-up (2026-11-21):** Removed 480p/360p from the advertised and
   scheduled ladder; added RX/Vega adapter-affine job lanes with HWiNFO thermal admission,
   defaulting to single-RX operation when readings are unavailable or over the configured
-  temperature ceiling. See [`DUAL_GPU_STABILITY.md`](DUAL_GPU_STABILITY.md). The remaining
-  Issue 18 findings below are still open.
+  temperature ceiling. The subsequent local cleanup removed all 38 cached 480p/360p
+  rendition directories and their 19 master-playlist references, preserving the original
+  masters as backups. It also removed the 44 completed `hls:480p`/`hls:360p` rows from
+  PostgreSQL job history. See [`DUAL_GPU_STABILITY.md`](DUAL_GPU_STABILITY.md). The
+  remaining Issue 18 findings below are still open.
 
 - **Reported:** *(found during local quality-pipeline reconnaissance)* — preset labels, encoder output,
   client readiness behavior, and post-transcode storage policy do not consistently describe or
@@ -630,8 +633,10 @@ a claim that it is the complete backlog.
 - **Expected:** One preset contract is shared by the encoder, selectors, HLS master, job telemetry,
   and storage estimates. Web and Flutter follow the same readiness and quality-switch contract.
   Retention semantics are implemented and missing tiers can be rebuilt safely.
-- **Scope note:** This entry records reconnaissance findings only. No encoder configuration,
-  playback behavior, media files, job rows, or cache contents were changed during discovery.
+- **Scope note:** The findings above record the reconnaissance baseline. No encoder
+  configuration, playback behavior, media files, job rows, or cache contents were changed
+  during that discovery. The later approved quality-floor cleanup is recorded in the
+  implemented follow-up above.
 
 ---
 
