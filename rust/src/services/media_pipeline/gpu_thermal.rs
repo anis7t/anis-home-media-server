@@ -148,9 +148,7 @@ fn mapped_bytes() -> Option<Vec<u8>> {
         }
     }
     #[cfg(not(windows))]
-    {
-        None
-    }
+    {}
     #[allow(unreachable_code)]
     None
 }
