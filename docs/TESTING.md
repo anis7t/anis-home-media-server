@@ -17,6 +17,17 @@ The primary CI pipeline is defined in [`.github/workflows/ci.yml`](../.github/wo
 | **`flutter`** | `ubuntu-latest` + Flutter stable + Java 17 | Flutter Client (`flutter_client/`) | `flutter pub get`<br>`flutter analyze`<br>`flutter test` (417 offline unit, widget, contract & intro tests) |
 | **`security`** | `ubuntu-latest` | Full Repository | Gitleaks secret scanner (`gitleaks/gitleaks-action`) scanning for leaked API keys, tokens, credentials, and PII |
 
+### Finding the Clippy result in GitHub Actions
+
+Open the relevant **CI** workflow run, then expand **Rust Backend (Axum)** and select
+the **Clippy static analysis** step. Clippy is a static-analysis check inside the Rust
+job; it is separate from the later **Run Rust unit and integration tests** step. The
+step runs:
+
+```bash
+cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+```
+
 ### Triggers & Concurrency
 - **Triggers**: Pushes to `main`, pull requests targeting `main`, pushes to `android/antigravity-work`, and manual triggers (`workflow_dispatch`).
 - **Concurrency**: Grouped by workflow and branch (`${{ github.workflow }}-${{ github.ref }}`). Outdated runs on pull request branches are automatically canceled (`cancel-in-progress: true`), while runs on `main` run to completion sequentially.
