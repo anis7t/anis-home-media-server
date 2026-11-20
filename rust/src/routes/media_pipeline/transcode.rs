@@ -329,6 +329,15 @@ pub async fn transcode_start_handler(
         .filter(|q| !q.is_empty() && *q != "source" && *q != "default");
 
     if let Some(q) = q_norm {
+        let Some((_, canonical_quality)) =
+            crate::services::chunk_transcode::ChunkTranscodeService::normalize_quality_label(q)
+        else {
+            return Err(AppError::BadRequest(format!(
+                "Unsupported quality '{}'; available HLS qualities are 720p, 1080p, 1440p, and 2160p",
+                q
+            )));
+        };
+        let q = canonical_quality;
         let q_dir =
             HlsService::find_hls_quality_dir(&video_path, &state.roots, &state.cache_dir, Some(q));
         let playlist_file = q_dir.join("playlist.m3u8");

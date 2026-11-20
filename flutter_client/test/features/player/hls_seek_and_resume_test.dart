@@ -130,21 +130,11 @@ void main() {
           isDirect: false,
           isReady: true,
         ),
-        QualityOption(
-          label: '480p (SD)',
-          quality: '480p',
-          height: 480,
-          width: 854,
-          bitrate: 1200000,
-          isDirect: false,
-          isReady: false,
-        ),
       ];
 
       expect(options[0].isDirect, isTrue);
       expect(options[1].quality, equals('1080p'));
       expect(options[2].quality, equals('720p'));
-      expect(options[3].isReady, isFalse);
     });
   });
 }

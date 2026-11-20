@@ -110,8 +110,6 @@ impl ChunkTranscodeService {
             "2k" | "1440p" | "1440" => Some((1440, "1440p")),
             "1080p" | "1080" | "fhd" => Some((1080, "1080p")),
             "720p" | "720" | "hd" => Some((720, "720p")),
-            "480p" | "480" | "sd" => Some((480, "480p")),
-            "360p" | "360" => Some((360, "360p")),
             _ => None,
         }
     }
@@ -523,5 +521,17 @@ impl ChunkTranscodeService {
         );
         let progress_file = hls_dir.join("hls.progress");
         fs::write(progress_file, content)
+    }
+}
+
+#[cfg(test)]
+mod quality_tests {
+    use super::ChunkTranscodeService;
+
+    #[test]
+    fn quality_floor_is_720p() {
+        assert!(ChunkTranscodeService::normalize_quality_label("720p").is_some());
+        assert!(ChunkTranscodeService::normalize_quality_label("480p").is_none());
+        assert!(ChunkTranscodeService::normalize_quality_label("360p").is_none());
     }
 }

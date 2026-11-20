@@ -15,7 +15,7 @@ pub use catalog::{
 };
 pub use identity::{audit_service, auth_service, device_service};
 pub use media_pipeline::{
-    chunk_transcode, gpu_service, hls_service, preview_service, probe_service, range_service,
-    subtitle_service, transcode_sweeper, transcode_worker,
+    chunk_transcode, gpu_service, gpu_thermal, hls_service, preview_service, probe_service,
+    range_service, subtitle_service, transcode_sweeper, transcode_worker,
 };
 pub use ops::{job_service, storage_service, system_service, upload_service};

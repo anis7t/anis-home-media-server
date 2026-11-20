@@ -1,5 +1,6 @@
 pub mod chunk_transcode;
 pub mod gpu_service;
+pub mod gpu_thermal;
 pub mod hls_service;
 pub mod preview_service;
 pub mod probe_service;
@@ -10,6 +11,7 @@ pub mod transcode_worker;
 
 pub use chunk_transcode::*;
 pub use gpu_service::*;
+pub use gpu_thermal::*;
 pub use hls_service::*;
 pub use preview_service::*;
 pub use probe_service::*;
