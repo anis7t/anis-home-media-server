@@ -152,11 +152,11 @@ fn test_parse_job_mode_and_qualities() {
     );
     assert_eq!(
         ChunkTranscodeService::parse_job_mode("hls:480p"),
-        ("hls".into(), Some(480), "480p".into())
+        ("hls".into(), Some(1080), "1080p".into())
     );
     assert_eq!(
         ChunkTranscodeService::parse_job_mode("hls:360p"),
-        ("hls".into(), Some(360), "360p".into())
+        ("hls".into(), Some(1080), "1080p".into())
     );
     assert_eq!(
         ChunkTranscodeService::parse_job_mode("hls:1440p"),
@@ -190,6 +190,8 @@ fn test_parse_job_mode_and_qualities() {
     assert!(ChunkTranscodeService::is_quality_string("720p"));
     assert!(ChunkTranscodeService::is_quality_string("4k"));
     assert!(ChunkTranscodeService::is_quality_string("2K"));
+    assert!(!ChunkTranscodeService::is_quality_string("480p"));
+    assert!(!ChunkTranscodeService::is_quality_string("360p"));
     assert!(!ChunkTranscodeService::is_quality_string("invalid_quality"));
     assert!(!ChunkTranscodeService::is_quality_string("movie.mkv"));
 }

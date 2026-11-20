@@ -543,18 +543,14 @@ async fn test_hls_master_playlist_multi_tier_delivery() {
     );
     let q1080 = base_hls_dir.join("1080p");
     let q720 = base_hls_dir.join("720p");
-    let q480 = base_hls_dir.join("480p");
     fs::create_dir_all(&q1080).unwrap();
     fs::create_dir_all(&q720).unwrap();
-    fs::create_dir_all(&q480).unwrap();
 
     // Write tier playlists
     let pl_1080 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
     let pl_720 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
-    let pl_480 = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI=\"init_chunk_0.mp4\"\n#EXTINF:4.000000,\nsegment_000000.m4s\n#EXT-X-ENDLIST\n";
     fs::write(q1080.join("playlist.m3u8"), pl_1080).unwrap();
     fs::write(q720.join("playlist.m3u8"), pl_720).unwrap();
-    fs::write(q480.join("playlist.m3u8"), pl_480).unwrap();
 
     // 1. GET /hls/Inception.mkv/master.m3u8
     let req = Request::builder()
@@ -580,8 +576,10 @@ async fn test_hls_master_playlist_multi_tier_delivery() {
     assert!(body_str.contains("1080p/playlist.m3u8"));
     assert!(body_str.contains("RESOLUTION=1280x720"));
     assert!(body_str.contains("720p/playlist.m3u8"));
-    assert!(body_str.contains("RESOLUTION=854x480"));
-    assert!(body_str.contains("480p/playlist.m3u8"));
+    assert!(!body_str.contains("RESOLUTION=854x480"));
+    assert!(!body_str.contains("RESOLUTION=640x360"));
+    assert!(!body_str.contains("480p/playlist.m3u8"));
+    assert!(!body_str.contains("360p/playlist.m3u8"));
 
     // 2. GET /hls/Inception.mkv/playlist.m3u8 without quality subpath should auto-serve master playlist
     let req2 = Request::builder()
