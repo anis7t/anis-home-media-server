@@ -177,8 +177,18 @@ impl TranscodeSweeperService {
                             stats.skipped += 1;
                             continue;
                         }
-                        // Circuit breaker: do not endlessly re-enqueue jobs that repeatedly failed
-                        if existing.status == "failed" && existing.attempts >= 3 {
+                        // Circuit breaker: do not endlessly re-enqueue jobs that repeatedly failed with fatal errors (e.g. corrupt bitstream).
+                        // Thermal safeguard pauses have UNLIMITED retries.
+                        let is_thermal_pause = existing
+                            .error
+                            .as_deref()
+                            .map(crate::services::gpu_thermal::is_thermal_safeguard_error)
+                            .unwrap_or(false);
+
+                        if existing.status == "failed"
+                            && existing.attempts >= 3
+                            && !is_thermal_pause
+                        {
                             debug!(
                                 "Sweeper skipping failed job for {} ({}): exceeded max attempts ({})",
                                 rel_key, mode, existing.attempts

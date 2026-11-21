@@ -309,17 +309,36 @@ impl JobService {
     }
 
     pub async fn fail(pool: &PgPool, id: i64, owner: &str, error: &str) -> Result<bool, AppError> {
+        let is_thermal = crate::services::gpu_thermal::is_thermal_safeguard_error(error);
+        let error_msg =
+            if is_thermal && !error.contains(crate::services::gpu_thermal::THERMAL_PAUSE_MARKER) {
+                format!(
+                    "{} {}",
+                    crate::services::gpu_thermal::THERMAL_PAUSE_MARKER,
+                    error
+                )
+            } else {
+                error.to_string()
+            };
+
+        // When a job fails due to thermal safeguard, decrement attempts back by 1 so the thermal pause
+        // does not penalize or consume the generic 3-attempt circuit breaker limit.
         let res = sqlx::query(
             r#"
             UPDATE transcode_jobs
-               SET status = 'failed', error = $3, lease_owner = NULL,
-                   lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+               SET status = 'failed',
+                   error = $3,
+                   attempts = CASE WHEN $4::BOOLEAN THEN GREATEST(0, attempts - 1) ELSE attempts END,
+                   lease_owner = NULL,
+                   lease_expires_at = NULL,
+                   updated_at = CURRENT_TIMESTAMP
              WHERE id = $1 AND lease_owner = $2
             "#,
         )
         .bind(id)
         .bind(owner)
-        .bind(error)
+        .bind(&error_msg)
+        .bind(is_thermal)
         .execute(pool)
         .await?;
         Ok(res.rows_affected() > 0)

@@ -65,5 +65,23 @@ void main() {
       expect(dualGpu.secondary.temperatureC, equals(65.0));
       expect(dualGpu.secondary.utilizationPct, equals(0.0));
     });
+
+    test('TranscodeRecentJob correctly parses error field and thermal pause', () {
+      final json = {
+        'id': 1150,
+        'filename': 'The Odyssey.mkv',
+        'title': 'The Odyssey',
+        'status': 'failed',
+        'error': '[THERMAL_PAUSE] Critical GPU temperature reached on Radeon RX 560X',
+        'elapsed_str': '52m 14s',
+        'updated_at': '2026-11-21T18:46:58Z',
+      };
+
+      final job = TranscodeRecentJob.fromJson(json);
+
+      expect(job.id, equals(1150));
+      expect(job.status, equals('failed'));
+      expect(job.error, contains('[THERMAL_PAUSE]'));
+    });
   });
 }

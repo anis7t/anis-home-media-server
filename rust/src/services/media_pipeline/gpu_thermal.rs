@@ -397,6 +397,19 @@ pub fn critical_temperature_or_sensor_loss(is_discrete: bool) -> bool {
     stop
 }
 
+/// Canonical marker indicating a transcode pause or failure is due to thermal safeguard.
+pub const THERMAL_PAUSE_MARKER: &str = "[THERMAL_PAUSE]";
+
+/// Returns true if the error message corresponds to a thermal protection pause or
+/// prerequisite sensor telemetry unavailability rather than a permanent media bitstream failure.
+pub fn is_thermal_safeguard_error(error_message: &str) -> bool {
+    error_message.contains(THERMAL_PAUSE_MARKER)
+        || error_message.contains("Critical GPU temperature")
+        || error_message.contains("thermal telemetry is required")
+        || error_message.contains("Thermal Safeguard")
+        || error_message.contains("thermal safeguard")
+}
+
 pub fn read_gpu_telemetry() -> Option<DualGpuTelemetry> {
     let bytes = mapped_bytes()?;
     let header = parse_header(&bytes)?;
@@ -604,5 +617,29 @@ mod tests {
             );
             assert!((0..=MAX_AGE_SECS).contains(&telemetry.age_secs));
         }
+    }
+
+    #[test]
+    fn test_thermal_safeguard_error_classification() {
+        assert!(is_thermal_safeguard_error(
+            "Critical GPU temperature reached"
+        ));
+        assert!(is_thermal_safeguard_error(
+            "Critical GPU temperature or sensor loss on Radeon RX 560X Series"
+        ));
+        assert!(is_thermal_safeguard_error(
+            "[THERMAL_PAUSE] Heavy/4K transcode paused: active HWiNFO thermal telemetry is required"
+        ));
+        assert!(is_thermal_safeguard_error("Paused by Thermal Safeguard"));
+
+        // Generic errors must NOT be classified as thermal safeguard
+        assert!(!is_thermal_safeguard_error("FFmpeg exited with code 1"));
+        assert!(!is_thermal_safeguard_error(
+            "Invalid data found when processing input"
+        ));
+        assert!(!is_thermal_safeguard_error(
+            "Could not find codec parameters for stream"
+        ));
+        assert!(!is_thermal_safeguard_error("No such file or directory"));
     }
 }

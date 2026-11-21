@@ -308,19 +308,29 @@ class TranscodeDashboardView extends ConsumerWidget {
   Widget _buildRecentJobRow(TranscodeRecentJob job) {
     Color statusColor;
     IconData statusIcon;
-    switch (job.status.toLowerCase()) {
-      case 'completed':
-        statusColor = AppColors.statusSuccess;
-        statusIcon = Icons.check_circle_rounded;
-        break;
-      case 'canceled':
-        statusColor = AppColors.textMuted;
-        statusIcon = Icons.cancel_rounded;
-        break;
-      default:
-        statusColor = AppColors.brandRed;
-        statusIcon = Icons.error_rounded;
+    final isThermalPause = job.status.toLowerCase() == 'failed' &&
+        (job.error?.contains('[THERMAL_PAUSE]') ?? false);
+
+    if (isThermalPause) {
+      statusColor = AppColors.statusWarning;
+      statusIcon = Icons.thermostat_rounded;
+    } else {
+      switch (job.status.toLowerCase()) {
+        case 'completed':
+          statusColor = AppColors.statusSuccess;
+          statusIcon = Icons.check_circle_rounded;
+          break;
+        case 'canceled':
+          statusColor = AppColors.textMuted;
+          statusIcon = Icons.cancel_rounded;
+          break;
+        default:
+          statusColor = AppColors.brandRed;
+          statusIcon = Icons.error_rounded;
+      }
     }
+
+    final statusLabel = isThermalPause ? 'THERMAL COOLDOWN' : job.status.toUpperCase();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -344,7 +354,7 @@ class TranscodeDashboardView extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${job.status.toUpperCase()} ${job.elapsedStr != null ? '• ${job.elapsedStr}' : ''}',
+                  '$statusLabel ${job.elapsedStr != null ? '• ${job.elapsedStr}' : ''}',
                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                 ),
               ],

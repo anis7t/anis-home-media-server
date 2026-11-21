@@ -482,9 +482,10 @@ impl TranscodeWorker {
                 mode = %job.mode,
                 "Heavy/4K transcode paused: active HWiNFO Shared Memory telemetry is required to prevent thermal shutdown on mobile GPU"
             );
-            return Err(AppError::Internal(
-                "Heavy/4K transcode paused: active HWiNFO thermal telemetry is required to prevent hardware thermal trip. Start HWiNFO64 with Shared Memory Support.".into(),
-            ));
+            return Err(AppError::Internal(format!(
+                "{} Heavy/4K transcode paused: active HWiNFO thermal telemetry is required to prevent hardware thermal trip. Start HWiNFO64 with Shared Memory Support.",
+                crate::services::gpu_thermal::THERMAL_PAUSE_MARKER
+            )));
         }
 
         let is_4k = is_heavy_workload;
@@ -1097,7 +1098,8 @@ impl TranscodeWorker {
                         "Stopped GPU FFmpeg chunk because temperature reached the critical limit or HWiNFO telemetry was lost"
                     );
                     return Err(AppError::Internal(format!(
-                        "Critical GPU temperature or sensor loss on {}; stopped job #{job_id} chunk {} (FFmpeg diagnostics: {})",
+                        "{} Critical GPU temperature or sensor loss on {}; stopped job #{job_id} chunk {} (FFmpeg diagnostics: {})",
+                        crate::services::gpu_thermal::THERMAL_PAUSE_MARKER,
                         worker.name, chunk.chunk_id, retained_path.display()
                     )));
                 }
