@@ -109,6 +109,9 @@ scripts/*router*
 scripts/*wan*
 docs/*router*
 docs/*wan*
+docs/PLAN_SWITCH_WIFI_5GHZ_CHANNEL_52.md
+docs/WALKTHROUGH_SWITCH_WIFI_5GHZ_CHANNEL_52.md
+.codex-attachments/
 *router*
 *wan*
 *.cfg

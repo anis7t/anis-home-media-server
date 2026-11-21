@@ -264,6 +264,14 @@ pub fn dual_gpu_thermal_safe() -> bool {
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(85.0);
             let safe = t.rx560x_c < limit && t.vega8_c < limit;
+            tracing::debug!(
+                rx_temp_c = t.rx560x_c,
+                vega_temp_c = t.vega8_c,
+                telemetry_age_secs = t.age_secs,
+                limit_c = limit,
+                admitted = safe,
+                "Dual-GPU thermal admission check"
+            );
             if !safe {
                 tracing::warn!(
                     rx_temp_c = t.rx560x_c,
@@ -282,33 +290,77 @@ pub fn dual_gpu_thermal_safe() -> bool {
 }
 
 pub fn adapter_temperature_safe(is_discrete: bool) -> bool {
-    let ThermalStatus::Safe(t) = read_temperatures() else {
-        return false;
+    let t = match read_temperatures() {
+        ThermalStatus::Safe(t) => t,
+        ThermalStatus::Unsafe(reason) => {
+            tracing::debug!(
+                adapter = if is_discrete { "RX 560X" } else { "Vega 8" },
+                %reason,
+                "GPU chunk admission blocked by unavailable thermal telemetry"
+            );
+            return false;
+        }
     };
     let limit = std::env::var("MEDIA_SERVER_GPU_MAX_TEMP_C")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(85.0);
-    if is_discrete {
-        t.rx560x_c < limit
+    let (adapter, temperature) = if is_discrete {
+        ("RX 560X", t.rx560x_c)
     } else {
-        t.vega8_c < limit
-    }
+        ("Vega 8", t.vega8_c)
+    };
+    let safe = temperature < limit;
+    tracing::debug!(
+        adapter,
+        temperature_c = temperature,
+        telemetry_age_secs = t.age_secs,
+        limit_c = limit,
+        admitted = safe,
+        "GPU chunk thermal admission check"
+    );
+    safe
 }
 
 pub fn critical_temperature_or_sensor_loss(is_discrete: bool) -> bool {
-    let ThermalStatus::Safe(t) = read_temperatures() else {
-        return true;
+    let t = match read_temperatures() {
+        ThermalStatus::Safe(t) => t,
+        ThermalStatus::Unsafe(reason) => {
+            tracing::warn!(
+                adapter = if is_discrete { "RX 560X" } else { "Vega 8" },
+                %reason,
+                "Stopping active GPU chunk because thermal telemetry is unavailable"
+            );
+            return true;
+        }
     };
     let critical = std::env::var("MEDIA_SERVER_GPU_CRITICAL_TEMP_C")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(92.0);
-    if is_discrete {
-        t.rx560x_c >= critical
+    let (adapter, temperature) = if is_discrete {
+        ("RX 560X", t.rx560x_c)
     } else {
-        t.vega8_c >= critical
+        ("Vega 8", t.vega8_c)
+    };
+    let stop = temperature >= critical;
+    tracing::debug!(
+        adapter,
+        temperature_c = temperature,
+        telemetry_age_secs = t.age_secs,
+        critical_c = critical,
+        stop,
+        "Active GPU chunk thermal monitor check"
+    );
+    if stop {
+        tracing::error!(
+            adapter,
+            temperature_c = temperature,
+            critical_c = critical,
+            "Critical GPU temperature reached"
+        );
     }
+    stop
 }
 
 #[cfg(test)]
