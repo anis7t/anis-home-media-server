@@ -35,9 +35,12 @@ export function AdminPinModal({
         if (/^\d$/.test(c)) newDigits[i] = c;
       });
       setDigits(newDigits);
-      setTimeout(() => {
-        inputRefs.current[0]?.focus();
+      const timer = setTimeout(() => {
+        if (!document.activeElement || !inputRefs.current.includes(document.activeElement as HTMLInputElement)) {
+          inputRefs.current[0]?.focus();
+        }
       }, 50);
+      return () => clearTimeout(timer);
     } else {
       setDigits(['', '', '', '', '', '']);
     }

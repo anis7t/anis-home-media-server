@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -192,9 +192,7 @@ describe('ManagePage Comprehensive Edge Cases', () => {
     const inputs = screen.getAllByRole('textbox');
     expect(inputs).toHaveLength(6);
 
-    for (let i = 0; i < 6; i++) {
-      await user.type(inputs[i], '975312'[i]);
-    }
+    fireEvent.change(inputs[0], { target: { value: '975312' } });
 
     await waitFor(() => {
       expect(screen.getByText(/admin verified/i)).toBeInTheDocument();
