@@ -6,7 +6,39 @@ Working branch: `feat/dual-gpu-diagnostics`
 
 ---
 
-## 2026-11-21 — Dual-GPU Activation, Persistent Diagnostic Stderr Logging & Thermal Telemetry
+## 2026-11-21 — Concurrent Dual-GPU 4K Transcoding, Fire TV Zero-Copy Playback & Error Auto-Dismissal
+
+- **Concurrent Dual-GPU 4K Transcoding (`rust/src/services/media_pipeline/`)**:
+  - Lifted the single-GPU clamp on 4K workloads in `transcode_worker.rs`. Enabled intra-job chunked transcoding
+    across both physical GPUs: discrete AMD Radeon RX 560X (`dx11:1`) and integrated AMD Radeon Vega 8 (`dx11:0`).
+  - Added `is_dual_gpu_configured()` and `is_4k_dual_gpu_allowed()` in `gpu_service.rs` with `MEDIA_SERVER_4K_DUAL_GPU`
+    environment toggle for zero-recompile rollback.
+  - Added atomic `VEGA_BUSY` state and RAII guard (`VegaBusyGuard`) preventing adapter lane collisions while Vega 8
+    is active on 4K chunks.
+  - Added per-adapter independent thermal loops (< 85°C admission, 5s breather, 75°C dynamic cooldown, 92°C critical kill).
+  - Verified live in production on *The Odyssey* (2160p HEVC, Job #1148): both GPUs encoding chunks concurrently (RX 560X
+    chunks and Vega 8 chunks), with overall transcode throughput jumping from ~0.76x to **1.53x real-time speed**.
+- **4K AMF HEVC Driver Freeze Fix (`gpu_service.rs`)**:
+  - Diagnosed AMD AMF encoder freeze on 4K HEVC downscaling: `vpp_amf` scaling to NV12 retained HDR10 / SMPTE 2084 PQ
+    metadata tags on an 8-bit SDR surface, causing `AMFEncoderUVEHEVCImpl` to stall.
+  - Appended `,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709` to the `vpp_amf` filter chain, enabling
+    clean 4K HEVC hardware encoding on both Polaris 11 (RX 560X, 28 fps) and Vega 8 (16 fps).
+- **Zero-Copy Direct Hardware Decoding Default (`mediacodec`) for Android/Fire TV (`flutter_client/`)**:
+  - Switched default Android hardware decoder in `media_kit_player_adapter.dart` from `mediacodec-copy` to zero-copy
+    direct `mediacodec`, eliminating the ~600 MB/s uncompressed RAM bus bottleneck on Fire TV Stick 4K (1st Gen, MT8695).
+  - Added in-player `DecoderMode` selector modal (`HW Direct`, `HW Copy`, `SW CPU`) with D-pad navigation (`TvFocusable`)
+    and `SharedPreferences` persistence (`player_decoder_mode`).
+  - Removed aggressive keyword watchdog that demoted hardware decoding to CPU software on non-fatal engine info messages.
+- **Active Playback Error Banner Auto-Dismissal (`player_screen.dart`)**:
+  - Filtered transient engine error events on `player.stream.error` when playback is active or position is advancing.
+  - Added position stream listener in `PlayerScreen`: automatically clears error banners (`_errorMessage = null`) as soon
+    as playback advances past `0:00`.
+  - Guarded fatal error dialog rendering with `!isActuallyPlaying`, preventing error dialogs from masking playing video.
+- **Production Delivery**:
+  - Built and published Android Client release `v1.4.11` (versionCode `157`) to `updates/production/media-server-client.apk`.
+  - Immutable backup binary created at `E:\MediaServer\cache\release-build\dual-gpu-validation\release\media-server-api.exe.bak-single-gpu`
+    with automated 1-command rollback script `scripts/rollback_single_gpu_transcode.ps1`.
+  - Verification: 8/8 `gpu_service_test` Rust integration tests passed, 433/433 Flutter client tests passed, `flutter analyze` 0 warnings / 0 errors.
 
 - **Persistent On-Disk FFmpeg Stderr Capture**: Implemented bounded asynchronous stderr
   logging (`logs/gpu/job-{id}-adapter-{worker}-chunk-{id}-{ts}.log`) during chunk transcoding in

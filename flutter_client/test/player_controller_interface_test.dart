@@ -37,6 +37,15 @@ class MockPlayerController implements PlayerControllerInterface {
   @override
   PlayerTrackInfo get trackInfo => _trackInfo;
 
+  DecoderMode _decoderMode = DecoderMode.hardwareDirect;
+  @override
+  DecoderMode get decoderMode => _decoderMode;
+
+  @override
+  Future<void> setDecoderMode(DecoderMode mode) async {
+    _decoderMode = mode;
+  }
+
   @override
   Stream<Duration> get positionStream => _positionController.stream;
   @override
@@ -209,7 +218,23 @@ void main() {
 
         await sub.cancel();
         await controller.dispose();
-      },
-    );
-  });
+      });
+
+      test('DecoderMode enum and extension properties work as expected', () async {
+        final controller = MockPlayerController();
+        expect(controller.decoderMode, DecoderMode.hardwareDirect);
+
+        expect(DecoderMode.hardwareDirect.toMpvHwdec(), 'mediacodec');
+        expect(DecoderMode.hardwareCopy.toMpvHwdec(), 'mediacodec-copy');
+        expect(DecoderMode.software.toMpvHwdec(), 'no');
+        expect(DecoderMode.auto.toMpvHwdec(), 'mediacodec');
+
+        expect(DecoderMode.hardwareDirect.badge, 'HW-DIRECT');
+        expect(DecoderMode.hardwareCopy.badge, 'HW-COPY');
+        expect(DecoderMode.software.badge, 'SW-CPU');
+
+        await controller.setDecoderMode(DecoderMode.software);
+        expect(controller.decoderMode, DecoderMode.software);
+      });
+    });
 }

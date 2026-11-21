@@ -76,6 +76,16 @@ pub fn evaluate_direct_play(
     audio_codec: Option<&str>,
     is_android: bool,
 ) -> bool {
+    let audio_codecs = audio_codec.map(|a| vec![a]).unwrap_or_default();
+    evaluate_direct_play_streams(container, video_codec, &audio_codecs, is_android)
+}
+
+pub fn evaluate_direct_play_streams(
+    container: &str,
+    video_codec: Option<&str>,
+    audio_codecs: &[&str],
+    is_android: bool,
+) -> bool {
     if DIRECT_PLAY_EXTENSIONS.contains(&container) {
         return true;
     }
@@ -84,10 +94,32 @@ pub fn evaluate_direct_play(
             video_codec.unwrap_or(""),
             "h264" | "hevc" | "h265" | "vp9" | "av1"
         );
-        let a_ok = matches!(
-            audio_codec.unwrap_or(""),
-            "aac" | "ac3" | "eac3" | "mp3" | "opus" | "flac" | ""
-        );
+        // Android client uses media_kit (libmpv), which natively decodes all standard
+        // and lossless surround audio codecs (including DTS, DTS-HD MA, TrueHD, EAC3, AC3, FLAC, Opus).
+        let is_supported_audio = |a: &str| {
+            matches!(
+                a,
+                "aac"
+                    | "ac3"
+                    | "eac3"
+                    | "mp3"
+                    | "opus"
+                    | "flac"
+                    | "dts"
+                    | "dca"
+                    | "truehd"
+                    | "vorbis"
+                    | "pcm_s16le"
+                    | "pcm_s24le"
+                    | ""
+            )
+        };
+        let a_ok = if audio_codecs.is_empty() {
+            true
+        } else {
+            // Permit direct play if any audio stream in the container is supported
+            audio_codecs.iter().any(|&a| is_supported_audio(a))
+        };
         return v_ok && a_ok;
     }
     false
@@ -259,8 +291,15 @@ async fn build_media_info(
     let v_codec = video.and_then(|v| v.codec_name.as_deref());
     let a_codec = audio.and_then(|a| a.codec_name.as_deref());
 
+    let audio_codecs: Vec<&str> = probe
+        .streams
+        .iter()
+        .filter(|s| s.codec_type.as_deref() == Some("audio"))
+        .filter_map(|s| s.codec_name.as_deref())
+        .collect();
+
     let container = extension_of(&path);
-    let direct_play = evaluate_direct_play(&container, v_codec, a_codec, is_android);
+    let direct_play = evaluate_direct_play_streams(&container, v_codec, &audio_codecs, is_android);
     let needs_tc = !direct_play;
 
     // HLS timelines are built from our own playlist, so they advertise the
@@ -418,4 +457,63 @@ async fn movie_metadata(state: &MediaInfoState, filename: &str) -> serde_json::M
         runtime.map(Value::from).unwrap_or(Value::Null),
     );
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_android_mkv_dts_direct_play() {
+        assert!(evaluate_direct_play("mkv", Some("hevc"), Some("dts"), true));
+        assert!(evaluate_direct_play("mkv", Some("h264"), Some("dca"), true));
+    }
+
+    #[test]
+    fn test_android_mkv_truehd_direct_play() {
+        assert!(evaluate_direct_play(
+            "mkv",
+            Some("hevc"),
+            Some("truehd"),
+            true
+        ));
+    }
+
+    #[test]
+    fn test_web_mkv_dts_requires_transcode() {
+        // Non-Android web client cannot direct-play MKV or DTS natively
+        assert!(!evaluate_direct_play(
+            "mkv",
+            Some("hevc"),
+            Some("dts"),
+            false
+        ));
+        assert!(!evaluate_direct_play(
+            "mkv",
+            Some("h264"),
+            Some("aac"),
+            false
+        ));
+    }
+
+    #[test]
+    fn test_multi_audio_fallback() {
+        // Primary track is an obscure unsupported audio format, but secondary track is eac3/dts
+        let codecs = ["unsupported_pcm_codec", "dts"];
+        assert!(evaluate_direct_play_streams(
+            "mkv",
+            Some("hevc"),
+            &codecs,
+            true
+        ));
+
+        // When all tracks are unsupported, direct play is disallowed
+        let all_bad = ["unsupported_pcm_codec", "another_unknown"];
+        assert!(!evaluate_direct_play_streams(
+            "mkv",
+            Some("hevc"),
+            &all_bad,
+            true
+        ));
+    }
 }

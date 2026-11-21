@@ -168,6 +168,7 @@ class TranscodeRecentJob {
   final String filename;
   final String title;
   final String status;
+  final String? error;
   final String? elapsedStr;
   final String? updatedAt;
 
@@ -176,6 +177,7 @@ class TranscodeRecentJob {
     required this.filename,
     required this.title,
     required this.status,
+    this.error,
     this.elapsedStr,
     this.updatedAt,
   });
@@ -186,6 +188,7 @@ class TranscodeRecentJob {
       filename: (json['filename'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
       status: (json['status'] as String?) ?? 'completed',
+      error: json['error'] as String?,
       elapsedStr: json['elapsed_str'] as String?,
       updatedAt: json['updated_at'] as String?,
     );

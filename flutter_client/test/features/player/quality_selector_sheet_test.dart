@@ -119,5 +119,31 @@ void main() {
       expect(selected!.height, 1080);
       expect(selected!.isReady, isTrue);
     });
+
+    testWidgets('renders Original (4K Direct Play - Lossless) when direct option is 4K', (tester) async {
+      final ladderWith4kDirect = [
+        const QualityOption(
+          label: 'Direct Play (Source)',
+          quality: 'source',
+          height: 2160,
+          width: 3840,
+          bitrate: 45000000,
+          isDirect: true,
+          isReady: true,
+        ),
+        ...sampleLadder,
+      ];
+      await tester.pumpWidget(
+        buildTestWidget(
+          qualityLadder: ladderWith4kDirect,
+          selectedQuality: 'auto',
+          onQualitySelected: (_) {},
+          supportsDirectPlay: true,
+        ),
+      );
+
+      expect(find.text('Original (4K Direct Play - Lossless)'), findsOneWidget);
+      expect(find.textContaining('3840×2160 • Bitstream direct play without transcoding'), findsOneWidget);
+    });
   });
 }

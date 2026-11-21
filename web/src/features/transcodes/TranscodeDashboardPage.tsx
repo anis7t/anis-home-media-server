@@ -710,22 +710,38 @@ export function TranscodeDashboardPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <span
-                        className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                          item.status === 'completed'
-                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                            : item.status === 'failed'
-                            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                            : 'bg-white/10 text-white/50'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                      {item.error ? (
-                        <p className="text-[10px] text-rose-400 mt-0.5 max-w-xs truncate" title={item.error}>
-                          {item.error}
-                        </p>
-                      ) : null}
+                      {(() => {
+                        const isThermalPause =
+                          item.status === 'failed' &&
+                          (item.error?.includes('[THERMAL_PAUSE]') ?? false);
+                        return (
+                          <>
+                            <span
+                              className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                item.status === 'completed'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                  : isThermalPause
+                                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                  : item.status === 'failed'
+                                  ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                                  : 'bg-white/10 text-white/50'
+                              }`}
+                            >
+                              {isThermalPause ? 'Thermal Cooldown' : item.status}
+                            </span>
+                            {item.error ? (
+                              <p
+                                className={`text-[10px] mt-0.5 max-w-xs truncate ${
+                                  isThermalPause ? 'text-amber-400' : 'text-rose-400'
+                                }`}
+                                title={item.error}
+                              >
+                                {item.error.replace('[THERMAL_PAUSE]', '').trim()}
+                              </p>
+                            ) : null}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-4 font-mono text-white/60">
                       {item.elapsed_str}

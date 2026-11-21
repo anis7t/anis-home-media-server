@@ -53,6 +53,15 @@ class RemoteTestPlayerController implements PlayerControllerInterface {
   @override
   PlayerTrackInfo get trackInfo => _trackInfo;
 
+  DecoderMode _decoderMode = DecoderMode.hardwareDirect;
+  @override
+  DecoderMode get decoderMode => _decoderMode;
+
+  @override
+  Future<void> setDecoderMode(DecoderMode mode) async {
+    _decoderMode = mode;
+  }
+
   @override
   Stream<Duration> get positionStream => _positionController.stream;
   @override

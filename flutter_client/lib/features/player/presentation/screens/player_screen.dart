@@ -37,6 +37,7 @@ import '../widgets/player_hud_toast.dart';
 import '../widgets/player_key_dispatcher.dart';
 import '../widgets/player_loading_indicator.dart';
 import '../widgets/player_surface.dart';
+import '../widgets/decoder_selector_sheet.dart';
 import '../widgets/quality_selector_sheet.dart';
 import '../widgets/track_selector_sheet.dart';
 
@@ -218,7 +219,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // 10-foot TV navigation state
   TvPlayerFocusZone _tvFocusZone = TvPlayerFocusZone.timeline;
   int _tvFocusedControlIndex = 1; // Default to Play/Pause
-  static const int _tvControlCount = 8;
+  static const int _tvControlCount = 9;
 
   @override
   void initState() {
@@ -331,7 +332,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() {
           _state = s;
           if (s == PlayerPlaybackState.error) {
-            _errorMessage = 'Failed to load media or decode stream.';
+            // Guard: If playback has already advanced or is progressing, suppress spurious error card
+            if (_position > Duration.zero) {
+              debugPrint(
+                '[PlayerScreen] Suppressing spurious error state event during active stream at $_position',
+              );
+              _errorMessage = null;
+            } else {
+              _errorMessage = 'Failed to load media or decode stream.';
+            }
           } else if (s == PlayerPlaybackState.playing) {
             _errorMessage = null;
             if (!_isScrubbing) {
@@ -355,7 +364,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _progress?.onPosition(p, _duration);
         // Do not snap back during user scrubbing gestures
         if (!_isScrubbing) {
-          setState(() => _position = p);
+          setState(() {
+            _position = p;
+            if (_errorMessage != null && p > Duration.zero) {
+              debugPrint(
+                '[PlayerScreen] Auto-dismissing error popup because playback is advancing at $p',
+              );
+              _errorMessage = null;
+              if (_state == PlayerPlaybackState.error) {
+                _state = PlayerPlaybackState.playing;
+              }
+            }
+          });
         }
       }),
     );
@@ -834,11 +854,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _openQualitySheet() {
     _onUserInteraction();
+    final hasDirectReady = _qualityLadder.any((q) => q.isDirect && q.isReady);
+    final supportsDirect = _playbackMode == PlaybackMode.directPlay || hasDirectReady;
     QualitySelectorSheet.show(
       context: context,
       qualityLadder: _qualityLadder,
       selectedQuality: _selectedQuality,
-      supportsDirectPlay: _playbackMode == PlaybackMode.directPlay,
+      supportsDirectPlay: supportsDirect,
       onQualitySelected: _handleQualitySelected,
     );
   }
@@ -849,7 +871,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final currentPos = _transportPosition;
     final wasPlaying = _state == PlayerPlaybackState.playing;
 
-    setState(() => _selectedQuality = option.quality);
+    final isDirectSelection = option.isDirect || option.quality == 'source';
+    final targetMode = isDirectSelection
+        ? PlaybackMode.directPlay
+        : (option.quality == 'auto' ? _playbackMode : PlaybackMode.hls);
+
+    setState(() {
+      _selectedQuality = option.quality;
+      _playbackMode = targetMode;
+    });
 
     final filename = _resolveFilename();
     final serverOrigin = _apiServerOrigin();
@@ -857,7 +887,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final isDirect4kRouting =
         (option.quality == '2160p' || option.quality == '4k') &&
-        _playbackMode == PlaybackMode.directPlay &&
+        targetMode == PlaybackMode.directPlay &&
         _isNative4k;
 
     // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto, and not direct-routed
@@ -905,6 +935,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
     } catch (e) {
       debugPrint('[PlayerScreen] Failed to switch quality URL: $e');
+    }
+  }
+
+  void _openDecoderSheet() {
+    _onUserInteraction();
+    DecoderSelectorSheet.show(
+      context: context,
+      currentMode: _controller.decoderMode,
+      onModeSelected: _handleDecoderModeSelected,
+    );
+  }
+
+  Future<void> _handleDecoderModeSelected(DecoderMode mode) async {
+    if (_controller.decoderMode == mode) return;
+    await _controller.setDecoderMode(mode);
+    if (mounted) {
+      _showHudToast('Decoder: ${mode.label}', icon: Icons.memory_rounded);
+      setState(() {});
     }
   }
 
@@ -1265,12 +1313,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _openQualitySheet();
         break;
       case 5:
-        _openAudioTrackSheet();
+        _openDecoderSheet();
         break;
       case 6:
-        _openSubtitleTrackSheet();
+        _openAudioTrackSheet();
         break;
       case 7:
+        _openSubtitleTrackSheet();
+        break;
+      case 8:
         _cycleAspectRatio();
         break;
     }
@@ -1609,6 +1660,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             onOpenSpeedSheet: _openPlaybackSpeedSheet,
             onOpenQualitySheet: _openQualitySheet,
             selectedQualityLabel: _selectedQualityBadge,
+            onOpenDecoderSheet: _openDecoderSheet,
+            decoderModeBadge: _controller.decoderMode.badge,
             onOpenAudioSheet: _openAudioTrackSheet,
             onOpenSubtitleSheet: _openSubtitleTrackSheet,
             onToggleAspectRatio: _cycleAspectRatio,
@@ -1670,13 +1723,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final isTv = ref.watch(isTvModeProvider);
+    final castState = ref.watch(castControllerProvider);
     final showFullscreen = isTv || _isFullscreen;
+
+    final isActuallyPlaying = castState.isCasting
+        ? castState.playbackState == 'playing'
+        : (_state == PlayerPlaybackState.playing ||
+            (!_isBuffering &&
+                _position > Duration.zero &&
+                _state != PlayerPlaybackState.paused &&
+                _state != PlayerPlaybackState.completed));
 
     final isOpening =
         _state == PlayerPlaybackState.opening ||
         (_state == PlayerPlaybackState.idle && _errorMessage == null);
     final hasError =
-        _state == PlayerPlaybackState.error || _errorMessage != null;
+        !isActuallyPlaying &&
+        (_state == PlayerPlaybackState.error || _errorMessage != null);
 
     final hasSubtitles =
         _trackInfo.currentSubtitleTrack.id != 'no' &&

@@ -218,7 +218,7 @@ fn test_ffmpeg_arguments_generation() {
         let args = amf_worker.get_ffmpeg_video_args(true, Some(h));
         let expected_filter = format!("vpp_amf=h='min({},ih)':w=-2:format=nv12", h);
         assert!(
-            args.iter().any(|a| a == &expected_filter),
+            args.iter().any(|a| a.starts_with(&expected_filter)),
             "AMF video args for {}p must contain '{}'",
             h,
             expected_filter
@@ -399,4 +399,36 @@ fn test_real_hardware_amf_scaling_and_nv12() {
     }
 
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_dual_gpu_4k_allowed_flag_and_configuration() {
+    let old_dual = std::env::var_os("MEDIA_SERVER_ENABLE_DUAL_GPU");
+    let old_4k = std::env::var_os("MEDIA_SERVER_4K_DUAL_GPU");
+
+    std::env::set_var("MEDIA_SERVER_ENABLE_DUAL_GPU", "1");
+    std::env::remove_var("MEDIA_SERVER_4K_DUAL_GPU");
+    if GpuService::detect_available_gpus(false).len() >= 2 {
+        assert!(GpuService::is_dual_gpu_configured());
+        assert!(GpuService::is_4k_dual_gpu_allowed());
+
+        // When explicitly set to 0, it should disallow 4K dual GPU
+        std::env::set_var("MEDIA_SERVER_4K_DUAL_GPU", "0");
+        assert!(!GpuService::is_4k_dual_gpu_allowed());
+
+        // When set to 1, it allows it
+        std::env::set_var("MEDIA_SERVER_4K_DUAL_GPU", "1");
+        assert!(GpuService::is_4k_dual_gpu_allowed());
+    }
+
+    if let Some(v) = old_dual {
+        std::env::set_var("MEDIA_SERVER_ENABLE_DUAL_GPU", v);
+    } else {
+        std::env::remove_var("MEDIA_SERVER_ENABLE_DUAL_GPU");
+    }
+    if let Some(v) = old_4k {
+        std::env::set_var("MEDIA_SERVER_4K_DUAL_GPU", v);
+    } else {
+        std::env::remove_var("MEDIA_SERVER_4K_DUAL_GPU");
+    }
 }

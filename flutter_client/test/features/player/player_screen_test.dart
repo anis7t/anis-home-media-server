@@ -50,6 +50,15 @@ class FakePlayerController implements PlayerControllerInterface {
   @override
   PlayerTrackInfo get trackInfo => _trackInfo;
 
+  DecoderMode _decoderMode = DecoderMode.hardwareDirect;
+  @override
+  DecoderMode get decoderMode => _decoderMode;
+
+  @override
+  Future<void> setDecoderMode(DecoderMode mode) async {
+    _decoderMode = mode;
+  }
+
   @override
   Stream<Duration> get positionStream => _positionController.stream;
   @override
@@ -277,6 +286,63 @@ void main() {
 
       // Controller should transition back to opening
       expect(controller.state, PlayerPlaybackState.opening);
+    });
+
+    testWidgets('suppresses spurious error card when playback has advanced or is playing', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: PlayerScreen(
+              mediaUrl: 'http://127.0.0.1:8000/media/test.mp4',
+              title: 'The Odyssey (2026)',
+              deviceId: 'dev_test',
+              customController: controller,
+            ),
+          ),
+        ),
+      );
+
+      // Playback begins and advances to 5 seconds
+      controller.emitState(PlayerPlaybackState.playing);
+      controller.emitPosition(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlayerErrorCard), findsNothing);
+
+      // Spurious error emitted while playing
+      controller.emitState(PlayerPlaybackState.error);
+      await tester.pumpAndSettle();
+
+      // Error card must NOT be displayed over active video
+      expect(find.byType(PlayerErrorCard), findsNothing);
+      expect(find.byType(PlayerControlsOverlay), findsOneWidget);
+    });
+
+    testWidgets('auto-dismisses error card when position advances past zero', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: PlayerScreen(
+              mediaUrl: 'http://127.0.0.1:8000/media/test.mp4',
+              title: 'The Odyssey (2026)',
+              deviceId: 'dev_test',
+              customController: controller,
+            ),
+          ),
+        ),
+      );
+
+      // Error occurs at initial load
+      controller.emitState(PlayerPlaybackState.error);
+      await tester.pumpAndSettle();
+      expect(find.byType(PlayerErrorCard), findsOneWidget);
+
+      // Position advances (e.g. stream loads and starts painting)
+      controller.emitPosition(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      // Error card self-heals and vanishes!
+      expect(find.byType(PlayerErrorCard), findsNothing);
     });
 
     testWidgets('toggles fullscreen via button and keyboard shortcut F', (tester) async {
