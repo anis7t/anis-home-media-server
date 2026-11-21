@@ -231,7 +231,7 @@ PostgreSQL 18.4 (MediaServerPG, port 5432)   Local Media Roots
 ### Prerequisites
 - Windows 10/11 or Windows Server.
 - Rust 1.85+ (MSRV 2021 edition) & Cargo.
-- Node.js 20+ & npm (for building the React SPA in `web/`).
+- Node.js 24+ LTS & npm (for building the React SPA in `web/`).
 - PostgreSQL 18.4 (installed as Windows Service `MediaServerPG`).
 - FFmpeg 9.0+ with AMF/D3D11va support.
 - NSSM (Non-Sucking Service Manager).

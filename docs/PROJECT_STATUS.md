@@ -11,7 +11,8 @@ Working branch: `main`
 - **GitHub Actions CI Toolchain Modernization (`.github/workflows/ci.yml`)**:
   - Upgraded `actions/setup-java` to `v5` (`actions/setup-java@v5`), eliminating the deprecation warning for `v4` and updating the action runner engine to Node 24.
   - Upgraded frontend CI runtime to Node.js 24 (`node-version: 24`), aligning with `web/package.json` (`@types/node: ^24.13.3`).
-  - Synchronized documentation in `docs/TESTING.md` and `docs/WINDOWS_SETUP.md` to reflect the Node 24 and Java setup-java v5 baselines.
+  - Synchronized documentation in `README.md`, `AGENTS.md`, `docs/TESTING.md`, `docs/WINDOWS_SETUP.md`, and added `"engines": { "node": ">=24.0.0" }` in `web/package.json`.
+  - Stabilized `AdminPinModal.tsx` focus timer race condition that triggered an intermittent failure in `ManagePage.test.tsx` during CI run `44949284538`, verified green in run `44949933794`.
 - **Production Artifact Rebuild & Android Client Release v1.4.12 (`updates/production/`)**:
   - Rebuilt React 19 production distribution (`web/dist/`).
   - Rebuilt and published Android production client APK `v1.4.12` (versionCode `158`) via `scripts/release_android.py`.

@@ -544,7 +544,7 @@ watch-history row is never editable. Phase 3 is the supported, auditable way to 
 ### Windows
 - Windows 10/11 or supported Windows Server.
 - Rust 1.85+ (MSRV 2021 edition), Cargo.
-- Node.js 20+ & npm for `web/` React SPA.
+- Node.js 24+ LTS (minimum 20+) & npm for `web/` React SPA.
 - PostgreSQL 18.4 (`MediaServerPG` Windows Service on port 5432).
 - PowerShell, Git, FFmpeg and FFprobe.
 - Production Server: **MediaServerRust** (native Rust Axum binary via NSSM).
@@ -559,7 +559,7 @@ watch-history row is never editable. Phase 3 is the supported, auditable way to 
 - **Service hosting & resilience (do not regress):** NSSM lives at `C:\MediaServer\bin\nssm.exe` and PostgreSQL binaries at `C:\postgres` (data stays `E:\pgdata`), so both survive `E:` absence; `MediaServerPG` runs as NetworkService with restart-x3 recovery actions. NSSM restarts `MediaServerRust` and `MediaServerCaddy` within ~5s of a crash, and both have SCM restart-x3 recovery. Probe PG with a TCP connect to `127.0.0.1:5432`, never `pg_ctl status`. Repo `.ps1` files must stay pure ASCII.
 
 ### Linux/Kali
-- Rust 1.85+, Node.js 20+, PostgreSQL 16+.
+- Rust 1.85+, Node.js 24+ LTS (minimum 20+), PostgreSQL 16+.
 - **Python is tooling-only, not a runtime dependency.** The backend is native Rust, the frontend is
   a React SPA, and the database is PostgreSQL — none of them need Python to build or run. Python
   remains only for the operational probe and release scripts, and most of those are
@@ -1185,7 +1185,7 @@ Rules:
 - **Unified 4-Pillar CI Pipeline ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):**
   Automated validation runs concurrently on every pull request targeting `main` and on pushes to `main`:
   1. `Rust Backend (Axum)`: Ephemeral PostgreSQL 17 container, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, synthetic media fixture, `cargo test --no-fail-fast -- --test-threads=1`.
-  2. `React 19 Frontend (SPA)`: Node 22 LTS, `npm ci`, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build`.
+  2. `React 19 Frontend (SPA)`: Node 24 LTS, `npm ci`, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build`.
   3. `Flutter Client (Android / TV)`: Java 17 Temurin, Flutter stable, `libmpv-dev libmpv2`, `flutter analyze`, and 417 offline unit/widget/contract/intro tests via `flutter test`.
   4. `Secrets & Security Scan`: Gitleaks full history audit (`gitleaks/gitleaks-action@v3.0.0`) configured via [`.gitleaks.toml`](.gitleaks.toml).
 - **Mandatory Branch Protection on `main`:**
