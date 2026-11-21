@@ -834,11 +834,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _openQualitySheet() {
     _onUserInteraction();
+    final hasDirectReady = _qualityLadder.any((q) => q.isDirect && q.isReady);
+    final supportsDirect = _playbackMode == PlaybackMode.directPlay || hasDirectReady;
     QualitySelectorSheet.show(
       context: context,
       qualityLadder: _qualityLadder,
       selectedQuality: _selectedQuality,
-      supportsDirectPlay: _playbackMode == PlaybackMode.directPlay,
+      supportsDirectPlay: supportsDirect,
       onQualitySelected: _handleQualitySelected,
     );
   }
@@ -849,7 +851,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final currentPos = _transportPosition;
     final wasPlaying = _state == PlayerPlaybackState.playing;
 
-    setState(() => _selectedQuality = option.quality);
+    final isDirectSelection = option.isDirect || option.quality == 'source';
+    final targetMode = isDirectSelection
+        ? PlaybackMode.directPlay
+        : (option.quality == 'auto' ? _playbackMode : PlaybackMode.hls);
+
+    setState(() {
+      _selectedQuality = option.quality;
+      _playbackMode = targetMode;
+    });
 
     final filename = _resolveFilename();
     final serverOrigin = _apiServerOrigin();
@@ -857,7 +867,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     final isDirect4kRouting =
         (option.quality == '2160p' || option.quality == '4k') &&
-        _playbackMode == PlaybackMode.directPlay &&
+        targetMode == PlaybackMode.directPlay &&
         _isNative4k;
 
     // Trigger on-demand transcode start in background if tier is not cached/ready, not direct, not auto, and not direct-routed
