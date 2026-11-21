@@ -2,7 +2,34 @@
 
 Last reviewed: 2026-11-21
 Repository: `anis7t/media-server`
-Working branch: `codex/dual-gpu-stability`
+Working branch: `feat/dual-gpu-diagnostics`
+
+---
+
+## 2026-11-21 — Dual-GPU Activation, Persistent Diagnostic Stderr Logging & Thermal Telemetry
+
+- **Persistent On-Disk FFmpeg Stderr Capture**: Implemented bounded asynchronous stderr
+  logging (`logs/gpu/job-{id}-adapter-{worker}-chunk-{id}-{ts}.log`) during chunk transcoding in
+  `rust/src/services/media_pipeline/transcode_worker.rs`. Logs are capped at 4 MiB per chunk with
+  a truncation indicator and directory cap at 256 MiB (14-day retention). Successful chunks delete
+  their temporary log immediately; failed or timed-out chunks retain their stderr files for post-mortem
+  troubleshooting, with log tails surfaced in tracing.
+- **Structured AMF Probe & Thermal Telemetry**:
+  - `gpu_service.rs`: D3D11 AMF adapter probe failures and timeouts capture FFmpeg stderr into structured
+    `tracing::error!` and `warn!` entries with adapter indices and exit codes.
+  - `gpu_thermal.rs`: Granular structured debug logs tracking live RX 560X and Vega 8 temperatures,
+    sensor telemetry freshness/age, and admission limits (`<85°C` limit).
+- **Production Service Activation**: Enabled `MEDIA_SERVER_ENABLE_DUAL_GPU=1` across both `.env` and
+  Windows Service NSSM `AppEnvironmentExtra` for `MediaServerRust`, alongside targeted GPU debug logging.
+  Startup verification in `logs/rust_api.log` confirms:
+  `Detected 2 hardware GPU encoder(s): ["Radeon RX 560X Series", "AMD Radeon(TM) Vega 8 Graphics"]` and
+  `Dual-GPU job lanes enabled: one rendition job per physical adapter`.
+- **Operational Automation**: Added `scripts/deploy_dual_gpu_service.ps1` for safe stopping, binary backup,
+  registry parameter updates, and clean service restart.
+- **Validation**: 136 Rust library unit tests passed. The live dual-adapter hardware test
+  (`live_dual_gpu_chunk_transcode_and_diagnostic_capture`) passed with live AMF encoding on both GPUs and
+  HWiNFO temperatures recorded (RX 560X: 64°C, Vega 8: 60°C). HTTP endpoints (`/api/health`, `/api/system-status`)
+  confirmed healthy.
 
 ---
 
