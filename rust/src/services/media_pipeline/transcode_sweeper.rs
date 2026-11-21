@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::models::job::TranscodeJob;
 use crate::services::hls_service::HlsService;
 use crate::services::job_service::JobService;
 use crate::services::path_resolver::PathResolver;
@@ -72,6 +73,43 @@ impl TranscodeSweeperService {
         }
     }
 
+    /// Default cooldown period (in hours) before a canceled job can be automatically re-enqueued.
+    pub const DEFAULT_CANCELED_COOLDOWN_HOURS: i64 = 2;
+
+    /// Checks if a cancellation reason indicates an administrative, diagnostic, or thermal stoppage
+    /// that should be automatically recovered when resources are free.
+    pub fn is_diagnostic_cancellation(error: Option<&str>) -> bool {
+        let Some(err) = error else { return false };
+        let err_lower = err.to_lowercase();
+        err_lower.contains("thermal")
+            || err_lower.contains("stopped by admin")
+            || err_lower.contains("server restarted")
+            || err_lower.contains("diagnostic")
+            || err_lower.contains("safeguard")
+    }
+
+    /// Determines whether a canceled job is eligible for automatic re-enqueuing:
+    /// 1. Diagnostic or thermal cancellations are immediately eligible.
+    /// 2. User/manual cancellations become eligible once the cooldown period has elapsed.
+    pub fn is_recoverable_canceled_job(job: &TranscodeJob, cooldown_hours: i64) -> bool {
+        if job.status != "canceled" {
+            return false;
+        }
+        if Self::is_diagnostic_cancellation(job.error.as_deref()) {
+            return true;
+        }
+        let age = chrono::Utc::now() - job.updated_at;
+        age >= chrono::Duration::hours(cooldown_hours)
+    }
+
+    /// Resolves the configured cooldown duration for canceled jobs.
+    pub fn canceled_cooldown_hours() -> i64 {
+        std::env::var("MEDIA_SERVER_SWEEPER_CANCELED_COOLDOWN_HOURS")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(Self::DEFAULT_CANCELED_COOLDOWN_HOURS)
+    }
+
     /// Single pass over movies in PostgreSQL evaluating all applicable quality tiers.
     pub async fn sweep_once(
         pool: &PgPool,
@@ -79,6 +117,7 @@ impl TranscodeSweeperService {
         cache_dir: &Path,
     ) -> Result<SweeperStats, AppError> {
         let mut stats = SweeperStats::default();
+        let cooldown_hours = Self::canceled_cooldown_hours();
 
         if !Self::check_disk_healthy(cache_dir) {
             info!("Transcode sweep skipped due to disk safety floor.");
@@ -174,8 +213,18 @@ impl TranscodeSweeperService {
                             continue;
                         }
                         if existing.status == "canceled" {
-                            stats.skipped += 1;
-                            continue;
+                            if !Self::is_recoverable_canceled_job(&existing, cooldown_hours) {
+                                debug!(
+                                    "Sweeper skipping recently canceled job for {} ({}) within cooldown",
+                                    rel_key, mode
+                                );
+                                stats.skipped += 1;
+                                continue;
+                            }
+                            info!(
+                                "Sweeper auto-recovering canceled job for {} ({}) [diagnostic or expired cooldown]",
+                                rel_key, mode
+                            );
                         }
                         // Circuit breaker: do not endlessly re-enqueue jobs that repeatedly failed with fatal errors (e.g. corrupt bitstream).
                         // Thermal safeguard pauses have UNLIMITED retries.

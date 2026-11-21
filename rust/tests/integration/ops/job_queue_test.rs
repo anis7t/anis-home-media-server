@@ -615,6 +615,72 @@ async fn test_transcode_sweeper_file_needs_transcode() {
 }
 
 #[tokio::test]
+async fn test_transcode_sweeper_canceled_job_recovery() {
+    use media_server_api::models::job::TranscodeJob;
+    use media_server_api::services::transcode_sweeper::TranscodeSweeperService;
+
+    // Diagnostic cancellation reasons are always immediately recoverable
+    assert!(TranscodeSweeperService::is_diagnostic_cancellation(Some(
+        "Stopped by admin: thermal crash diagnosis"
+    )));
+    assert!(TranscodeSweeperService::is_diagnostic_cancellation(Some(
+        "Thermal safeguard exceeded 85C"
+    )));
+    assert!(TranscodeSweeperService::is_diagnostic_cancellation(Some(
+        "Server restarted during transcode"
+    )));
+    assert!(!TranscodeSweeperService::is_diagnostic_cancellation(Some(
+        "User dismissed"
+    )));
+    assert!(!TranscodeSweeperService::is_diagnostic_cancellation(None));
+
+    let now = chrono::Utc::now();
+    let mut job = TranscodeJob {
+        id: 9999,
+        filename: "test.mkv".to_string(),
+        mode: "hls:720p".to_string(),
+        status: "canceled".to_string(),
+        progress: Some(0.0),
+        speed: None,
+        fps: None,
+        eta: None,
+        resume_time: None,
+        start_seg: None,
+        attempts: 0,
+        priority: 0,
+        error: Some("Stopped by admin: thermal crash diagnosis".to_string()),
+        lease_owner: None,
+        lease_expires_at: None,
+        created_at: now - chrono::Duration::minutes(5),
+        updated_at: now - chrono::Duration::minutes(5),
+    };
+
+    // Diagnostic cancellation is recoverable immediately (even if only 5 minutes old)
+    assert!(TranscodeSweeperService::is_recoverable_canceled_job(
+        &job, 2
+    ));
+
+    // Generic cancellation updated 30 minutes ago with 2-hour cooldown is NOT yet recoverable
+    job.error = Some("Canceled by user".to_string());
+    job.updated_at = now - chrono::Duration::minutes(30);
+    assert!(!TranscodeSweeperService::is_recoverable_canceled_job(
+        &job, 2
+    ));
+
+    // Generic cancellation updated 3 hours ago with 2-hour cooldown IS recoverable
+    job.updated_at = now - chrono::Duration::hours(3);
+    assert!(TranscodeSweeperService::is_recoverable_canceled_job(
+        &job, 2
+    ));
+
+    // Non-canceled job is never considered a recoverable canceled job
+    job.status = "completed".to_string();
+    assert!(!TranscodeSweeperService::is_recoverable_canceled_job(
+        &job, 2
+    ));
+}
+
+#[tokio::test]
 async fn test_suite_leaves_no_residue() {
     let _lock = acquire_global_lock().await;
     let pool = pool().await;

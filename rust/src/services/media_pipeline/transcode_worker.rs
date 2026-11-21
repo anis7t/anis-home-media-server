@@ -504,7 +504,8 @@ impl TranscodeWorker {
         let dual_gpu_configured = GpuService::is_dual_gpu_configured();
         let allow_4k_dual_gpu = GpuService::is_4k_dual_gpu_allowed();
 
-        let use_dual_gpu = (is_4k && allow_4k_dual_gpu && dual_gpu_configured)
+        // Dual-GPU chunk expansion is active for 4K target encodes, or when no adapter lane is constrained.
+        let use_dual_gpu = (is_4k_target && allow_4k_dual_gpu && dual_gpu_configured)
             || (dual_gpu_enabled && adapter_lane.is_none());
 
         let workers: Vec<GPUWorkerConfig> = if use_dual_gpu && base_gpus.len() > 1 {

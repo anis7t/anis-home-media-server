@@ -1,8 +1,29 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-21
+Last reviewed: 2026-11-22
 Repository: `anis7t/media-server`
-Working branch: `feat/dual-gpu-diagnostics`
+Working branch: `main`
+
+---
+
+## 2026-11-22 — Background Transcode Sweeper Auto-Recovery & Multi-GPU Lane Separation
+
+- **Background Sweeper Diagnostic & Cooldown Auto-Recovery (`rust/src/services/media_pipeline/transcode_sweeper.rs`)**:
+  - Resolved automated progression stall where 1440p and 720p renditions did not transcode after 4K completed.
+  - Root cause: previous debugging turns marked jobs as `status = 'canceled'` (`"Stopped by admin: thermal crash diagnosis"`), which the sweeper unconditionally skipped forever to avoid overriding human cancellations.
+  - Added `is_diagnostic_cancellation`: automatically identifies diagnostic, thermal, and server-restart cancellations (`"thermal"`, `"stopped by admin"`, `"server restarted"`, `"diagnostic"`, `"safeguard"`), making them eligible for immediate automated re-enqueuing when media is incomplete on disk.
+  - Added `is_recoverable_canceled_job` with configurable TTL cooldown (default 2 hours, `MEDIA_SERVER_SWEEPER_CANCELED_COOLDOWN_HOURS`): permits expired user cancellations to be re-swept at low priority if streams are missing on disk.
+  - Added `test_transcode_sweeper_canceled_job_recovery` in `tests/integration/ops/job_queue_test.rs` covering immediate diagnostic recovery, 2-hour cooldown windows, and terminal job stability.
+- **Multi-GPU Adapter Lane Separation Hardening (`rust/src/services/media_pipeline/transcode_worker.rs`)**:
+  - Constrained intra-job dual-GPU worker expansion strictly to **4K target encodes** (`is_4k_target` / 2160p) or unconstrained runs.
+  - When evaluating downscaling jobs on 4K sources (e.g. 720p or 1440p), prevented both worker lanes from simultaneously expanding to dual-GPU execution:
+    - `vega` lane encodes 720p strictly on integrated AMD Radeon Vega 8 (`adapter_id=1`, ~64–66°C).
+    - `rx` lane encodes 1440p strictly on discrete AMD Radeon RX 560X (`adapter_id=0`, ~80–85°C).
+  - Eliminates cross-lane GPU contention and protects the discrete GPU from multi-process thermal saturation.
+- **Production Delivery**:
+  - Rebuilt optimized release binary `media-server-api.exe` (15.3 MB) and deployed to `MediaServerRust` via `scripts/deploy_dual_gpu_service.ps1`.
+  - Service confirmed healthy on `:8000` with active telemetry.
+  - Verified *The Odyssey (2026)* 1440p (Job #1149) and 720p (Job #1151) transcoding concurrently on their respective dedicated GPU adapters.
 
 ---
 
