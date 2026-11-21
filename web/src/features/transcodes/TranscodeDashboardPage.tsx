@@ -398,18 +398,58 @@ export function TranscodeDashboardPage() {
               🎮
             </span>
           </div>
-          <div className="mt-3 space-y-1 text-xs">
+          <div className="mt-3 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-white/80 font-medium">RX 560X (dx11:1)</span>
-              <span className="text-[10px] text-emerald-400 font-semibold">
-                {summary?.hardware_engine?.primary?.status || 'Standby'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {summary?.hardware_engine?.primary?.temperature_c != null && (
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      summary.hardware_engine.primary.temperature_c >= 85
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : summary.hardware_engine.primary.temperature_c >= 75
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}
+                  >
+                    {summary.hardware_engine.primary.temperature_c.toFixed(1)}°C
+                  </span>
+                )}
+                {summary?.hardware_engine?.primary?.utilization_pct != null && (
+                  <span className="text-[10px] text-white/70 font-mono">
+                    {summary.hardware_engine.primary.utilization_pct.toFixed(0)}% load
+                  </span>
+                )}
+                <span className="text-[10px] text-emerald-400 font-semibold">
+                  {summary?.hardware_engine?.primary?.status || 'Standby'}
+                </span>
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-white/60 font-medium">Vega 8 (dx11:0)</span>
-              <span className="text-[10px] text-emerald-400 font-semibold">
-                {summary?.hardware_engine?.secondary?.status || 'Standby'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {summary?.hardware_engine?.secondary?.temperature_c != null && (
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      summary.hardware_engine.secondary.temperature_c >= 85
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : summary.hardware_engine.secondary.temperature_c >= 75
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}
+                  >
+                    {summary.hardware_engine.secondary.temperature_c.toFixed(1)}°C
+                  </span>
+                )}
+                {summary?.hardware_engine?.secondary?.utilization_pct != null && (
+                  <span className="text-[10px] text-white/70 font-mono">
+                    {summary.hardware_engine.secondary.utilization_pct.toFixed(0)}% load
+                  </span>
+                )}
+                <span className="text-[10px] text-emerald-400 font-semibold">
+                  {summary?.hardware_engine?.secondary?.status || 'Standby'}
+                </span>
+              </div>
             </div>
           </div>
           <div className="mt-2 text-[10px] text-white/40">

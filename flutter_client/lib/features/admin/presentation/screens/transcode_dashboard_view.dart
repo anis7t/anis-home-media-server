@@ -181,6 +181,15 @@ class TranscodeDashboardView extends ConsumerWidget {
   Widget _buildGpuCard(GpuEngineStatus gpu, bool isDiscrete) {
     final isActive = gpu.status.toLowerCase().contains('active');
 
+    Color tempColor = AppColors.statusSuccess;
+    if (gpu.temperatureC != null) {
+      if (gpu.temperatureC! >= 85) {
+        tempColor = AppColors.statusError;
+      } else if (gpu.temperatureC! >= 75) {
+        tempColor = AppColors.statusWarning;
+      }
+    }
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -206,19 +215,52 @@ class TranscodeDashboardView extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              Flexible(
+              Expanded(
                 child: Text(
                   gpu.name,
                   style: AppTypography.titleMedium.copyWith(fontSize: 12, fontWeight: FontWeight.w700),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (gpu.temperatureC != null) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: tempColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: tempColor.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    '${gpu.temperatureC!.toStringAsFixed(1)}°C',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: tempColor,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            isDiscrete ? 'Discrete • dx11:1' : 'Integrated • dx11:0',
-            style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isDiscrete ? 'Discrete • dx11:1' : 'Integrated • dx11:0',
+                style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+              ),
+              if (gpu.utilizationPct != null)
+                Text(
+                  '${gpu.utilizationPct!.toStringAsFixed(0)}% load',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: gpu.utilizationPct! > 10 ? AppColors.brandRedLight : AppColors.textSecondary,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(

@@ -18,6 +18,19 @@ pub struct GpuTemperatures {
     pub age_secs: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct GpuTelemetry {
+    pub temperature_c: Option<f64>,
+    pub utilization_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct DualGpuTelemetry {
+    pub rx560x: GpuTelemetry,
+    pub vega8: GpuTelemetry,
+    pub age_secs: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThermalStatus {
     Safe(GpuTemperatures),
@@ -384,6 +397,130 @@ pub fn critical_temperature_or_sensor_loss(is_discrete: bool) -> bool {
     stop
 }
 
+pub fn read_gpu_telemetry() -> Option<DualGpuTelemetry> {
+    let bytes = mapped_bytes()?;
+    let header = parse_header(&bytes)?;
+    let now = current_hw_time()?;
+    let age = now.saturating_sub(header.poll_time);
+    if !(0..=MAX_AGE_SECS).contains(&age) {
+        return None;
+    }
+
+    let rx_match = configured_match("MEDIA_SERVER_GPU_TEMP_RX_MATCH", "560x");
+    let vega_match = configured_match("MEDIA_SERVER_GPU_TEMP_VEGA_MATCH", "vega 8");
+    let mut groups = Vec::with_capacity(header.sensor_count);
+    for index in 0..header.sensor_count {
+        let base = header.sensor_offset + index * header.sensor_size;
+        let original = c_string(&bytes, base + 8, 128).unwrap_or_default();
+        let user = c_string(&bytes, base + 136, 128).unwrap_or_default();
+        groups.push(if user.is_empty() { original } else { user });
+    }
+
+    let mut rx_temps = Vec::new();
+    let mut vega_temps = Vec::new();
+    let mut rx_utils = Vec::new();
+    let mut vega_utils = Vec::new();
+
+    for index in 0..header.reading_count {
+        let base = header.reading_offset + index * header.reading_size;
+        let reading_type = u32_at(&bytes, base);
+        let sensor_idx = u32_at(&bytes, base + 4).unwrap_or(u32::MAX) as usize;
+        let Some(group) = groups.get(sensor_idx) else {
+            continue;
+        };
+        let original = c_string(&bytes, base + 12, 128).unwrap_or_default();
+        let user = c_string(&bytes, base + 140, 128).unwrap_or_default();
+        let label = if user.is_empty() { original } else { user };
+        let unit = c_string(&bytes, base + 268, 16)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+
+        let value_offset = base + 0x11C;
+        let Some(value) = bytes
+            .get(value_offset..value_offset + 8)
+            .and_then(|v| <[u8; 8]>::try_from(v).ok())
+            .map(f64::from_le_bytes)
+        else {
+            continue;
+        };
+        if !value.is_finite() {
+            continue;
+        }
+
+        let group_low = group.to_lowercase();
+        let label_low = label.to_lowercase();
+        let is_rx = group_low.contains(&rx_match);
+        let is_vega = group_low.contains(&vega_match);
+        if !is_rx && !is_vega {
+            continue;
+        }
+
+        // Temperature (type 1 or unit contains C)
+        if (reading_type == Some(1) || unit.contains('c'))
+            && !unit.contains('f')
+            && (0.0..=125.0).contains(&value)
+        {
+            let is_temp = label_low.contains("temperature")
+                || label_low.contains("temp")
+                || label_low.contains("hot spot")
+                || label_low.contains("hotspot")
+                || label_low.contains("diode");
+            if is_temp {
+                if is_rx {
+                    rx_temps.push(value);
+                }
+                if is_vega {
+                    vega_temps.push(value);
+                }
+            }
+        }
+
+        // Utilization / Usage (% unit)
+        if unit.contains('%') && (0.0..=100.0).contains(&value) && !label_low.contains("fan") {
+            let is_util = label_low.contains("utilization")
+                || label_low.contains("usage")
+                || label_low.contains("load");
+            if is_util {
+                if is_rx {
+                    rx_utils.push(value);
+                }
+                if is_vega {
+                    vega_utils.push(value);
+                }
+            }
+        }
+    }
+
+    let rx_temp_c = rx_temps
+        .into_iter()
+        .reduce(f64::max)
+        .map(|v| (v * 10.0).round() / 10.0);
+    let vega_temp_c = vega_temps
+        .into_iter()
+        .reduce(f64::max)
+        .map(|v| (v * 10.0).round() / 10.0);
+    let rx_util_pct = rx_utils
+        .into_iter()
+        .reduce(f64::max)
+        .map(|v| (v * 10.0).round() / 10.0);
+    let vega_util_pct = vega_utils
+        .into_iter()
+        .reduce(f64::max)
+        .map(|v| (v * 10.0).round() / 10.0);
+
+    Some(DualGpuTelemetry {
+        rx560x: GpuTelemetry {
+            temperature_c: rx_temp_c,
+            utilization_pct: rx_util_pct,
+        },
+        vega8: GpuTelemetry {
+            temperature_c: vega_temp_c,
+            utilization_pct: vega_util_pct,
+        },
+        age_secs: age,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,6 +587,22 @@ mod tests {
                 );
             }
             ThermalStatus::Unsafe(reason) => panic!("HWiNFO sensor check failed: {reason}"),
+        }
+    }
+
+    #[test]
+    #[ignore = "requires live HWiNFO shared memory and both Radeon GPU sensors"]
+    fn live_shared_memory_reports_telemetry_metrics() {
+        if let Some(telemetry) = read_gpu_telemetry() {
+            println!(
+                "HWiNFO live GPU telemetry: RX 560X: temp={:?}C, util={:?}%, Vega 8: temp={:?}C, util={:?}%, age={}s",
+                telemetry.rx560x.temperature_c,
+                telemetry.rx560x.utilization_pct,
+                telemetry.vega8.temperature_c,
+                telemetry.vega8.utilization_pct,
+                telemetry.age_secs
+            );
+            assert!((0..=MAX_AGE_SECS).contains(&telemetry.age_secs));
         }
     }
 }

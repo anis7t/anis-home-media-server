@@ -7,12 +7,16 @@ class GpuEngineStatus {
   final int adapter;
   final String backend;
   final String status;
+  final double? temperatureC;
+  final double? utilizationPct;
 
   const GpuEngineStatus({
     required this.name,
     required this.adapter,
     required this.backend,
     required this.status,
+    this.temperatureC,
+    this.utilizationPct,
   });
 
   factory GpuEngineStatus.fromJson(Map<String, dynamic> json) {
@@ -21,6 +25,8 @@ class GpuEngineStatus {
       adapter: (json['adapter'] as num?)?.toInt() ?? 0,
       backend: (json['backend'] as String?) ?? '',
       status: (json['status'] as String?) ?? 'Idle / Standby',
+      temperatureC: (json['temperature_c'] as num?)?.toDouble(),
+      utilizationPct: (json['utilization_pct'] as num?)?.toDouble(),
     );
   }
 }
