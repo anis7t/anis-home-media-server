@@ -37,6 +37,8 @@ class PlayerControlsOverlay extends StatefulWidget {
   final VoidCallback? onOpenSpeedSheet;
   final VoidCallback? onOpenQualitySheet;
   final String selectedQualityLabel;
+  final VoidCallback? onOpenDecoderSheet;
+  final String decoderModeBadge;
   final VoidCallback? onOpenAudioSheet;
   final VoidCallback? onOpenSubtitleSheet;
   final VoidCallback? onToggleAspectRatio;
@@ -84,6 +86,8 @@ class PlayerControlsOverlay extends StatefulWidget {
     this.onOpenSpeedSheet,
     this.onOpenQualitySheet,
     this.selectedQualityLabel = 'HD',
+    this.onOpenDecoderSheet,
+    this.decoderModeBadge = 'HW',
     this.onOpenAudioSheet,
     this.onOpenSubtitleSheet,
     this.onToggleAspectRatio,
@@ -594,10 +598,70 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                                 ),
                               ],
 
+                              // Decoder Mode pill button
+                              if (widget.onOpenDecoderSheet != null) ...[
+                                const SizedBox(width: 4),
+                                _buildButtonWrapper(
+                                  index: 5,
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: InkWell(
+                                    onTap: widget.onOpenDecoderSheet,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isCompact ? 5 : 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white12,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: widget.decoderModeBadge == 'SW-CPU'
+                                              ? const Color(0xFFFF9900)
+                                              : (widget.decoderModeBadge == 'HW-DIRECT'
+                                                  ? const Color(0xFF00E676)
+                                                  : Colors.white24),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            widget.decoderModeBadge == 'SW-CPU'
+                                                ? Icons.speed_rounded
+                                                : Icons.memory_rounded,
+                                            size: isCompact ? 10 : 12,
+                                            color: widget.decoderModeBadge == 'SW-CPU'
+                                                ? const Color(0xFFFF9900)
+                                                : (widget.decoderModeBadge == 'HW-DIRECT'
+                                                    ? const Color(0xFF00E676)
+                                                    : Colors.white70),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            widget.decoderModeBadge,
+                                            style: TextStyle(
+                                              color: widget.decoderModeBadge == 'SW-CPU'
+                                                  ? const Color(0xFFFF9900)
+                                                  : (widget.decoderModeBadge == 'HW-DIRECT'
+                                                      ? const Color(0xFF00E676)
+                                                      : Colors.white),
+                                              fontSize: isCompact ? 10 : 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+
                               // Audio Stream selector button
                               if (widget.onOpenAudioSheet != null)
                                 _buildButtonWrapper(
-                                  index: 5,
+                                  index: 6,
                                   child: IconButton(
                                     tooltip: 'Audio Tracks',
                                     constraints: btnConstraints,
@@ -615,7 +679,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                               // Subtitle selector button
                               if (widget.onOpenSubtitleSheet != null)
                                 _buildButtonWrapper(
-                                  index: 6,
+                                  index: 7,
                                   child: IconButton(
                                     tooltip: 'Subtitles (c)',
                                     constraints: btnConstraints,
@@ -635,7 +699,7 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay> {
                               // Aspect Ratio toggle (on TV, moved into controls row so it's D-pad focusable)
                               if (widget.isTv && widget.onToggleAspectRatio != null)
                                 _buildButtonWrapper(
-                                  index: 7,
+                                  index: 8,
                                   child: IconButton(
                                     tooltip: 'Aspect Ratio',
                                     constraints: btnConstraints,

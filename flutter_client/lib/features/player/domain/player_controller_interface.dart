@@ -47,6 +47,9 @@ abstract class PlayerControllerInterface {
   /// Current track information.
   PlayerTrackInfo get trackInfo;
 
+  /// Current decoder acceleration mode.
+  DecoderMode get decoderMode;
+
   /// Opens a media resource.
   Future<void> open(
     String url, {
@@ -76,6 +79,9 @@ abstract class PlayerControllerInterface {
 
   /// Sets audio track.
   Future<void> setAudioTrack(PlayerAudioTrack track);
+
+  /// Sets decoder hardware acceleration mode.
+  Future<void> setDecoderMode(DecoderMode mode);
 
   /// Stops playback.
   Future<void> stop();

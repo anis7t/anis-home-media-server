@@ -126,3 +126,81 @@ class PlayerError {
   @override
   String toString() => 'PlayerError($message, code: $code)';
 }
+
+/// Hardware/software decoding acceleration mode for media engine.
+enum DecoderMode {
+  /// Direct zero-copy Surface decoding (`mediacodec` on Android).
+  ///
+  /// Bypasses the CPU memory bus completely. Recommended for 4K / UHD playback,
+  /// low-power devices, and streaming sticks (e.g. Fire TV Stick 4K).
+  hardwareDirect,
+
+  /// Hardware decoding with frame copy to CPU/RAM (`mediacodec-copy` on Android).
+  ///
+  /// Compatible with devices having non-standard Surface implementations,
+  /// but consumes high memory bandwidth on 4K content.
+  hardwareCopy,
+
+  /// Software CPU decoding via libavcodec (`no`).
+  ///
+  /// Decodes entirely on CPU cores. Safe fallback for broken hardware decoders,
+  /// but causes frame drops on 4K on low-power CPUs.
+  software,
+
+  /// Automatically select optimal hardware decoding mode for the platform.
+  auto,
+}
+
+extension DecoderModeX on DecoderMode {
+  String get label {
+    switch (this) {
+      case DecoderMode.hardwareDirect:
+        return 'Hardware (Direct - Zero-Copy)';
+      case DecoderMode.hardwareCopy:
+        return 'Hardware (Compatible - Copy)';
+      case DecoderMode.software:
+        return 'Software (CPU)';
+      case DecoderMode.auto:
+        return 'Auto (Recommended)';
+    }
+  }
+
+  String get badge {
+    switch (this) {
+      case DecoderMode.hardwareDirect:
+        return 'HW-DIRECT';
+      case DecoderMode.hardwareCopy:
+        return 'HW-COPY';
+      case DecoderMode.software:
+        return 'SW-CPU';
+      case DecoderMode.auto:
+        return 'AUTO';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case DecoderMode.hardwareDirect:
+        return 'Direct Surface zero-copy. Recommended for 4K and Fire TV Stick.';
+      case DecoderMode.hardwareCopy:
+        return 'Hardware decode copied to RAM. Compatible, higher memory usage.';
+      case DecoderMode.software:
+        return 'Decodes via CPU cores. Safe fallback for broken hardware decoders.';
+      case DecoderMode.auto:
+        return 'Automatically selects direct hardware acceleration.';
+    }
+  }
+
+  String toMpvHwdec() {
+    switch (this) {
+      case DecoderMode.hardwareDirect:
+        return 'mediacodec';
+      case DecoderMode.hardwareCopy:
+        return 'mediacodec-copy';
+      case DecoderMode.software:
+        return 'no';
+      case DecoderMode.auto:
+        return 'mediacodec';
+    }
+  }
+}

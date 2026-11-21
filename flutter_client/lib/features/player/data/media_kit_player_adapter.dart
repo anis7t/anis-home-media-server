@@ -2,20 +2,28 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/player_controller_interface.dart';
 
 /// Concrete adapter wrapping [Player] and [VideoController] behind [PlayerControllerInterface].
 class MediaKitPlayerAdapter implements PlayerControllerInterface {
+  static const String prefDecoderModeKey = 'player_decoder_mode';
+
   final Player player;
   VideoController? _videoController;
+
+  DecoderMode _decoderMode = DecoderMode.hardwareDirect;
+
+  @override
+  DecoderMode get decoderMode => _decoderMode;
 
   VideoController get videoController =>
       _videoController ??= VideoController(
         player,
         configuration: VideoControllerConfiguration(
-          enableHardwareAcceleration: true,
+          enableHardwareAcceleration: _decoderMode != DecoderMode.software,
           hwdec: defaultTargetPlatform == TargetPlatform.android
-              ? 'mediacodec-copy'
+              ? _decoderMode.toMpvHwdec()
               : 'auto',
         ),
       );
@@ -44,16 +52,72 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
   Map<String, String>? _currentHeaders;
   String? _currentExternalSubtitleUrl;
 
-  MediaKitPlayerAdapter({Player? player, VideoController? videoController})
-      : player = player ?? Player() {
+  MediaKitPlayerAdapter({
+    Player? player,
+    VideoController? videoController,
+    DecoderMode? initialDecoderMode,
+  }) : player = player ?? Player() {
     _videoController = videoController;
+    if (initialDecoderMode != null) {
+      _decoderMode = initialDecoderMode;
+    }
+    _loadSavedDecoderMode();
     _initStreams();
+  }
+
+  Future<void> _loadSavedDecoderMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(prefDecoderModeKey);
+      if (saved != null) {
+        final mode = DecoderMode.values.firstWhere(
+          (m) => m.name == saved,
+          orElse: () => DecoderMode.hardwareDirect,
+        );
+        _decoderMode = mode;
+        final nativePlatform = player.platform;
+        if (nativePlatform != null) {
+          await (nativePlatform as dynamic).setProperty('hwdec', mode.toMpvHwdec());
+        }
+      }
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Failed to load saved decoder mode: $e');
+    }
+  }
+
+  @override
+  Future<void> setDecoderMode(DecoderMode mode) async {
+    if (_decoderMode == mode) return;
+    _decoderMode = mode;
+    final hwdec = mode.toMpvHwdec();
+    debugPrint('[MediaKitPlayerAdapter] Switching decoder mode to $mode (hwdec: $hwdec)');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(prefDecoderModeKey, mode.name);
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Failed to persist decoder mode: $e');
+    }
+
+    try {
+      final nativePlatform = player.platform;
+      if (nativePlatform != null) {
+        await (nativePlatform as dynamic).setProperty('hwdec', hwdec);
+        // If actively playing or loaded, seek to current position to reinitialize decoder buffers cleanly
+        if (player.state.playing || player.state.position > Duration.zero) {
+          await player.seek(player.state.position);
+        }
+      }
+    } catch (e) {
+      debugPrint('[MediaKitPlayerAdapter] Failed to set native hwdec property: $e');
+    }
   }
 
   /// Automatically fall back to software decoding (libavcodec) if hardware decoding locks or fails.
   Future<void> fallbackToSoftwareDecoder() async {
-    if (_hwdecFailed) return;
+    if (_hwdecFailed || _decoderMode == DecoderMode.software) return;
     _hwdecFailed = true;
+    _decoderMode = DecoderMode.software;
     debugPrint('[MediaKitPlayerAdapter] Falling back to software decoding (hwdec: no)');
     try {
       final nativePlatform = player.platform;
@@ -97,22 +161,15 @@ class MediaKitPlayerAdapter implements PlayerControllerInterface {
     }));
 
     _subscriptions.add(player.stream.error.listen((errorMsg) {
-      debugPrint('[MediaKitPlayerAdapter] Engine Error: $errorMsg');
-      if (!_hwdecFailed && defaultTargetPlatform == TargetPlatform.android) {
-        final lower = errorMsg.toLowerCase();
-        if (lower.contains('video') ||
-            lower.contains('codec') ||
-            lower.contains('mediacodec') ||
-            lower.contains('vd') ||
-            lower.contains('decoder') ||
-            lower.contains('hwdec') ||
-            lower.contains('surface') ||
-            lower.contains('hardware') ||
-            lower.contains('omx') ||
-            lower.contains('c2.')) {
-          fallbackToSoftwareDecoder();
-          return;
-        }
+      debugPrint('[MediaKitPlayerAdapter] Engine Log/Warning: $errorMsg');
+      // If the player is actively playing or advancing position, mpv stream.error
+      // frequently emits non-fatal warnings (demuxer sync, PTS gaps, audio packet drops).
+      // Suppress state transition to error so active playback is not interrupted!
+      if (player.state.playing || player.state.position > Duration.zero) {
+        debugPrint(
+          '[MediaKitPlayerAdapter] Suppressing non-fatal engine message during active playback: $errorMsg',
+        );
+        return;
       }
       _updateState(PlayerPlaybackState.error);
     }));
