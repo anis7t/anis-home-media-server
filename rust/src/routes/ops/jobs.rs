@@ -644,6 +644,10 @@ pub async fn transcode_dashboard_handler(
         "0s".to_string()
     };
 
+    let gpu_telemetry = crate::services::media_pipeline::gpu_thermal::read_gpu_telemetry();
+    let rx_telemetry = gpu_telemetry.as_ref().map(|t| &t.rx560x);
+    let vega_telemetry = gpu_telemetry.as_ref().map(|t| &t.vega8);
+
     let summary = serde_json::json!({
         "active_count": active_jobs.len(),
         "running_count": running_count,
@@ -659,13 +663,17 @@ pub async fn transcode_dashboard_handler(
                 "name": "AMD Radeon RX 560X",
                 "adapter": 1,
                 "backend": "AMF / D3D11VA (Discrete)",
-                "status": if running_count > 0 { "Active Encoding" } else { "Idle / Standby" }
+                "status": if running_count > 0 { "Active Encoding" } else { "Idle / Standby" },
+                "temperature_c": rx_telemetry.and_then(|t| t.temperature_c),
+                "utilization_pct": rx_telemetry.and_then(|t| t.utilization_pct),
             },
             "secondary": {
                 "name": "AMD Radeon Vega 8",
                 "adapter": 0,
                 "backend": "AMF / D3D11VA (Integrated)",
-                "status": if running_count > 0 { "Active Encoding" } else { "Idle / Standby" }
+                "status": if running_count > 0 { "Active Encoding" } else { "Idle / Standby" },
+                "temperature_c": vega_telemetry.and_then(|t| t.temperature_c),
+                "utilization_pct": vega_telemetry.and_then(|t| t.utilization_pct),
             }
         }
     });

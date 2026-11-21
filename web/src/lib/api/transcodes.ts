@@ -1,18 +1,17 @@
 import { request } from './client';
 
+export interface GpuEngineStatus {
+  readonly name: string;
+  readonly adapter: number;
+  readonly backend: string;
+  readonly status: string;
+  readonly temperature_c?: number | null;
+  readonly utilization_pct?: number | null;
+}
+
 export interface HardwareEngineInfo {
-  readonly primary: {
-    readonly name: string;
-    readonly adapter: number;
-    readonly backend: string;
-    readonly status: string;
-  };
-  readonly secondary: {
-    readonly name: string;
-    readonly adapter: number;
-    readonly backend: string;
-    readonly status: string;
-  };
+  readonly primary: GpuEngineStatus;
+  readonly secondary: GpuEngineStatus;
 }
 
 export interface TranscodeSummaryMetrics {
