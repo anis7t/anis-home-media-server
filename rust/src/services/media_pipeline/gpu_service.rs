@@ -438,7 +438,7 @@ impl GpuService {
                 backend: GpuBackend::Cpu,
                 is_discrete: false,
             }]
-        } else if !Self::is_dual_gpu_enabled() {
+        } else if !Self::is_dual_gpu_configured() {
             if let Some(d) = gpus.iter().find(|g| g.is_discrete).cloned() {
                 vec![d]
             } else {
@@ -459,6 +459,24 @@ impl GpuService {
         }
         Self::detect_available_gpus(false).len() >= 2
             && crate::services::gpu_thermal::dual_gpu_thermal_safe()
+    }
+
+    /// Check if dual-GPU chunked transcoding is configured and hardware is present.
+    pub fn is_dual_gpu_configured() -> bool {
+        let enabled = std::env::var("MEDIA_SERVER_ENABLE_DUAL_GPU")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+        enabled && Self::detect_available_gpus(false).len() >= 2
+    }
+
+    /// Check if dual-GPU 4K transcoding is specifically allowed (defaults to true when dual-GPU is enabled).
+    pub fn is_4k_dual_gpu_allowed() -> bool {
+        if !Self::is_dual_gpu_configured() {
+            return false;
+        }
+        std::env::var("MEDIA_SERVER_4K_DUAL_GPU")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(true)
     }
 
     /// True when per-source pipeline/worker selection is switched on.

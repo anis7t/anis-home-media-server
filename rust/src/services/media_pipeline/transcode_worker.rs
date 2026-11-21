@@ -31,6 +31,17 @@ const GPU_DIAGNOSTIC_RETENTION: Duration = Duration::from_secs(14 * 24 * 60 * 60
 const GPU_DIAGNOSTIC_TAIL_BYTES: u64 = 64 * 1024;
 const GPU_DIAGNOSTIC_TRUNCATION_MARKER: &[u8] = b"\n[FFmpeg stderr log truncated at 4 MiB]\n";
 
+static VEGA_BUSY: AtomicBool = AtomicBool::new(false);
+
+struct VegaBusyGuard(bool);
+impl Drop for VegaBusyGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            VEGA_BUSY.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
 async fn persist_ffmpeg_stderr<R>(mut stderr: R, mut file: tokio::fs::File) -> std::io::Result<()>
 where
     R: AsyncRead + Unpin,
@@ -280,7 +291,7 @@ impl TranscodeWorker {
     ) {
         while !shutdown.load(Ordering::SeqCst) {
             let telemetry_safe = GpuService::is_dual_gpu_enabled();
-            if lane == "vega" && !telemetry_safe {
+            if lane == "vega" && (!telemetry_safe || VEGA_BUSY.load(Ordering::SeqCst)) {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
@@ -490,14 +501,22 @@ impl TranscodeWorker {
 
         let is_4k = is_heavy_workload;
         let dual_gpu_enabled = GpuService::is_dual_gpu_enabled();
-        let effective_lane = adapter_lane.unwrap_or(
-            if dual_gpu_enabled && effective_quality_label == "720p" && !is_4k {
-                "vega"
-            } else {
-                "rx"
-            },
-        );
-        let mut workers: Vec<GPUWorkerConfig> = {
+        let dual_gpu_configured = GpuService::is_dual_gpu_configured();
+        let allow_4k_dual_gpu = GpuService::is_4k_dual_gpu_allowed();
+
+        let use_dual_gpu = (is_4k && allow_4k_dual_gpu && dual_gpu_configured)
+            || (dual_gpu_enabled && adapter_lane.is_none());
+
+        let workers: Vec<GPUWorkerConfig> = if use_dual_gpu && base_gpus.len() > 1 {
+            base_gpus.clone()
+        } else {
+            let effective_lane = adapter_lane.unwrap_or(
+                if dual_gpu_enabled && effective_quality_label == "720p" && !is_4k {
+                    "vega"
+                } else {
+                    "rx"
+                },
+            );
             let selected = if effective_lane == "vega" {
                 base_gpus.iter().find(|w| !w.is_discrete)
             } else {
@@ -505,27 +524,39 @@ impl TranscodeWorker {
             };
             selected.cloned().into_iter().collect()
         };
+
         if workers.is_empty() {
             return Err(AppError::Internal(format!(
                 "No eligible physical GPU is available for adapter lane {:?}",
                 adapter_lane
             )));
         }
-        if is_4k || !dual_gpu_enabled {
-            if workers.len() > 1 {
-                if let Some(d) = workers.iter().find(|w| w.is_discrete).cloned() {
-                    workers = vec![d];
-                } else {
-                    workers.truncate(1);
-                }
-            }
-            if !workers.is_empty() {
-                info!(
-                    "Job #{}: transcode running on single dedicated GPU ({}) for thermal and driver stability",
-                    job.id,
-                    workers[0].name
-                );
-            }
+
+        let is_using_vega = workers.len() > 1 && workers.iter().any(|w| !w.is_discrete);
+        let _vega_guard = if is_using_vega {
+            VEGA_BUSY.store(true, Ordering::SeqCst);
+            VegaBusyGuard(true)
+        } else {
+            VegaBusyGuard(false)
+        };
+
+        if workers.len() > 1 {
+            info!(
+                "Job #{}: dual-GPU chunked transcoding active across {} physical adapters: {}",
+                job.id,
+                workers.len(),
+                workers
+                    .iter()
+                    .map(|w| w.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        } else {
+            info!(
+                "Job #{}: transcode running on single dedicated GPU ({}) for thermal and driver stability",
+                job.id,
+                workers[0].name
+            );
         }
 
         info!(
