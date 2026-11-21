@@ -172,7 +172,7 @@ impl GPUWorkerConfig {
         match self.backend {
             GpuBackend::Amf => {
                 let vf = if use_vpp_amf {
-                    format!("vpp_amf=h='min({},ih)':w=-2:format=nv12", height)
+                    format!("vpp_amf=h='min({},ih)':w=-2:format=nv12,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709", height)
                 } else {
                     "null".to_string()
                 };
@@ -634,6 +634,9 @@ mod tests {
         };
 
         let args = worker.get_ffmpeg_video_args(true, Some(2160));
+        assert!(args.contains(&"-vf".to_string()));
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_idx + 1].contains("setparams=color_primaries=bt709"));
         assert!(args.contains(&"-c:v".to_string()));
         let cv_idx = args.iter().position(|a| a == "-c:v").unwrap();
         assert_eq!(args[cv_idx + 1], "hevc_amf");
