@@ -322,6 +322,27 @@ pub fn adapter_temperature_safe(is_discrete: bool) -> bool {
     safe
 }
 
+pub fn is_telemetry_available() -> bool {
+    matches!(read_temperatures(), ThermalStatus::Safe(_))
+}
+
+pub fn adapter_temperature_above(is_discrete: bool, threshold_c: f64) -> bool {
+    match read_temperatures() {
+        ThermalStatus::Safe(t) => {
+            let temp = if is_discrete { t.rx560x_c } else { t.vega8_c };
+            temp >= threshold_c
+        }
+        ThermalStatus::Unsafe(_) => false,
+    }
+}
+
+pub fn get_adapter_temperature(is_discrete: bool) -> Option<f64> {
+    match read_temperatures() {
+        ThermalStatus::Safe(t) => Some(if is_discrete { t.rx560x_c } else { t.vega8_c }),
+        ThermalStatus::Unsafe(_) => None,
+    }
+}
+
 pub fn critical_temperature_or_sensor_loss(is_discrete: bool) -> bool {
     let t = match read_temperatures() {
         ThermalStatus::Safe(t) => t,
@@ -366,6 +387,19 @@ pub fn critical_temperature_or_sensor_loss(is_discrete: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn telemetry_helpers_handle_missing_sensors_gracefully() {
+        // In unit test runner without HWiNFO, telemetry is unsafe
+        if !is_telemetry_available() {
+            assert!(!adapter_temperature_above(true, 75.0));
+            assert!(!adapter_temperature_above(false, 75.0));
+            assert!(get_adapter_temperature(true).is_none());
+            assert!(get_adapter_temperature(false).is_none());
+            assert!(!adapter_temperature_safe(true));
+            assert!(critical_temperature_or_sensor_loss(true));
+        }
+    }
 
     #[test]
     fn invalid_header_is_rejected() {

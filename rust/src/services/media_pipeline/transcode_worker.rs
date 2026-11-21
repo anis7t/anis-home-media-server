@@ -463,8 +463,31 @@ impl TranscodeWorker {
         let (use_vpp_amf, _) =
             GpuService::select_amf_strategy(probe.first_stream("video"), effective_target_height);
         let base_gpus = GpuService::get_gpu_workers();
-        let is_4k = effective_target_height.is_some_and(|h| h >= 2160)
+        let is_4k_source = source_height >= 1800;
+        let is_4k_target = effective_target_height.is_some_and(|h| h >= 1800)
             || effective_quality_label == "2160p";
+        let is_heavy_workload = is_4k_source || is_4k_target;
+
+        let require_hwinfo = std::env::var("MEDIA_SERVER_REQUIRE_HWINFO_FOR_4K")
+            .map(|v| !matches!(v.to_lowercase().as_str(), "0" | "false" | "no"))
+            .unwrap_or(true);
+
+        if is_heavy_workload
+            && require_hwinfo
+            && !crate::services::gpu_thermal::is_telemetry_available()
+        {
+            warn!(
+                job_id = job.id,
+                filename = %job.filename,
+                mode = %job.mode,
+                "Heavy/4K transcode paused: active HWiNFO Shared Memory telemetry is required to prevent thermal shutdown on mobile GPU"
+            );
+            return Err(AppError::Internal(
+                "Heavy/4K transcode paused: active HWiNFO thermal telemetry is required to prevent hardware thermal trip. Start HWiNFO64 with Shared Memory Support.".into(),
+            ));
+        }
+
+        let is_4k = is_heavy_workload;
         let dual_gpu_enabled = GpuService::is_dual_gpu_enabled();
         let effective_lane = adapter_lane.unwrap_or(
             if dual_gpu_enabled && effective_quality_label == "720p" && !is_4k {
@@ -692,7 +715,7 @@ impl TranscodeWorker {
                     }
 
                     let chunk = &pending_chunks_ref[idx];
-                    if dual_gpu_enabled {
+                    if crate::services::gpu_thermal::is_telemetry_available() {
                         while !crate::services::gpu_thermal::adapter_temperature_safe(
                             worker_cfg.is_discrete,
                         ) {
@@ -713,7 +736,7 @@ impl TranscodeWorker {
                         &worker_cfg,
                         use_vpp_amf,
                         effective_target_height,
-                        dual_gpu_enabled,
+                        true,
                         pids.clone(),
                     )
                     .await;
@@ -731,12 +754,37 @@ impl TranscodeWorker {
                     }
 
                     // Inter-chunk thermal breather to prevent monotonic heat accumulation and VRM over-temp
-                    let breather_ms: u64 = std::env::var("MEDIA_SERVER_CHUNK_BREATHER_MS")
+                    let base_breather_ms: u64 = if is_heavy_workload {
+                        std::env::var("MEDIA_SERVER_4K_CHUNK_BREATHER_MS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(5000)
+                    } else {
+                        std::env::var("MEDIA_SERVER_CHUNK_BREATHER_MS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(1000)
+                    };
+                    if base_breather_ms > 0 {
+                        tokio::time::sleep(Duration::from_millis(base_breather_ms)).await;
+                    }
+
+                    // Dynamic GPU cooldown check: wait until GPU cools below target threshold (default 75°C)
+                    let cooldown_target: f64 = std::env::var("MEDIA_SERVER_GPU_COOLDOWN_TEMP_C")
                         .ok()
                         .and_then(|v| v.parse().ok())
-                        .unwrap_or(1000);
-                    if breather_ms > 0 {
-                        tokio::time::sleep(Duration::from_millis(breather_ms)).await;
+                        .unwrap_or(75.0);
+                    let cooldown_start = Instant::now();
+                    while crate::services::gpu_thermal::adapter_temperature_above(
+                        worker_cfg.is_discrete,
+                        cooldown_target,
+                    ) {
+                        if cancel.load(Ordering::Relaxed)
+                            || cooldown_start.elapsed() > Duration::from_secs(45)
+                        {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
                     }
                 }
             }));
@@ -1360,5 +1408,26 @@ mod tests {
         assert_eq!(bytes.len() as u64, GPU_DIAGNOSTIC_MAX_FILE_BYTES);
         assert!(bytes.ends_with(GPU_DIAGNOSTIC_TRUNCATION_MARKER));
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn test_4k_breather_and_cooldown_threshold_configurations() {
+        // Verify default breather is 5000ms for heavy/4K jobs and 1000ms for standard HD
+        let default_hd_breather: u64 = std::env::var("MEDIA_SERVER_CHUNK_BREATHER_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+        let default_4k_breather: u64 = std::env::var("MEDIA_SERVER_4K_CHUNK_BREATHER_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5000);
+        let cooldown_target: f64 = std::env::var("MEDIA_SERVER_GPU_COOLDOWN_TEMP_C")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(75.0);
+
+        assert_eq!(default_hd_breather, 1000);
+        assert_eq!(default_4k_breather, 5000);
+        assert_eq!(cooldown_target, 75.0);
     }
 }
