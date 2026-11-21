@@ -265,9 +265,6 @@ pub async fn append_chunk(part_path: &Path, offset: u64, bytes: &[u8]) -> Result
     file.write_all(bytes)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to write upload chunk: {}", e)))?;
-    file.sync_all()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to sync upload chunk: {}", e)))?;
 
     Ok(offset + bytes.len() as u64)
 }
@@ -329,6 +326,15 @@ pub async fn finalize_session(
             "Upload is incomplete: expected {} bytes, have {}",
             manifest.size, actual
         )));
+    }
+
+    // Ensure complete upload data is flushed to physical storage before final catalog move.
+    if let Ok(file) = tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(&part_path)
+        .await
+    {
+        let _ = file.sync_all().await;
     }
 
     let target_name = build_target_name(&manifest.filename, manifest.title.as_deref())?;
