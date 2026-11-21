@@ -6,6 +6,20 @@ Working branch: `main`
 
 ---
 
+## 2026-11-22 — CI Pipeline Upgrade (Java v5 & Node.js 24) & Android Client Release v1.4.12
+
+- **GitHub Actions CI Toolchain Modernization (`.github/workflows/ci.yml`)**:
+  - Upgraded `actions/setup-java` to `v5` (`actions/setup-java@v5`), eliminating the deprecation warning for `v4` and updating the action runner engine to Node 24.
+  - Upgraded frontend CI runtime to Node.js 24 (`node-version: 24`), aligning with `web/package.json` (`@types/node: ^24.13.3`).
+  - Synchronized documentation in `docs/TESTING.md` and `docs/WINDOWS_SETUP.md` to reflect the Node 24 and Java setup-java v5 baselines.
+- **Production Artifact Rebuild & Android Client Release v1.4.12 (`updates/production/`)**:
+  - Rebuilt React 19 production distribution (`web/dist/`).
+  - Rebuilt and published Android production client APK `v1.4.12` (versionCode `158`) via `scripts/release_android.py`.
+  - Stamped `updates/production/manifest.json`, `updates/version_registry.json`, and `updates/production/media-server-client.apk`.
+  - Local validation: 46 test files / 338 tests passed in React frontend (`vitest`), 433 tests passed in Flutter client with 0 analyzer issues, 17/17 Rust job queue tests passed.
+
+---
+
 ## 2026-11-22 — Background Transcode Sweeper Auto-Recovery & Multi-GPU Lane Separation
 
 - **Background Sweeper Diagnostic & Cooldown Auto-Recovery (`rust/src/services/media_pipeline/transcode_sweeper.rs`)**:

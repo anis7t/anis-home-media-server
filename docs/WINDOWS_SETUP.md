@@ -15,7 +15,7 @@ This document records the complete Windows development and production environmen
 - **PostgreSQL Data:** `E:\pgdata` (binaries at `C:\postgres`)
 - **Environment File:** `E:\MediaServer\.env`
 - **Rust Toolchain:** 1.85+ (MSRV 2021 edition)
-- **Node.js:** 20+ (for the `web/` React SPA build)
+- **Node.js:** 24+ LTS (minimum 20+, for the `web/` React SPA build)
 - **FFmpeg:** 9.0.1 essentials build with AMD AMF & D3D11va
 - **Caddy:** `E:\MediaServer\bin\caddy_custom.exe` (Cloudflare DNS module)
 

@@ -13,8 +13,8 @@ The primary CI pipeline is defined in [`.github/workflows/ci.yml`](../.github/wo
 | Job | Environment | Target | Checks Performed |
 |---|---|---|---|
 | **`backend`** | `ubuntu-latest` + `postgres:17-alpine` | Rust Axum (`rust/`) | `cargo fmt --check`<br>`cargo clippy --all-targets -- -D warnings`<br>Synthetic media fixture generation<br>`cargo test --no-fail-fast -- --test-threads=1` |
-| **`frontend`** | `ubuntu-latest` + Node.js 22 LTS | React 19 SPA (`web/`) | `npm ci`<br>`npm run typecheck`<br>`npm run lint` (oxlint)<br>`npm run test` (Vitest)<br>`npm run build` (Vite production build) |
-| **`flutter`** | `ubuntu-latest` + Flutter stable + Java 17 | Flutter Client (`flutter_client/`) | `flutter pub get`<br>`flutter analyze`<br>`flutter test` (417 offline unit, widget, contract & intro tests) |
+| **`frontend`** | `ubuntu-latest` + Node.js 24 | React 19 SPA (`web/`) | `npm ci`<br>`npm run typecheck`<br>`npm run lint` (oxlint)<br>`npm run test` (Vitest)<br>`npm run build` (Vite production build) |
+| **`flutter`** | `ubuntu-latest` + Flutter stable + Java 17 (`setup-java@v5`) | Flutter Client (`flutter_client/`) | `flutter pub get`<br>`flutter analyze`<br>`flutter test` (417 offline unit, widget, contract & intro tests) |
 | **`security`** | `ubuntu-latest` | Full Repository | Gitleaks secret scanner (`gitleaks/gitleaks-action`) scanning for leaked API keys, tokens, credentials, and PII |
 
 ### Finding the Clippy result in GitHub Actions
