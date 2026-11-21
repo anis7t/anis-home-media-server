@@ -16,12 +16,217 @@ use crate::services::path_resolver::PathResolver;
 use crate::services::probe_service::ProbeService;
 use sqlx::PgPool;
 use std::collections::HashSet;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+
+const GPU_DIAGNOSTIC_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const GPU_DIAGNOSTIC_MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
+const GPU_DIAGNOSTIC_RETENTION: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+const GPU_DIAGNOSTIC_TAIL_BYTES: u64 = 64 * 1024;
+const GPU_DIAGNOSTIC_TRUNCATION_MARKER: &[u8] = b"\n[FFmpeg stderr log truncated at 4 MiB]\n";
+
+async fn persist_ffmpeg_stderr<R>(mut stderr: R, mut file: tokio::fs::File) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+{
+    let payload_limit =
+        GPU_DIAGNOSTIC_MAX_FILE_BYTES.saturating_sub(GPU_DIAGNOSTIC_TRUNCATION_MARKER.len() as u64);
+    let mut written = 0u64;
+    let mut truncated = false;
+    let mut write_error = None;
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let read = stderr.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+
+        let remaining = payload_limit.saturating_sub(written) as usize;
+        let write = read.min(remaining);
+        if write > 0 && write_error.is_none() {
+            match file.write_all(&buffer[..write]).await {
+                Ok(()) => written += write as u64,
+                Err(error) => write_error = Some(error),
+            }
+        }
+        truncated |= write < read;
+    }
+
+    if truncated && write_error.is_none() {
+        if let Err(error) = file.write_all(GPU_DIAGNOSTIC_TRUNCATION_MARKER).await {
+            write_error = Some(error);
+        }
+    }
+    if write_error.is_none() {
+        if let Err(error) = file.flush().await {
+            write_error = Some(error);
+        }
+    }
+    write_error.map_or(Ok(()), Err)
+}
+
+async fn finish_ffmpeg_stderr_capture(
+    mut task: tokio::task::JoinHandle<std::io::Result<()>>,
+) -> Option<String> {
+    match tokio::time::timeout(Duration::from_secs(5), &mut task).await {
+        Ok(Ok(Ok(()))) => None,
+        Ok(Ok(Err(error))) => Some(error.to_string()),
+        Ok(Err(error)) => Some(format!("stderr capture task failed: {error}")),
+        Err(_) => {
+            task.abort();
+            let _ = task.await;
+            Some("stderr capture did not stop after FFmpeg exited".into())
+        }
+    }
+}
+
+fn read_ffmpeg_log_tail(path: &Path) -> String {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return "(diagnostic log could not be reopened)".into();
+    };
+    let Ok(length) = file.metadata().map(|metadata| metadata.len()) else {
+        return "(diagnostic log size could not be read)".into();
+    };
+    let start = length.saturating_sub(GPU_DIAGNOSTIC_TAIL_BYTES);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return "(diagnostic log could not be read)".into();
+    }
+    let mut bytes = Vec::with_capacity((length - start) as usize);
+    if file.read_to_end(&mut bytes).is_err() {
+        return "(diagnostic log could not be read)".into();
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn gpu_diagnostic_log_dir() -> PathBuf {
+    std::env::var_os("MEDIA_SERVER_GPU_LOG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("logs").join("gpu"))
+}
+
+fn create_gpu_diagnostic_log(
+    job_id: i64,
+    worker: &GPUWorkerConfig,
+    chunk: &TranscodeChunk,
+) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let directory = gpu_diagnostic_log_dir();
+    std::fs::create_dir_all(&directory)?;
+    prune_gpu_diagnostic_logs(&directory);
+
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let adapter_name = worker
+        .name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>();
+    let base = format!(
+        "job-{job_id}-adapter-{}-{adapter_name}-chunk-{}-{now_ms}",
+        worker.adapter_id, chunk.chunk_id
+    );
+
+    for attempt in 0..100u8 {
+        let suffix = if attempt == 0 {
+            String::new()
+        } else {
+            format!("-{attempt}")
+        };
+        let path = directory.join(format!("{base}{suffix}.partial.log"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a unique GPU diagnostic log filename",
+    ))
+}
+
+fn prune_gpu_diagnostic_logs(directory: &Path) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    let now = SystemTime::now();
+    let mut files = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_file() || !entry.file_name().to_string_lossy().starts_with("job-") {
+                return None;
+            }
+            Some((entry.path(), metadata.len(), metadata.modified().ok()))
+        })
+        .collect::<Vec<_>>();
+
+    for (path, size, modified) in &files {
+        if modified.is_some_and(|time| {
+            now.duration_since(time).unwrap_or_default() > GPU_DIAGNOSTIC_RETENTION
+        }) && std::fs::remove_file(path).is_ok()
+        {
+            debug!(log_path = %path.display(), bytes = size, "Removed expired GPU diagnostic log");
+        }
+    }
+    files.retain(|(path, _, _)| path.exists());
+
+    let mut total = files.iter().map(|(_, size, _)| *size).sum::<u64>();
+    if total <= GPU_DIAGNOSTIC_MAX_TOTAL_BYTES {
+        return;
+    }
+    files.sort_by_key(|(_, _, modified)| *modified);
+    for (path, size, _) in files {
+        if total <= GPU_DIAGNOSTIC_MAX_TOTAL_BYTES {
+            break;
+        }
+        if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".partial.log"))
+        {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(size);
+            debug!(log_path = %path.display(), bytes = size, "Removed oldest GPU diagnostic log to enforce storage cap");
+        }
+    }
+}
+
+fn finalize_gpu_diagnostic_log(path: &Path, preserve: bool) -> PathBuf {
+    if preserve {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return path.to_path_buf();
+        };
+        if let Some(final_name) = name.strip_suffix(".partial.log") {
+            let final_path = path.with_file_name(format!("{final_name}.log"));
+            match std::fs::rename(path, &final_path) {
+                Ok(()) => return final_path,
+                Err(error) => {
+                    warn!(log_path = %path.display(), %error, "Could not finalize GPU diagnostic log");
+                }
+            }
+        }
+    } else if let Err(error) = std::fs::remove_file(path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            warn!(log_path = %path.display(), %error, "Could not remove successful GPU diagnostic log");
+        }
+    }
+    path.to_path_buf()
+}
 
 pub struct TranscodeWorker;
 
@@ -457,6 +662,7 @@ impl TranscodeWorker {
         });
 
         // Spawn independent asynchronous worker loops for each hardware GPU worker slot
+        let transcode_job_id = job.id;
         let mut worker_tasks = Vec::new();
         for (w_idx, worker_cfg) in workers.iter().enumerate() {
             let worker_cfg = worker_cfg.clone();
@@ -500,6 +706,7 @@ impl TranscodeWorker {
                         }
                     }
                     let chunk_res = Self::execute_single_chunk(
+                        transcode_job_id,
                         &v_path,
                         &h_dir,
                         chunk,
@@ -673,6 +880,7 @@ impl TranscodeWorker {
     // tracking inputs explicit for each isolated FFmpeg chunk.
     #[allow(clippy::too_many_arguments)]
     async fn execute_single_chunk(
+        job_id: i64,
         video_path: &Path,
         hls_dir: &Path,
         chunk: &TranscodeChunk,
@@ -684,10 +892,20 @@ impl TranscodeWorker {
     ) -> Result<(), AppError> {
         let chunk_pl_name = format!("chunk_{}.m3u8", chunk.chunk_id);
         let init_name = format!("init_chunk_{}.mp4", chunk.chunk_id);
+        let (diagnostic_path, diagnostic_file) = create_gpu_diagnostic_log(job_id, worker, chunk)
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "Could not create GPU diagnostic log for job #{job_id}, adapter {} ({}), chunk {}: {error}",
+                    worker.adapter_id, worker.name, chunk.chunk_id
+                ))
+            })?;
 
         let mut cmd = tokio::process::Command::new("ffmpeg");
         cmd.current_dir(hls_dir);
-        cmd.arg("-hide_banner").arg("-y");
+        cmd.arg("-hide_banner")
+            .arg("-loglevel")
+            .arg("info")
+            .arg("-y");
 
         // HW Init
         for arg in worker.get_ffmpeg_init_args() {
@@ -748,22 +966,55 @@ impl TranscodeWorker {
         #[cfg(windows)]
         cmd.creation_flags(0x00004000); // BELOW_NORMAL_PRIORITY_CLASS
 
-        let child = cmd.spawn().map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to spawn FFmpeg for chunk {}: {}",
-                chunk.chunk_id, e
-            ))
-        })?;
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                finalize_gpu_diagnostic_log(&diagnostic_path, false);
+                return Err(AppError::Internal(format!(
+                    "Failed to spawn FFmpeg for job #{job_id}, adapter {} ({}), chunk {}: {error}",
+                    worker.adapter_id, worker.name, chunk.chunk_id
+                )));
+            }
+        };
 
         let child_pid = child.id();
+        info!(
+            job_id,
+            adapter_id = worker.adapter_id,
+            adapter = %worker.name,
+            chunk_id = chunk.chunk_id,
+            start_seconds = chunk.start_time,
+            duration_seconds = chunk.duration,
+            pid = ?child_pid,
+            log_path = %diagnostic_path.display(),
+            "Started FFmpeg chunk on GPU adapter"
+        );
+        let Some(stderr) = child.stderr.take() else {
+            finalize_gpu_diagnostic_log(&diagnostic_path, true);
+            return Err(AppError::Internal(format!(
+                "FFmpeg stderr capture unavailable for job #{job_id}, adapter {} ({}), chunk {}",
+                worker.adapter_id, worker.name, chunk.chunk_id
+            )));
+        };
+        let diagnostic_file = tokio::fs::File::from_std(diagnostic_file);
+        let stderr_task =
+            tokio::spawn(async move { persist_ffmpeg_stderr(stderr, diagnostic_file).await });
         if let Some(pid) = child_pid {
             active_pids.lock().await.insert(pid);
         }
 
         // Bounded per-chunk timeout (180s) to guard against GPU driver deadlocks
         let timeout_duration = Duration::from_secs(180);
+        let mut wait = Box::pin(async {
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return Ok::<_, std::io::Error>(status),
+                    Ok(None) => tokio::time::sleep(Duration::from_millis(100)).await,
+                    Err(error) => return Err(error),
+                }
+            }
+        });
         let output_result = if thermal_guarded {
-            let mut wait = Box::pin(child.wait_with_output());
             tokio::select! {
                 result = tokio::time::timeout(timeout_duration, &mut wait) => result,
                 _ = async {
@@ -775,44 +1026,95 @@ impl TranscodeWorker {
                     }
                 } => {
                     if let Some(pid) = child_pid {
-                        active_pids.lock().await.remove(&pid);
                         let _ = std::process::Command::new("taskkill")
                             .args(["/PID", &pid.to_string(), "/F", "/T"])
                             .output();
                     }
+                    let _ = tokio::time::timeout(Duration::from_secs(5), &mut wait).await;
+                    if let Some(pid) = child_pid {
+                        active_pids.lock().await.remove(&pid);
+                    }
+                    let stderr_error = finish_ffmpeg_stderr_capture(stderr_task).await;
+                    let retained_path = finalize_gpu_diagnostic_log(&diagnostic_path, true);
+                    let stderr_tail = read_ffmpeg_log_tail(&retained_path);
+                    error!(
+                        job_id,
+                        adapter_id = worker.adapter_id,
+                        adapter = %worker.name,
+                        chunk_id = chunk.chunk_id,
+                        pid = ?child_pid,
+                        log_path = %retained_path.display(),
+                        stderr_capture_error = ?stderr_error,
+                        stderr_tail = %stderr_tail,
+                        "Stopped GPU FFmpeg chunk because temperature reached the critical limit or HWiNFO telemetry was lost"
+                    );
                     return Err(AppError::Internal(format!(
-                        "Critical GPU temperature or sensor loss on {}; stopped chunk {}",
-                        worker.name, chunk.chunk_id
+                        "Critical GPU temperature or sensor loss on {}; stopped job #{job_id} chunk {} (FFmpeg diagnostics: {})",
+                        worker.name, chunk.chunk_id, retained_path.display()
                     )));
                 }
             }
         } else {
-            tokio::time::timeout(timeout_duration, child.wait_with_output()).await
+            tokio::time::timeout(timeout_duration, &mut wait).await
         };
-        let output = match output_result {
-            Ok(Ok(out)) => out,
+        let status = match output_result {
+            Ok(Ok(status)) => status,
             Ok(Err(e)) => {
                 if let Some(pid) = child_pid {
                     active_pids.lock().await.remove(&pid);
                 }
+                let stderr_error = finish_ffmpeg_stderr_capture(stderr_task).await;
+                let retained_path = finalize_gpu_diagnostic_log(&diagnostic_path, true);
+                let stderr_tail = read_ffmpeg_log_tail(&retained_path);
+                error!(
+                    job_id,
+                    adapter_id = worker.adapter_id,
+                    adapter = %worker.name,
+                    chunk_id = chunk.chunk_id,
+                    pid = ?child_pid,
+                    log_path = %retained_path.display(),
+                    stderr_capture_error = ?stderr_error,
+                    stderr_tail = %stderr_tail,
+                    %e,
+                    "Error while waiting for GPU FFmpeg chunk"
+                );
                 return Err(AppError::Internal(format!(
-                    "FFmpeg wait error on chunk {}: {}",
-                    chunk.chunk_id, e
+                    "FFmpeg wait error on job #{job_id}, adapter {} ({}), chunk {}: {} (diagnostics: {})",
+                    worker.adapter_id, worker.name, chunk.chunk_id, e, retained_path.display()
                 )));
             }
             Err(_) => {
                 // Timeout elapsed - kill child process to release GPU contexts
                 if let Some(pid) = child_pid {
-                    active_pids.lock().await.remove(&pid);
                     let _ = std::process::Command::new("taskkill")
                         .args(["/PID", &pid.to_string(), "/F", "/T"])
                         .output();
                 }
+                let _ = tokio::time::timeout(Duration::from_secs(5), &mut wait).await;
+                if let Some(pid) = child_pid {
+                    active_pids.lock().await.remove(&pid);
+                }
+                let stderr_error = finish_ffmpeg_stderr_capture(stderr_task).await;
+                let retained_path = finalize_gpu_diagnostic_log(&diagnostic_path, true);
+                let stderr_tail = read_ffmpeg_log_tail(&retained_path);
+                error!(
+                    job_id,
+                    adapter_id = worker.adapter_id,
+                    adapter = %worker.name,
+                    chunk_id = chunk.chunk_id,
+                    pid = ?child_pid,
+                    timeout_seconds = timeout_duration.as_secs(),
+                    log_path = %retained_path.display(),
+                    stderr_capture_error = ?stderr_error,
+                    stderr_tail = %stderr_tail,
+                    "GPU FFmpeg chunk timed out; possible driver hang or TDR"
+                );
                 return Err(AppError::Internal(format!(
-                    "Chunk {} on {} timed out after {}s (possible GPU hang/TDR)",
+                    "Job #{job_id} chunk {} on {} timed out after {}s (possible GPU hang/TDR; diagnostics: {})",
                     chunk.chunk_id,
                     worker.name,
-                    timeout_duration.as_secs()
+                    timeout_duration.as_secs(),
+                    retained_path.display()
                 )));
             }
         };
@@ -821,35 +1123,64 @@ impl TranscodeWorker {
             active_pids.lock().await.remove(&pid);
         }
 
-        if !output.status.success() {
-            let stderr_text = String::from_utf8_lossy(&output.stderr);
+        let stderr_error = finish_ffmpeg_stderr_capture(stderr_task).await;
+
+        if !status.success() {
+            let retained_path = finalize_gpu_diagnostic_log(&diagnostic_path, true);
+            let stderr_text = read_ffmpeg_log_tail(&retained_path);
             let last_err = stderr_text
                 .lines()
                 .rfind(|l| !l.trim().is_empty())
                 .unwrap_or("unknown FFmpeg failure");
 
-            // Log explicit diagnostic if AMF / D3D11 device error is detected
-            if stderr_text.contains("AMF_")
-                || stderr_text.contains("DXGI_ERROR")
-                || stderr_text.contains("D3D11")
-            {
-                error!(
-                    "AMF/GPU driver error on adapter {} ({}): stderr: {}",
-                    worker.adapter_id, worker.name, last_err
-                );
-            }
+            error!(
+                job_id,
+                adapter_id = worker.adapter_id,
+                adapter = %worker.name,
+                chunk_id = chunk.chunk_id,
+                exit_code = ?status.code(),
+                log_path = %retained_path.display(),
+                stderr_capture_error = ?stderr_error,
+                stderr_tail = %stderr_text,
+                "AMF/GPU FFmpeg chunk failed; full stderr was retained in the diagnostic file"
+            );
 
             return Err(AppError::Internal(format!(
-                "Chunk {} failed on {}: {}",
-                chunk.chunk_id, worker.name, last_err
+                "Job #{job_id} chunk {} failed on adapter {} ({}): {} (diagnostics: {})",
+                chunk.chunk_id,
+                worker.adapter_id,
+                worker.name,
+                last_err,
+                retained_path.display()
             )));
+        }
+
+        if let Some(error) = stderr_error.as_deref() {
+            error!(
+                job_id,
+                adapter_id = worker.adapter_id,
+                adapter = %worker.name,
+                chunk_id = chunk.chunk_id,
+                log_path = %diagnostic_path.display(),
+                capture_error = error,
+                "GPU FFmpeg completed, but stderr capture reported an error; diagnostic file retained"
+            );
         }
 
         // Validate chunk produced usable output
         if !ChunkTranscodeService::chunk_output_ok(hls_dir, chunk) {
+            let retained_path = finalize_gpu_diagnostic_log(&diagnostic_path, true);
+            error!(
+                job_id,
+                adapter_id = worker.adapter_id,
+                adapter = %worker.name,
+                chunk_id = chunk.chunk_id,
+                log_path = %retained_path.display(),
+                "GPU FFmpeg exited successfully but its output failed validation; diagnostics retained"
+            );
             return Err(AppError::Internal(format!(
-                "Chunk {} on {} failed output verification",
-                chunk.chunk_id, worker.name
+                "Job #{job_id} chunk {} on adapter {} ({}) failed output verification (diagnostics: {})",
+                chunk.chunk_id, worker.adapter_id, worker.name, retained_path.display()
             )));
         }
 
@@ -861,6 +1192,173 @@ impl TranscodeWorker {
             chunk.start_seg,
         );
 
+        finalize_gpu_diagnostic_log(&diagnostic_path, stderr_error.is_some());
+        debug!(
+            job_id,
+            adapter_id = worker.adapter_id,
+            adapter = %worker.name,
+            chunk_id = chunk.chunk_id,
+            "GPU FFmpeg chunk completed and passed output validation"
+        );
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::gpu_service::GpuBackend;
+    use crate::services::gpu_thermal::{dual_gpu_thermal_safe, read_temperatures, ThermalStatus};
+
+    #[tokio::test]
+    #[ignore = "requires both Radeon AMF adapters and fresh HWiNFO shared-memory temperatures"]
+    async fn live_dual_gpu_chunk_transcode_and_diagnostic_capture() {
+        assert!(
+            dual_gpu_thermal_safe(),
+            "dual-GPU thermal gate must be safe"
+        );
+        let workers = GpuService::detect_available_gpus(true);
+        let rx = workers
+            .iter()
+            .find(|worker| worker.adapter_id == 1 && worker.backend == GpuBackend::Amf)
+            .expect("RX 560X AMF adapter should be available")
+            .clone();
+        let vega = workers
+            .iter()
+            .find(|worker| worker.adapter_id == 0 && worker.backend == GpuBackend::Amf)
+            .expect("Vega 8 AMF adapter should be available")
+            .clone();
+
+        let test_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("Rust crate should be inside the repository")
+            .to_path_buf();
+        let scratch = repo_root
+            .join("cache/release-build/dual-gpu-validation/scratch")
+            .join(format!("app-dual-gpu-{test_id}"));
+        let logs = scratch.join("gpu-logs");
+        let source = scratch.join("synthetic-source.mp4");
+        let rx_output = scratch.join("rx-560x");
+        let vega_output = scratch.join("vega-8");
+        std::fs::create_dir_all(&rx_output).unwrap();
+        std::fs::create_dir_all(&vega_output).unwrap();
+
+        let old_log_dir = std::env::var_os("MEDIA_SERVER_GPU_LOG_DIR");
+        std::env::set_var("MEDIA_SERVER_GPU_LOG_DIR", &logs);
+        let source_status = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=1280x720:rate=24:duration=3",
+                "-frames:v",
+                "72",
+                "-c:v",
+                "mpeg4",
+                "-q:v",
+                "5",
+                "-an",
+            ])
+            .arg(&source)
+            .status()
+            .expect("FFmpeg should generate the synthetic scratch source");
+        assert!(
+            source_status.success(),
+            "synthetic FFmpeg source generation failed"
+        );
+
+        let chunk = TranscodeChunk {
+            chunk_id: 0,
+            start_time: 0.0,
+            duration: 3.0,
+            start_seg: 0,
+            expected_segs: 1,
+        };
+        let active_rx = Arc::new(Mutex::new(HashSet::new()));
+        let active_vega = Arc::new(Mutex::new(HashSet::new()));
+        let (rx_result, vega_result) = tokio::join!(
+            TranscodeWorker::execute_single_chunk(
+                9_000_001,
+                &source,
+                &rx_output,
+                &chunk,
+                &rx,
+                false,
+                Some(720),
+                true,
+                active_rx,
+            ),
+            TranscodeWorker::execute_single_chunk(
+                9_000_002,
+                &source,
+                &vega_output,
+                &chunk,
+                &vega,
+                false,
+                Some(720),
+                true,
+                active_vega,
+            )
+        );
+
+        std::env::remove_var("MEDIA_SERVER_GPU_LOG_DIR");
+        if let Some(old) = old_log_dir {
+            std::env::set_var("MEDIA_SERVER_GPU_LOG_DIR", old);
+        }
+
+        assert!(rx_result.is_ok(), "RX 560X chunk failed: {rx_result:?}");
+        assert!(vega_result.is_ok(), "Vega 8 chunk failed: {vega_result:?}");
+        assert!(ChunkTranscodeService::chunk_output_ok(&rx_output, &chunk));
+        assert!(ChunkTranscodeService::chunk_output_ok(&vega_output, &chunk));
+        assert!(
+            std::fs::read_dir(&logs)
+                .map(|mut entries| entries.next().is_none())
+                .unwrap_or(true),
+            "successful chunks should remove their temporary stderr logs"
+        );
+        match read_temperatures() {
+            ThermalStatus::Safe(temps) => eprintln!(
+                "Concurrent app chunk test temperatures: RX 560X={:.1}C, Vega 8={:.1}C, age={}s",
+                temps.rx560x_c, temps.vega8_c, temps.age_secs
+            ),
+            ThermalStatus::Unsafe(reason) => panic!("HWiNFO readings became unsafe: {reason}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_stderr_capture_is_bounded_and_marks_truncation() {
+        let test_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "media-server-gpu-log-test-{}-{test_id}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("stderr.log");
+        let file = tokio::fs::File::create(&path).await.unwrap();
+        let (mut writer, reader) = tokio::io::duplex(16 * 1024);
+        let input = vec![b'x'; GPU_DIAGNOSTIC_MAX_FILE_BYTES as usize + 1024];
+        let producer = tokio::spawn(async move {
+            writer.write_all(&input).await.unwrap();
+        });
+
+        persist_ffmpeg_stderr(reader, file).await.unwrap();
+        producer.await.unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(bytes.len() as u64, GPU_DIAGNOSTIC_MAX_FILE_BYTES);
+        assert!(bytes.ends_with(GPU_DIAGNOSTIC_TRUNCATION_MARKER));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

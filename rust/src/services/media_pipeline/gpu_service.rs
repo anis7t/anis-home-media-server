@@ -7,7 +7,7 @@ use crate::services::probe_service::ProbeStream;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 /// Subprocess priority level for GPU and CPU media processing tasks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -317,22 +317,47 @@ impl GpuService {
                 Ok(None) => {
                     if start.elapsed() > timeout {
                         let _ = child.kill();
+                        let stderr = child
+                            .wait_with_output()
+                            .map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
+                            .unwrap_or_else(|error| {
+                                format!("could not collect FFmpeg stderr: {error}")
+                            });
+                        warn!(
+                            adapter_id = adapter_idx,
+                            timeout_seconds = timeout.as_secs(),
+                            stderr = %stderr,
+                            "D3D11 AMF adapter probe timed out"
+                        );
                         return None;
                     }
                     std::thread::sleep(Duration::from_millis(50));
                 }
-                Err(_) => return None,
+                Err(error) => {
+                    warn!(adapter_id = adapter_idx, %error, "D3D11 AMF adapter probe wait failed");
+                    return None;
+                }
             }
         };
 
-        if status.success() {
-            let mut stderr_bytes = Vec::new();
-            if let Some(mut err_pipe) = child.stderr.take() {
-                use std::io::Read;
-                let _ = err_pipe.read_to_end(&mut stderr_bytes);
-            }
-            let stderr_text = String::from_utf8_lossy(&stderr_bytes);
+        let mut stderr_bytes = Vec::new();
+        if let Some(mut err_pipe) = child.stderr.take() {
+            use std::io::Read;
+            let _ = err_pipe.read_to_end(&mut stderr_bytes);
+        }
+        let stderr_text = String::from_utf8_lossy(&stderr_bytes);
 
+        if !status.success() {
+            error!(
+                adapter_id = adapter_idx,
+                exit_code = ?status.code(),
+                stderr = %stderr_text,
+                "D3D11 AMF adapter probe failed"
+            );
+            return None;
+        }
+
+        if status.success() {
             // Extract device name e.g. "Using device 1002:67df (Radeon RX 560X Series)"
             let name = if let Some(cap) = stderr_text.lines().find_map(|line| {
                 if let Some(idx) = line.find("Using device ") {
@@ -364,7 +389,7 @@ impl GpuService {
                 is_discrete,
             })
         } else {
-            None
+            unreachable!("failed adapter probe returned above")
         }
     }
 
