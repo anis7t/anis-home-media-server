@@ -145,6 +145,7 @@ pub async fn test_config() -> AppConfig {
 /// container and stream values, and a synthetic placeholder cannot provide
 /// them. The file is only ever read.
 pub fn discover_real_media_file(media_roots: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    let mut fallback = None;
     for root in media_roots {
         if !root.is_dir() {
             continue;
@@ -163,12 +164,14 @@ pub fn discover_real_media_file(media_roots: &[std::path::PathBuf]) -> Option<st
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if matches!(ext.as_str(), "mp4" | "mkv" | "m4v" | "webm") {
+            if matches!(ext.as_str(), "mp4" | "m4v" | "webm") {
                 return Some(path.to_path_buf());
+            } else if ext == "mkv" && fallback.is_none() {
+                fallback = Some(path.to_path_buf());
             }
         }
     }
-    None
+    fallback
 }
 
 /// Seed the test database with a catalog row for a real, probeable media file.

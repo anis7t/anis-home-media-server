@@ -115,7 +115,7 @@ export function useMediaUpload() {
         setState({
           ...INITIAL_STATE,
           phase: 'error',
-          error: 'The selected file exceeds the 20 GiB limit.',
+          error: 'The selected file exceeds the 25 GiB limit.',
           errorStatus: 413,
         });
         return;

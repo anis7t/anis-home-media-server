@@ -14,21 +14,20 @@ the Rust service:
 MEDIA_SERVER_ENABLE_DUAL_GPU=1
 MEDIA_SERVER_GPU_MAX_TEMP_C=85
 MEDIA_SERVER_GPU_CRITICAL_TEMP_C=92
+MEDIA_SERVER_GPU_COOLDOWN_TEMP_C=75.0
+MEDIA_SERVER_CHUNK_BREATHER_MS=1000
+MEDIA_SERVER_4K_CHUNK_BREATHER_MS=5000
+MEDIA_SERVER_REQUIRE_HWINFO_FOR_4K=1
 MEDIA_SERVER_GPU_TEMP_RX_MATCH=560X
 MEDIA_SERVER_GPU_TEMP_VEGA_MATCH=Vega 8
 ```
 
-In HWiNFO, enable Shared Memory Support and keep sensor publishing active. The
-server requires fresh Celsius readings for both adapters. Sensor group names
-must contain the configured match strings, and the reading label must identify
-a temperature. Missing, malformed, stale (older than 15 seconds), or over-limit
-data blocks dual dispatch. When several temperature readings match an adapter,
-the hottest reading is used. At chunk boundaries, active jobs wait for
-fresh safe readings before starting another FFmpeg process. If either adapter
-reaches the critical limit or telemetry disappears during an encode, the active
-FFmpeg process is terminated and the job is left retryable. HWiNFO Shared Memory
-Support may stop publishing after a period of time depending on the edition;
-when that happens the service pauses safely.
+In HWiNFO, enable Shared Memory Support and keep sensor publishing active. HWiNFO 8.60 Portable is installed at `C:\HWiNFO\HWiNFO64.exe` with preconfigured `HWiNFO64.INI` and Windows Startup integration (`HKCU:...\Run`). The server requires fresh Celsius readings for both adapters. Sensor group names must contain the configured match strings, and the reading label must identify a temperature. Missing, malformed, stale (older than 15 seconds), or over-limit data blocks dual dispatch. When several temperature readings match an adapter, the hottest reading is used.
+
+### Thermal Protection Invariants:
+1. **Unconditional Chunk Guarding**: Every transcode chunk (single-GPU and dual-GPU) is thermal-guarded. If the active GPU hits the critical limit (default 92°C) or sensor loss occurs, the active FFmpeg child process is immediately terminated via `taskkill /PID ... /F /T` and persistent diagnostic logs are retained.
+2. **Heavy / 4K Workload Admission**: 4K sources and 4K targets strictly require active HWiNFO Shared Memory telemetry (`MEDIA_SERVER_REQUIRE_HWINFO_FOR_4K=1`). If HWiNFO is not running, heavy transcode jobs are safely paused with a warning to protect mobile laptop silicon from hardware thermal shutdowns.
+3. **Dynamic Cooldown Breathers**: Heavy workloads apply a base 5,000ms breather between chunks (`MEDIA_SERVER_4K_CHUNK_BREATHER_MS`). In addition, before proceeding to the next chunk, workers dynamically poll the GPU temperature and wait until the adapter drops below `MEDIA_SERVER_GPU_COOLDOWN_TEMP_C` (default 75°C) to prevent thermal saturation across shared heatpipes.
 
 If dual mode or telemetry is unavailable when the service starts, it starts in
 single-RX mode. Restart the Rust service after correcting HWiNFO or sensor

@@ -57,11 +57,20 @@ foreach ($line in $currentEnv) {
         Write-Host "Updated RUST_LOG filter"
     } elseif ($line -like "MEDIA_SERVER_ENABLE_DUAL_GPU=*") {
         continue
+    } elseif ($line -like "MEDIA_SERVER_4K_CHUNK_BREATHER_MS=*") {
+        continue
+    } elseif ($line -like "MEDIA_SERVER_GPU_COOLDOWN_TEMP_C=*") {
+        continue
+    } elseif ($line -like "MEDIA_SERVER_REQUIRE_HWINFO_FOR_4K=*") {
+        continue
     } elseif ($line.Trim().Length -gt 0) {
         $newEnv.Add($line)
     }
 }
 $newEnv.Add("MEDIA_SERVER_ENABLE_DUAL_GPU=1")
+$newEnv.Add("MEDIA_SERVER_4K_CHUNK_BREATHER_MS=5000")
+$newEnv.Add("MEDIA_SERVER_GPU_COOLDOWN_TEMP_C=75.0")
+$newEnv.Add("MEDIA_SERVER_REQUIRE_HWINFO_FOR_4K=1")
 
 Set-ItemProperty -Path $regPath -Name "AppEnvironmentExtra" -Value $newEnv.ToArray() -Type MultiString
 Write-Host "Registry updated successfully."

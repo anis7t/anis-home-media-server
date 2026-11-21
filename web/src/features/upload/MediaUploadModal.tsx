@@ -107,7 +107,7 @@ export function MediaUploadModal({
       return;
     }
     if (selected.size > MAX_UPLOAD_BYTES) {
-      setLocalError('The selected file exceeds the 20 GiB limit.');
+      setLocalError('The selected file exceeds the 25 GiB limit.');
       return;
     }
     setLocalError(null);
@@ -156,7 +156,7 @@ export function MediaUploadModal({
                 Upload media
               </h2>
               <p className="text-xs text-white/50">
-                Resumable 8 MiB chunks · up to 20 GiB
+                Resumable 8 MiB chunks · up to 25 GiB
               </p>
             </div>
           </div>

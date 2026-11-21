@@ -8,7 +8,7 @@ export const SUPPORTED_UPLOAD_EXTENSIONS = [
   'm4v',
 ] as const;
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 * 1024;
 export const CHUNK_SIZE = 8 * 1024 * 1024;
 
 export interface ChunkInit {
@@ -145,7 +145,7 @@ export async function initUpload(
     throw new UploadApiError(400, 'The selected file is empty.');
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new UploadApiError(413, 'The selected file exceeds the 20 GiB limit.');
+    throw new UploadApiError(413, 'The selected file exceeds the 25 GiB limit.');
   }
 
   return requestJson<ChunkInit>(
