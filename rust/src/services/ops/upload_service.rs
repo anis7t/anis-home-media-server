@@ -8,8 +8,8 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 /// Matches the Flask-era chunk size: 8 MiB per request.
 pub const CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
-/// Matches the Flask-era total cap: 20 GiB.
-pub const MAX_UPLOAD_BYTES: u64 = 20 * 1024 * 1024 * 1024;
+/// Matches the resumable upload cap: 25 GiB.
+pub const MAX_UPLOAD_BYTES: u64 = 25 * 1024 * 1024 * 1024;
 
 /// The formats the upload UI advertises and the backend accepts. The scanner
 /// supports more containers, but limiting the write surface to these keeps the

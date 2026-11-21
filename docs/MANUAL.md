@@ -332,7 +332,7 @@ Each movie features a dedicated cinema details page (`/movie/<filename>`):
 Upload new media files directly through the browser without needing FTP or SMB shares:
 1. Sign in as an administrator, or have the Admin PIN ready. The upload routes are admin-gated: a signed-in admin session works without a PIN; otherwise the browser asks for the PIN once and keeps it for the tab session.
 2. On the library page (`/`), click **Upload Media**.
-3. Drag and drop or choose a `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, or `.m4v` file up to **20 GiB**.
+3. Drag and drop or choose a `.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, or `.m4v` file up to **25 GiB**.
 4. *(Optional)* Enter a clean display title if your original file has a cryptic scene name. The original extension is preserved.
 5. Leave **Replace an existing file with the same name** off to keep both files; the server appends ` (1)`, ` (2)`, and so on. Enable it only when you intend to replace a same-named file.
 6. Click **Start upload**. The browser sends sequential **8 MiB** chunks at the offset the server reports, shows transfer speed and a measured ETA, retries transient network/5xx failures, and can resume from a `409` offset mismatch. **Abort upload** removes the temporary session.

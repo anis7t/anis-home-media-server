@@ -4,6 +4,7 @@ import {
   isSupportedMediaFile,
   sendChunk,
   UploadApiError,
+  MAX_UPLOAD_BYTES,
 } from './uploadApi';
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -139,6 +140,41 @@ describe('uploadApi', () => {
     expect(isSupportedMediaFile('payload.exe')).toBe(false);
     expect(isSupportedMediaFile('archive.zip')).toBe(false);
     expect(isSupportedMediaFile('no-extension')).toBe(false);
+  });
+
+  it('rejects files exceeding the 25 GiB limit before network init', async () => {
+    expect(MAX_UPLOAD_BYTES).toBe(25 * 1024 * 1024 * 1024);
+    const file = new File([], 'LargeMovie.mkv', { type: 'video/x-matroska' });
+    Object.defineProperty(file, 'size', { value: MAX_UPLOAD_BYTES + 1 });
+
+    await expect(initUpload(file, {})).rejects.toMatchObject({
+      name: 'UploadApiError',
+      status: 413,
+      message: 'The selected file exceeds the 25 GiB limit.',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a 24 GiB file within the 25 GiB limit to initialize', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        upload_id: 'upload-24gb',
+        filename: 'LargeMovie.mkv',
+        size: 24 * 1024 * 1024 * 1024,
+        offset: 0,
+        chunk_size: 8 * 1024 * 1024,
+      }),
+    );
+
+    const file = new File([], 'LargeMovie.mkv', { type: 'video/x-matroska' });
+    const size24Gb = 24 * 1024 * 1024 * 1024;
+    Object.defineProperty(file, 'size', { value: size24Gb });
+
+    const result = await initUpload(file, {});
+    expect(result.upload_id).toBe('upload-24gb');
+    expect(result.size).toBe(size24Gb);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('sends chunks with the offset and parses the acknowledgement', async () => {

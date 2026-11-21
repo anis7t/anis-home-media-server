@@ -757,7 +757,7 @@ export interface paths {
         put?: never;
         /**
          * Initialize Resumable Chunked Upload Session
-         * @description Starts an 8 MiB-chunk resumable session for a file up to 20 GiB.
+         * @description Starts an 8 MiB-chunk resumable session for a file up to 25 GiB.
          *
          *     **Admin authorization is required.** The JSON request stays under
          *     Axum's 2 MB default body limit; only the chunk route carries the larger
@@ -2959,7 +2959,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Size exceeds the 20 GiB safety limit. */
+            /** @description Size exceeds the 25 GiB safety limit. */
             413: {
                 headers: {
                     [name: string]: unknown;

@@ -840,7 +840,7 @@ paths:
     post:
       summary: Initialize Resumable Chunked Upload Session
       description: |
-        Starts an 8 MiB-chunk resumable session for a file up to 20 GiB.
+        Starts an 8 MiB-chunk resumable session for a file up to 25 GiB.
 
         **Admin authorization is required.** The JSON request stays under
         Axum's 2 MB default body limit; only the chunk route carries the larger
@@ -877,7 +877,7 @@ paths:
         "403":
           description: Admin authorization required.
         "413":
-          description: Size exceeds the 20 GiB safety limit.
+          description: Size exceeds the 25 GiB safety limit.
         "415":
           description: Unsupported media extension.
 

@@ -452,3 +452,50 @@ async fn upload_init_keeps_the_default_json_body_limit() {
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     ctx.restore_pin().await;
 }
+
+#[tokio::test]
+async fn upload_init_enforces_25_gib_cap() {
+    let ctx = UploadCtx::new().await;
+    let cap = 25 * 1024 * 1024 * 1024u64;
+
+    // 25 GiB exact declaration succeeds
+    let valid_payload = json!({
+        "filename": "Allowed25G.mkv",
+        "size": cap,
+    });
+    let res = ctx
+        .app
+        .clone()
+        .oneshot(init_req(
+            "/api/upload/chunk/init",
+            Some(&ctx.admin_session),
+            &valid_payload,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 25 GiB + 1 byte declaration is rejected with 413
+    let excessive_payload = json!({
+        "filename": "TooLarge.mkv",
+        "size": cap + 1,
+    });
+    let res = ctx
+        .app
+        .clone()
+        .oneshot(init_req(
+            "/api/upload/chunk/init",
+            Some(&ctx.admin_session),
+            &excessive_payload,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let body = body_json(res).await;
+    assert_eq!(
+        body["error"].as_str().unwrap(),
+        "Upload exceeds the 25 GiB cap"
+    );
+
+    ctx.restore_pin().await;
+}

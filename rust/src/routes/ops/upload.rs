@@ -20,7 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 
 /// 256 MiB is the compatibility cap for the single-file route. Anything larger
-/// uses the resumable chunked route (8 MiB chunks, 20 GiB total).
+/// uses the resumable chunked route (8 MiB chunks, 25 GiB total).
 const SINGLE_UPLOAD_MAX: usize = 256 * 1024 * 1024;
 
 #[derive(Clone)]
