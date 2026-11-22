@@ -89,6 +89,8 @@ void main() {
       expect(find.textContaining('Production (Stable)'), findsOneWidget);
       expect(find.text('Developer'), findsWidgets);
       expect(find.text('Check for Updates'), findsOneWidget);
+      expect(find.text('ABOUT & PRIVACY'), findsOneWidget);
+      expect(find.text('Privacy Policy & Architecture'), findsOneWidget);
     },
   );
 

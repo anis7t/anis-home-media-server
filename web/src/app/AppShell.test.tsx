@@ -139,3 +139,39 @@ describe('AppShell sign-in header', () => {
     expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 });
+
+describe('AppShell footer & privacy policy', () => {
+  it('renders amended footer note with Zero 3rd-party tracking', async () => {
+    mockApi({ authenticated: false });
+    renderShell();
+
+    expect(
+      await screen.findByText(/Zero 3rd-party tracking/i),
+    ).toBeInTheDocument();
+  });
+
+  it('opens and closes the Privacy Policy & Architecture modal with disclosures', async () => {
+    const user = userEvent.setup();
+    mockApi({ authenticated: false });
+    renderShell();
+
+    const privacyBtn = await screen.findByRole('button', { name: /privacy policy/i });
+    await user.click(privacyBtn);
+
+    expect(
+      await screen.findByRole('dialog', { name: /privacy policy & architecture/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Zero Third-Party Tracking')).toBeInTheDocument();
+    expect(screen.getByText('First-Party Operational Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText('Local Database Persistence')).toBeInTheDocument();
+    expect(screen.getByText('External Media Metadata')).toBeInTheDocument();
+    expect(screen.getByText('Encrypted Remote Transport')).toBeInTheDocument();
+
+    const closeBtn = screen.getByRole('button', { name: /close dialog/i });
+    await user.click(closeBtn);
+
+    expect(
+      screen.queryByRole('dialog', { name: /privacy policy & architecture/i }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -12,6 +12,7 @@ import '../../../../core/device/data/device_capability_service.dart';
 import '../../../../core/widgets/tv_focusable.dart';
 import '../../../updater/presentation/controllers/update_controller.dart';
 import '../../../updater/presentation/widgets/update_prompt_dialog.dart';
+import 'privacy_policy_dialog.dart';
 
 /// Reusable settings content displaying server origin, device identity,
 /// application version, update channel selector, and live update checks.
@@ -664,6 +665,85 @@ class SettingsContent extends ConsumerWidget {
                             .setOverride(current.copyWith(isTv: val));
                       },
                     ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+
+        // Section 6: About & Privacy
+        _buildSectionHeader('ABOUT & PRIVACY'),
+        const SizedBox(height: 8),
+        TvFocusable(
+          borderRadius: BorderRadius.circular(12),
+          borderWidth: 4,
+          focusedBorderColor: AppColors.brandRedLight,
+          focusedBackgroundColor: AppColors.surfaceHighlight,
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (_) => const PrivacyPolicyDialog(),
+            );
+          },
+          builder: (context, isFocused, child) {
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: isFocused
+                    ? AppColors.brandRed.withValues(alpha: 0.28)
+                    : AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isFocused
+                      ? AppColors.brandRedLight
+                      : AppColors.borderSubtle,
+                  width: isFocused ? 4 : 1.0,
+                ),
+                boxShadow: isFocused
+                    ? [
+                        const BoxShadow(
+                          color: AppColors.brandRedGlow,
+                          blurRadius: 24,
+                          spreadRadius: 3,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.shield_outlined,
+                    color: AppColors.brandRed,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Privacy Policy & Architecture',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Self-hosted private streaming · Zero 3rd-party tracking · Direct hardware pipeline',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textMuted,
+                    size: 20,
                   ),
                 ],
               ),

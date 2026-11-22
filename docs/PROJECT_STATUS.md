@@ -1,8 +1,33 @@
 # Project Status, Completed Work, Bugs & Hosting Requirements
 
-Last reviewed: 2026-11-22
+Last reviewed: 2026-11-23
 Repository: `anis7t/media-server`
 Working branch: `main`
+
+---
+
+## 2026-11-23 — Privacy Transparency Parity, Web Footer Amendment & Android Client Release v1.4.13
+
+- **Web Footer Note & Privacy Transparency Amendment (`web/src/app/AppShell.tsx`)**:
+  - Addressed the contradictory `"Zero telemetry"` phrase positioned directly adjacent to `"Devices Telemetry"` in the footer.
+  - Slogan updated to: `"Self-hosted private streaming · Zero 3rd-party tracking · Direct hardware pipeline"`.
+  - Expanded the in-app **Privacy Policy & Architecture** modal into 5 clear disclosure sections:
+    1. *Zero Third-Party Tracking*: No tracking SDKs, ad networks, marketing pixels, or third-party cookies.
+    2. *First-Party Operational Diagnostics*: Disclosing that operational telemetry (GPU/CPU stats, "Stats for Nerds" in-player metrics, client hints, and LAN/WAN presence heartbeats) is strictly local, stored in PostgreSQL, and privacy-scoped to the active device by default.
+    3. *Local Database Persistence*: All accounts, watch history, and pairing tokens remain in PostgreSQL on the host machine.
+    4. *External Media Metadata*: Disclosing that TMDb API requests are made directly by the backend solely for media matching (posters/synopses) with no user identities or logs.
+    5. *Encrypted Remote Transport*: Disclosing Cloudflare Named Tunnel usage strictly as an encrypted transport bridge.
+  - Added unit tests in `web/src/app/AppShell.test.tsx` verifying footer text and modal interaction.
+- **Flutter Client Privacy Transparency Parity (`flutter_client/`)**:
+  - Implemented `PrivacyPolicyDialog` (`flutter_client/lib/features/settings/presentation/widgets/privacy_policy_dialog.dart`) matching web architectural transparency declarations with TV D-pad and mobile touch accessibility.
+  - Integrated Section 6 `"ABOUT & PRIVACY"` into `SettingsContent` (`settings_content.dart`) with a focusable `TvFocusable` tile.
+  - Added test suite `privacy_policy_dialog_test.dart` and updated `settings_screen_test.dart` (9/9 settings tests passing).
+- **Production Artifact Rebuild & Android Client Release v1.4.13 (`updates/production/`)**:
+  - Rebuilt optimized React 19 production distribution (`web/dist/`).
+  - Compiled and published production Android client APK `v1.4.13` (versionCode `159`, SHA-256 `54bdcd27e923693e550b3ae21faabc64f866ab2c5f2ef7590b5d0e46c3d7b147`) via `scripts/release_android.py`.
+  - Stamped `updates/production/manifest.json`, `updates/version_registry.json`, and `updates/production/media-server-client.apk`.
+  - Rebuilt Rust release binary `media-server-api.exe` and safely deployed to `MediaServerRust` Windows Service via `scripts/deploy_dual_gpu_service.ps1`.
+  - Service confirmed running and healthy on port 8000; verified `/api/app/update?channel=production` and `/api/system-status`.
 
 ---
 

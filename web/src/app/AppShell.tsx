@@ -579,7 +579,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Copyright and Legal Notice */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40">
               <p>© 2026 Anis&apos; Home Media Server. All rights reserved.</p>
-              <p>Self-hosted private streaming · Zero telemetry · Direct hardware pipeline</p>
+              <p>Self-hosted private streaming · Zero 3rd-party tracking · Direct hardware pipeline</p>
             </div>
           </div>
         </footer>
@@ -605,7 +605,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <Icon name="shield" size={18} />
                     </div>
                     <h3 id="privacy-dialog-title" className="text-lg font-bold text-white">
-                      Privacy Policy
+                      Privacy Policy &amp; Architecture
                     </h3>
                   </div>
                   <button
@@ -618,16 +618,37 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </button>
                 </div>
 
-                <div className="space-y-3 text-xs sm:text-sm text-white/70 leading-relaxed">
-                  <p>
-                    <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It does not collect, transmit, or share personal data, browsing behavior, or watch activity with any external third parties.
-                  </p>
-                  <p>
-                    Playback progress, user accounts, and device identities are stored in the server&apos;s PostgreSQL database on your host machine.
-                  </p>
-                  <p>
-                    Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no advertising trackers, analytics SDKs, or third-party cookies are used.
-                  </p>
+                <div className="space-y-3.5 text-xs sm:text-sm text-white/70 leading-relaxed max-h-[60vh] overflow-y-auto pr-1">
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">Zero Third-Party Tracking</h4>
+                    <p>
+                      <strong>Anis&apos; Home Media Server</strong> is a private, self-hosted media platform. It contains zero advertising trackers, analytics SDKs, marketing beacons, or third-party tracking cookies. Your personal data, browsing behavior, and watch activity are never transmitted, sold, or shared with external parties.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">First-Party Operational Diagnostics</h4>
+                    <p>
+                      The server gathers internal operational telemetry—including hardware GPU/CPU utilization, playback performance metrics (&quot;Stats for Nerds&quot;), client device hints, and network presence heartbeats—strictly for local media transcoding orchestration and fleet management. Telemetry is privacy-scoped to your active device by default.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">Local Database Persistence</h4>
+                    <p>
+                      Playback progress, user accounts, and paired device identities are stored strictly in the server&apos;s local PostgreSQL database on your host machine.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">External Media Metadata</h4>
+                    <p>
+                      During media library scans, the backend server makes direct API queries to The Movie Database (TMDb) solely to fetch poster artwork, ratings, and synopses. No user identities or viewing activity are included in these metadata requests.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">Encrypted Remote Transport</h4>
+                    <p>
+                      Remote access is routed through a dedicated Cloudflare Named Tunnel strictly as an encrypted transport bridge; no user-facing trackers or third-party cookies are injected.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="pt-2 flex justify-end">

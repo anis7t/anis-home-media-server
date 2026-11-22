@@ -116,3 +116,10 @@ docs/WALKTHROUGH_SWITCH_WIFI_5GHZ_CHANNEL_52.md
 *wan*
 *.cfg
 *.romfile
+
+# SSH documentation and sensitive keys/configs
+docs/*ssh*
+docs/*SSH*
+*ssh*key*
+*.key
+
