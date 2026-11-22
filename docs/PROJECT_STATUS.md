@@ -6,6 +6,31 @@ Working branch: `main`
 
 ---
 
+## 2026-11-23 — GitHub Actions Node 24 Runner Upgrade & Dependabot Vulnerability Remediation
+
+- **GitHub Actions CI Workflow Modernization (`.github/workflows/ci.yml`)**:
+  - Resolved runner warning: `"Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24"`.
+  - Upgraded core GitHub actions to official releases running natively on Node 24:
+    - `actions/checkout`: upgraded to `v7.0.1` (`3d3c42e5aac5ba805825da76410c181273ba90b1`) across `backend`, `frontend`, `flutter`, and `security` jobs.
+    - `actions/cache`: upgraded to `v6.1.0` (`55cc8345863c7cc4c66a329aec7e433d2d1c52a9`) in `backend` job.
+    - `actions/setup-node`: upgraded to `v7.1.0` (`949feb2413d6458794dcd2491c4babbbce0c15c1`) in `frontend` job.
+    - `actions/setup-java`: upgraded to `v6.3.0` (`d1374f8ac74474200d16ef8ecee22c7ae7a51880`) in `flutter` job.
+    - Comment tag for `subosito/flutter-action` updated to `# v2.23.0`.
+- **Dependabot Security Vulnerability Remediation (`web/package-lock.json`)**:
+  - Resolved 5 open repository security advisories (4 High, 1 Moderate) flagged on `main`:
+    - `GHSA-4w7w-5xrc-9h26` / `CVE-2026-109829` (High - cache poisoning and cross-user disclosure via cross-origin redirects).
+    - `GHSA-2m5v-pch6-74hx` (High - TLS certificate validation bypass via dropped tls options in Agent).
+    - `GHSA-qrxm-fqhp-jwvm` / `CVE-2026-87018` (High - DoS via TLS 1.2 certificate-changing renegotiation).
+    - `GHSA-xjj6-f33q-929c` (High - DoS via unhandled error on excessive content-encodings).
+    - `GHSA-9fm3-97px-rjf6` (Moderate - WebSocket client DoS via unbounded automatic PONG buffering).
+  - Executed `npm audit fix` in `web/` bumping transitive development dependency `undici` from `7.30.0` to `7.30.2` (superseding open Dependabot PR #12).
+  - Verified 0 audit vulnerabilities remain via `npm audit`.
+- **Test Suite Hardening (`rust/tests/integration/media_pipeline/hls_transcode_test.rs`)**:
+  - Replaced non-deterministic `hls_candidates.into_iter().next().unwrap()` in `test_hls_playlist_query_start_slices` with canonical `HlsService::find_hls_dir()`, eliminating an intermittent 503 test assertion failure caused by randomized HashSet candidate iteration order.
+  - Verified 16/16 HLS integration tests pass consistently.
+
+---
+
 ## 2026-11-23 — Privacy Transparency Parity, Web Footer Amendment & Android Client Release v1.4.13
 
 - **Web Footer Note & Privacy Transparency Amendment (`web/src/app/AppShell.tsx`)**:

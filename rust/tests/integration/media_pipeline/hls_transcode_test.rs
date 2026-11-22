@@ -680,10 +680,12 @@ async fn test_hls_playlist_query_start_slices() {
     let video_path = harness.media_dir.join("SlicedMovie.mkv");
     fs::write(&video_path, b"dummy video content").unwrap();
 
-    let hls_candidates =
-        HlsService::get_hls_candidates(&video_path, std::slice::from_ref(&harness.media_dir));
-    let hls_hash = hls_candidates.into_iter().next().unwrap();
-    let q1080 = harness.cache_dir.join("hls").join(hls_hash).join("1080p");
+    let base_hls_dir = HlsService::find_hls_dir(
+        &video_path,
+        std::slice::from_ref(&harness.media_dir),
+        &harness.cache_dir,
+    );
+    let q1080 = base_hls_dir.join("1080p");
     fs::create_dir_all(&q1080).unwrap();
 
     let pl = r#"#EXTM3U
